@@ -1,0 +1,12 @@
+[package]
+name = "iamine-client"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+sysinfo = "0.33"
+solana-sdk = "2.0"
+tokio = { version = "1", features = ["full"] }
+libp2p = { version = "0.55", features = ["tcp", "noise", "yamux", "websocket"] }
+anchor-client = "0.31"
+serde = { version = "1.0", features = ["derive"] }
