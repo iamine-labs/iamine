@@ -1,4 +1,4 @@
-use sysinfo::{System, SystemExt, CpuExt};
+use sysinfo::{System, Cpu};
 use std::env;
 
 fn main() {
