@@ -5,12 +5,17 @@ mod task_protocol;
 mod task_codec;
 mod worker_pool;
 mod task_queue;
-mod task_scheduler;  // ← nuevo
+mod task_scheduler;
+mod heartbeat;
+mod metrics;
 
 use worker_pool::WorkerPool;
 use task_queue::TaskQueue;
 use task_scheduler::TaskScheduler;
+use heartbeat::HeartbeatService;
+use metrics::{NodeMetrics, start_metrics_server};
 use std::sync::Arc;
+use tokio::sync::RwLock;
 
 use libp2p::{
     gossipsub, identify, identity, kad, mdns, noise, ping,
@@ -163,8 +168,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let bid_topic = gossipsub::IdentTopic::new("iamine-bids");
     let assign_topic = gossipsub::IdentTopic::new("iamine-assign");
     gossipsub.subscribe(&task_topic)?;
-    gossipsub.subscribe(&bid_topic)?;    // ← nuevo
-    gossipsub.subscribe(&assign_topic)?; // ← nuevo
+    gossipsub.subscribe(&bid_topic)?;
+    gossipsub.subscribe(&assign_topic)?;
+    gossipsub.subscribe(&gossipsub::IdentTopic::new("iamine-heartbeat"))?; // ← nuevo
+    gossipsub.subscribe(&gossipsub::IdentTopic::new("iamine-results"))?;   // ← nuevo
 
     // Kademlia
     let mut kad_cfg = kad::Config::default();
@@ -204,41 +211,51 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let pool = Arc::new(WorkerPool::auto());
     // ✅ Task queue con retries + timeouts
     let queue = Arc::new(TaskQueue::new(peer_id.to_string()));
-    let scheduler = Arc::new(TaskScheduler::new()); // ← nuevo
+    let scheduler = Arc::new(TaskScheduler::new());
+    let heartbeat = Arc::new(HeartbeatService::new());
+    let metrics = Arc::new(RwLock::new(NodeMetrics::new()));
 
     println!("   Slots paralelos: {}", pool.max_concurrent);
     println!("   Task queue: activa (max 3 reintentos)");
-    println!("   Scheduler: activo (bid window 500ms)\n");
+    println!("   Scheduler: activo (bid window 1.5s)\n");
 
-    let listen_addr: Multiaddr = match &mode {
-        // ← puerto fijo solo si se especifica --port, sino aleatorio
-        NodeMode::Worker => {
-            let args: Vec<String> = std::env::args().collect();
-            if let Some(port) = args.iter().find(|a| a.starts_with("--port=")) {
-                let p = port.replace("--port=", "");
-                format!("/ip4/0.0.0.0/tcp/{}", p).parse()?
-            } else {
-                "/ip4/0.0.0.0/tcp/9000".parse()?
+    // Bootnodes desde CLI --bootnode=/ip4/.../tcp/.../p2p/...
+    let args: Vec<String> = std::env::args().collect();
+    for arg in &args {
+        if arg.starts_with("--bootnode=") {
+            let addr_str = arg.replace("--bootnode=", "");
+            if let Ok(addr) = addr_str.parse::<Multiaddr>() {
+                println!("🔗 Conectando a bootnode: {}", addr);
+                let _ = swarm.dial(addr);
             }
         }
-        _ => "/ip4/0.0.0.0/tcp/0".parse()?,
-    };
-    swarm.listen_on(listen_addr)?;
-
-    // Conectar a peer explícito si se indicó
-    match &mode {
-        NodeMode::Client { peer: Some(p), .. } | NodeMode::Stress { peer: Some(p), .. } => {
-            println!("📡 Conectando a: {}", p);
-            swarm.dial(p.clone())?;
-        }
-        _ => {}
-    };
-
-    match &mode {
-        NodeMode::Worker => println!("✅ Worker listo en puerto 9000. Escuchando gossipsub...\n"),
-        NodeMode::Broadcast { .. } => println!("📢 Modo broadcast — esperando peers via mDNS...\n"),
-        _ => {}
     }
+
+    // Puerto del worker (default 9000)
+    let worker_port: u16 = {
+        let args: Vec<String> = std::env::args().collect();
+        if let Some(port_arg) = args.iter().find(|a| a.starts_with("--port=")) {
+            port_arg.replace("--port=", "").parse().unwrap_or(9000)
+        } else {
+            9000
+        }
+    };
+
+    let metrics_port = 9090 + (worker_port - 9000);
+
+    // Iniciar metrics server — puerto único por worker
+    if matches!(mode, NodeMode::Worker) {
+        let m = Arc::clone(&metrics);
+        let port = metrics_port;
+        tokio::spawn(async move {
+            start_metrics_server(m, port).await;
+        });
+        // ← un solo println!, fuera del spawn
+        println!("📊 Metrics en http://localhost:{}/metrics", metrics_port);
+    }
+
+    // Heartbeat cada 5s
+    let mut heartbeat_rx = HeartbeatService::start(5);
 
     // Estado
     let mut pending_tasks: Vec<TaskRequest> = Vec::new();
@@ -250,7 +267,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut tasks_sent = false;
     let mut broadcast_sent = false;
     let mut broadcast_attempts = 0u32;
-    let mut subscribed_peers = 0usize; // ← nuevo: contar peers suscritos
+    let mut subscribed_peers = 0usize;
 
     match &mode {
         NodeMode::Client { task_type, data, .. } => {
@@ -278,308 +295,318 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let is_client = !matches!(mode, NodeMode::Worker);
 
     loop {
-        match swarm.select_next_some().await {
-            SwarmEvent::NewListenAddr { address, .. } => {
-                println!("🌐 Escuchando en: {}", address);
-                swarm.behaviour_mut().kademlia.add_address(&peer_id, address);
-            }
-
-            SwarmEvent::Behaviour(IaMineEvent::Mdns(mdns::Event::Discovered(peers))) => {
-                for (pid, addr) in peers {
-                    if pid != peer_id {
-                        println!("🔍 mDNS descubrió: {} @ {}", pid, addr);
-                        swarm.behaviour_mut().kademlia.add_address(&pid, addr.clone());
-                        swarm.behaviour_mut().gossipsub.add_explicit_peer(&pid);
-                        known_workers.insert(pid);
-
-                        if is_client && connected_peer.is_none() && !tasks_sent {
-                            println!("📡 Conectando via mDNS a: {}", addr);
-                            let _ = swarm.dial(addr);
-                        }
-                        // ⚠️ NO publicar aquí — gossipsub aún no está listo
+        tokio::select! {
+            // Heartbeat tick
+            Some(_) = heartbeat_rx.recv() => {
+                if matches!(mode, NodeMode::Worker) {
+                    let rep = queue.reputation().await;
+                    let uptime = heartbeat.uptime_secs();
+                    let slots = pool.available_slots();
+                    {
+                        let mut m = metrics.write().await;
+                        m.uptime_secs = uptime;
+                        m.reputation_score = rep.reputation_score;
+                        m.active_workers = pool.max_concurrent - slots;
                     }
+                    let hb = serde_json::json!({
+                        "type": "Heartbeat",
+                        "peer_id": peer_id.to_string(),
+                        "available_slots": slots,
+                        "reputation_score": rep.reputation_score,
+                        "uptime_secs": uptime,
+                        "avg_latency_ms": rep.avg_execution_ms,
+                    });
+                    let hb_topic = gossipsub::IdentTopic::new("iamine-heartbeat");
+                    let _ = swarm.behaviour_mut().gossipsub.publish(
+                        hb_topic, serde_json::to_vec(&hb).unwrap(),
+                    );
                 }
             }
 
-            SwarmEvent::Behaviour(IaMineEvent::Mdns(mdns::Event::Expired(peers))) => {
-                for (pid, _) in peers {
-                    known_workers.remove(&pid);
-                    swarm.behaviour_mut().gossipsub.remove_explicit_peer(&pid);
-                }
-            }
+            event = swarm.select_next_some() => match event {
 
-            // 📢 GOSSIPSUB: recibir TaskOffer y hacer bid (si somos worker)
-            SwarmEvent::Behaviour(IaMineEvent::Gossipsub(gossipsub::Event::Message {
-                propagation_source: _,
-                message,
-                ..
-            })) => {
-                if let Ok(msg) = serde_json::from_slice::<serde_json::Value>(&message.data) {
-                    let msg_type = msg["type"].as_str().unwrap_or("");
-
-                    match msg_type {
-                        // Worker recibe oferta y hace bid
-                        "TaskOffer" if matches!(mode, NodeMode::Worker) => {
-                            let task_id = msg["task_id"].as_str().unwrap_or("").to_string();
-                            let available = pool.available_slots();
-
-                            if available > 0 {
-                                println!("📋 [Worker] Bid para tarea {} ({} slots libres)", task_id, available);
-
-                                let bid = serde_json::json!({
-                                    "type": "TaskBid",
-                                    "task_id": task_id,
-                                    "worker_id": peer_id.to_string(),
-                                    "reputation_score": queue.reputation().await.reputation_score,
-                                    "available_slots": available,
-                                    "estimated_ms": 10,
-                                });
-
-                                let bid_topic = gossipsub::IdentTopic::new("iamine-bids");
-                                let _ = swarm.behaviour_mut().gossipsub.publish(
-                                    bid_topic,
-                                    serde_json::to_vec(&bid).unwrap(),
-                                );
-                            } else {
-                                println!("⏳ [Worker] Pool lleno, ignorando tarea {}", task_id);
-                            }
-                        }
-
-                        // Broadcaster recibe bids y asigna
-                        "TaskBid" if matches!(mode, NodeMode::Broadcast { .. }) => {
-                            let task_id = msg["task_id"].as_str().unwrap_or("").to_string();
-                            let worker_id = msg["worker_id"].as_str().unwrap_or("").to_string();
-                            let rep = msg["reputation_score"].as_u64().unwrap_or(0) as u32;
-                            let slots = msg["available_slots"].as_u64().unwrap_or(0) as usize;
-                            let est_ms = msg["estimated_ms"].as_u64().unwrap_or(1000);
-
-                            println!("📨 [Scheduler] Bid: worker={}... rep={} slots={}",
-                                &worker_id[..8.min(worker_id.len())], rep, slots);
-
-                            if let Some(winner) = scheduler.receive_bid(
-                                &task_id, worker_id, rep, slots, est_ms
-                            ).await {
-                                println!("🏆 [Scheduler] Asignando tarea {} a {}...", task_id, &winner[..8.min(winner.len())]);
-
-                                let assign = serde_json::json!({
-                                    "type": "TaskAssign",
-                                    "task_id": task_id,
-                                    "assigned_worker": winner,
-                                    // incluir datos de la tarea para que el worker pueda ejecutar
-                                    "task_type": if let NodeMode::Broadcast { task_type, .. } = &mode { task_type } else { "" },
-                                    "data": if let NodeMode::Broadcast { data, .. } = &mode { data } else { "" },
-                                });
-
-                                let assign_topic = gossipsub::IdentTopic::new("iamine-assign");
-                                let _ = swarm.behaviour_mut().gossipsub.publish(
-                                    assign_topic,
-                                    serde_json::to_vec(&assign).unwrap(),
-                                );
-                            }
-                        }
-
-                        // Solo el worker asignado ejecuta
-                        "TaskAssign" if matches!(mode, NodeMode::Worker) => {
-                            let assigned = msg["assigned_worker"].as_str().unwrap_or("");
-                            let task_id = msg["task_id"].as_str().unwrap_or("").to_string();
-                            let task_type = msg["task_type"].as_str().unwrap_or("").to_string();
-                            let data = msg["data"].as_str().unwrap_or("").to_string();
-
-                            if assigned == peer_id.to_string() {
-                                println!("🎯 [Worker] ¡Asignado! Ejecutando tarea {}...", task_id);
-
-                                let queue_ref = Arc::clone(&queue);
-                                tokio::spawn(async move {
-                                    let _ = queue_ref.push(task_id, task_type, data).await;
-                                    if let Some(outcome) = queue_ref.outcome_rx.lock().await.recv().await {
-                                        println!("🏁 [Scheduler] Tarea {} completada en {} intentos",
-                                            outcome.task_id, outcome.attempts);
-                                        let rep = queue_ref.reputation().await;
-                                        println!("⭐ Reputación: {}/100 | Éxito: {:.1}%",
-                                            rep.reputation_score, rep.success_rate() * 100.0);
-                                    }
-                                });
-                            } else {
-                                println!("⏭️  [Worker] Tarea {} → otro worker ganó", task_id);
-                            }
-                        }
-
-                        _ => {}
-                    }
-                }
-            }
-
-            // ✅ Gossipsub listo cuando un peer se suscribe al mismo topic
-            SwarmEvent::Behaviour(IaMineEvent::Gossipsub(gossipsub::Event::Subscribed { peer_id: pid, topic })) => {
-                println!("📢 Peer {} suscrito a topic: {}", pid, topic);
-
-                // Contar solo suscripciones al topic principal
-                if topic.as_str() == TASK_TOPIC && matches!(mode, NodeMode::Broadcast { .. }) {
-                    subscribed_peers += 1;
-                    println!("👥 Workers suscritos: {}", subscribed_peers);
+                SwarmEvent::NewListenAddr { address, .. } => {
+                    println!("🌐 Escuchando en: {}", address);
+                    swarm.behaviour_mut().kademlia.add_address(&peer_id, address);
                 }
 
-                // Publicar solo cuando al menos 1 worker esté suscrito a iamine-tasks
-                if matches!(mode, NodeMode::Broadcast { .. }) && !broadcast_sent && subscribed_peers >= 1 {
-                    if let NodeMode::Broadcast { task_type, data } = &mode {
-                        let task_id = uuid_simple();
-
-                        scheduler.register_task(task_id.clone(), task_type.clone()).await;
-
-                        let offer = serde_json::json!({
-                            "type": "TaskOffer",
-                            "task_id": task_id,
-                            "task_type": task_type,
-                            "data": data,
-                            "requester_id": peer_id.to_string(),
-                        });
-
-                        match swarm.behaviour_mut().gossipsub.publish(
-                            task_topic.clone(),
-                            serde_json::to_vec(&offer).unwrap(),
-                        ) {
-                            Ok(_) => {
-                                println!("📢 ✅ TaskOffer enviado: {} → '{}' [id: {}]", task_type, data, task_id);
-                                broadcast_sent = true;
-                            }
-                            Err(e) => {
-                                broadcast_attempts += 1;
-                                eprintln!("❌ Error broadcast (intento {}): {:?}", broadcast_attempts, e);
+                SwarmEvent::Behaviour(IaMineEvent::Mdns(mdns::Event::Discovered(peers))) => {
+                    for (pid, addr) in peers {
+                        if pid != peer_id {
+                            println!("🔍 mDNS descubrió: {} @ {}", pid, addr);
+                            swarm.behaviour_mut().kademlia.add_address(&pid, addr.clone());
+                            swarm.behaviour_mut().gossipsub.add_explicit_peer(&pid);
+                            known_workers.insert(pid);
+                            if is_client && connected_peer.is_none() && !tasks_sent {
+                                println!("📡 Conectando via mDNS a: {}", addr);
+                                let _ = swarm.dial(addr);
                             }
                         }
                     }
                 }
-            }
 
-            SwarmEvent::ConnectionEstablished { peer_id: pid, endpoint, .. } => {
-                println!("✅ Conectado a: {} ({})", pid, endpoint.get_remote_address());
-                connected_peer = Some(pid);
-
-                if is_client && !tasks_sent && !matches!(mode, NodeMode::Broadcast { .. }) {
-                    if let Some(task) = pending_tasks.first().cloned() {
-                        println!("📤 [{}/{}] Enviando: {} → '{}'",
-                            1, total_tasks, task.task_type, task.data);
-                        swarm.behaviour_mut().request_response.send_request(&pid, task);
-                        waiting_for_response = true;
-                        tasks_sent = true;
+                SwarmEvent::Behaviour(IaMineEvent::Mdns(mdns::Event::Expired(peers))) => {
+                    for (pid, _) in peers {
+                        known_workers.remove(&pid);
+                        swarm.behaviour_mut().gossipsub.remove_explicit_peer(&pid);
                     }
                 }
-            }
 
-            SwarmEvent::ConnectionClosed { peer_id: _, .. } => {
-                if is_client && !waiting_for_response && !matches!(mode, NodeMode::Broadcast { .. }) {
-                    println!("\n📊 Completado: {}/{} tareas", completed, total_tasks);
-                    break;
-                }
-                if matches!(mode, NodeMode::Broadcast { .. }) && broadcast_sent {
-                    // Broadcast ya enviado, podemos salir
-                    break;
-                }
-            }
-
-            SwarmEvent::Behaviour(IaMineEvent::Ping(ping::Event { peer, result, .. })) => {
-                if let Ok(d) = result {
-                    println!("🏓 Ping {}: {:?}", peer, d);
-                }
-            }
-
-            SwarmEvent::Behaviour(IaMineEvent::Kademlia(kad::Event::RoutingUpdated { peer, .. })) => {
-                println!("📡 Kademlia: nodo añadido {}", peer);
-            }
-
-            SwarmEvent::Behaviour(IaMineEvent::RequestResponse(event)) => {
-                match event {
-                    RREvent::Message { peer, message: Message::Request { request, channel, .. } } => {
-                        println!("📨 Tarea recibida de {}: [{}] {} → '{}'",
-                            peer, request.task_id, request.task_type, request.data);
-
-                        // ✅ Encolar con retries y timeout
-                        let queue_ref = Arc::clone(&queue);
-                        let t_id = request.task_id.clone();
-                        let t_type = request.task_type.clone();
-                        let t_data = request.data.clone();
-
-                        tokio::spawn(async move {
-                            if let Err(e) = queue_ref.push(t_id, t_type, t_data).await {
-                                eprintln!("❌ Error encolando tarea: {}", e);
-                            }
-                            // Leer outcome
-                            if let Some(outcome) = queue_ref.outcome_rx.lock().await.recv().await {
-                                match outcome.status {
-                                    task_queue::OutcomeStatus::Success =>
-                                        println!("🏁 [Queue] {} completada en {} intentos",
-                                            outcome.task_id, outcome.attempts),
-                                    task_queue::OutcomeStatus::MaxRetriesExceeded =>
-                                        println!("💀 [Queue] {} falló tras {} intentos",
-                                            outcome.task_id, outcome.attempts),
-                                    task_queue::OutcomeStatus::TimedOut =>
-                                        println!("⏱️ [Queue] {} timeout tras {} intentos",
-                                            outcome.task_id, outcome.attempts),
-                                    task_queue::OutcomeStatus::Failed =>
-                                        println!("❌ [Queue] {} error crítico",
-                                            outcome.task_id),
+                SwarmEvent::Behaviour(IaMineEvent::Gossipsub(gossipsub::Event::Message {
+                    propagation_source: _,
+                    message,
+                    ..
+                })) => {
+                    if let Ok(msg) = serde_json::from_slice::<serde_json::Value>(&message.data) {
+                        let msg_type = msg["type"].as_str().unwrap_or("");
+                        match msg_type {
+                            "TaskOffer" if matches!(mode, NodeMode::Worker) => {
+                                let task_id = msg["task_id"].as_str().unwrap_or("").to_string();
+                                let origin_peer = msg["origin_peer"].as_str().unwrap_or("").to_string();
+                                let available = pool.available_slots();
+                                if available > 0 {
+                                    println!("📋 [Worker] Bid para tarea {} ({} slots libres)", task_id, available);
+                                    let bid = serde_json::json!({
+                                        "type": "TaskBid",
+                                        "task_id": task_id,
+                                        "worker_id": peer_id.to_string(),
+                                        "origin_peer": origin_peer,
+                                        "reputation_score": queue.reputation().await.reputation_score,
+                                        "available_slots": available,
+                                        "estimated_ms": 10,
+                                    });
+                                    let _ = swarm.behaviour_mut().gossipsub.publish(
+                                        gossipsub::IdentTopic::new("iamine-bids"),
+                                        serde_json::to_vec(&bid).unwrap(),
+                                    );
+                                } else {
+                                    println!("⏳ [Worker] Pool lleno, ignorando tarea {}", task_id);
                                 }
-                                // Mostrar reputación actualizada
-                                let rep = queue_ref.reputation().await;
-                                println!("⭐ Reputación: {}/100 | Éxito: {:.1}%",
-                                    rep.reputation_score,
-                                    rep.success_rate() * 100.0);
                             }
-                        });
 
-                        // Respuesta inmediata P2P (no bloqueante)
-                        let response = TaskExecutor::execute_task(
-                            request.task_id, request.task_type, request.data,
-                        );
-                        match swarm.behaviour_mut().request_response.send_response(channel, response) {
-                            Ok(_) => println!("📤 Respuesta enviada"),
-                            Err(e) => eprintln!("❌ Error enviando respuesta: {:?}", e),
-                        }
-                    }
-                    RREvent::Message { peer, message: Message::Response { response, .. } } => {
-                        waiting_for_response = false;
-                        completed += 1;
-                        if !pending_tasks.is_empty() { pending_tasks.remove(0); }
-
-                        if response.success {
-                            println!("📩 ✅ [{}/{}] Resultado de {}: '{}'",
-                                completed, total_tasks, peer, response.result);
-                        } else {
-                            println!("📩 ❌ [{}/{}] Error: '{}'", completed, total_tasks, response.result);
-                        }
-
-                        if let Some(next_task) = pending_tasks.first().cloned() {
-                            if let Some(pid) = connected_peer {
-                                println!("📤 [{}/{}] Enviando: {} → '{}'",
-                                    completed + 1, total_tasks, next_task.task_type, next_task.data);
-                                swarm.behaviour_mut().request_response.send_request(&pid, next_task);
-                                waiting_for_response = true;
+                            "TaskBid" if matches!(mode, NodeMode::Broadcast { .. }) => {
+                                let task_id = msg["task_id"].as_str().unwrap_or("").to_string();
+                                let worker_id = msg["worker_id"].as_str().unwrap_or("").to_string();
+                                let rep = msg["reputation_score"].as_u64().unwrap_or(0) as u32;
+                                let slots = msg["available_slots"].as_u64().unwrap_or(0) as usize;
+                                let est_ms = msg["estimated_ms"].as_u64().unwrap_or(1000);
+                                println!("📨 [Scheduler] Bid: worker={}... rep={} slots={}",
+                                    &worker_id[..8.min(worker_id.len())], rep, slots);
+                                if let Some(winner) = scheduler.receive_bid(&task_id, worker_id, rep, slots, est_ms).await {
+                                    println!("🏆 Asignando {} a {}...", task_id, &winner[..8.min(winner.len())]);
+                                    let assign = serde_json::json!({
+                                        "type": "TaskAssign",
+                                        "task_id": task_id,
+                                        "assigned_worker": winner,
+                                        "origin_peer": peer_id.to_string(),
+                                        "task_type": if let NodeMode::Broadcast { task_type, .. } = &mode { task_type } else { "" },
+                                        "data": if let NodeMode::Broadcast { data, .. } = &mode { data } else { "" },
+                                    });
+                                    let _ = swarm.behaviour_mut().gossipsub.publish(
+                                        gossipsub::IdentTopic::new("iamine-assign"),
+                                        serde_json::to_vec(&assign).unwrap(),
+                                    );
+                                }
                             }
-                        } else {
-                            println!("\n🎉 Todas las tareas completadas: {}/{}", completed, total_tasks);
-                            break;
+
+                            "TaskAssign" if matches!(mode, NodeMode::Worker) => {
+                                let assigned = msg["assigned_worker"].as_str().unwrap_or("");
+                                let task_id = msg["task_id"].as_str().unwrap_or("").to_string();
+                                let task_type = msg["task_type"].as_str().unwrap_or("").to_string();
+                                let data = msg["data"].as_str().unwrap_or("").to_string();
+                                let origin_peer = msg["origin_peer"].as_str().unwrap_or("").to_string();
+
+                                if assigned == peer_id.to_string() {
+                                    println!("🎯 [Worker] ¡Asignado! Ejecutando tarea {}...", task_id);
+                                    let queue_ref = Arc::clone(&queue);
+                                    let metrics_ref = Arc::clone(&metrics);
+
+                                    tokio::spawn(async move {
+                                        let _ = queue_ref.push(task_id.clone(), task_type, data).await;
+                                        if let Some(outcome) = queue_ref.outcome_rx.lock().await.recv().await {
+                                            {
+                                                let mut m = metrics_ref.write().await;
+                                                match outcome.status {
+                                                    task_queue::OutcomeStatus::Success => m.task_success(0),
+                                                    task_queue::OutcomeStatus::TimedOut => m.task_timed_out(),
+                                                    _ => m.task_failed(),
+                                                }
+                                            }
+                                            println!("📤 [Worker] Resultado listo para origin {}...",
+                                                &origin_peer[..8.min(origin_peer.len())]);
+                                            let rep = queue_ref.reputation().await;
+                                            println!("⭐ Reputación: {}/100 | Éxito: {:.1}%",
+                                                rep.reputation_score, rep.success_rate() * 100.0);
+                                        }
+                                    });
+                                } else {
+                                    println!("⏭️  [Worker] Tarea {} → otro worker ganó", task_id);
+                                }
+                            }
+
+                            "TaskResult" if matches!(mode, NodeMode::Broadcast { .. }) => {
+                                let task_id = msg["task_id"].as_str().unwrap_or("");
+                                let success = msg["success"].as_bool().unwrap_or(false);
+                                let origin = msg["origin_peer"].as_str().unwrap_or("");
+                                if origin == peer_id.to_string() {
+                                    if success {
+                                        println!("🎉 [Broadcaster] Tarea {} completada!", task_id);
+                                    } else {
+                                        println!("❌ [Broadcaster] Tarea {} falló", task_id);
+                                    }
+                                }
+                            }
+
+                            "Heartbeat" => {
+                                let worker_id = msg["peer_id"].as_str().unwrap_or("");
+                                let slots = msg["available_slots"].as_u64().unwrap_or(0);
+                                let rep = msg["reputation_score"].as_u64().unwrap_or(0);
+                                let uptime = msg["uptime_secs"].as_u64().unwrap_or(0);
+                                println!("💓 Heartbeat {}... slots={} rep={} uptime={}s",
+                                    &worker_id[..8.min(worker_id.len())], slots, rep, uptime);
+                                metrics.write().await.network_peers = known_workers.len();
+                            }
+
+                            _ => {}
                         }
-                    }
-                    RREvent::OutboundFailure { peer, error, .. } => {
-                        if waiting_for_response {
-                            println!("⚠️ Substream cerrado, esperando respuesta de {}...", peer);
-                        } else {
-                            eprintln!("❌ Error outbound con {}: {:?}", peer, error);
-                            if is_client { break; }
-                        }
-                    }
-                    RREvent::InboundFailure { peer, error, .. } => {
-                        eprintln!("❌ Error inbound con {}: {:?}", peer, error);
-                    }
-                    RREvent::ResponseSent { peer, .. } => {
-                        println!("✅ Respuesta entregada a {}", peer);
                     }
                 }
+
+                SwarmEvent::Behaviour(IaMineEvent::Gossipsub(gossipsub::Event::Subscribed { peer_id: pid, topic })) => {
+                    println!("📢 Peer {} suscrito a topic: {}", pid, topic);
+                    if topic.as_str() == TASK_TOPIC && matches!(mode, NodeMode::Broadcast { .. }) {
+                        subscribed_peers += 1;
+                        println!("👥 Workers suscritos: {}", subscribed_peers);
+                    }
+                    if matches!(mode, NodeMode::Broadcast { .. }) && !broadcast_sent && subscribed_peers >= 1 {
+                        if let NodeMode::Broadcast { task_type, data } = &mode {
+                            let task_id = uuid_simple();
+                            scheduler.register_task(task_id.clone(), task_type.clone()).await;
+                            let offer = serde_json::json!({
+                                "type": "TaskOffer",
+                                "task_id": task_id,
+                                "task_type": task_type,
+                                "data": data,
+                                "requester_id": peer_id.to_string(),
+                                "origin_peer": peer_id.to_string(),
+                            });
+                            match swarm.behaviour_mut().gossipsub.publish(
+                                task_topic.clone(),
+                                serde_json::to_vec(&offer).unwrap(),
+                            ) {
+                                Ok(_) => {
+                                    println!("📢 ✅ TaskOffer enviado [id: {}]", task_id);
+                                    broadcast_sent = true;
+                                }
+                                Err(e) => {
+                                    broadcast_attempts += 1;
+                                    eprintln!("❌ Error broadcast (intento {}): {:?}", broadcast_attempts, e);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                SwarmEvent::ConnectionEstablished { peer_id: pid, endpoint, .. } => {
+                    println!("✅ Conectado a: {} ({})", pid, endpoint.get_remote_address());
+                    connected_peer = Some(pid);
+                    if is_client && !tasks_sent && !matches!(mode, NodeMode::Broadcast { .. }) {
+                        if let Some(task) = pending_tasks.first().cloned() {
+                            println!("📤 [{}/{}] Enviando: {} → '{}'",
+                                1, total_tasks, task.task_type, task.data);
+                            swarm.behaviour_mut().request_response.send_request(&pid, task);
+                            waiting_for_response = true;
+                            tasks_sent = true;
+                        }
+                    }
+                }
+
+                SwarmEvent::ConnectionClosed { peer_id: _, .. } => {
+                    if is_client && !waiting_for_response && !matches!(mode, NodeMode::Broadcast { .. }) {
+                        println!("\n📊 Completado: {}/{} tareas", completed, total_tasks);
+                        break;
+                    }
+                }
+
+                SwarmEvent::Behaviour(IaMineEvent::Ping(ping::Event { peer, result, .. })) => {
+                    if let Ok(d) = result {
+                        println!("🏓 Ping {}: {:?}", peer, d);
+                    }
+                }
+
+                SwarmEvent::Behaviour(IaMineEvent::Kademlia(kad::Event::RoutingUpdated { peer, .. })) => {
+                    println!("📡 Kademlia: nodo añadido {}", peer);
+                }
+
+                SwarmEvent::Behaviour(IaMineEvent::RequestResponse(event)) => {
+                    match event {
+                        RREvent::Message { peer, message: Message::Request { request, channel, .. } } => {
+                            println!("📨 Tarea recibida de {}: [{}] {} → '{}'",
+                                peer, request.task_id, request.task_type, request.data);
+                            let queue_ref = Arc::clone(&queue);
+                            let t_id = request.task_id.clone();
+                            let t_type = request.task_type.clone();
+                            let t_data = request.data.clone();
+                            tokio::spawn(async move {
+                                if let Err(e) = queue_ref.push(t_id, t_type, t_data).await {
+                                    eprintln!("❌ Error encolando: {}", e);
+                                }
+                                if let Some(outcome) = queue_ref.outcome_rx.lock().await.recv().await {
+                                    println!("🏁 [Queue] {} → {:?} en {} intentos",
+                                        outcome.task_id, outcome.status, outcome.attempts);
+                                    let rep = queue_ref.reputation().await;
+                                    println!("⭐ Reputación: {}/100", rep.reputation_score);
+                                }
+                            });
+                            let response = TaskExecutor::execute_task(
+                                request.task_id, request.task_type, request.data,
+                            );
+                            match swarm.behaviour_mut().request_response.send_response(channel, response) {
+                                Ok(_) => println!("📤 Respuesta enviada"),
+                                Err(e) => eprintln!("❌ Error: {:?}", e),
+                            }
+                        }
+                        RREvent::Message { peer, message: Message::Response { response, .. } } => {
+                            waiting_for_response = false;
+                            completed += 1;
+                            if !pending_tasks.is_empty() { pending_tasks.remove(0); }
+                            if response.success {
+                                println!("📩 ✅ [{}/{}] Resultado de {}: '{}'",
+                                    completed, total_tasks, peer, response.result);
+                            } else {
+                                println!("📩 ❌ [{}/{}] Error: '{}'", completed, total_tasks, response.result);
+                            }
+                            if let Some(next_task) = pending_tasks.first().cloned() {
+                                if let Some(pid) = connected_peer {
+                                    println!("📤 [{}/{}] Enviando: {} → '{}'",
+                                        completed + 1, total_tasks, next_task.task_type, next_task.data);
+                                    swarm.behaviour_mut().request_response.send_request(&pid, next_task);
+                                    waiting_for_response = true;
+                                }
+                            } else {
+                                println!("\n🎉 Todas las tareas completadas: {}/{}", completed, total_tasks);
+                                break;
+                            }
+                        }
+                        RREvent::OutboundFailure { peer, error, .. } => {
+                            eprintln!("❌ Error outbound con {}: {:?}", peer, error);
+                            if is_client && !waiting_for_response { break; }
+                        }
+                        RREvent::InboundFailure { peer, error, .. } => {
+                            eprintln!("❌ Error inbound con {}: {:?}", peer, error);
+                        }
+                        RREvent::ResponseSent { peer, .. } => {
+                            println!("✅ Respuesta entregada a {}", peer);
+                        }
+                    }
+                }
+
+                _ => {}
             }
-            _ => {}
         }
     }
 
+    #[allow(unreachable_code)]
     Ok(())
 }
 
