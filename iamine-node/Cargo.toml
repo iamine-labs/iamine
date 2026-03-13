@@ -17,6 +17,3 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 sha2 = "0.10"
 async-trait = "0.1"
-# Solana — reportar resultados en blockchain
-solana-sdk = "2.0"
-solana-client = "2.0"

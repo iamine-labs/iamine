@@ -3,6 +3,12 @@ mod network;
 mod executor;
 mod task_protocol;
 mod task_codec;
+mod worker_pool;
+mod task_queue;  // ← nuevo
+
+use worker_pool::WorkerPool;
+use task_queue::TaskQueue;
+use std::sync::Arc;
 
 use libp2p::{
     gossipsub, identify, identity, kad, mdns, noise, ping,
@@ -188,6 +194,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
             .with_idle_connection_timeout(Duration::from_secs(60)),
     );
 
+    // ✅ Crear worker pool ANTES del loop
+    let pool = Arc::new(WorkerPool::auto());
+    // ✅ Task queue con retries + timeouts
+    let queue = Arc::new(TaskQueue::new(peer_id.to_string()));
+
+    println!("   Slots paralelos: {}", pool.max_concurrent);
+    println!("   Task queue: activa (max 3 reintentos, timeout por tipo)\n");
+
     let listen_addr: Multiaddr = match &mode {
         NodeMode::Worker => "/ip4/0.0.0.0/tcp/9000".parse()?,
         _ => "/ip4/0.0.0.0/tcp/0".parse()?,
@@ -368,6 +382,42 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     RREvent::Message { peer, message: Message::Request { request, channel, .. } } => {
                         println!("📨 Tarea recibida de {}: [{}] {} → '{}'",
                             peer, request.task_id, request.task_type, request.data);
+
+                        // ✅ Encolar con retries y timeout
+                        let queue_ref = Arc::clone(&queue);
+                        let t_id = request.task_id.clone();
+                        let t_type = request.task_type.clone();
+                        let t_data = request.data.clone();
+
+                        tokio::spawn(async move {
+                            if let Err(e) = queue_ref.push(t_id, t_type, t_data).await {
+                                eprintln!("❌ Error encolando tarea: {}", e);
+                            }
+                            // Leer outcome
+                            if let Some(outcome) = queue_ref.outcome_rx.lock().await.recv().await {
+                                match outcome.status {
+                                    task_queue::OutcomeStatus::Success =>
+                                        println!("🏁 [Queue] {} completada en {} intentos",
+                                            outcome.task_id, outcome.attempts),
+                                    task_queue::OutcomeStatus::MaxRetriesExceeded =>
+                                        println!("💀 [Queue] {} falló tras {} intentos",
+                                            outcome.task_id, outcome.attempts),
+                                    task_queue::OutcomeStatus::TimedOut =>
+                                        println!("⏱️ [Queue] {} timeout tras {} intentos",
+                                            outcome.task_id, outcome.attempts),
+                                    task_queue::OutcomeStatus::Failed =>
+                                        println!("❌ [Queue] {} error crítico",
+                                            outcome.task_id),
+                                }
+                                // Mostrar reputación actualizada
+                                let rep = queue_ref.reputation().await;
+                                println!("⭐ Reputación: {}/100 | Éxito: {:.1}%",
+                                    rep.reputation_score,
+                                    rep.success_rate() * 100.0);
+                            }
+                        });
+
+                        // Respuesta inmediata P2P (no bloqueante)
                         let response = TaskExecutor::execute_task(
                             request.task_id, request.task_type, request.data,
                         );
