@@ -4,10 +4,19 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-libp2p = { version = "0.53", features = ["tcp", "noise", "yamux", "tokio", "identify", "ping", "macros", "request-response", "cbor"] }
+iamine-core = { path = "../iamine-core" }
+libp2p = { version = "0.53", features = [
+    "tcp", "noise", "yamux", "tokio",
+    "identify", "ping", "macros",
+    "request-response", "cbor",
+    "kad", "mdns", "gossipsub",
+] }
 tokio = { version = "1", features = ["full"] }
 futures = "0.3"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 sha2 = "0.10"
 async-trait = "0.1"
+# Solana — reportar resultados en blockchain
+solana-sdk = "2.0"
+solana-client = "2.0"
