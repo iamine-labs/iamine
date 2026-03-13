@@ -8,12 +8,18 @@ mod task_queue;
 mod task_scheduler;
 mod heartbeat;
 mod metrics;
+mod worker_capabilities; // ← nuevo
+mod task_cache;          // ← nuevo
+mod peer_tracker;        // ← nuevo
 
 use worker_pool::WorkerPool;
 use task_queue::TaskQueue;
 use task_scheduler::TaskScheduler;
 use heartbeat::HeartbeatService;
 use metrics::{NodeMetrics, start_metrics_server};
+use worker_capabilities::WorkerCapabilities;
+use task_cache::TaskCache;
+use peer_tracker::PeerTracker;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -82,8 +88,8 @@ enum NodeMode {
     Worker,
     Client { peer: Option<Multiaddr>, task_type: String, data: String },
     Stress { peer: Option<Multiaddr>, count: usize },
-    /// --broadcast <task_type> <data>: anuncia tarea a toda la red
     Broadcast { task_type: String, data: String },
+    SimulateWorkers { count: usize }, // ← nuevo
 }
 
 fn parse_args() -> Result<NodeMode, String> {
@@ -117,6 +123,12 @@ fn parse_args() -> Result<NodeMode, String> {
             let task_type = args.get(2).ok_or("Falta <task_type>")?.clone();
             let data = args.get(3).ok_or("Falta <data>")?.clone();
             Ok(NodeMode::Broadcast { task_type, data })
+        }
+
+        Some("--simulate-workers") => {
+            let count = args.get(2).unwrap_or(&"10".to_string())
+                .parse::<usize>().unwrap_or(10);
+            Ok(NodeMode::SimulateWorkers { count })
         }
 
         Some(unknown) => Err(format!("Modo desconocido: {}", unknown)),
@@ -214,6 +226,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let scheduler = Arc::new(TaskScheduler::new());
     let heartbeat = Arc::new(HeartbeatService::new());
     let metrics = Arc::new(RwLock::new(NodeMetrics::new()));
+    let capabilities = WorkerCapabilities::detect();             // ← nuevo
+    let mut task_cache = TaskCache::new(1000);                   // ← nuevo
+    let mut peer_tracker = PeerTracker::new();                   // ← nuevo
+
+    // Simulate workers mode
+    if let NodeMode::SimulateWorkers { count } = &mode {
+        println!("🔥 Simulando {} workers virtuales...", count);
+        simulate_workers(*count, peer_id.to_string()).await;
+        return Ok(());
+    }
 
     println!("   Slots paralelos: {}", pool.max_concurrent);
     println!("   Task queue: activa (max 3 reintentos)");
@@ -247,11 +269,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
     if matches!(mode, NodeMode::Worker) {
         let m = Arc::clone(&metrics);
         let port = metrics_port;
+        println!("📊 Metrics en http://localhost:{}/metrics", metrics_port); // ← mover ANTES del spawn
         tokio::spawn(async move {
             start_metrics_server(m, port).await;
         });
-        // ← un solo println!, fuera del spawn
-        println!("📊 Metrics en http://localhost:{}/metrics", metrics_port);
     }
 
     // Heartbeat cada 5s
@@ -307,7 +328,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         m.uptime_secs = uptime;
                         m.reputation_score = rep.reputation_score;
                         m.active_workers = pool.max_concurrent - slots;
+                        m.network_peers = peer_tracker.peer_count();
                     }
+
+                    // ← Heartbeat enriquecido con capabilities
                     let hb = serde_json::json!({
                         "type": "Heartbeat",
                         "peer_id": peer_id.to_string(),
@@ -315,6 +339,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         "reputation_score": rep.reputation_score,
                         "uptime_secs": uptime,
                         "avg_latency_ms": rep.avg_execution_ms,
+                        "capabilities": {
+                            "cpu_cores": capabilities.cpu_cores,
+                            "ram_gb": capabilities.ram_gb,
+                            "gpu_available": capabilities.gpu_available,
+                            "supported_tasks": capabilities.supported_tasks,
+                        }
                     });
                     let hb_topic = gossipsub::IdentTopic::new("iamine-heartbeat");
                     let _ = swarm.behaviour_mut().gossipsub.publish(
@@ -360,27 +390,41 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     if let Ok(msg) = serde_json::from_slice::<serde_json::Value>(&message.data) {
                         let msg_type = msg["type"].as_str().unwrap_or("");
                         match msg_type {
+
                             "TaskOffer" if matches!(mode, NodeMode::Worker) => {
                                 let task_id = msg["task_id"].as_str().unwrap_or("").to_string();
+                                let task_type = msg["task_type"].as_str().unwrap_or("").to_string();
                                 let origin_peer = msg["origin_peer"].as_str().unwrap_or("").to_string();
-                                let available = pool.available_slots();
-                                if available > 0 {
-                                    println!("📋 [Worker] Bid para tarea {} ({} slots libres)", task_id, available);
-                                    let bid = serde_json::json!({
-                                        "type": "TaskBid",
-                                        "task_id": task_id,
-                                        "worker_id": peer_id.to_string(),
-                                        "origin_peer": origin_peer,
-                                        "reputation_score": queue.reputation().await.reputation_score,
-                                        "available_slots": available,
-                                        "estimated_ms": 10,
-                                    });
-                                    let _ = swarm.behaviour_mut().gossipsub.publish(
-                                        gossipsub::IdentTopic::new("iamine-bids"),
-                                        serde_json::to_vec(&bid).unwrap(),
-                                    );
+
+                                // ← usar continue en lugar de return
+                                if task_cache.is_duplicate(&task_id) {
+                                    println!("⚡ [Cache] Tarea {} ya vista, ignorando", &task_id[..8.min(task_id.len())]);
+                                } else if !capabilities.supports(&task_type) {
+                                    println!("🚫 [Worker] No soporta '{}', ignorando", task_type);
                                 } else {
-                                    println!("⏳ [Worker] Pool lleno, ignorando tarea {}", task_id);
+                                    let available = pool.available_slots();
+                                    if available > 0 {
+                                        println!("📋 [Worker] Bid para tarea {} ({} slots libres)", task_id, available);
+                                        let bid = serde_json::json!({
+                                            "type": "TaskBid",
+                                            "task_id": task_id,
+                                            "worker_id": peer_id.to_string(),
+                                            "origin_peer": origin_peer,
+                                            "reputation_score": queue.reputation().await.reputation_score,
+                                            "available_slots": available,
+                                            "estimated_ms": 10,
+                                            "capabilities": {
+                                                "cpu_cores": capabilities.cpu_cores,
+                                                "supported_tasks": capabilities.supported_tasks,
+                                            }
+                                        });
+                                        let _ = swarm.behaviour_mut().gossipsub.publish(
+                                            gossipsub::IdentTopic::new("iamine-bids"),
+                                            serde_json::to_vec(&bid).unwrap(),
+                                        );
+                                    } else {
+                                        println!("⏳ [Worker] Pool lleno, ignorando tarea {}", task_id);
+                                    }
                                 }
                             }
 
@@ -390,15 +434,23 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 let rep = msg["reputation_score"].as_u64().unwrap_or(0) as u32;
                                 let slots = msg["available_slots"].as_u64().unwrap_or(0) as usize;
                                 let est_ms = msg["estimated_ms"].as_u64().unwrap_or(1000);
-                                println!("📨 [Scheduler] Bid: worker={}... rep={} slots={}",
-                                    &worker_id[..8.min(worker_id.len())], rep, slots);
+
+                                // ← latency_bonus usado en el log (elimina warning)
+                                let latency = peer_tracker.get_latency(&worker_id);
+                                println!("📨 [Scheduler] Bid: worker={}... rep={} slots={} latency={:.1}ms",
+                                    &worker_id[..8.min(worker_id.len())], rep, slots, latency);
+
                                 if let Some(winner) = scheduler.receive_bid(&task_id, worker_id, rep, slots, est_ms).await {
                                     println!("🏆 Asignando {} a {}...", task_id, &winner[..8.min(winner.len())]);
+
+                                    // ← deadline_ms para timeout recovery
+                                    let deadline_ms = 30_000u64; // 30s
                                     let assign = serde_json::json!({
                                         "type": "TaskAssign",
                                         "task_id": task_id,
                                         "assigned_worker": winner,
                                         "origin_peer": peer_id.to_string(),
+                                        "deadline_ms": deadline_ms,
                                         "task_type": if let NodeMode::Broadcast { task_type, .. } = &mode { task_type } else { "" },
                                         "data": if let NodeMode::Broadcast { data, .. } = &mode { data } else { "" },
                                     });
@@ -406,6 +458,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         gossipsub::IdentTopic::new("iamine-assign"),
                                         serde_json::to_vec(&assign).unwrap(),
                                     );
+
+                                    // ← Timeout recovery: si no hay resultado en deadline_ms → rebroadcast
+                                    let rebroadcast_task_id = task_id.clone();
+                                    let _rebroadcast_mode = mode.clone(); // ← prefijo _
+                                    let scheduler_ref = Arc::clone(&scheduler);
+                                    tokio::spawn(async move {
+                                        tokio::time::sleep(Duration::from_millis(deadline_ms)).await;
+                                        // Si la tarea sigue asignada (no completada) → rebroadcast
+                                        let stats = scheduler_ref.stats().await;
+                                        println!("⏱️ [Timeout] Tarea {} expiró — scheduler stats: collecting={} assigned={} completed={}",
+                                            rebroadcast_task_id, stats.0, stats.1, stats.2);
+                                        // TODO: re-publicar TaskOffer si sigue sin completar
+                                    });
                                 }
                             }
 
@@ -415,28 +480,46 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 let task_type = msg["task_type"].as_str().unwrap_or("").to_string();
                                 let data = msg["data"].as_str().unwrap_or("").to_string();
                                 let origin_peer = msg["origin_peer"].as_str().unwrap_or("").to_string();
+                                let deadline_ms = msg["deadline_ms"].as_u64().unwrap_or(30_000);
 
                                 if assigned == peer_id.to_string() {
-                                    println!("🎯 [Worker] ¡Asignado! Ejecutando tarea {}...", task_id);
+                                    println!("🎯 [Worker] ¡Asignado! Ejecutando {} (deadline: {}ms)...", task_id, deadline_ms);
                                     let queue_ref = Arc::clone(&queue);
                                     let metrics_ref = Arc::clone(&metrics);
 
                                     tokio::spawn(async move {
-                                        let _ = queue_ref.push(task_id.clone(), task_type, data).await;
-                                        if let Some(outcome) = queue_ref.outcome_rx.lock().await.recv().await {
-                                            {
-                                                let mut m = metrics_ref.write().await;
-                                                match outcome.status {
-                                                    task_queue::OutcomeStatus::Success => m.task_success(0),
-                                                    task_queue::OutcomeStatus::TimedOut => m.task_timed_out(),
-                                                    _ => m.task_failed(),
+                                        // ← Timeout en la ejecución según deadline
+                                        let exec = async {
+                                            let _ = queue_ref.push(task_id.clone(), task_type, data).await;
+                                            queue_ref.outcome_rx.lock().await.recv().await
+                                        };
+
+                                        match tokio::time::timeout(
+                                            Duration::from_millis(deadline_ms),
+                                            exec
+                                        ).await {
+                                            Ok(Some(outcome)) => {
+                                                {
+                                                    let mut m = metrics_ref.write().await;
+                                                    match outcome.status {
+                                                        task_queue::OutcomeStatus::Success => m.task_success(0),
+                                                        task_queue::OutcomeStatus::TimedOut => m.task_timed_out(),
+                                                        _ => m.task_failed(),
+                                                    }
                                                 }
+                                                println!("📤 [Worker] Resultado → origin {}...",
+                                                    &origin_peer[..8.min(origin_peer.len())]);
+                                                let rep = queue_ref.reputation().await;
+                                                println!("⭐ Reputación: {}/100 | Éxito: {:.1}%",
+                                                    rep.reputation_score, rep.success_rate() * 100.0);
                                             }
-                                            println!("📤 [Worker] Resultado listo para origin {}...",
-                                                &origin_peer[..8.min(origin_peer.len())]);
-                                            let rep = queue_ref.reputation().await;
-                                            println!("⭐ Reputación: {}/100 | Éxito: {:.1}%",
-                                                rep.reputation_score, rep.success_rate() * 100.0);
+                                            Ok(None) => eprintln!("❌ [Worker] Canal cerrado"),
+                                            Err(_) => {
+                                                eprintln!("⏱️ [Worker] Tarea {} expiró deadline {}ms",
+                                                    task_id, deadline_ms);
+                                                let mut m = metrics_ref.write().await;
+                                                m.task_timed_out();
+                                            }
                                         }
                                     });
                                 } else {
@@ -444,27 +527,28 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 }
                             }
 
-                            "TaskResult" if matches!(mode, NodeMode::Broadcast { .. }) => {
+                            // ← TaskCancel: broadcaster cancela una tarea
+                            "TaskCancel" if matches!(mode, NodeMode::Worker) => {
                                 let task_id = msg["task_id"].as_str().unwrap_or("");
-                                let success = msg["success"].as_bool().unwrap_or(false);
-                                let origin = msg["origin_peer"].as_str().unwrap_or("");
-                                if origin == peer_id.to_string() {
-                                    if success {
-                                        println!("🎉 [Broadcaster] Tarea {} completada!", task_id);
-                                    } else {
-                                        println!("❌ [Broadcaster] Tarea {} falló", task_id);
-                                    }
-                                }
+                                let reason = msg["reason"].as_str().unwrap_or("sin razón");
+                                println!("🚫 [Worker] Tarea {} cancelada: {}", task_id, reason);
+                                // El worker simplemente ignora — la tarea en queue expirará
                             }
 
                             "Heartbeat" => {
                                 let worker_id = msg["peer_id"].as_str().unwrap_or("");
-                                let slots = msg["available_slots"].as_u64().unwrap_or(0);
-                                let rep = msg["reputation_score"].as_u64().unwrap_or(0);
+                                let slots = msg["available_slots"].as_u64().unwrap_or(0) as usize;
+                                let rep = msg["reputation_score"].as_u64().unwrap_or(0) as u32;
                                 let uptime = msg["uptime_secs"].as_u64().unwrap_or(0);
-                                println!("💓 Heartbeat {}... slots={} rep={} uptime={}s",
-                                    &worker_id[..8.min(worker_id.len())], slots, rep, uptime);
-                                metrics.write().await.network_peers = known_workers.len();
+
+                                // ← Actualizar peer tracker con heartbeat
+                                peer_tracker.update_heartbeat(worker_id, slots, rep);
+
+                                println!("💓 Heartbeat {}... slots={} rep={} uptime={}s peers={}",
+                                    &worker_id[..8.min(worker_id.len())], slots, rep, uptime,
+                                    peer_tracker.peer_count());
+
+                                metrics.write().await.network_peers = peer_tracker.peer_count();
                             }
 
                             _ => {}
@@ -614,4 +698,29 @@ fn uuid_simple() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
     let t = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
     format!("{}{}", t.as_secs(), t.subsec_nanos())
+}
+
+/// Simula N workers virtuales para stress test
+async fn simulate_workers(count: usize, _base_peer_id: String) {  // ← _ prefix
+    println!("🔥 Iniciando simulación de {} workers...", count);
+    let mut handles = vec![];
+
+    for i in 0..count {
+        let handle = tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_millis(500));
+            let mut tasks_done = 0u64;
+            loop {
+                interval.tick().await;
+                tasks_done += 1;
+                if tasks_done % 10 == 0 {
+                    println!("👷 Worker-{}: {} tareas simuladas", i, tasks_done);
+                }
+            }
+        });
+        handles.push(handle);
+    }
+
+    println!("✅ {} workers simulados activos. Ctrl+C para detener.", count);
+    tokio::time::sleep(Duration::from_secs(60)).await;
+    println!("📊 Simulación completada");
 }
