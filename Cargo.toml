@@ -1,0 +1,7 @@
+[workspace]
+members = [
+    "iamine-node",
+    "iamine-core",
+    "client-rust",
+]
+resolver = "2"
