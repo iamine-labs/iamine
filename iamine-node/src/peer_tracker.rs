@@ -86,4 +86,12 @@ impl PeerTracker {
             .filter(|p| p.is_alive(self.timeout))
             .count()
     }
+
+    pub fn avg_latency(&self) -> f64 {
+        let alive: Vec<_> = self.peers.values()
+            .filter(|p| p.is_alive(self.timeout))
+            .collect();
+        if alive.is_empty() { return 0.0; }
+        alive.iter().map(|p| p.avg_latency_ms).sum::<f64>() / alive.len() as f64
+    }
 }

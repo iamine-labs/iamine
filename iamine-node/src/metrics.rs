@@ -12,6 +12,12 @@ pub struct NodeMetrics {
     pub avg_execution_ms: f64,
     pub uptime_secs: u64,
     pub reputation_score: u32,
+    // ← Topology metrics nuevas
+    pub mesh_peers: usize,
+    pub direct_peers: usize,
+    pub relay_peers: usize,
+    pub avg_latency_ms: f64,
+    pub msgs_rate_limited: u64,
 }
 
 impl NodeMetrics {
@@ -25,6 +31,11 @@ impl NodeMetrics {
             avg_execution_ms: 0.0,
             uptime_secs: 0,
             reputation_score: 100,
+            mesh_peers: 0,
+            direct_peers: 0,
+            relay_peers: 0,
+            avg_latency_ms: 0.0,
+            msgs_rate_limited: 0,
         }
     }
 
@@ -37,6 +48,7 @@ impl NodeMetrics {
     pub fn task_failed(&mut self) { self.tasks_failed += 1; }
     pub fn task_timed_out(&mut self) { self.tasks_timed_out += 1; }
 
+    #[allow(dead_code)]
     pub fn success_rate(&self) -> f64 {
         let total = self.tasks_executed + self.tasks_failed + self.tasks_timed_out;
         if total == 0 { return 1.0; }
