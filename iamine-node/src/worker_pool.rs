@@ -39,9 +39,20 @@ impl WorkerPool {
     /// Detectar cores y crear pool automáticamente
     pub fn auto() -> Self {
         let cores = std::thread::available_parallelism()
-            .map(|n| n.get())
-            .unwrap_or(2);
-        Self::new(cores)
+            .map(|n| n.get()).unwrap_or(2);
+        Self::with_slots(cores)
+    }
+
+    pub fn with_slots(slots: usize) -> Self {
+        let semaphore = Arc::new(Semaphore::new(slots));
+        let (task_tx, task_rx) = mpsc::channel::<PoolTask>(slots * 4);
+
+        let sem = Arc::clone(&semaphore);
+        tokio::spawn(Self::run_loop(task_rx, sem));
+
+        println!("⚡ WorkerPool iniciado: {} slots paralelos", slots);
+
+        Self { semaphore, task_tx, max_concurrent: slots }
     }
 
     /// Enviar tarea al pool — retorna resultado via oneshot

@@ -1,0 +1,30 @@
+[package]
+name = "iamine-models"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+iamine-core = { path = "../iamine-core" }
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sha2 = "0.10"
+dirs = "5.0"
+reqwest = { version = "0.12", features = ["stream"] }
+futures = "0.3"
+hex = "0.4"
+thiserror = "1.0"
+libp2p = { version = "0.53", features = ["identify"] }
+llama_cpp = { version = "0.3", optional = true }  # ← opcional hasta confirmar build
+
+[features]
+default = []
+real-inference = ["llama_cpp"]  # ← activar cuando llama.cpp esté disponible
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full", "test-util"] }
+tempfile = "3"
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"
