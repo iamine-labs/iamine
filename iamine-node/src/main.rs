@@ -24,8 +24,14 @@ use iamine_models::{
     ModelInstaller, InstallResult,
     RealInferenceEngine, RealInferenceRequest,
     HardwareAcceleration,
-    InferenceTask, InferenceTaskResult, StreamedToken, // ← v0.6
+    InferenceTask, InferenceTaskResult, StreamedToken,
+    // v0.5.4
+    ModelNodeCapabilities, ModelRequirements, can_node_run_model,
+    select_best_model, CapabilitiesUpdatedEvent,
+    ModelInstalledEvent,
+    DirectInferenceRequest,
 };
+use iamine_network::{NodeRegistry, SharedNodeRegistry, NodeCapabilityHeartbeat};
 
 use worker_pool::WorkerPool;
 use task_queue::TaskQueue;
@@ -61,6 +67,8 @@ use task_protocol::{TaskRequest, TaskResponse};
 use executor::TaskExecutor;
 
 const TASK_TOPIC: &str = "iamine-tasks";
+const CAP_TOPIC: &str = "iamine-capabilities";
+const DIRECT_INF_TOPIC: &str = "iamine-direct-inference";
 
 #[derive(NetworkBehaviour)]
 #[behaviour(to_swarm = "IaMineEvent")]
@@ -120,7 +128,9 @@ enum NodeMode {
     ModelsDownload { model_id: String },
     ModelsRemove { model_id: String },
     TestInference { prompt: String },
-    Infer { prompt: String, model_id: Option<String> }, // ← v0.6
+    Infer { prompt: String, model_id: Option<String> },
+    Capabilities, // ← v0.5.4
+    Nodes, // ← nuevo
 }
 
 fn parse_args() -> Result<NodeMode, String> {
@@ -179,6 +189,8 @@ fn parse_args() -> Result<NodeMode, String> {
             Ok(NodeMode::TestInference { prompt })
         }
 
+        Some("capabilities") => Ok(NodeMode::Capabilities),
+
         Some("infer") => {
             let prompt = args.get(2).ok_or("Falta <prompt>")?.clone();
             let model_id = args.iter()
@@ -186,6 +198,8 @@ fn parse_args() -> Result<NodeMode, String> {
                 .and_then(|i| args.get(i + 1).cloned());
             Ok(NodeMode::Infer { prompt, model_id })
         }
+
+        Some("nodes") => Ok(NodeMode::Nodes),
 
         Some(unknown) => Err(format!("Modo desconocido: {}", unknown)),
     }
@@ -205,12 +219,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
             eprintln!("  iamine-node models list");
             eprintln!("  iamine-node models download <model_id>");
             eprintln!("  iamine-node models remove <model_id>");
+            // eprintln!("  iamine-node nodes");
             std::process::exit(1);
         }
     };
 
+    // v0.6.1: Registry global para smart routing (capabilities + selección de nodo)
+    let registry: SharedNodeRegistry = Arc::new(RwLock::new(NodeRegistry::new()));
+
     // ═══════════════════════════════════════════════
-    // CLI MODELS — salida temprana, sin P2P
+    // CLI MODELS + CAPABILITIES — salida temprana
     // ═══════════════════════════════════════════════
     match &mode {
         NodeMode::ModelsList => {
@@ -320,6 +338,47 @@ async fn main() -> Result<(), Box<dyn Error>> {
             return Ok(());
         }
 
+        NodeMode::Capabilities => {
+            println!("╔══════════════════════════════════╗");
+            println!("║   IaMine — Node Capabilities     ║");
+            println!("╚══════════════════════════════════╝\n");
+
+            let node_identity = NodeIdentity::load_or_create();
+            let caps = ModelNodeCapabilities::detect(&node_identity.peer_id.to_string());
+            caps.display();
+
+            // Mostrar qué modelos puede ejecutar
+            let runnable = iamine_models::runnable_models(&caps);
+            println!("\n📋 Modelos ejecutables según hardware:");
+            for mid in &runnable {
+                let installed = caps.has_model(mid);
+                let icon = if installed { "✅" } else { "⬜" };
+                let req = ModelRequirements::for_model(mid).unwrap();
+                println!("   {} {} (min {}GB RAM, {}GB storage{})",
+                    icon, mid, req.min_ram_gb, req.min_storage_gb,
+                    if req.requires_gpu { ", GPU requerida" } else { "" });
+            }
+            return Ok(());
+        }
+
+        NodeMode::Nodes => {
+            let snapshot = registry.read().await.all_nodes();
+            println!("\nPeer ID        Models                CPU Score    Load");
+            println!("-------------------------------------------------------");
+            for (pid, c) in snapshot {
+                let models = c.models.join(",");
+                println!(
+                    "{}  {:20} {:10} {}/{}",
+                    &pid.to_string()[..10.min(pid.to_string().len())],
+                    models,
+                    c.cpu_score,
+                    c.active_tasks,
+                    c.worker_slots
+                );
+            }
+            return Ok(());
+        }
+
         _ => {} // continuar con startup normal
     }
 
@@ -381,6 +440,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
         RealInferenceEngine::new(ModelStorage::new())
     ));
 
+    // v0.5.4: Detectar capabilities del nodo
+    let node_caps = ModelNodeCapabilities::detect(&peer_id.to_string());
+    if matches!(mode, NodeMode::Worker) {
+        node_caps.display();
+    }
+
     if matches!(mode, NodeMode::Worker) {
         println!("💾 Storage limit: {} GB", storage_config.max_storage_gb);
         println!("🤖 Modelos disponibles localmente:");
@@ -436,6 +501,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     gossipsub_behaviour.subscribe(&gossipsub::IdentTopic::new("iamine-assign"))?;
     gossipsub_behaviour.subscribe(&gossipsub::IdentTopic::new("iamine-heartbeat"))?;
     gossipsub_behaviour.subscribe(&gossipsub::IdentTopic::new("iamine-results"))?;
+    gossipsub_behaviour.subscribe(&gossipsub::IdentTopic::new(CAP_TOPIC))?;
+    gossipsub_behaviour.subscribe(&gossipsub::IdentTopic::new(DIRECT_INF_TOPIC))?;
 
     let mut kad_cfg = kad::Config::default();
     kad_cfg.set_query_timeout(Duration::from_secs(30));
@@ -642,6 +709,22 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             serde_json::to_vec(&payload).unwrap(),
                         );
                     }
+
+                    // Broadcast capabilities
+                    let cap_hb = NodeCapabilityHeartbeat {
+                        peer_id: peer_id.to_string(),
+                        cpu_score: benchmark.as_ref().map(|b| b.cpu_score as u64).unwrap_or(0),
+                        ram_gb: benchmark.as_ref().map(|b| b.ram_available_gb as u32).unwrap_or(8),
+                        accelerator: node_caps.accelerator.clone(),
+                        models: model_storage.list_local_models(),
+                        worker_slots: worker_slots as u32,
+                        active_tasks: (pool.max_concurrent - pool.available_slots()) as u32,
+                        latency_ms: peer_tracker.avg_latency().max(1.0) as u32,
+                    };
+                    let _ = swarm.behaviour_mut().gossipsub.publish(
+                        gossipsub::IdentTopic::new(CAP_TOPIC),
+                        serde_json::to_vec(&cap_hb).unwrap(),
+                    );
                 }
             }
 
@@ -893,6 +976,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     continue;
                                 }
 
+                                // v0.5.4: Validar requisitos de hardware
+                                if let Some(req) = ModelRequirements::for_model(&model_id) {
+                                    if !can_node_run_model(&node_caps, &req) {
+                                        println!("   ⚠️ Hardware insuficiente para {} — ignorando", model_id);
+                                        continue;
+                                    }
+                                }
+
                                 let engine_ref = Arc::clone(&inference_engine);
                                 let metrics_ref = Arc::clone(&metrics);
                                 let registry_clone = ModelRegistry::new();
@@ -1004,6 +1095,104 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     }
                                     println!("═══════════════════════════════════");
                                     break;
+                                }
+                            }
+
+                            "NodeCapabilities" | "CapabilitiesUpdated" => {
+                                if let Ok(hb) = serde_json::from_value::<NodeCapabilityHeartbeat>(msg.clone()) {
+                                    let _ = registry.write().await.update_from_heartbeat(hb);
+                                }
+                            }
+
+                            "DirectInferenceRequest" if matches!(mode, NodeMode::Worker) => {
+                                let target = msg["target_peer"].as_str().unwrap_or("");
+                                if target != peer_id.to_string() {
+                                    continue;
+                                }
+                                let request_id = msg["request_id"].as_str().unwrap_or("").to_string();
+                                let model_id = msg["model"].as_str().unwrap_or("tinyllama-1b").to_string();
+                                let prompt = msg["prompt"].as_str().unwrap_or("").to_string();
+                                let max_tokens = msg["max_tokens"].as_u64().unwrap_or(200) as u32;
+
+                                // ...existing inference execution code path...
+                                // reuse current block (load_model -> run_inference -> stream tokens -> InferenceResult)
+                                let engine_ref = Arc::clone(&inference_engine);
+                                let metrics_ref = Arc::clone(&metrics);
+                                let registry_clone = ModelRegistry::new();
+                                let peer_id_str = peer_id.to_string();
+                                let request_id_clone = request_id.clone();
+
+                                // Crear canal para tokens streaming
+                                let (token_tx, mut token_rx) = tokio::sync::mpsc::channel::<String>(100);
+
+                                // Spawn inference execution
+                                let inference_handle = tokio::spawn(async move {
+                                    let mut eng = engine_ref.lock().await;
+
+                                    // Load model if not cached
+                                    let hash = registry_clone.get(&model_id)
+                                        .map(|m| m.hash.clone())
+                                        .unwrap_or_default();
+                                    if let Err(e) = eng.load_model(&model_id, &hash) {
+                                        return InferenceTaskResult::failure(
+                                            request_id_clone, model_id, peer_id_str, e,
+                                        );
+                                    }
+
+                                    let req = RealInferenceRequest {
+                                        task_id: request_id_clone.clone(),
+                                        model_id: model_id.clone(),
+                                        prompt,
+                                        max_tokens,
+                                        temperature: 0.7,
+                                    };
+
+                                    let result = eng.run_inference(req, Some(token_tx)).await;
+
+                                    InferenceTaskResult::success(
+                                        request_id_clone,
+                                        model_id,
+                                        result.output,
+                                        result.tokens_generated,
+                                        result.execution_ms,
+                                        peer_id_str,
+                                        result.accelerator_used,
+                                    )
+                                });
+
+                                // Stream tokens via gossipsub while inference runs
+                                let mut token_idx = 0u32;
+                                while let Some(token) = token_rx.recv().await {
+                                    let st = StreamedToken {
+                                        request_id: request_id.clone(),
+                                        token,
+                                        index: token_idx,
+                                        is_final: false,
+                                    };
+                                    let _ = swarm.behaviour_mut().gossipsub.publish(
+                                        gossipsub::IdentTopic::new("iamine-results"),
+                                        serde_json::to_vec(&st.to_gossip_json()).unwrap(),
+                                    );
+                                    token_idx += 1;
+                                }
+
+                                // Send final result
+                                if let Ok(result) = inference_handle.await {
+                                    {
+                                        let mut m = metrics_ref.write().await;
+                                        if result.success {
+                                            m.inference_success(result.execution_ms, result.tokens_generated as u64);
+                                        } else {
+                                            m.inference_failed();
+                                        }
+                                    }
+
+                                    let _ = swarm.behaviour_mut().gossipsub.publish(
+                                        gossipsub::IdentTopic::new("iamine-results"),
+                                        serde_json::to_vec(&result.to_gossip_json()).unwrap(),
+                                    );
+                                    println!("✅ [Worker] Inference completada: {} tokens en {}ms",
+                                        result.tokens_generated, result.execution_ms);
                                 }
                             }
 

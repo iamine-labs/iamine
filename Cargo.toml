@@ -4,5 +4,6 @@ members = [
     "iamine-node",
     "iamine-models",   # ← nuevo
     "client-rust",
+    "iamine-network",
 ]
 resolver = "2"

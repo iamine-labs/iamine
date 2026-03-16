@@ -1,0 +1,10 @@
+[package]
+name = "iamine-network"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+libp2p = "0.53"
+serde = { version = "1.0", features = ["derive"] }
+iamine-models = { path = "../iamine-models" }
+tokio = { version = "1", features = ["sync"] }

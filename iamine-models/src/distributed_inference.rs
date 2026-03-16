@@ -34,6 +34,16 @@ pub struct StreamedToken {
     pub is_final: bool,
 }
 
+/// Petición de inferencia directa
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DirectInferenceRequest {
+    pub request_id: String,
+    pub target_peer: String,
+    pub model: String,
+    pub prompt: String,
+    pub max_tokens: u32,
+}
+
 impl InferenceTask {
     pub fn new(
         request_id: String,
@@ -115,6 +125,19 @@ impl StreamedToken {
             "token": self.token,
             "index": self.index,
             "is_final": self.is_final,
+        })
+    }
+}
+
+impl DirectInferenceRequest {
+    pub fn to_gossip_json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "type": "DirectInferenceRequest",
+            "request_id": self.request_id,
+            "target_peer": self.target_peer,
+            "model": self.model,
+            "prompt": self.prompt,
+            "max_tokens": self.max_tokens,
         })
     }
 }

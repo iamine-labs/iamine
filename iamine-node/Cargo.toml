@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 iamine-core = { path = "../iamine-core" }
 iamine-models = { path = "../iamine-models" }  # ← nuevo
+iamine-network = { path = "../iamine-network" }
 libp2p = { version = "0.53", features = [
     "tcp", "noise", "yamux", "tokio",
     "identify", "ping", "macros",

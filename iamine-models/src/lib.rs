@@ -11,7 +11,11 @@ pub mod signed_metrics;
 pub mod model_validator;
 pub mod storage_config;
 pub mod model_installer;
-pub mod distributed_inference; // ← nuevo v0.6
+pub mod distributed_inference;
+pub mod model_requirements;
+pub mod model_selector;
+pub mod model_signature;
+pub mod model_events;
 
 pub use model_registry::{ModelDescriptor, ModelRegistry};
 pub use model_storage::ModelStorage;
@@ -30,4 +34,13 @@ pub use signed_metrics::{SignedNodeMetrics, NodeMetricsPayload};
 pub use model_validator::ModelValidator;
 pub use storage_config::StorageConfig;
 pub use model_installer::{ModelInstaller, InstallResult, ModelStatus};
-pub use distributed_inference::{InferenceTask, InferenceTaskResult, StreamedToken};
+pub use distributed_inference::{
+    InferenceTask,
+    InferenceTaskResult,
+    StreamedToken,
+    DirectInferenceRequest,
+};
+pub use model_requirements::{ModelRequirements, can_node_run_model, runnable_models};
+pub use model_selector::{select_best_model, estimate_tokens, classify_prompt, PromptComplexity, ModelInfo};
+pub use model_signature::{verify_model_hash, verify_model_signature, full_model_verification, SignatureVerification};
+pub use model_events::{ModelInstalledEvent, ModelRemovedEvent, CapabilitiesUpdatedEvent};
