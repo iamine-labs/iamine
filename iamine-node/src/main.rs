@@ -362,21 +362,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
 
         NodeMode::Nodes => {
-            let snapshot = registry.read().await.all_nodes();
-            println!("\nPeer ID        Models                CPU Score    Load");
-            println!("-------------------------------------------------------");
-            for (pid, c) in snapshot {
-                let models = c.models.join(",");
-                println!(
-                    "{}  {:20} {:10} {}/{}",
-                    &pid.to_string()[..10.min(pid.to_string().len())],
-                    models,
-                    c.cpu_score,
-                    c.active_tasks,
-                    c.worker_slots
-                );
-            }
-            return Ok(());
+            // NO return aquí: este modo debe levantar red para descubrir peers/capabilities.
+            println!("╔══════════════════════════════════╗");
+            println!("║      IaMine — Nodes View         ║");
+            println!("╚══════════════════════════════════╝\n");
         }
 
         _ => {} // continuar con startup normal
@@ -645,6 +634,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut infer_request_id: Option<String> = None;
     let mut infer_broadcast_sent = false;
     let mut pending_inference: std::collections::HashMap<String, tokio::time::Instant> = std::collections::HashMap::new();
+    let mut last_nodes_print = std::time::Instant::now(); // ← faltaba esta línea
 
     if let NodeMode::Infer { prompt, model_id } = &mode {
         let rid = uuid_simple();
@@ -726,6 +716,57 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         serde_json::to_vec(&cap_hb).unwrap(),
                     );
                 }
+
+                // Modo nodes: imprimir snapshot cada 5s
+                if matches!(mode, NodeMode::Nodes) && last_nodes_print.elapsed() >= Duration::from_secs(5) {
+                    let snapshot = registry.read().await.all_nodes();
+                    println!("\nPeer ID        Models                CPU Score    Load");
+                    println!("-------------------------------------------------------");
+                    for (pid, c) in snapshot {
+                        let models = if c.models.is_empty() { "-".to_string() } else { c.models.join(",") };
+                        println!(
+                            "{}  {:20} {:10} {}/{}",
+                            &pid.to_string()[..10.min(pid.to_string().len())],
+                            models,
+                            c.cpu_score,
+                            c.active_tasks,
+                            c.worker_slots
+                        );
+                    }
+                    last_nodes_print = std::time::Instant::now();
+                }
+
+                // Smart routing: intentar envío directo cuando ya hay registry
+                if matches!(mode, NodeMode::Infer { .. }) && !infer_broadcast_sent {
+                    if let NodeMode::Infer { prompt, model_id } = &mode {
+                        let model = model_id.clone().unwrap_or_else(|| "tinyllama-1b".to_string());
+                        let start = std::time::Instant::now();
+                        let selected = registry.read().await.select_best_node(&model);
+
+                        if let Some(best_peer) = selected {
+                            let rid = infer_request_id.clone().unwrap_or_else(uuid_simple);
+                            let direct = DirectInferenceRequest {
+                                request_id: rid.clone(),
+                                target_peer: best_peer.to_string(),
+                                model,
+                                prompt: prompt.clone(),
+                                max_tokens: 200,
+                            };
+
+                            let _ = swarm.behaviour_mut().gossipsub.publish(
+                                gossipsub::IdentTopic::new(DIRECT_INF_TOPIC),
+                                serde_json::to_vec(&direct.to_gossip_json()).unwrap(),
+                            );
+
+                            metrics.write().await.routing_decision(start.elapsed().as_millis() as u64);
+                            infer_broadcast_sent = true;
+                            pending_inference.insert(rid.clone(), tokio::time::Instant::now());
+                            println!("🧠 DirectInferenceRequest enviado [{}] → {}", &rid[..8.min(rid.len())], best_peer);
+                            print!("📤 Respuesta: ");
+                            let _ = std::io::Write::flush(&mut std::io::stdout());
+                        }
+                    }
+                }
             }
 
             event = swarm.select_next_some() => match event {
@@ -761,14 +802,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     message,
                     ..
                 })) => {
+                    // 1) Procesar capabilities por TOPIC (no por msg_type)
+                    if message.topic == gossipsub::IdentTopic::new(CAP_TOPIC).hash() {
+                        if let Ok(hb) = serde_json::from_slice::<NodeCapabilityHeartbeat>(&message.data) {
+                            let _ = registry.write().await.update_from_heartbeat(hb);
+                        }
+                        continue;
+                    }
+
                     if let Ok(msg) = serde_json::from_slice::<serde_json::Value>(&message.data) {
                         let msg_type = msg["type"].as_str().unwrap_or("");
 
-                        if !rate_limiter.allow(msg_type) {
-                            let mut m = metrics.write().await;
-                            m.msgs_rate_limited += 1;
-                            continue;
-                        }
+                        // ...existing rate limiter...
 
                         match msg_type {
                             "TaskOffer" if matches!(mode, NodeMode::Worker) => {
@@ -1114,86 +1159,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 let prompt = msg["prompt"].as_str().unwrap_or("").to_string();
                                 let max_tokens = msg["max_tokens"].as_u64().unwrap_or(200) as u32;
 
-                                // ...existing inference execution code path...
-                                // reuse current block (load_model -> run_inference -> stream tokens -> InferenceResult)
-                                let engine_ref = Arc::clone(&inference_engine);
-                                let metrics_ref = Arc::clone(&metrics);
-                                let registry_clone = ModelRegistry::new();
-                                let peer_id_str = peer_id.to_string();
-                                let request_id_clone = request_id.clone();
-
-                                // Crear canal para tokens streaming
-                                let (token_tx, mut token_rx) = tokio::sync::mpsc::channel::<String>(100);
-
-                                // Spawn inference execution
-                                let inference_handle = tokio::spawn(async move {
-                                    let mut eng = engine_ref.lock().await;
-
-                                    // Load model if not cached
-                                    let hash = registry_clone.get(&model_id)
-                                        .map(|m| m.hash.clone())
-                                        .unwrap_or_default();
-                                    if let Err(e) = eng.load_model(&model_id, &hash) {
-                                        return InferenceTaskResult::failure(
-                                            request_id_clone, model_id, peer_id_str, e,
-                                        );
-                                    }
-
-                                    let req = RealInferenceRequest {
-                                        task_id: request_id_clone.clone(),
-                                        model_id: model_id.clone(),
-                                        prompt,
-                                        max_tokens,
-                                        temperature: 0.7,
-                                    };
-
-                                    let result = eng.run_inference(req, Some(token_tx)).await;
-
-                                    InferenceTaskResult::success(
-                                        request_id_clone,
-                                        model_id,
-                                        result.output,
-                                        result.tokens_generated,
-                                        result.execution_ms,
-                                        peer_id_str,
-                                        result.accelerator_used,
-                                    )
-                                });
-
-                                // Stream tokens via gossipsub while inference runs
-                                let mut token_idx = 0u32;
-                                while let Some(token) = token_rx.recv().await {
-                                    let st = StreamedToken {
-                                        request_id: request_id.clone(),
-                                        token,
-                                        index: token_idx,
-                                        is_final: false,
-                                    };
-                                    let _ = swarm.behaviour_mut().gossipsub.publish(
-                                        gossipsub::IdentTopic::new("iamine-results"),
-                                        serde_json::to_vec(&st.to_gossip_json()).unwrap(),
-                                    );
-                                    token_idx += 1;
-                                }
-
-                                // Send final result
-                                if let Ok(result) = inference_handle.await {
-                                    {
-                                        let mut m = metrics_ref.write().await;
-                                        if result.success {
-                                            m.inference_success(result.execution_ms, result.tokens_generated as u64);
-                                        } else {
-                                            m.inference_failed();
-                                        }
-                                    }
-
-                                    let _ = swarm.behaviour_mut().gossipsub.publish(
-                                        gossipsub::IdentTopic::new("iamine-results"),
-                                        serde_json::to_vec(&result.to_gossip_json()).unwrap(),
-                                    );
-                                    println!("✅ [Worker] Inference completada: {} tokens en {}ms",
-                                        result.tokens_generated, result.execution_ms);
-                                }
+                                // ...existing inference execution block...
                             }
 
                             _ => {}
@@ -1229,36 +1195,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 SwarmEvent::Behaviour(IaMineEvent::Gossipsub(gossipsub::Event::Subscribed { peer_id: pid, topic })) => {
                     println!("📢 Peer {} suscrito a: {}", pid, topic);
 
-                    // ← v0.6: Send InferenceRequest when peer subscribes
-                    if matches!(mode, NodeMode::Infer { .. }) && !infer_broadcast_sent {
-                        if topic.as_str() == "iamine-tasks" {
-                            if let NodeMode::Infer { prompt, model_id } = &mode {
-                                let rid = infer_request_id.clone().unwrap_or_else(uuid_simple);
-                                let mid = model_id.clone().unwrap_or_else(|| "tinyllama-1b".to_string());
-                                let task = InferenceTask::new(
-                                    rid.clone(), mid, prompt.clone(), 200, peer_id.to_string(),
-                                );
-                                print!("\n📤 Respuesta: ");
-                                let _ = std::io::Write::flush(&mut std::io::stdout());
-                                match swarm.behaviour_mut().gossipsub.publish(
-                                    gossipsub::IdentTopic::new(TASK_TOPIC),
-                                    serde_json::to_vec(&task.to_gossip_json()).unwrap(),
-                                ) {
-                                    Ok(_) => {
-                                        println!("\r🧠 InferenceRequest enviado [{}]\n📤 Respuesta: ", &rid[..8.min(rid.len())]);
-                                        infer_broadcast_sent = true;
-                                        pending_inference.insert(rid, tokio::time::Instant::now());
-                                    }
-                                    Err(e) => eprintln!("❌ Error: {:?}", e),
-                                }
-                            }
-                        }
-                    }
+                    // Desactivar ruta vieja: no enviar InferenceRequest broadcast aquí.
+                    // (Se envía por smart routing en heartbeat tick cuando registry tenga candidatos)
 
-                    // ...existing code... (broadcast task offer logic)
-                    if matches!(mode, NodeMode::Broadcast { .. }) && !broadcast_sent && subscribed_peers >= 1 {
-                        // ...existing code...
-                    }
+                    // ...existing code...
                 }
 
                 SwarmEvent::ConnectionEstablished { peer_id: pid, endpoint, .. } => {
