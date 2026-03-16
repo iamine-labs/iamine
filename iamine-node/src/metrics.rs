@@ -12,12 +12,16 @@ pub struct NodeMetrics {
     pub avg_execution_ms: f64,
     pub uptime_secs: u64,
     pub reputation_score: u32,
-    // ← Topology metrics nuevas
     pub mesh_peers: usize,
     pub direct_peers: usize,
     pub relay_peers: usize,
     pub avg_latency_ms: f64,
     pub msgs_rate_limited: u64,
+    // ← v0.6 inference metrics
+    pub inference_tasks_completed: u64,
+    pub inference_tasks_failed: u64,
+    pub avg_inference_ms: f64,
+    pub total_tokens_generated: u64,
 }
 
 impl NodeMetrics {
@@ -36,6 +40,10 @@ impl NodeMetrics {
             relay_peers: 0,
             avg_latency_ms: 0.0,
             msgs_rate_limited: 0,
+            inference_tasks_completed: 0,
+            inference_tasks_failed: 0,
+            avg_inference_ms: 0.0,
+            total_tokens_generated: 0,
         }
     }
 
@@ -53,6 +61,17 @@ impl NodeMetrics {
         let total = self.tasks_executed + self.tasks_failed + self.tasks_timed_out;
         if total == 0 { return 1.0; }
         self.tasks_executed as f64 / total as f64
+    }
+
+    pub fn inference_success(&mut self, execution_ms: u64, tokens: u64) {
+        self.inference_tasks_completed += 1;
+        self.total_tokens_generated += tokens;
+        let n = self.inference_tasks_completed as f64;
+        self.avg_inference_ms = (self.avg_inference_ms * (n - 1.0) + execution_ms as f64) / n;
+    }
+
+    pub fn inference_failed(&mut self) {
+        self.inference_tasks_failed += 1;
     }
 }
 

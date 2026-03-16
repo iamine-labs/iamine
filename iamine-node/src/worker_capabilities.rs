@@ -23,6 +23,7 @@ impl WorkerCapabilities {
                 "reverse_string".to_string(),
                 "compute_hash".to_string(),
                 "validate_challenge".to_string(),
+                "inference".to_string(),
             ],
             avg_latency_ms: 0.0,
         }

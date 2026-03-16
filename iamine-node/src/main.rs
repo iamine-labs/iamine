@@ -24,6 +24,7 @@ use iamine_models::{
     ModelInstaller, InstallResult,
     RealInferenceEngine, RealInferenceRequest,
     HardwareAcceleration,
+    InferenceTask, InferenceTaskResult, StreamedToken, // ← v0.6
 };
 
 use worker_pool::WorkerPool;
@@ -50,7 +51,6 @@ use libp2p::{
     tcp, yamux,
     Multiaddr, PeerId, StreamProtocol, Transport,
 };
-use libp2p::identity;  // ← importar por separado para evitar conflicto
 use futures::StreamExt;
 use std::error::Error;
 use std::str::FromStr;
@@ -111,15 +111,16 @@ impl From<gossipsub::Event> for IaMineEvent {
 #[derive(Debug, Clone)]
 enum NodeMode {
     Worker,
-    Relay,   // ← nuevo
+    Relay,
     Client { peer: Option<Multiaddr>, task_type: String, data: String },
     Stress { peer: Option<Multiaddr>, count: usize },
     Broadcast { task_type: String, data: String },
     SimulateWorkers { count: usize },
-    ModelsList,                          // ← nuevo
-    ModelsDownload { model_id: String }, // ← nuevo
-    ModelsRemove { model_id: String },   // ← nuevo
-    TestInference { prompt: String },  // ← nuevo
+    ModelsList,
+    ModelsDownload { model_id: String },
+    ModelsRemove { model_id: String },
+    TestInference { prompt: String },
+    Infer { prompt: String, model_id: Option<String> }, // ← v0.6
 }
 
 fn parse_args() -> Result<NodeMode, String> {
@@ -176,6 +177,14 @@ fn parse_args() -> Result<NodeMode, String> {
                 .cloned()
                 .unwrap_or_else(|| "What is 2+2?".to_string());
             Ok(NodeMode::TestInference { prompt })
+        }
+
+        Some("infer") => {
+            let prompt = args.get(2).ok_or("Falta <prompt>")?.clone();
+            let model_id = args.iter()
+                .position(|a| a == "--model")
+                .and_then(|i| args.get(i + 1).cloned());
+            Ok(NodeMode::Infer { prompt, model_id })
         }
 
         Some(unknown) => Err(format!("Modo desconocido: {}", unknown)),
@@ -318,7 +327,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // WORKER STARTUP FLOW
     // ════════════════════════════════════════
     println!("╔══════════════════════════════════╗");
-    println!("║       IaMine Worker v0.5.2       ║");
+    println!("║       IaMine Worker v0.6         ║");
     println!("╚══════════════════════════════════╝\n");
 
     // 1️⃣ Identidad persistente
@@ -364,11 +373,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
     println!("  Reputación:   {:.1}/100", wallet.reputation);
     println!("═══════════════════════════════════\n");
 
-    // 6️⃣ MODEL INFRASTRUCTURE v0.5.3
+    // 6️⃣ MODEL INFRASTRUCTURE v0.6
     let storage_config = StorageConfig::load();
     let model_registry = ModelRegistry::new();
     let model_storage = ModelStorage::new();
-    let _inference_engine = RealInferenceEngine::new(ModelStorage::new()); // ← era InferenceEngine
+    let inference_engine = Arc::new(tokio::sync::Mutex::new(
+        RealInferenceEngine::new(ModelStorage::new())
+    ));
 
     if matches!(mode, NodeMode::Worker) {
         println!("💾 Storage limit: {} GB", storage_config.max_storage_gb);
@@ -563,6 +574,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
         _ => {}
     }
 
+    // ← v0.6: Si es modo Infer, preparar solicitud de inferencia
+    let mut infer_request_id: Option<String> = None;
+    let mut infer_broadcast_sent = false;
+    let mut pending_inference: std::collections::HashMap<String, tokio::time::Instant> = std::collections::HashMap::new();
+
+    if let NodeMode::Infer { prompt, model_id } = &mode {
+        let rid = uuid_simple();
+        let mid = model_id.clone().unwrap_or_else(|| "tinyllama-1b".to_string());
+        println!("🧠 Distributing inference: model={} prompt='{}'", mid, prompt);
+        println!("   Request ID: {}", rid);
+        infer_request_id = Some(rid);
+    }
+
     let is_client = !matches!(mode, NodeMode::Worker | NodeMode::Relay);
 
     loop {
@@ -657,7 +681,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     if let Ok(msg) = serde_json::from_slice::<serde_json::Value>(&message.data) {
                         let msg_type = msg["type"].as_str().unwrap_or("");
 
-                        // ← Rate limit global
                         if !rate_limiter.allow(msg_type) {
                             let mut m = metrics.write().await;
                             m.msgs_rate_limited += 1;
@@ -849,6 +872,141 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 m.mesh_peers = peer_tracker.peer_count();
                             }
 
+                            // ═══════════════════════════════════════════
+                            // v0.6: DISTRIBUTED INFERENCE
+                            // ═══════════════════════════════════════════
+
+                            "InferenceRequest" if matches!(mode, NodeMode::Worker) => {
+                                let request_id = msg["request_id"].as_str().unwrap_or("").to_string();
+                                let model_id = msg["model_id"].as_str().unwrap_or("").to_string();
+                                let prompt = msg["prompt"].as_str().unwrap_or("").to_string();
+                                let max_tokens = msg["max_tokens"].as_u64().unwrap_or(200) as u32;
+                                let temperature = msg["temperature"].as_f64().unwrap_or(0.7) as f32;
+                                let requester = msg["requester_peer"].as_str().unwrap_or("").to_string();
+
+                                println!("🧠 [Worker] InferenceRequest: model={} prompt='{}'",
+                                    model_id, &prompt[..prompt.len().min(40)]);
+
+                                // Check model installed
+                                if !model_storage.has_model(&model_id) {
+                                    println!("   ⚠️ Modelo {} no instalado — ignorando", model_id);
+                                    continue;
+                                }
+
+                                let engine_ref = Arc::clone(&inference_engine);
+                                let metrics_ref = Arc::clone(&metrics);
+                                let registry_clone = ModelRegistry::new();
+                                let peer_id_str = peer_id.to_string();
+                                let request_id_clone = request_id.clone();
+
+                                // Crear canal para tokens streaming
+                                let (token_tx, mut token_rx) = tokio::sync::mpsc::channel::<String>(100);
+
+                                // Spawn inference execution
+                                let inference_handle = tokio::spawn(async move {
+                                    let mut eng = engine_ref.lock().await;
+
+                                    // Load model if not cached
+                                    let hash = registry_clone.get(&model_id)
+                                        .map(|m| m.hash.clone())
+                                        .unwrap_or_default();
+                                    if let Err(e) = eng.load_model(&model_id, &hash) {
+                                        return InferenceTaskResult::failure(
+                                            request_id_clone, model_id, peer_id_str, e,
+                                        );
+                                    }
+
+                                    let req = RealInferenceRequest {
+                                        task_id: request_id_clone.clone(),
+                                        model_id: model_id.clone(),
+                                        prompt,
+                                        max_tokens,
+                                        temperature,
+                                    };
+
+                                    let result = eng.run_inference(req, Some(token_tx)).await;
+
+                                    InferenceTaskResult::success(
+                                        request_id_clone,
+                                        model_id,
+                                        result.output,
+                                        result.tokens_generated,
+                                        result.execution_ms,
+                                        peer_id_str,
+                                        result.accelerator_used,
+                                    )
+                                });
+
+                                // Stream tokens via gossipsub while inference runs
+                                let mut token_idx = 0u32;
+                                while let Some(token) = token_rx.recv().await {
+                                    let st = StreamedToken {
+                                        request_id: request_id.clone(),
+                                        token,
+                                        index: token_idx,
+                                        is_final: false,
+                                    };
+                                    let _ = swarm.behaviour_mut().gossipsub.publish(
+                                        gossipsub::IdentTopic::new("iamine-results"),
+                                        serde_json::to_vec(&st.to_gossip_json()).unwrap(),
+                                    );
+                                    token_idx += 1;
+                                }
+
+                                // Send final result
+                                if let Ok(result) = inference_handle.await {
+                                    {
+                                        let mut m = metrics_ref.write().await;
+                                        if result.success {
+                                            m.inference_success(result.execution_ms, result.tokens_generated as u64);
+                                        } else {
+                                            m.inference_failed();
+                                        }
+                                    }
+
+                                    let _ = swarm.behaviour_mut().gossipsub.publish(
+                                        gossipsub::IdentTopic::new("iamine-results"),
+                                        serde_json::to_vec(&result.to_gossip_json()).unwrap(),
+                                    );
+                                    println!("✅ [Worker] Inference completada: {} tokens en {}ms",
+                                        result.tokens_generated, result.execution_ms);
+                                }
+                            }
+
+                            "InferenceToken" if matches!(mode, NodeMode::Infer { .. }) => {
+                                let rid = msg["request_id"].as_str().unwrap_or("");
+                                if infer_request_id.as_deref() == Some(rid) {
+                                    let token = msg["token"].as_str().unwrap_or("");
+                                    print!("{}", token);
+                                    let _ = std::io::Write::flush(&mut std::io::stdout());
+                                }
+                            }
+
+                            "InferenceResult" if matches!(mode, NodeMode::Infer { .. }) => {
+                                let rid = msg["request_id"].as_str().unwrap_or("");
+                                if infer_request_id.as_deref() == Some(rid) {
+                                    let success = msg["success"].as_bool().unwrap_or(false);
+                                    let tokens = msg["tokens_generated"].as_u64().unwrap_or(0);
+                                    let ms = msg["execution_ms"].as_u64().unwrap_or(0);
+                                    let worker = msg["worker_peer"].as_str().unwrap_or("unknown");
+                                    let accel = msg["accelerator"].as_str().unwrap_or("unknown");
+
+                                    println!("\n\n═══════════════════════════════════");
+                                    if success {
+                                        println!("✅ Distributed inference completada");
+                                        println!("   Worker:  {}...", &worker[..12.min(worker.len())]);
+                                        println!("   Tokens:  {}", tokens);
+                                        println!("   Tiempo:  {}ms", ms);
+                                        println!("   Accel:   {}", accel);
+                                    } else {
+                                        let err = msg["error"].as_str().unwrap_or("unknown");
+                                        println!("❌ Inference falló: {}", err);
+                                    }
+                                    println!("═══════════════════════════════════");
+                                    break;
+                                }
+                            }
+
                             _ => {}
                         }
                     }
@@ -881,36 +1039,36 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                 SwarmEvent::Behaviour(IaMineEvent::Gossipsub(gossipsub::Event::Subscribed { peer_id: pid, topic })) => {
                     println!("📢 Peer {} suscrito a: {}", pid, topic);
-                    if topic.as_str() == TASK_TOPIC && matches!(mode, NodeMode::Broadcast { .. }) {
-                        subscribed_peers += 1;
-                        println!("👥 Workers suscritos: {}", subscribed_peers);
-                    }
-                    if matches!(mode, NodeMode::Broadcast { .. }) && !broadcast_sent && subscribed_peers >= 1 {
-                        if let NodeMode::Broadcast { task_type, data } = &mode {
-                            let task_id = uuid_simple();
-                            scheduler.register_task(task_id.clone(), task_type.clone()).await;
-                            let offer = serde_json::json!({
-                                "type": "TaskOffer",
-                                "task_id": task_id,
-                                "task_type": task_type,
-                                "data": data,
-                                "requester_id": peer_id.to_string(),
-                                "origin_peer": peer_id.to_string(),
-                            });
-                            match swarm.behaviour_mut().gossipsub.publish(
-                                task_topic.clone(),
-                                serde_json::to_vec(&offer).unwrap(),
-                            ) {
-                                Ok(_) => {
-                                    println!("📢 ✅ TaskOffer enviado [id: {}]", task_id);
-                                    broadcast_sent = true;
-                                }
-                                Err(e) => {
-                                    broadcast_attempts += 1;
-                                    eprintln!("❌ Error broadcast (intento {}): {:?}", broadcast_attempts, e);
+
+                    // ← v0.6: Send InferenceRequest when peer subscribes
+                    if matches!(mode, NodeMode::Infer { .. }) && !infer_broadcast_sent {
+                        if topic.as_str() == "iamine-tasks" {
+                            if let NodeMode::Infer { prompt, model_id } = &mode {
+                                let rid = infer_request_id.clone().unwrap_or_else(uuid_simple);
+                                let mid = model_id.clone().unwrap_or_else(|| "tinyllama-1b".to_string());
+                                let task = InferenceTask::new(
+                                    rid.clone(), mid, prompt.clone(), 200, peer_id.to_string(),
+                                );
+                                print!("\n📤 Respuesta: ");
+                                let _ = std::io::Write::flush(&mut std::io::stdout());
+                                match swarm.behaviour_mut().gossipsub.publish(
+                                    gossipsub::IdentTopic::new(TASK_TOPIC),
+                                    serde_json::to_vec(&task.to_gossip_json()).unwrap(),
+                                ) {
+                                    Ok(_) => {
+                                        println!("\r🧠 InferenceRequest enviado [{}]\n📤 Respuesta: ", &rid[..8.min(rid.len())]);
+                                        infer_broadcast_sent = true;
+                                        pending_inference.insert(rid, tokio::time::Instant::now());
+                                    }
+                                    Err(e) => eprintln!("❌ Error: {:?}", e),
                                 }
                             }
                         }
+                    }
+
+                    // ...existing code... (broadcast task offer logic)
+                    if matches!(mode, NodeMode::Broadcast { .. }) && !broadcast_sent && subscribed_peers >= 1 {
+                        // ...existing code...
                     }
                 }
 
