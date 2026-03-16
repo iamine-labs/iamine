@@ -3,6 +3,7 @@ use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone)]
 pub struct PeerStats {
+    #[allow(dead_code)]
     pub peer_id: String,
     pub avg_latency_ms: f64,
     pub ping_count: u64,
@@ -32,6 +33,7 @@ impl PeerStats {
     }
 
     /// Score combinado para el scheduler (menor latencia = mejor score)
+    #[allow(dead_code)]
     pub fn latency_score(&self) -> u64 {
         if self.avg_latency_ms == 0.0 { return 20; }
         (1000.0 / self.avg_latency_ms.max(1.0)).min(20.0) as u64
@@ -75,6 +77,7 @@ impl PeerTracker {
         self.peers.get(peer_id).map(|s| s.avg_latency_ms).unwrap_or(0.0)
     }
 
+    #[allow(dead_code)]
     pub fn alive_peers(&self) -> Vec<&PeerStats> {
         self.peers.values()
             .filter(|p| p.is_alive(self.timeout))

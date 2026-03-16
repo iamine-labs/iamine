@@ -5,6 +5,7 @@ use tokio::sync::Mutex;
 use iamine_core::node::NodeCapabilities;
 
 /// Bid de un worker para ejecutar una tarea
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct WorkerBid {
     pub worker_id: String,
@@ -15,6 +16,7 @@ pub struct WorkerBid {
 }
 
 /// Estado de una tarea en el scheduler
+#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
 pub enum SchedulerTaskStatus {
     /// Esperando bids de workers
@@ -27,6 +29,7 @@ pub enum SchedulerTaskStatus {
     Failed,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct SchedulerTask {
     pub task_id: String,
@@ -36,6 +39,7 @@ pub struct SchedulerTask {
 }
 
 /// Scheduler — recibe bids y asigna tareas al mejor worker
+#[allow(dead_code)]
 pub struct TaskScheduler {
     /// Tareas pendientes de asignación
     tasks: Arc<Mutex<HashMap<String, SchedulerTask>>>,
@@ -45,6 +49,7 @@ pub struct TaskScheduler {
     bid_window: Duration,
 }
 
+#[allow(dead_code)]
 impl TaskScheduler {
     pub fn new() -> Self {
         let scheduler = Self {

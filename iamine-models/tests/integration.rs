@@ -1,7 +1,6 @@
 use iamine_models::*;
 use iamine_models::storage_config::StorageConfig;
 use iamine_models::node_models::{NodeModels, ModelId, PeerModelRegistry};
-use iamine_models::node_capabilities::NodeCapabilities as ModelNodeCapabilities;
 use iamine_models::model_validator::ModelValidator;
 
 // ─── Test 1: Model Registry ───────────────────────────────────────────────
@@ -151,16 +150,14 @@ fn test_model_validator_placeholder_hash() {
 #[test]
 fn test_model_storage_shard() {
     use tempfile::TempDir;
-    use std::fs;
 
     // Usar directorio temporal para no tocar ~/.iamine
-    let tmp_dir = TempDir::new().unwrap();
+    let _tmp_dir = TempDir::new().unwrap();
     let storage = ModelStorage::new();
 
     // Verificar que list_local_models funciona sin crash
     let models = storage.list_local_models();
-    // Puede ser vacío o tener modelos reales — solo verificamos que no falla
-    assert!(models.len() >= 0);
+    assert!(models.is_empty() || models.iter().all(|m| !m.is_empty()));
 }
 
 // ─── Test v0.5.2: ModelInstaller ─────────────────────────────────────────
@@ -190,7 +187,6 @@ async fn test_installer_storage_limit() {
 
 #[tokio::test]
 async fn test_installer_mock_download() {
-    use iamine_models::{ModelInstaller, InstallResult};
     use iamine_models::model_downloader::ModelDownloader;
     use iamine_models::ModelStorage;
 
@@ -248,7 +244,7 @@ async fn test_inference_engine_mock() {
     use iamine_models::{RealInferenceEngine, RealInferenceRequest, ModelStorage};
 
     let storage = ModelStorage::new();
-    let mut engine = RealInferenceEngine::new(storage);
+    let engine = RealInferenceEngine::new(storage);
 
     // Sin modelo cargado → debe fallar
     let req = RealInferenceRequest {
@@ -313,7 +309,6 @@ async fn test_inference_with_mock_model() {
 #[test]
 fn test_inference_cache() {
     use iamine_models::{RealInferenceEngine, ModelStorage};
-    use iamine_models::model_downloader::ModelDownloader;
 
     let storage = ModelStorage::new();
     let mut engine = RealInferenceEngine::new(storage);

@@ -64,7 +64,7 @@ pub enum OutcomeStatus {
 /// Task queue con retries, timeouts y reputación
 pub struct TaskQueue {
     tx: mpsc::Sender<QueuedTask>,
-    outcome_tx: mpsc::Sender<TaskOutcome>,
+    _outcome_tx: mpsc::Sender<TaskOutcome>,
     pub outcome_rx: Arc<Mutex<mpsc::Receiver<TaskOutcome>>>,
     reputation: Arc<Mutex<NodeReputation>>,
 }
@@ -81,7 +81,7 @@ impl TaskQueue {
 
         Self {
             tx,
-            outcome_tx,
+            _outcome_tx: outcome_tx,
             outcome_rx: Arc::new(Mutex::new(outcome_rx)),
             reputation,
         }

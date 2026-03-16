@@ -24,11 +24,8 @@ use iamine_models::{
     ModelInstaller, InstallResult,
     RealInferenceEngine, RealInferenceRequest,
     HardwareAcceleration,
-    InferenceTask, InferenceTaskResult, StreamedToken,
-    // v0.5.4
+    InferenceTaskResult, StreamedToken,
     ModelNodeCapabilities, ModelRequirements, can_node_run_model,
-    select_best_model, CapabilitiesUpdatedEvent,
-    ModelInstalledEvent,
     DirectInferenceRequest,
 };
 use iamine_network::{NodeRegistry, SharedNodeRegistry, NodeCapabilityHeartbeat};
@@ -116,6 +113,7 @@ impl From<gossipsub::Event> for IaMineEvent {
     fn from(e: gossipsub::Event) -> Self { IaMineEvent::Gossipsub(e) }
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 enum NodeMode {
     Worker,
@@ -281,7 +279,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             println!("║    IaMine — Test Inference       ║");
             println!("╚══════════════════════════════════╝\n");
 
-            let hw = HardwareAcceleration::detect();
+            let _hw = HardwareAcceleration::detect();
             let registry = ModelRegistry::new();
             let storage = ModelStorage::new();
 
@@ -592,6 +590,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
 
     let mut heartbeat_rx = HeartbeatService::start(5);
+    let mut nodes_tick = tokio::time::interval(Duration::from_secs(5)); // ← nuevo ticker dedicado
 
     // Estado
     let mut pending_tasks: Vec<TaskRequest> = Vec::new();
@@ -603,9 +602,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // Map de origin_peer_id → PeerId para direct result routing
     let mut origin_peer_map: std::collections::HashMap<String, PeerId> = std::collections::HashMap::new();
     let mut tasks_sent = false;
-    let mut broadcast_sent = false;
-    let mut broadcast_attempts = 0u32;
-    let mut subscribed_peers = 0usize;
 
     match &mode {
         NodeMode::Client { task_type, data, .. } => {
@@ -634,7 +630,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut infer_request_id: Option<String> = None;
     let mut infer_broadcast_sent = false;
     let mut pending_inference: std::collections::HashMap<String, tokio::time::Instant> = std::collections::HashMap::new();
-    let mut last_nodes_print = std::time::Instant::now(); // ← faltaba esta línea
 
     if let NodeMode::Infer { prompt, model_id } = &mode {
         let rid = uuid_simple();
@@ -648,6 +643,24 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     loop {
         tokio::select! {
+            // Ticker dedicado para mostrar nodos/capabilities
+            _ = nodes_tick.tick(), if matches!(mode, NodeMode::Nodes) => {
+                let snapshot = registry.read().await.all_nodes();
+                println!("\nPeer ID        Models                CPU Score    Load");
+                println!("-------------------------------------------------------");
+                for (pid, c) in snapshot {
+                    let models = if c.models.is_empty() { "-".to_string() } else { c.models.join(",") };
+                    println!(
+                        "{}  {:20} {:10} {}/{}",
+                        &pid.to_string()[..10.min(pid.to_string().len())],
+                        models,
+                        c.cpu_score,
+                        c.active_tasks,
+                        c.worker_slots
+                    );
+                }
+            }
+
             // Heartbeat tick
             Some(_) = heartbeat_rx.recv() => {
                 if matches!(mode, NodeMode::Worker) {
@@ -715,25 +728,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         gossipsub::IdentTopic::new(CAP_TOPIC),
                         serde_json::to_vec(&cap_hb).unwrap(),
                     );
-                }
-
-                // Modo nodes: imprimir snapshot cada 5s
-                if matches!(mode, NodeMode::Nodes) && last_nodes_print.elapsed() >= Duration::from_secs(5) {
-                    let snapshot = registry.read().await.all_nodes();
-                    println!("\nPeer ID        Models                CPU Score    Load");
-                    println!("-------------------------------------------------------");
-                    for (pid, c) in snapshot {
-                        let models = if c.models.is_empty() { "-".to_string() } else { c.models.join(",") };
-                        println!(
-                            "{}  {:20} {:10} {}/{}",
-                            &pid.to_string()[..10.min(pid.to_string().len())],
-                            models,
-                            c.cpu_score,
-                            c.active_tasks,
-                            c.worker_slots
-                        );
-                    }
-                    last_nodes_print = std::time::Instant::now();
                 }
 
                 // Smart routing: intentar envío directo cuando ya hay registry
@@ -1010,7 +1004,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 let prompt = msg["prompt"].as_str().unwrap_or("").to_string();
                                 let max_tokens = msg["max_tokens"].as_u64().unwrap_or(200) as u32;
                                 let temperature = msg["temperature"].as_f64().unwrap_or(0.7) as f32;
-                                let requester = msg["requester_peer"].as_str().unwrap_or("").to_string();
+                                let _requester = msg["requester_peer"].as_str().unwrap_or("").to_string();
 
                                 println!("🧠 [Worker] InferenceRequest: model={} prompt='{}'",
                                     model_id, &prompt[..prompt.len().min(40)]);
@@ -1143,7 +1137,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 }
                             }
 
-                            "NodeCapabilities" | "CapabilitiesUpdated" => {
+                            "NodeCapabilities" => {
                                 if let Ok(hb) = serde_json::from_value::<NodeCapabilityHeartbeat>(msg.clone()) {
                                     let _ = registry.write().await.update_from_heartbeat(hb);
                                 }
