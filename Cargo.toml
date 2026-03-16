@@ -1,7 +1,8 @@
 [workspace]
 members = [
-    "iamine-node",
     "iamine-core",
+    "iamine-node",
+    "iamine-models",   # ← nuevo
     "client-rust",
 ]
 resolver = "2"

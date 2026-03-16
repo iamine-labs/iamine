@@ -13,10 +13,15 @@ mod task_cache;
 mod peer_tracker;
 mod result_protocol;
 mod rate_limiter;
-mod node_identity;    // ← renombrado (era identity, conflicto con libp2p)
+mod node_identity;
 mod wallet;
 mod benchmark;
 mod resource_policy;
+
+use iamine_models::{
+    ModelRegistry, ModelStorage, ModelDownloader,
+    InferenceEngine, InferenceRequest,
+};
 
 use worker_pool::WorkerPool;
 use task_queue::TaskQueue;
@@ -216,7 +221,30 @@ async fn main() -> Result<(), Box<dyn Error>> {
     println!("  Reputación:   {:.1}/100", wallet.reputation);
     println!("═══════════════════════════════════\n");
 
-    // 6️⃣ Simulate workers — salida temprana
+    // 6️⃣ MODEL INFRASTRUCTURE v0.5
+    let model_registry = ModelRegistry::new();
+    let model_storage = ModelStorage::new();
+    let mut inference_engine = InferenceEngine::new(ModelStorage::new());
+
+    if matches!(mode, NodeMode::Worker) {
+        println!("🤖 Modelos disponibles localmente:");
+        let local = model_storage.list_local_models();
+        if local.is_empty() {
+            println!("   (ninguno — usa --download-model <id>)");
+        } else {
+            for m in &local {
+                println!("   ✅ {}", m);
+            }
+        }
+        println!("📋 Modelos en registry:");
+        for m in model_registry.list() {
+            let available = if model_storage.has_model(&m.id) { "✅" } else { "⬜" };
+            println!("   {} {} v{} ({}GB RAM)",
+                available, m.id, m.version, m.required_ram_gb);
+        }
+    }
+
+    // 7️⃣ Simulate workers — salida temprana
     if let NodeMode::SimulateWorkers { count } = &mode {
         println!("🔥 Simulando {} workers virtuales...", count);
         simulate_workers(*count, peer_id.to_string()).await;
