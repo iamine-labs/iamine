@@ -42,6 +42,15 @@ pub enum IaMineMessage {
         reason: String,
     },
 
+    /// Inference dirigida a un worker específico (v0.6.1 smart routing)
+    DirectInferenceRequest {
+        request_id: String,
+        target_peer: String,
+        model: String,
+        prompt: String,
+        max_tokens: u32,
+    },
+
     /// Worker envía resultado
     TaskResult(TaskResult),
 

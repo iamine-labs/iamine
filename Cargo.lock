@@ -2381,6 +2381,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "iamine-network"
+version = "0.1.0"
+dependencies = [
+ "iamine-models",
+ "libp2p 0.53.2",
+ "serde",
+ "tokio",
+]
+
+[[package]]
 name = "iamine-node"
 version = "0.1.0"
 dependencies = [
@@ -2389,6 +2399,7 @@ dependencies = [
  "futures",
  "iamine-core",
  "iamine-models",
+ "iamine-network",
  "libp2p 0.53.2",
  "serde",
  "serde_json",

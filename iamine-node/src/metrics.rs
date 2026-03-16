@@ -22,6 +22,8 @@ pub struct NodeMetrics {
     pub inference_tasks_failed: u64,
     pub avg_inference_ms: f64,
     pub total_tokens_generated: u64,
+    pub routing_decisions_total: u64, // ← nuevo
+    pub routing_latency_ms: f64,      // ← nuevo
 }
 
 impl NodeMetrics {
@@ -44,6 +46,8 @@ impl NodeMetrics {
             inference_tasks_failed: 0,
             avg_inference_ms: 0.0,
             total_tokens_generated: 0,
+            routing_decisions_total: 0,
+            routing_latency_ms: 0.0,
         }
     }
 
@@ -72,6 +76,12 @@ impl NodeMetrics {
 
     pub fn inference_failed(&mut self) {
         self.inference_tasks_failed += 1;
+    }
+
+    pub fn routing_decision(&mut self, decision_ms: u64) {
+        self.routing_decisions_total += 1;
+        let n = self.routing_decisions_total as f64;
+        self.routing_latency_ms = (self.routing_latency_ms * (n - 1.0) + decision_ms as f64) / n;
     }
 }
 
