@@ -2408,10 +2408,12 @@ dependencies = [
  "futures",
  "hex",
  "iamine-core",
+ "libp2p 0.53.2",
  "reqwest",
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "tempfile",
  "thiserror 1.0.69",
  "tokio",
 ]

@@ -19,8 +19,9 @@ mod benchmark;
 mod resource_policy;
 
 use iamine_models::{
-    ModelRegistry, ModelStorage, ModelDownloader,
-    InferenceEngine, InferenceRequest,
+    ModelRegistry, ModelStorage,
+    InferenceEngine,
+    StorageConfig,
 };
 
 use worker_pool::WorkerPool;
@@ -221,26 +222,34 @@ async fn main() -> Result<(), Box<dyn Error>> {
     println!("  Reputación:   {:.1}/100", wallet.reputation);
     println!("═══════════════════════════════════\n");
 
-    // 6️⃣ MODEL INFRASTRUCTURE v0.5
+    // 6️⃣ MODEL INFRASTRUCTURE v0.5.1
+    let storage_config = StorageConfig::load(); // ← crea ~/.iamine/storage_config.json
     let model_registry = ModelRegistry::new();
     let model_storage = ModelStorage::new();
-    let mut inference_engine = InferenceEngine::new(ModelStorage::new());
+    let _inference_engine = InferenceEngine::new(ModelStorage::new());
 
     if matches!(mode, NodeMode::Worker) {
+        println!("💾 Storage limit: {} GB", storage_config.max_storage_gb);
         println!("🤖 Modelos disponibles localmente:");
         let local = model_storage.list_local_models();
         if local.is_empty() {
             println!("   (ninguno — usa --download-model <id>)");
         } else {
             for m in &local {
-                println!("   ✅ {}", m);
+                // Verificar espacio antes de mostrar
+                let used = model_storage.total_size_bytes();
+                println!("   ✅ {} (storage: {:.1}/{} GB)",
+                    m,
+                    used as f64 / 1_073_741_824.0,
+                    storage_config.max_storage_gb);
             }
         }
         println!("📋 Modelos en registry:");
         for m in model_registry.list() {
             let available = if model_storage.has_model(&m.id) { "✅" } else { "⬜" };
-            println!("   {} {} v{} ({}GB RAM)",
-                available, m.id, m.version, m.required_ram_gb);
+            let fits = storage_config.has_space_for(m.size_bytes, model_storage.total_size_bytes());
+            let fits_str = if fits { "" } else { " ⚠️ sin espacio" };
+            println!("   {} {} v{} ({}GB RAM){}", available, m.id, m.version, m.required_ram_gb, fits_str);
         }
     }
 
