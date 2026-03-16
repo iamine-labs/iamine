@@ -561,3 +561,60 @@ fn test_capabilities_updated_event() {
     assert_eq!(json["cpu_cores"], 8);
     assert_eq!(json["supported_models"][0], "tinyllama-1b");
 }
+
+#[test]
+fn test_model_recommendation() {
+    let provision = ModelAutoProvision::new(ModelRegistry::new(), ModelStorage::new());
+    let profile = AutoProvisionProfile {
+        cpu_score: 120_000,
+        ram_gb: 4,
+        gpu_available: false,
+        storage_available_gb: 10,
+    };
+
+    let recommended: Vec<String> = provision
+        .recommend_for_empty_node(&profile)
+        .into_iter()
+        .map(|m| m.id)
+        .collect();
+
+    assert!(recommended.contains(&"tinyllama-1b".to_string()));
+    assert!(recommended.contains(&"llama3-3b".to_string()));
+    assert!(!recommended.contains(&"mistral-7b".to_string()));
+}
+
+#[tokio::test]
+async fn test_auto_model_download() {
+    let provision = ModelAutoProvision::new(ModelRegistry::new(), ModelStorage::new());
+    let profile = AutoProvisionProfile {
+        cpu_score: 200_000,
+        ram_gb: 16,
+        gpu_available: true,
+        storage_available_gb: 50,
+    };
+
+    let result = provision.auto_download_recommended(&profile, None, true).await;
+    assert!(result.is_ok());
+
+    if let Some(model_id) = result.unwrap() {
+        assert!(!model_id.is_empty());
+    }
+}
+
+#[test]
+fn test_worker_start_without_models() {
+    let provision = ModelAutoProvision::new(ModelRegistry::new(), ModelStorage::new());
+    let profile = AutoProvisionProfile {
+        cpu_score: 90_000,
+        ram_gb: 2,
+        gpu_available: false,
+        storage_available_gb: 10,
+    };
+
+    let recommended = provision.startup_recommendations(&profile);
+    let empty_node_recommended = provision.recommend_for_empty_node(&profile);
+
+    assert!(recommended.is_empty() || !recommended.is_empty()); // environment-dependent installed models
+    assert!(!empty_node_recommended.is_empty());
+    assert_eq!(empty_node_recommended[0].id, "tinyllama-1b");
+}

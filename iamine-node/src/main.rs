@@ -24,9 +24,10 @@ use iamine_models::{
     ModelInstaller, InstallResult,
     RealInferenceEngine, RealInferenceRequest,
     HardwareAcceleration,
-    InferenceTaskResult, StreamedToken,
+    InferenceTask, InferenceTaskResult, StreamedToken,
     ModelNodeCapabilities, ModelRequirements, can_node_run_model,
     DirectInferenceRequest,
+    AutoProvisionProfile, ModelAutoProvision,
 };
 use iamine_network::{NodeRegistry, SharedNodeRegistry, NodeCapabilityHeartbeat};
 
@@ -46,6 +47,7 @@ use benchmark::NodeBenchmark;
 use resource_policy::ResourcePolicy;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use std::collections::{HashMap, HashSet};
 
 use libp2p::{
     gossipsub, identify, kad, mdns, noise, ping,  // ← quitado identity de aquí
@@ -57,7 +59,6 @@ use libp2p::{
 use futures::StreamExt;
 use std::error::Error;
 use std::str::FromStr;
-use std::collections::HashSet;
 use std::time::Duration;
 
 use task_protocol::{TaskRequest, TaskResponse};
@@ -66,6 +67,8 @@ use executor::TaskExecutor;
 const TASK_TOPIC: &str = "iamine-tasks";
 const CAP_TOPIC: &str = "iamine-capabilities";
 const DIRECT_INF_TOPIC: &str = "iamine-direct-inference";
+const INFER_TIMEOUT_MS: u64 = 30_000;
+const INFER_FALLBACK_AFTER_MS: u64 = 8_000;
 
 #[derive(NetworkBehaviour)]
 #[behaviour(to_swarm = "IaMineEvent")]
@@ -129,6 +132,7 @@ enum NodeMode {
     Infer { prompt: String, model_id: Option<String> },
     Capabilities, // ← v0.5.4
     Nodes, // ← nuevo
+    ModelsRecommend,
 }
 
 fn parse_args() -> Result<NodeMode, String> {
@@ -140,6 +144,7 @@ fn parse_args() -> Result<NodeMode, String> {
         Some("models") => {
             match args.get(2).map(|s| s.as_str()) {
                 Some("list") => Ok(NodeMode::ModelsList),
+                Some("recommend") => Ok(NodeMode::ModelsRecommend),
                 Some("download") => {
                     let id = args.get(3).ok_or("Falta <model_id>")?.clone();
                     Ok(NodeMode::ModelsDownload { model_id: id })
@@ -148,7 +153,7 @@ fn parse_args() -> Result<NodeMode, String> {
                     let id = args.get(3).ok_or("Falta <model_id>")?.clone();
                     Ok(NodeMode::ModelsRemove { model_id: id })
                 }
-                _ => Err("Uso: iamine models [list|download <id>|remove <id>]".to_string()),
+                _ => Err("Uso: iamine models [list|recommend|download <id>|remove <id>]".to_string()),
             }
         }
         Some("--client") => {
@@ -206,6 +211,7 @@ fn parse_args() -> Result<NodeMode, String> {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = std::env::args().collect();
+    let auto_model = args.iter().any(|a| a == "--auto-model");
     let mode = match parse_args() {
         Ok(m) => m,
         Err(e) => {
@@ -366,6 +372,32 @@ async fn main() -> Result<(), Box<dyn Error>> {
             println!("╚══════════════════════════════════╝\n");
         }
 
+        NodeMode::ModelsRecommend => {
+            let node_identity = NodeIdentity::load_or_create();
+            let caps = ModelNodeCapabilities::detect(&node_identity.peer_id.to_string());
+            let benchmark = NodeBenchmark::run();
+
+            let profile = AutoProvisionProfile {
+                cpu_score: benchmark.cpu_score as u64,
+                ram_gb: caps.ram_gb,
+                gpu_available: benchmark.gpu_available,
+                storage_available_gb: caps.storage_available_gb,
+            };
+
+            let provision = ModelAutoProvision::new(ModelRegistry::new(), ModelStorage::new());
+            let recommended = provision.recommend_for_empty_node(&profile);
+
+            println!("Compatible models for this node:");
+            if recommended.is_empty() {
+                println!("(none)");
+            } else {
+                for model in recommended {
+                    println!("{}", model.id);
+                }
+            }
+            return Ok(());
+        }
+
         _ => {} // continuar con startup normal
     }
 
@@ -439,6 +471,40 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let local = model_storage.list_local_models();
         if local.is_empty() {
             println!("   (ninguno — usa --download-model <id>)");
+
+            let provision = ModelAutoProvision::new(ModelRegistry::new(), ModelStorage::new());
+            let profile = AutoProvisionProfile {
+                cpu_score: benchmark.as_ref().map(|b| b.cpu_score as u64).unwrap_or(0),
+                ram_gb: node_caps.ram_gb,
+                gpu_available: benchmark.as_ref().map(|b| b.gpu_available).unwrap_or(false),
+                storage_available_gb: node_caps.storage_available_gb,
+            };
+            let recommended = provision.startup_recommendations(&profile);
+
+            if !recommended.is_empty() {
+                println!("\n⚠ No models installed\n");
+                println!("Recommended:");
+                for model in &recommended {
+                    println!("{} ({:.0}MB)", model.id, model.size_bytes as f64 / 1_048_576.0);
+                }
+
+                if auto_model {
+                    if let Some(model_id) = provision.auto_download_recommended(&profile, None, false).await? {
+                        println!("\n⬇ Auto-downloaded: {}", model_id);
+                    }
+                } else {
+                    print!("\nDownload now? [Y/n] ");
+                    let _ = std::io::Write::flush(&mut std::io::stdout());
+                    let mut input = String::new();
+                    let _ = std::io::stdin().read_line(&mut input);
+
+                    if input.trim().is_empty() || matches!(input.trim(), "y" | "Y" | "yes" | "YES") {
+                        if let Some(model_id) = provision.auto_download_recommended(&profile, None, false).await? {
+                            println!("✅ Modelo descargado: {}", model_id);
+                        }
+                    }
+                }
+            }
         } else {
             for m in &local {
                 // Verificar espacio antes de mostrar
@@ -630,6 +696,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut infer_request_id: Option<String> = None;
     let mut infer_broadcast_sent = false;
     let mut pending_inference: std::collections::HashMap<String, tokio::time::Instant> = std::collections::HashMap::new();
+    let mut infer_started_at: Option<tokio::time::Instant> = None;
+
+    // v0.6.2: estado de streaming ordenado
+    let mut token_buffer: HashMap<u32, String> = HashMap::new();
+    let mut next_token_idx: u32 = 0;
+    let mut rendered_output = String::new();
 
     if let NodeMode::Infer { prompt, model_id } = &mode {
         let rid = uuid_simple();
@@ -637,6 +709,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         println!("🧠 Distributing inference: model={} prompt='{}'", mid, prompt);
         println!("   Request ID: {}", rid);
         infer_request_id = Some(rid);
+        infer_started_at = Some(tokio::time::Instant::now());
     }
 
     let is_client = !matches!(mode, NodeMode::Worker | NodeMode::Relay);
@@ -648,16 +721,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 let snapshot = registry.read().await.all_nodes();
                 println!("\nPeer ID        Models                CPU Score    Load");
                 println!("-------------------------------------------------------");
-                for (pid, c) in snapshot {
-                    let models = if c.models.is_empty() { "-".to_string() } else { c.models.join(",") };
-                    println!(
-                        "{}  {:20} {:10} {}/{}",
-                        &pid.to_string()[..10.min(pid.to_string().len())],
-                        models,
-                        c.cpu_score,
-                        c.active_tasks,
-                        c.worker_slots
-                    );
+                if snapshot.is_empty() {
+                    println!("(esperando capabilities de peers...)");
+                } else {
+                    for (pid, c) in snapshot {
+                        let models = if c.models.is_empty() { "-".to_string() } else { c.models.join(",") };
+                        println!(
+                            "{}  {:20} {:10} {}/{}",
+                            &pid.to_string()[..10.min(pid.to_string().len())],
+                            models,
+                            c.cpu_score,
+                            c.active_tasks,
+                            c.worker_slots
+                        );
+                    }
                 }
             }
 
@@ -730,7 +807,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     );
                 }
 
-                // Smart routing: intentar envío directo cuando ya hay registry
+                // Smart routing: intento envío directo cuando ya hay registry
                 if matches!(mode, NodeMode::Infer { .. }) && !infer_broadcast_sent {
                     if let NodeMode::Infer { prompt, model_id } = &mode {
                         let model = model_id.clone().unwrap_or_else(|| "tinyllama-1b".to_string());
@@ -758,6 +835,40 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             println!("🧠 DirectInferenceRequest enviado [{}] → {}", &rid[..8.min(rid.len())], best_peer);
                             print!("📤 Respuesta: ");
                             let _ = std::io::Write::flush(&mut std::io::stdout());
+                        } else if infer_started_at.map(|t| t.elapsed().as_millis() as u64).unwrap_or(0) >= INFER_FALLBACK_AFTER_MS {
+                            // Fallback automático a broadcast legacy
+                            let rid = infer_request_id.clone().unwrap_or_else(uuid_simple);
+                            let mid = model_id.clone().unwrap_or_else(|| "tinyllama-1b".to_string());
+                            let task = InferenceTask::new(
+                                rid.clone(),
+                                mid,
+                                prompt.clone(),
+                                200,
+                                peer_id.to_string(),
+                            );
+
+                            let _ = swarm.behaviour_mut().gossipsub.publish(
+                                gossipsub::IdentTopic::new(TASK_TOPIC),
+                                serde_json::to_vec(&task.to_gossip_json()).unwrap(),
+                            );
+
+                            infer_broadcast_sent = true;
+                            pending_inference.insert(rid.clone(), tokio::time::Instant::now());
+                            println!("↪️  Fallback: InferenceRequest broadcast enviado [{}]", &rid[..8.min(rid.len())]);
+                            print!("📤 Respuesta: ");
+                            let _ = std::io::Write::flush(&mut std::io::stdout());
+                        }
+                    }
+                }
+
+                // Timeout total de inferencia distribuida
+                if matches!(mode, NodeMode::Infer { .. }) {
+                    if let Some(rid) = infer_request_id.clone() {
+                        if let Some(t0) = pending_inference.get(&rid) {
+                            if t0.elapsed().as_millis() as u64 >= INFER_TIMEOUT_MS {
+                                eprintln!("\n❌ Timeout de inferencia distribuida ({} ms)", INFER_TIMEOUT_MS);
+                                break;
+                            }
                         }
                     }
                 }
@@ -1106,9 +1217,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             "InferenceToken" if matches!(mode, NodeMode::Infer { .. }) => {
                                 let rid = msg["request_id"].as_str().unwrap_or("");
                                 if infer_request_id.as_deref() == Some(rid) {
-                                    let token = msg["token"].as_str().unwrap_or("");
-                                    print!("{}", token);
-                                    let _ = std::io::Write::flush(&mut std::io::stdout());
+                                    let idx = msg["index"].as_u64().unwrap_or(0) as u32;
+                                    let token = msg["token"].as_str().unwrap_or("").to_string();
+
+                                    token_buffer.insert(idx, token);
+
+                                    // flush en orden
+                                    while let Some(next) = token_buffer.remove(&next_token_idx) {
+                                        print!("{}", next);
+                                        rendered_output.push_str(&next); // <- nuevo
+                                        let _ = std::io::Write::flush(&mut std::io::stdout());
+                                        next_token_idx += 1;
+                                    }
                                 }
                             }
 
@@ -1120,6 +1240,21 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     let ms = msg["execution_ms"].as_u64().unwrap_or(0);
                                     let worker = msg["worker_peer"].as_str().unwrap_or("unknown");
                                     let accel = msg["accelerator"].as_str().unwrap_or("unknown");
+
+                                    // v0.6.2: solo imprimir parte faltante, sin duplicar
+                                    if success {
+                                        if let Some(full_output) = msg["output"].as_str() {
+                                            if rendered_output.is_empty() {
+                                                print!("{}", full_output);
+                                            } else if full_output.starts_with(&rendered_output) {
+                                                let suffix = &full_output[rendered_output.len()..];
+                                                if !suffix.is_empty() {
+                                                    print!("{}", suffix);
+                                                }
+                                            }
+                                        }
+                                        let _ = std::io::Write::flush(&mut std::io::stdout());
+                                    }
 
                                     println!("\n\n═══════════════════════════════════");
                                     if success {
@@ -1133,6 +1268,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         println!("❌ Inference falló: {}", err);
                                     }
                                     println!("═══════════════════════════════════");
+                                    token_buffer.clear();
+                                    rendered_output.clear(); // <- nuevo
                                     break;
                                 }
                             }
