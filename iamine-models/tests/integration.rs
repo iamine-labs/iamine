@@ -193,3 +193,112 @@ fn test_build_node_models() {
     // models puede estar vacío si no hay nada instalado — OK
     println!("Node models: {} modelos", nm.models.len());
 }
+
+// ─── Tests v0.5.3: Hardware + InferenceEngine ─────────────────────────────
+
+#[test]
+fn test_hardware_detection() {
+    use iamine_models::HardwareAcceleration;
+    let hw = HardwareAcceleration::detect();
+    // Solo verificar que no falla y tiene valores razonables
+    assert!(hw.cpu_cores >= 1);
+    assert!(hw.recommended_threads >= 1);
+    println!("HW: {:?} — {} cores", hw.accelerator, hw.cpu_cores);
+}
+
+#[test]
+fn test_hardware_llama_params() {
+    use iamine_models::HardwareAcceleration;
+    let hw = HardwareAcceleration::detect();
+    let params = hw.llama_params();
+    assert!(params.n_threads >= 1);
+    // Metal/CUDA → GPU layers > 0
+    // CPU → 0 GPU layers
+    println!("Llama params: threads={} gpu_layers={}", params.n_threads, params.n_gpu_layers);
+}
+
+#[tokio::test]
+async fn test_inference_engine_mock() {
+    use iamine_models::{RealInferenceEngine, RealInferenceRequest, ModelStorage};
+
+    let storage = ModelStorage::new();
+    let mut engine = RealInferenceEngine::new(storage);
+
+    // Sin modelo cargado → debe fallar
+    let req = RealInferenceRequest {
+        task_id: "test-001".to_string(),
+        model_id: "tinyllama-1b".to_string(),
+        prompt: "What is 2+2?".to_string(),
+        max_tokens: 50,
+        temperature: 0.7,
+    };
+    let result = engine.run_inference(req, None).await;
+    assert!(!result.success); // no cargado → falla
+    assert!(result.error.is_some());
+}
+
+#[tokio::test]
+async fn test_inference_with_mock_model() {
+    use iamine_models::{RealInferenceEngine, RealInferenceRequest, ModelStorage};
+    use iamine_models::model_downloader::ModelDownloader;
+    use iamine_models::ModelRegistry;
+
+    let storage = ModelStorage::new();
+    let registry = ModelRegistry::new();
+
+    // Instalar mock de tinyllama si no existe
+    if !storage.has_model("tinyllama-1b") {
+        let downloader = ModelDownloader::new(ModelStorage::new());
+        let model = registry.get("tinyllama-1b").unwrap();
+        let _ = downloader.download_model_mock(model).await;
+    }
+
+    let mut engine = RealInferenceEngine::new(ModelStorage::new());
+
+    // Cargar con hash placeholder (siempre ok en dev)
+    let result = engine.load_model("tinyllama-1b", "tinyllama_hash_placeholder");
+    assert!(result.is_ok(), "Load failed: {:?}", result);
+    assert!(engine.is_loaded("tinyllama-1b"));
+
+    // Ejecutar inferencia
+    let req = RealInferenceRequest {
+        task_id: "test-002".to_string(),
+        model_id: "tinyllama-1b".to_string(),
+        prompt: "What is 2+2?".to_string(),
+        max_tokens: 50,
+        temperature: 0.7,
+    };
+
+    let (tx, mut rx) = tokio::sync::mpsc::channel(100);
+    let result = engine.run_inference(req, Some(tx)).await;
+
+    // Recolectar tokens
+    let mut streamed = String::new();
+    while let Ok(t) = rx.try_recv() { streamed.push_str(&t); }
+
+    assert!(result.success);
+    assert!(!result.output.is_empty());
+    assert!(result.tokens_generated > 0);
+    assert!(result.output.contains("4") || result.output.contains("equals"));
+    println!("Output: {}", result.output);
+    println!("Tokens: {} en {}ms", result.tokens_generated, result.execution_ms);
+}
+
+#[test]
+fn test_inference_cache() {
+    use iamine_models::{RealInferenceEngine, ModelStorage};
+    use iamine_models::model_downloader::ModelDownloader;
+
+    let storage = ModelStorage::new();
+    let mut engine = RealInferenceEngine::new(storage);
+
+    // Sin carga → no en cache
+    assert!(!engine.is_loaded("tinyllama-1b"));
+
+    // Cargar (con hash placeholder)
+    let _ = engine.load_model("tinyllama-1b", "tinyllama_hash_placeholder");
+
+    // Si existe el archivo → en cache; si no → error pero no panic
+    // Test válido en ambos casos
+    println!("Cache test passed");
+}

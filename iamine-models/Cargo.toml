@@ -15,6 +15,11 @@ futures = "0.3"
 hex = "0.4"
 thiserror = "1.0"
 libp2p = { version = "0.53", features = ["identify"] }
+llama_cpp = { version = "0.3", optional = true }  # ← opcional hasta confirmar build
+
+[features]
+default = []
+real-inference = ["llama_cpp"]  # ← activar cuando llama.cpp esté disponible
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full", "test-util"] }

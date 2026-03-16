@@ -20,9 +20,10 @@ mod resource_policy;
 
 use iamine_models::{
     ModelRegistry, ModelStorage,
-    InferenceEngine,
     StorageConfig,
     ModelInstaller, InstallResult,
+    RealInferenceEngine, RealInferenceRequest,
+    HardwareAcceleration,
 };
 
 use worker_pool::WorkerPool;
@@ -118,6 +119,7 @@ enum NodeMode {
     ModelsList,                          // ← nuevo
     ModelsDownload { model_id: String }, // ← nuevo
     ModelsRemove { model_id: String },   // ← nuevo
+    TestInference { prompt: String },  // ← nuevo
 }
 
 fn parse_args() -> Result<NodeMode, String> {
@@ -167,6 +169,13 @@ fn parse_args() -> Result<NodeMode, String> {
             let count = args.get(2).unwrap_or(&"10".to_string())
                 .parse::<usize>().unwrap_or(10);
             Ok(NodeMode::SimulateWorkers { count })
+        }
+
+        Some("test-inference") => {
+            let prompt = args.get(2)
+                .cloned()
+                .unwrap_or_else(|| "What is 2+2?".to_string());
+            Ok(NodeMode::TestInference { prompt })
         }
 
         Some(unknown) => Err(format!("Modo desconocido: {}", unknown)),
@@ -240,6 +249,68 @@ async fn main() -> Result<(), Box<dyn Error>> {
             return Ok(());
         }
 
+        NodeMode::TestInference { prompt } => {
+            println!("╔══════════════════════════════════╗");
+            println!("║    IaMine — Test Inference       ║");
+            println!("╚══════════════════════════════════╝\n");
+
+            let hw = HardwareAcceleration::detect();
+            let registry = ModelRegistry::new();
+            let storage = ModelStorage::new();
+
+            // Elegir modelo disponible
+            let model_id = ["tinyllama-1b", "llama3-3b", "mistral-7b"]
+                .iter()
+                .find(|&&id| storage.has_model(id))
+                .copied()
+                .unwrap_or("tinyllama-1b");
+
+            println!("🤖 Modelo: {}", model_id);
+            println!("💬 Prompt: {}\n", prompt);
+
+            if !storage.has_model(model_id) {
+                println!("❌ Modelo no instalado. Ejecuta primero:");
+                println!("   iamine-node models download {}", model_id);
+                return Ok(());
+            }
+
+            let model_desc = registry.get(model_id).unwrap();
+            let mut engine = RealInferenceEngine::new(ModelStorage::new());
+
+            // Cargar modelo
+            engine.load_model(model_id, &model_desc.hash)?;
+
+            // Streaming tokens
+            let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(100);
+
+            print!("📤 Respuesta: ");
+            let req = RealInferenceRequest {
+                task_id: "test-001".to_string(),
+                model_id: model_id.to_string(),
+                prompt: prompt.clone(),
+                max_tokens: 200,
+                temperature: 0.7,
+            };
+
+            // Spawn inference + print tokens en tiempo real
+            let engine_ref = std::sync::Arc::new(tokio::sync::Mutex::new(engine));
+            let engine_clone = std::sync::Arc::clone(&engine_ref);
+
+            tokio::spawn(async move {
+                let eng = engine_clone.lock().await;
+                eng.run_inference(req, Some(tx)).await
+            });
+
+            // Imprimir tokens según llegan
+            while let Some(token) = rx.recv().await {
+                print!("{}", token);
+                let _ = std::io::Write::flush(&mut std::io::stdout());
+            }
+
+            println!("\n\n✅ Inference completada");
+            return Ok(());
+        }
+
         _ => {} // continuar con startup normal
     }
 
@@ -293,11 +364,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
     println!("  Reputación:   {:.1}/100", wallet.reputation);
     println!("═══════════════════════════════════\n");
 
-    // 6️⃣ MODEL INFRASTRUCTURE v0.5.1
-    let storage_config = StorageConfig::load(); // ← crea ~/.iamine/storage_config.json
+    // 6️⃣ MODEL INFRASTRUCTURE v0.5.3
+    let storage_config = StorageConfig::load();
     let model_registry = ModelRegistry::new();
     let model_storage = ModelStorage::new();
-    let _inference_engine = InferenceEngine::new(ModelStorage::new());
+    let _inference_engine = RealInferenceEngine::new(ModelStorage::new()); // ← era InferenceEngine
 
     if matches!(mode, NodeMode::Worker) {
         println!("💾 Storage limit: {} GB", storage_config.max_storage_gb);
