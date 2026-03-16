@@ -814,7 +814,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     if let NodeMode::Infer { prompt, model_id } = &mode {
                         let model = model_id.clone().unwrap_or_else(|| "tinyllama-1b".to_string());
                         let start = std::time::Instant::now();
-                        let selected = registry.read().await.select_best_node(&model);
+                        let reg = registry.read().await;
+                        let selected = reg.select_best_node(&model);
+                        let total_nodes = reg.all_nodes().len();
+                        let nodes_with_model = reg.nodes_with_model(&model).len();
+                        drop(reg);
 
                         if let Some(best_peer) = selected {
                             let rid = infer_request_id.clone().unwrap_or_else(uuid_simple);
@@ -837,6 +841,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             println!("🧠 DirectInferenceRequest enviado [{}] → {}", &rid[..8.min(rid.len())], best_peer);
                             print!("📤 Respuesta: ");
                             let _ = std::io::Write::flush(&mut std::io::stdout());
+                        } else if total_nodes > 0 && nodes_with_model == 0 {
+                            // Registry ya tiene nodos pero ninguno tiene el modelo
+                            eprintln!("❌ Ningún nodo en la red tiene el modelo '{}' instalado.", model);
+                            eprintln!("   Nodos conocidos: {}", total_nodes);
+                            eprintln!("   Sugerencia: ejecuta en un worker:");
+                            eprintln!("   iamine-node models download {}", model);
+                            break;
                         } else if infer_started_at.map(|t| t.elapsed().as_millis() as u64).unwrap_or(0) >= INFER_FALLBACK_AFTER_MS {
                             // Fallback automático a broadcast legacy
                             let rid = infer_request_id.clone().unwrap_or_else(uuid_simple);
