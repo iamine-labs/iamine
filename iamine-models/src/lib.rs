@@ -8,10 +8,11 @@ pub mod node_capabilities;
 pub mod signed_metrics;
 pub mod model_validator;
 pub mod storage_config;
+pub mod model_installer;
 
 pub use model_registry::{ModelDescriptor, ModelRegistry};
 pub use model_storage::ModelStorage;
-pub use model_downloader::ModelDownloader;
+pub use model_downloader::{ModelDownloader, DownloadProgress};
 pub use model_verifier::ModelVerifier;
 pub use inference::{InferenceEngine, InferenceRequest, InferenceResult};
 pub use node_models::{NodeModels, ModelId, PeerModelRegistry, DownloadStrategy};
@@ -19,3 +20,4 @@ pub use node_capabilities::NodeCapabilities as ModelNodeCapabilities;
 pub use signed_metrics::{SignedNodeMetrics, NodeMetricsPayload};
 pub use model_validator::ModelValidator;
 pub use storage_config::StorageConfig;
+pub use model_installer::{ModelInstaller, InstallResult, ModelStatus};

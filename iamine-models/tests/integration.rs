@@ -136,3 +136,60 @@ fn test_model_storage_shard() {
     // Puede ser vacío o tener modelos reales — solo verificamos que no falla
     assert!(models.len() >= 0);
 }
+
+// ─── Test v0.5.2: ModelInstaller ─────────────────────────────────────────
+#[tokio::test]
+async fn test_installer_list_models() {
+    let installer = iamine_models::ModelInstaller::new();
+    let models = installer.list_models();
+    assert!(models.len() >= 3);
+    // Verificar que todos tienen los campos básicos
+    for m in &models {
+        assert!(!m.id.is_empty());
+        assert!(m.size_gb > 0.0);
+        assert!(m.required_ram_gb > 0);
+    }
+}
+
+#[tokio::test]
+async fn test_installer_storage_limit() {
+    use iamine_models::storage_config::StorageConfig;
+    let cfg = StorageConfig { max_storage_gb: 1, models_path: "/tmp".to_string() };
+    // mistral-7b necesita 4.1 GB, límite es 1 GB
+    let registry = iamine_models::ModelRegistry::new();
+    let model = registry.get("mistral-7b").unwrap();
+    let fits = cfg.has_space_for(model.size_bytes, 0);
+    assert!(!fits, "No debería caber mistral-7b en 1GB");
+}
+
+#[tokio::test]
+async fn test_installer_mock_download() {
+    use iamine_models::{ModelInstaller, InstallResult};
+    use iamine_models::model_downloader::ModelDownloader;
+    use iamine_models::ModelStorage;
+
+    let storage = ModelStorage::new();
+    let downloader = ModelDownloader::new(ModelStorage::new());
+    let registry = iamine_models::ModelRegistry::new();
+    let model = registry.get("tinyllama-1b").unwrap();
+
+    // Solo verificar que mock no falla si ya existe
+    if storage.has_model("tinyllama-1b") {
+        println!("tinyllama-1b ya existe — skip mock download");
+        return;
+    }
+
+    let result = downloader.download_model_mock(model).await;
+    // En CI puede fallar el path, solo verificar que no panics
+    println!("Mock download result: {:?}", result);
+}
+
+#[test]
+fn test_build_node_models() {
+    use iamine_models::ModelInstaller;
+    let installer = ModelInstaller::new();
+    let nm = installer.build_node_models("test_node_123");
+    assert_eq!(nm.node_id, "test_node_123");
+    // models puede estar vacío si no hay nada instalado — OK
+    println!("Node models: {} modelos", nm.models.len());
+}

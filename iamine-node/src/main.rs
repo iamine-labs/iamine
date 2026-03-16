@@ -22,6 +22,7 @@ use iamine_models::{
     ModelRegistry, ModelStorage,
     InferenceEngine,
     StorageConfig,
+    ModelInstaller, InstallResult,
 };
 
 use worker_pool::WorkerPool;
@@ -114,6 +115,9 @@ enum NodeMode {
     Stress { peer: Option<Multiaddr>, count: usize },
     Broadcast { task_type: String, data: String },
     SimulateWorkers { count: usize },
+    ModelsList,                          // ← nuevo
+    ModelsDownload { model_id: String }, // ← nuevo
+    ModelsRemove { model_id: String },   // ← nuevo
 }
 
 fn parse_args() -> Result<NodeMode, String> {
@@ -121,8 +125,21 @@ fn parse_args() -> Result<NodeMode, String> {
 
     match args.get(1).map(|s| s.as_str()) {
         Some("--worker") | None => Ok(NodeMode::Worker),
-        Some("--relay") => Ok(NodeMode::Relay), // ← nuevo
-
+        Some("--relay") => Ok(NodeMode::Relay),
+        Some("models") => {
+            match args.get(2).map(|s| s.as_str()) {
+                Some("list") => Ok(NodeMode::ModelsList),
+                Some("download") => {
+                    let id = args.get(3).ok_or("Falta <model_id>")?.clone();
+                    Ok(NodeMode::ModelsDownload { model_id: id })
+                }
+                Some("remove") => {
+                    let id = args.get(3).ok_or("Falta <model_id>")?.clone();
+                    Ok(NodeMode::ModelsRemove { model_id: id })
+                }
+                _ => Err("Uso: iamine models [list|download <id>|remove <id>]".to_string()),
+            }
+        }
         Some("--client") => {
             let (peer, offset) = if args.get(2).map(|s| s.starts_with("/ip4")).unwrap_or(false) {
                 (Some(Multiaddr::from_str(args.get(2).unwrap()).map_err(|e| e.to_string())?), 3)
@@ -164,19 +181,73 @@ async fn main() -> Result<(), Box<dyn Error>> {
         Err(e) => {
             eprintln!("❌ {}", e);
             eprintln!("Uso:");
-            eprintln!("  iamine-node --worker [--port=N] [--cpu=N] [--ram=N] [--gpu] [--max-load=N]");
+            eprintln!("  iamine-node --worker [--port=N] [--cpu=N] [--ram=N] [--gpu]");
             eprintln!("  iamine-node --relay");
             eprintln!("  iamine-node --broadcast <type> <data>");
-            eprintln!("  iamine-node --simulate-workers N");
+            eprintln!("  iamine-node models list");
+            eprintln!("  iamine-node models download <model_id>");
+            eprintln!("  iamine-node models remove <model_id>");
             std::process::exit(1);
         }
     };
 
+    // ═══════════════════════════════════════════════
+    // CLI MODELS — salida temprana, sin P2P
+    // ═══════════════════════════════════════════════
+    match &mode {
+        NodeMode::ModelsList => {
+            println!("╔══════════════════════════════════╗");
+            println!("║       IaMine — Modelos           ║");
+            println!("╚══════════════════════════════════╝\n");
+            let installer = ModelInstaller::new();
+            let models = installer.list_models();
+            println!("📋 Modelos disponibles:\n");
+            for m in &models { m.display(); }
+            let used = ModelStorage::new().total_size_bytes();
+            let cfg = StorageConfig::load();
+            println!("\n💾 Storage: {:.1}/{} GB usados",
+                used as f64 / 1_073_741_824.0, cfg.max_storage_gb);
+            return Ok(());
+        }
+
+        NodeMode::ModelsDownload { model_id } => {
+            println!("╔══════════════════════════════════╗");
+            println!("║    IaMine — Descargar Modelo     ║");
+            println!("╚══════════════════════════════════╝\n");
+            let installer = ModelInstaller::new();
+            let (tx, _rx) = tokio::sync::mpsc::channel(10);
+            match installer.install(model_id, "local", Some(tx)).await {
+                InstallResult::Installed(id) =>
+                    println!("✅ Modelo {} instalado en ~/.iamine/models/", id),
+                InstallResult::AlreadyExists(id) =>
+                    println!("ℹ️  Modelo {} ya está instalado", id),
+                InstallResult::InsufficientStorage { needed_gb, available_gb } =>
+                    println!("❌ Espacio insuficiente: necesita {:.1} GB, disponible {:.1} GB", needed_gb, available_gb),
+                InstallResult::DownloadFailed(e) =>
+                    println!("❌ Descarga fallida: {}", e),
+                InstallResult::ValidationFailed(e) =>
+                    println!("❌ Validación fallida: {}", e),
+            }
+            return Ok(());
+        }
+
+        NodeMode::ModelsRemove { model_id } => {
+            let installer = ModelInstaller::new();
+            match installer.remove(model_id) {
+                Ok(_) => println!("✅ Modelo {} eliminado", model_id),
+                Err(e) => println!("❌ {}", e),
+            }
+            return Ok(());
+        }
+
+        _ => {} // continuar con startup normal
+    }
+
     // ════════════════════════════════════════
-    // WORKER STARTUP FLOW v0.4
+    // WORKER STARTUP FLOW
     // ════════════════════════════════════════
     println!("╔══════════════════════════════════╗");
-    println!("║       IaMine Worker v0.4         ║");
+    println!("║       IaMine Worker v0.5.2       ║");
     println!("╚══════════════════════════════════╝\n");
 
     // 1️⃣ Identidad persistente
@@ -459,6 +530,21 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         let hb_topic = gossipsub::IdentTopic::new("iamine-heartbeat");
                         let _ = swarm.behaviour_mut().gossipsub.publish(
                             hb_topic, serde_json::to_vec(&hb).unwrap(),
+                        );
+                    }
+
+                    // ─── Broadcast NodeModelsBroadcast
+                    let installer = ModelInstaller::new();
+                    let nm = installer.build_node_models(&peer_id.to_string());
+                    if !nm.models.is_empty() {
+                        let payload = serde_json::json!({
+                            "type": "NodeModelsBroadcast",
+                            "node_id": peer_id.to_string(),
+                            "models": nm.models,
+                        });
+                        let _ = swarm.behaviour_mut().gossipsub.publish(
+                            gossipsub::IdentTopic::new("iamine-heartbeat"),
+                            serde_json::to_vec(&payload).unwrap(),
                         );
                     }
                 }
