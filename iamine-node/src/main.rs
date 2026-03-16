@@ -11,8 +11,12 @@ mod metrics;
 mod worker_capabilities;
 mod task_cache;
 mod peer_tracker;
-mod result_protocol;  // ← nuevo
-mod rate_limiter;     // ← nuevo
+mod result_protocol;
+mod rate_limiter;
+mod node_identity;    // ← renombrado (era identity, conflicto con libp2p)
+mod wallet;
+mod benchmark;
+mod resource_policy;
 
 use worker_pool::WorkerPool;
 use task_queue::TaskQueue;
@@ -24,16 +28,21 @@ use task_cache::TaskCache;
 use peer_tracker::PeerTracker;
 use result_protocol::{TaskResultRequest, TaskResultResponse};
 use rate_limiter::RateLimiter;
+use node_identity::NodeIdentity;  // ← actualizado
+use wallet::Wallet;
+use benchmark::NodeBenchmark;
+use resource_policy::ResourcePolicy;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use libp2p::{
-    gossipsub, identify, identity, kad, mdns, noise, ping,
+    gossipsub, identify, kad, mdns, noise, ping,  // ← quitado identity de aquí
     request_response::{self, cbor, Event as RREvent, Message, ProtocolSupport},
     swarm::{NetworkBehaviour, Swarm, SwarmEvent},
     tcp, yamux,
     Multiaddr, PeerId, StreamProtocol, Transport,
 };
+use libp2p::identity;  // ← importar por separado para evitar conflicto
 use futures::StreamExt;
 use std::error::Error;
 use std::str::FromStr;
@@ -143,12 +152,13 @@ fn parse_args() -> Result<NodeMode, String> {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
+    let args: Vec<String> = std::env::args().collect();
     let mode = match parse_args() {
         Ok(m) => m,
         Err(e) => {
             eprintln!("❌ {}", e);
             eprintln!("Uso:");
-            eprintln!("  iamine-node --worker [--port=N] [--bootnode=...]");
+            eprintln!("  iamine-node --worker [--port=N] [--cpu=N] [--ram=N] [--gpu] [--max-load=N]");
             eprintln!("  iamine-node --relay");
             eprintln!("  iamine-node --broadcast <type> <data>");
             eprintln!("  iamine-node --simulate-workers N");
@@ -156,12 +166,62 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     };
 
-    let id_keys = identity::Keypair::generate_ed25519();
-    let peer_id = PeerId::from(id_keys.public());
+    // ════════════════════════════════════════
+    // WORKER STARTUP FLOW v0.4
+    // ════════════════════════════════════════
+    println!("╔══════════════════════════════════╗");
+    println!("║       IaMine Worker v0.4         ║");
+    println!("╚══════════════════════════════════╝\n");
 
-    println!("🔥 IaMine Node iniciado");
-    println!("   Peer ID: {}", peer_id);
-    println!("   Modo: {:?}\n", mode);
+    // 1️⃣ Identidad persistente
+    let node_identity = NodeIdentity::load_or_create();
+    let peer_id = node_identity.peer_id;
+    let id_keys = node_identity.keypair.clone();
+
+    // 2️⃣ Wallet
+    let wallet = Wallet::load_or_create(&node_identity.wallet_address); // ← sin mut
+
+    // 3️⃣ Benchmark (solo en modo worker)
+    let benchmark = if matches!(mode, NodeMode::Worker) {
+        Some(NodeBenchmark::run())
+    } else {
+        None
+    };
+
+    // 4️⃣ Resource policy desde CLI
+    let resource_policy = ResourcePolicy::from_args(&args);
+    if matches!(mode, NodeMode::Worker) {
+        resource_policy.display();
+    }
+
+    // 5️⃣ Worker slots dinámicos
+    let worker_slots = if let Some(ref b) = benchmark {
+        b.calculate_slots(&resource_policy)
+    } else {
+        std::thread::available_parallelism().map(|n| n.get()).unwrap_or(2)
+    };
+
+    println!("\n═══════════════════════════════════");
+    println!("  Peer ID:      {}", peer_id);
+    println!("  Wallet:       {}", node_identity.wallet_address);
+    if let Some(ref b) = benchmark {
+        println!("  CPU Score:    {:.0}", b.cpu_score);
+        println!("  RAM:          {} GB", b.ram_available_gb);
+        println!("  GPU:          {}", if b.gpu_available { "✅" } else { "❌" });
+    }
+    println!("  Worker Slots: {}", worker_slots);
+    println!("  Modo:         {:?}", mode);
+    println!("  Balance:      {} $MIND", wallet.balance);
+    println!("  Tareas:       {}", wallet.tasks_completed);
+    println!("  Reputación:   {:.1}/100", wallet.reputation);
+    println!("═══════════════════════════════════\n");
+
+    // 6️⃣ Simulate workers — salida temprana
+    if let NodeMode::SimulateWorkers { count } = &mode {
+        println!("🔥 Simulando {} workers virtuales...", count);
+        simulate_workers(*count, peer_id.to_string()).await;
+        return Ok(());
+    }
 
     let transport = tcp::tokio::Transport::new(tcp::Config::default())
         .upgrade(libp2p::core::upgrade::Version::V1)
@@ -223,7 +283,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             .with_idle_connection_timeout(Duration::from_secs(60)),
     );
 
-    let pool = Arc::new(WorkerPool::auto());
+    let pool = Arc::new(WorkerPool::with_slots(worker_slots));
     let queue = Arc::new(TaskQueue::new(peer_id.to_string()));
     let scheduler = Arc::new(TaskScheduler::new());
     let heartbeat = Arc::new(HeartbeatService::new());
@@ -233,11 +293,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut peer_tracker = PeerTracker::new();
     let mut rate_limiter = RateLimiter::new(100); // ← 100 msgs/sec max
 
-    // Simulate workers mode — salida temprana
-    if let NodeMode::SimulateWorkers { count } = &mode {
-        println!("🔥 Simulando {} workers virtuales...", count);
-        simulate_workers(*count, peer_id.to_string()).await;
-        return Ok(());
+    // ← Actualizar métricas con wallet
+    {
+        let mut m = metrics.write().await;
+        m.reputation_score = wallet.reputation as u32;
     }
 
     // Relay mode
