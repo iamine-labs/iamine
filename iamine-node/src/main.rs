@@ -795,6 +795,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         peer_id: peer_id.to_string(),
                         cpu_score: benchmark.as_ref().map(|b| b.cpu_score as u64).unwrap_or(0),
                         ram_gb: benchmark.as_ref().map(|b| b.ram_available_gb as u32).unwrap_or(8),
+                        gpu_available: benchmark.as_ref().map(|b| b.gpu_available).unwrap_or(false),
+                        storage_available_gb: node_caps.storage_available_gb,
                         accelerator: node_caps.accelerator.clone(),
                         models: model_storage.list_local_models(),
                         worker_slots: worker_slots as u32,
