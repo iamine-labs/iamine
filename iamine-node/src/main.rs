@@ -1154,12 +1154,102 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 if target != peer_id.to_string() {
                                     continue;
                                 }
+
                                 let request_id = msg["request_id"].as_str().unwrap_or("").to_string();
                                 let model_id = msg["model"].as_str().unwrap_or("tinyllama-1b").to_string();
                                 let prompt = msg["prompt"].as_str().unwrap_or("").to_string();
                                 let max_tokens = msg["max_tokens"].as_u64().unwrap_or(200) as u32;
 
-                                // ...existing inference execution block...
+                                println!("🧠 [Worker] DirectInferenceRequest: model={} prompt='{}'",
+                                    model_id, &prompt[..prompt.len().min(40)]);
+
+                                if !model_storage.has_model(&model_id) {
+                                    println!("   ⚠️ Modelo {} no instalado — ignorando", model_id);
+                                    continue;
+                                }
+
+                                if let Some(req) = ModelRequirements::for_model(&model_id) {
+                                    if !can_node_run_model(&node_caps, &req) {
+                                        println!("   ⚠️ Hardware insuficiente para {} — ignorando", model_id);
+                                        continue;
+                                    }
+                                }
+
+                                let engine_ref = Arc::clone(&inference_engine);
+                                let metrics_ref = Arc::clone(&metrics);
+                                let registry_clone = ModelRegistry::new();
+                                let peer_id_str = peer_id.to_string();
+                                let request_id_clone = request_id.clone();
+
+                                let (token_tx, mut token_rx) = tokio::sync::mpsc::channel::<String>(100);
+
+                                let inference_handle = tokio::spawn(async move {
+                                    let mut eng = engine_ref.lock().await;
+
+                                    let hash = registry_clone.get(&model_id)
+                                        .map(|m| m.hash.clone())
+                                        .unwrap_or_default();
+
+                                    if let Err(e) = eng.load_model(&model_id, &hash) {
+                                        return InferenceTaskResult::failure(
+                                            request_id_clone, model_id, peer_id_str, e,
+                                        );
+                                    }
+
+                                    let req = RealInferenceRequest {
+                                        task_id: request_id_clone.clone(),
+                                        model_id: model_id.clone(),
+                                        prompt,
+                                        max_tokens,
+                                        temperature: 0.7,
+                                    };
+
+                                    let result = eng.run_inference(req, Some(token_tx)).await;
+
+                                    InferenceTaskResult::success(
+                                        request_id_clone,
+                                        model_id,
+                                        result.output,
+                                        result.tokens_generated,
+                                        result.execution_ms,
+                                        peer_id_str,
+                                        result.accelerator_used,
+                                    )
+                                });
+
+                                let mut token_idx = 0u32;
+                                while let Some(token) = token_rx.recv().await {
+                                    let st = StreamedToken {
+                                        request_id: request_id.clone(),
+                                        token,
+                                        index: token_idx,
+                                        is_final: false,
+                                    };
+                                    let _ = swarm.behaviour_mut().gossipsub.publish(
+                                        gossipsub::IdentTopic::new("iamine-results"),
+                                        serde_json::to_vec(&st.to_gossip_json()).unwrap(),
+                                    );
+                                    token_idx += 1;
+                                }
+
+                                if let Ok(result) = inference_handle.await {
+                                    {
+                                        let mut m = metrics_ref.write().await;
+                                        if result.success {
+                                            m.inference_success(result.execution_ms, result.tokens_generated as u64);
+                                        } else {
+                                            m.inference_failed();
+                                        }
+                                    }
+
+                                    let _ = swarm.behaviour_mut().gossipsub.publish(
+                                        gossipsub::IdentTopic::new("iamine-results"),
+                                        serde_json::to_vec(&result.to_gossip_json()).unwrap(),
+                                    );
+
+                                    println!("✅ [Worker] Direct inference completada: {} tokens en {}ms",
+                                        result.tokens_generated, result.execution_ms);
+                                }
                             }
 
                             _ => {}
