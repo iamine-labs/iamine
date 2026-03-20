@@ -38,8 +38,8 @@ pub struct InferenceEngine {
 }
 
 struct LoadedModel {
-    model_id: String,
-    loaded_at: Instant,
+    _model_id: String,
+    _loaded_at: Instant,
 }
 
 impl InferenceEngine {
@@ -66,8 +66,8 @@ impl InferenceEngine {
         // TODO v0.6: llama_cpp::LlamaModel::load_from_file(&path)
 
         self.loaded_models.insert(model_id.to_string(), LoadedModel {
-            model_id: model_id.to_string(),
-            loaded_at: Instant::now(),
+            _model_id: model_id.to_string(),
+            _loaded_at: Instant::now(),
         });
 
         println!("✅ Modelo {} cargado en memoria", model_id);

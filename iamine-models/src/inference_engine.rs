@@ -44,6 +44,7 @@ impl InferenceResult {
     }
 }
 
+#[allow(dead_code)]
 struct CachedModel {
     model_id: String,
     path: PathBuf,

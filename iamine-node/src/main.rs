@@ -33,6 +33,7 @@ use iamine_models::{
 };
 use iamine_network::{NodeRegistry, SharedNodeRegistry, NodeCapabilityHeartbeat};
 
+use model_selector_cli::ModelSelectorCLI;
 use worker_pool::WorkerPool;
 use task_queue::TaskQueue;
 use task_scheduler::TaskScheduler;

@@ -1,7 +1,6 @@
 use crate::model_registry::ModelDescriptor;
 use crate::model_storage::ModelStorage;
 use crate::model_verifier::ModelVerifier;
-use bytes::Buf;
 use futures::StreamExt;
 use std::fs;
 use std::io::Write;
