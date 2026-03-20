@@ -1,13 +1,34 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HFModel {
-    pub id: String,                 // "mistralai/Mistral-7B-Instruct-v0.1"
+    #[serde(rename = "modelId")]
+    pub id: String,
+    #[serde(default)]
     pub downloads: u64,
+    #[serde(default)]
     pub likes: u64,
+    #[serde(default)]
     pub tags: Vec<String>,
-    pub gated: bool,
+    #[serde(default)]
+    pub gated: serde_json::Value,   // ← can be bool, string, or missing
+    #[serde(default)]
     pub description: Option<String>,
+    #[serde(default)]
+    pub private: bool,
+    #[serde(flatten)]
+    pub _extra: HashMap<String, serde_json::Value>,
+}
+
+impl HFModel {
+    pub fn is_gated(&self) -> bool {
+        match &self.gated {
+            serde_json::Value::Bool(b) => *b,
+            serde_json::Value::String(s) => s != "false" && !s.is_empty(),
+            _ => false,
+        }
+    }
 }
 
 pub struct HuggingFaceSearch;
@@ -50,18 +71,22 @@ impl HuggingFaceSearch {
 
     /// Filtrar por criterios (tamaño estimado, licencia abierta, etc.)
     pub fn filter_suitable(models: Vec<HFModel>) -> Vec<HFModel> {
-        models.into_iter()
+        let filtered: Vec<HFModel> = models.iter()
             .filter(|m| {
-                // Excluir gated (requieren login)
-                !m.gated
-                // Solo LLMs populares (1K+ descargas)
-                && m.downloads >= 1000
-                // Validar tags
-                && (m.tags.contains(&"llama".to_string())
-                    || m.tags.contains(&"mistral".to_string())
-                    || m.tags.contains(&"phi".to_string())
-                    || m.tags.contains(&"qwen".to_string()))
+                !m.is_gated()
+                && !m.private
+                && m.downloads >= 100
             })
-            .collect()
+            .cloned()
+            .collect();
+
+        // Si el filtro deja vacío, devolver todos los no-gated
+        if filtered.is_empty() {
+            models.into_iter()
+                .filter(|m| !m.is_gated() && !m.private)
+                .collect()
+        } else {
+            filtered
+        }
     }
 }

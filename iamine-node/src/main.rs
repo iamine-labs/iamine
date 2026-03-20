@@ -31,6 +31,7 @@ use iamine_models::{
     DirectInferenceRequest,
     AutoProvisionProfile, ModelAutoProvision,
 };
+
 use iamine_network::{NodeRegistry, SharedNodeRegistry, NodeCapabilityHeartbeat};
 
 use model_selector_cli::ModelSelectorCLI;
@@ -132,14 +133,13 @@ enum NodeMode {
     ModelsList,
     ModelsDownload { model_id: String },
     ModelsRemove { model_id: String },
-    ModelsRecommend,
-    ModelsSearch { query: String },
-    ModelsSelect,        // ← NUEVO: cambiar modelo
-    ModelsSelectDownload, // ← NUEVO: elegir qué descargar
+    ModelsMenu,                          // ← nuevo
+    ModelsSearch { query: String },      // ← nuevo
     TestInference { prompt: String },
     Infer { prompt: String, model_id: Option<String> },
     Capabilities,
     Nodes,
+    ModelsRecommend,
 }
 
 fn parse_args() -> Result<NodeMode, String> {
@@ -152,12 +152,11 @@ fn parse_args() -> Result<NodeMode, String> {
             match args.get(2).map(|s| s.as_str()) {
                 Some("list") => Ok(NodeMode::ModelsList),
                 Some("recommend") => Ok(NodeMode::ModelsRecommend),
+                Some("menu") => Ok(NodeMode::ModelsMenu),
                 Some("search") => {
                     let query = args.get(3).ok_or("Falta <query>")?.clone();
                     Ok(NodeMode::ModelsSearch { query })
                 }
-                Some("select") => Ok(NodeMode::ModelsSelect), // ← NUEVO
-                Some("get") => Ok(NodeMode::ModelsSelectDownload), // ← NUEVO
                 Some("download") => {
                     let id = args.get(3).ok_or("Falta <model_id>")?.clone();
                     Ok(NodeMode::ModelsDownload { model_id: id })
@@ -166,7 +165,7 @@ fn parse_args() -> Result<NodeMode, String> {
                     let id = args.get(3).ok_or("Falta <model_id>")?.clone();
                     Ok(NodeMode::ModelsRemove { model_id: id })
                 }
-                _ => Err("Uso: iamine models [list|recommend|search <q>|select|get|download <id>|remove <id>]".to_string()),
+                _ => Err("Uso: iamine models [list|recommend|menu|search <q>|download <id>|remove <id>]".to_string()),
             }
         }
         Some("--client") => {
@@ -263,33 +262,44 @@ async fn main() -> Result<(), Box<dyn Error>> {
             return Ok(());
         }
 
-        NodeMode::ModelsSelect => {
+        NodeMode::ModelsMenu => {
             let node_identity = NodeIdentity::load_or_create();
             ModelSelectorCLI::show_model_menu(&node_identity.peer_id.to_string())?;
             return Ok(());
         }
 
-        NodeMode::ModelsSelectDownload => {
-            let node_identity = NodeIdentity::load_or_create();
-            match ModelSelectorCLI::select_model_to_download(&node_identity.peer_id.to_string()) {
-                Ok(model_id) => {
-                    println!("\n⬇️  Descargando {}...", model_id);
-                    let installer = ModelInstaller::new();
-                    let (tx, _rx) = tokio::sync::mpsc::channel(10);
-                    match installer.install(&model_id, "local", Some(tx)).await {
-                        InstallResult::Installed(id) =>
-                            println!("✅ Modelo {} instalado en ~/.iamine/models/", id),
-                        InstallResult::AlreadyExists(id) =>
-                            println!("ℹ️  Modelo {} ya está instalado", id),
-                        InstallResult::InsufficientStorage { needed_gb, available_gb } =>
-                            println!("❌ Espacio insuficiente: necesita {:.1} GB, disponible {:.1} GB", needed_gb, available_gb),
-                        InstallResult::DownloadFailed(e) =>
-                            println!("❌ Descarga fallida: {}", e),
-                        InstallResult::ValidationFailed(e) =>
-                            println!("❌ Validación fallida: {}", e),
+        NodeMode::ModelsSearch { query } => {
+            println!("╔══════════════════════════════════╗");
+            println!("║   IaMine — Buscar en HF          ║");
+            println!("╚══════════════════════════════════╝\n");
+            
+            println!("🔍 Buscando '{}' en HuggingFace...", query);
+            
+            match iamine_models::HuggingFaceSearch::search_gguf_models(query, 10).await {
+                Ok(models) => {
+                    let filtered = iamine_models::HuggingFaceSearch::filter_suitable(models);
+                    
+                    if filtered.is_empty() {
+                        println!("❌ Sin modelos encontrados para '{}'", query);
+                    } else {
+                        println!("\n📦 {} modelos encontrados:\n", filtered.len());
+                        println!("{:<50} {:>12} {:>8}", "Modelo", "Downloads", "Likes");
+                        println!("{}", "─".repeat(72));
+                        
+                        for m in &filtered {
+                            let name = if m.id.len() > 48 {
+                                format!("{}…", &m.id[..47])
+                            } else {
+                                m.id.clone()
+                            };
+                            println!("{:<50} {:>12} {:>8}", name, m.downloads, m.likes);
+                        }
+                        
+                        println!("\n💡 Descarga:");
+                        println!("   iamine-node models download <model_id>");
                     }
                 }
-                Err(e) => println!("❌ {}", e),
+                Err(e) => println!("❌ Error: {}", e),
             }
             return Ok(());
         }
@@ -429,41 +439,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 for model in recommended {
                     println!("{}", model.id);
                 }
-            }
-            return Ok(());
-        }
-
-        NodeMode::ModelsSearch { query } => {
-            println!("╔══════════════════════════════════╗");
-            println!("║   IaMine — Buscar en HF          ║");
-            println!("╚══════════════════════════════════╝\n");
-            
-            println!("🔍 Buscando '{}' en HuggingFace...", query);
-            
-            match iamine_models::HuggingFaceSearch::search_gguf_models(query, 10).await {
-                Ok(models) => {
-                    let filtered = iamine_models::HuggingFaceSearch::filter_suitable(models);
-                    
-                    if filtered.is_empty() {
-                        println!("❌ Sin modelos encontrados para '{}'", query);
-                    } else {
-                        println!("\n📦 {} modelos disponibles:\n", filtered.len());
-                        println!("{:<40} {:>10} {:>8}", "Modelo", "Downloads", "Likes");
-                        println!("{}", "─".repeat(60));
-                        
-                        for m in &filtered {
-                            println!("{:<40} {:>10} {:>8}",
-                                &m.id[..40.min(m.id.len())],
-                                m.downloads / 1000,
-                                m.likes);
-                        }
-                        
-                        println!("\n💡 Descarga:");
-                        println!("   iamine-node models download <model_id>");
-                        println!("   Ejemplo: iamine-node models download mistralai/Mistral-7B-Instruct-v0.1");
-                    }
-                }
-                Err(e) => println!("❌ Error: {}", e),
             }
             return Ok(());
         }
@@ -1303,7 +1278,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     token_idx += 1;
                                 }
 
-                                // Send final result
                                 if let Ok(result) = inference_handle.await {
                                     {
                                         let mut m = metrics_ref.write().await;

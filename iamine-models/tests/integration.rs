@@ -201,7 +201,7 @@ async fn test_installer_mock_download() {
         return;
     }
 
-    let result = downloader.download_model_mock(model).await;
+    let result = downloader.download_model_mock(&model).await;
     // En CI puede fallar el path, solo verificar que no panics
     println!("Mock download result: {:?}", result);
 }
@@ -272,7 +272,7 @@ async fn test_inference_with_mock_model() {
     if !storage.has_model("tinyllama-1b") {
         let downloader = ModelDownloader::new(ModelStorage::new());
         let model = registry.get("tinyllama-1b").unwrap();
-        let _ = downloader.download_model_mock(model).await;
+        let _ = downloader.download_model_mock(&model).await;
     }
 
     let mut engine = RealInferenceEngine::new(ModelStorage::new());
