@@ -30,7 +30,6 @@ impl ModelAutoProvision {
             .list()
             .into_iter()
             .filter(|model| self.is_compatible(profile, model))
-            .cloned()
             .collect();
 
         models.sort_by_key(|m| (m.required_ram_gb, m.size_bytes));
@@ -87,6 +86,9 @@ fn cpu_threshold(model_id: &str) -> u64 {
         "tinyllama-1b" => 50_000,
         "llama3-3b" => 100_000,
         "mistral-7b" => 140_000,
+        "neural-chat-7b" => 120_000,
+        "orca-mini-7b" => 110_000,
+        "zephyr-7b" => 130_000,
         _ => 25_000,
     }
 }

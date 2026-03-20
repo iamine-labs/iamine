@@ -1,6 +1,7 @@
 use crate::model_registry::ModelDescriptor;
 use crate::model_storage::ModelStorage;
 use crate::model_verifier::ModelVerifier;
+use bytes::Buf;
 use futures::StreamExt;
 use std::fs;
 use std::io::Write;
@@ -71,7 +72,6 @@ impl ModelDownloader {
         let output_path = self.storage.gguf_path(&model.id);
         let tmp_path = model_dir.join(format!("{}.tmp", model.id));
 
-        // Resume: si existe .tmp, empezar desde ahí
         let resume_from = if tmp_path.exists() {
             let size = fs::metadata(&tmp_path).map(|m| m.len()).unwrap_or(0);
             if size > 0 {
@@ -114,8 +114,8 @@ impl ModelDownloader {
         let mut stream = response.bytes_stream();
         let mut last_report = std::time::Instant::now();
 
-        while let Some(chunk) = stream.next().await {
-            let chunk = chunk.map_err(|e| format!("Error stream: {}", e))?;
+        while let Some(chunk_result) = stream.next().await {
+            let chunk: bytes::Bytes = chunk_result.map_err(|e| format!("Error stream: {}", e))?;
             file.write_all(&chunk).map_err(|e| e.to_string())?;
             downloaded += chunk.len() as u64;
 

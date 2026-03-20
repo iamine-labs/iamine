@@ -34,6 +34,27 @@ impl ModelRequirements {
                 requires_gpu: false,
                 recommended_gpu_layers: Some(99),
             }),
+            "neural-chat-7b" => Some(Self {
+                model_id: "neural-chat-7b".to_string(),
+                min_ram_gb: 8,
+                min_storage_gb: 5,
+                requires_gpu: false,
+                recommended_gpu_layers: None,
+            }),
+            "orca-mini-7b" => Some(Self {
+                model_id: "orca-mini-7b".to_string(),
+                min_ram_gb: 7,
+                min_storage_gb: 4,
+                requires_gpu: false,
+                recommended_gpu_layers: None,
+            }),
+            "zephyr-7b" => Some(Self {
+                model_id: "zephyr-7b".to_string(),
+                min_ram_gb: 9,
+                min_storage_gb: 5,
+                requires_gpu: false,
+                recommended_gpu_layers: None,
+            }),
             _ => None,
         }
     }
@@ -43,6 +64,9 @@ impl ModelRequirements {
             Self::for_model("tinyllama-1b").unwrap(),
             Self::for_model("llama3-3b").unwrap(),
             Self::for_model("mistral-7b").unwrap(),
+            Self::for_model("neural-chat-7b").unwrap(),
+            Self::for_model("orca-mini-7b").unwrap(),
+            Self::for_model("zephyr-7b").unwrap(),
         ]
     }
 }

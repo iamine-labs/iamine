@@ -120,5 +120,21 @@ fn sysinfo_ram_gb() -> u32 {
             }
         }
     }
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(out) = std::process::Command::new("powershell")
+            .args([
+                "-NoProfile",
+                "-Command",
+                "(Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory",
+            ])
+            .output()
+        {
+            let s = String::from_utf8_lossy(&out.stdout);
+            if let Ok(bytes) = s.trim().parse::<u64>() {
+                return (bytes / 1_073_741_824) as u32;
+            }
+        }
+    }
     8 // fallback
 }

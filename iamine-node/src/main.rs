@@ -17,6 +17,8 @@ mod node_identity;
 mod wallet;
 mod benchmark;
 mod resource_policy;
+mod setup_wizard;
+mod model_selector_cli;
 
 use iamine_models::{
     ModelRegistry, ModelStorage,
@@ -45,6 +47,7 @@ use node_identity::NodeIdentity;  // ← actualizado
 use wallet::Wallet;
 use benchmark::NodeBenchmark;
 use resource_policy::ResourcePolicy;
+use setup_wizard::{DetectedHardware, NodeSetupConfig};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use std::collections::{HashMap, HashSet};
@@ -128,11 +131,14 @@ enum NodeMode {
     ModelsList,
     ModelsDownload { model_id: String },
     ModelsRemove { model_id: String },
+    ModelsRecommend,
+    ModelsSearch { query: String },
+    ModelsSelect,        // ← NUEVO: cambiar modelo
+    ModelsSelectDownload, // ← NUEVO: elegir qué descargar
     TestInference { prompt: String },
     Infer { prompt: String, model_id: Option<String> },
-    Capabilities, // ← v0.5.4
-    Nodes, // ← nuevo
-    ModelsRecommend,
+    Capabilities,
+    Nodes,
 }
 
 fn parse_args() -> Result<NodeMode, String> {
@@ -145,6 +151,12 @@ fn parse_args() -> Result<NodeMode, String> {
             match args.get(2).map(|s| s.as_str()) {
                 Some("list") => Ok(NodeMode::ModelsList),
                 Some("recommend") => Ok(NodeMode::ModelsRecommend),
+                Some("search") => {
+                    let query = args.get(3).ok_or("Falta <query>")?.clone();
+                    Ok(NodeMode::ModelsSearch { query })
+                }
+                Some("select") => Ok(NodeMode::ModelsSelect), // ← NUEVO
+                Some("get") => Ok(NodeMode::ModelsSelectDownload), // ← NUEVO
                 Some("download") => {
                     let id = args.get(3).ok_or("Falta <model_id>")?.clone();
                     Ok(NodeMode::ModelsDownload { model_id: id })
@@ -153,7 +165,7 @@ fn parse_args() -> Result<NodeMode, String> {
                     let id = args.get(3).ok_or("Falta <model_id>")?.clone();
                     Ok(NodeMode::ModelsRemove { model_id: id })
                 }
-                _ => Err("Uso: iamine models [list|recommend|download <id>|remove <id>]".to_string()),
+                _ => Err("Uso: iamine models [list|recommend|search <q>|select|get|download <id>|remove <id>]".to_string()),
             }
         }
         Some("--client") => {
@@ -250,6 +262,37 @@ async fn main() -> Result<(), Box<dyn Error>> {
             return Ok(());
         }
 
+        NodeMode::ModelsSelect => {
+            let node_identity = NodeIdentity::load_or_create();
+            ModelSelectorCLI::show_model_menu(&node_identity.peer_id.to_string())?;
+            return Ok(());
+        }
+
+        NodeMode::ModelsSelectDownload => {
+            let node_identity = NodeIdentity::load_or_create();
+            match ModelSelectorCLI::select_model_to_download(&node_identity.peer_id.to_string()) {
+                Ok(model_id) => {
+                    println!("\n⬇️  Descargando {}...", model_id);
+                    let installer = ModelInstaller::new();
+                    let (tx, _rx) = tokio::sync::mpsc::channel(10);
+                    match installer.install(&model_id, "local", Some(tx)).await {
+                        InstallResult::Installed(id) =>
+                            println!("✅ Modelo {} instalado en ~/.iamine/models/", id),
+                        InstallResult::AlreadyExists(id) =>
+                            println!("ℹ️  Modelo {} ya está instalado", id),
+                        InstallResult::InsufficientStorage { needed_gb, available_gb } =>
+                            println!("❌ Espacio insuficiente: necesita {:.1} GB, disponible {:.1} GB", needed_gb, available_gb),
+                        InstallResult::DownloadFailed(e) =>
+                            println!("❌ Descarga fallida: {}", e),
+                        InstallResult::ValidationFailed(e) =>
+                            println!("❌ Validación fallida: {}", e),
+                    }
+                }
+                Err(e) => println!("❌ {}", e),
+            }
+            return Ok(());
+        }
+
         NodeMode::ModelsDownload { model_id } => {
             println!("╔══════════════════════════════════╗");
             println!("║    IaMine — Descargar Modelo     ║");
@@ -267,15 +310,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     println!("❌ Descarga fallida: {}", e),
                 InstallResult::ValidationFailed(e) =>
                     println!("❌ Validación fallida: {}", e),
-            }
-            return Ok(());
-        }
-
-        NodeMode::ModelsRemove { model_id } => {
-            let installer = ModelInstaller::new();
-            match installer.remove(model_id) {
-                Ok(_) => println!("✅ Modelo {} eliminado", model_id),
-                Err(e) => println!("❌ {}", e),
             }
             return Ok(());
         }
@@ -398,6 +432,41 @@ async fn main() -> Result<(), Box<dyn Error>> {
             return Ok(());
         }
 
+        NodeMode::ModelsSearch { query } => {
+            println!("╔══════════════════════════════════╗");
+            println!("║   IaMine — Buscar en HF          ║");
+            println!("╚══════════════════════════════════╝\n");
+            
+            println!("🔍 Buscando '{}' en HuggingFace...", query);
+            
+            match iamine_models::HuggingFaceSearch::search_gguf_models(query, 10).await {
+                Ok(models) => {
+                    let filtered = iamine_models::HuggingFaceSearch::filter_suitable(models);
+                    
+                    if filtered.is_empty() {
+                        println!("❌ Sin modelos encontrados para '{}'", query);
+                    } else {
+                        println!("\n📦 {} modelos disponibles:\n", filtered.len());
+                        println!("{:<40} {:>10} {:>8}", "Modelo", "Downloads", "Likes");
+                        println!("{}", "─".repeat(60));
+                        
+                        for m in &filtered {
+                            println!("{:<40} {:>10} {:>8}",
+                                &m.id[..40.min(m.id.len())],
+                                m.downloads / 1000,
+                                m.likes);
+                        }
+                        
+                        println!("\n💡 Descarga:");
+                        println!("   iamine-node models download <model_id>");
+                        println!("   Ejemplo: iamine-node models download mistralai/Mistral-7B-Instruct-v0.1");
+                    }
+                }
+                Err(e) => println!("❌ Error: {}", e),
+            }
+            return Ok(());
+        }
+
         _ => {} // continuar con startup normal
     }
 
@@ -461,6 +530,23 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // v0.5.4: Detectar capabilities del nodo
     let node_caps = ModelNodeCapabilities::detect(&peer_id.to_string());
+
+    let worker_setup = if matches!(mode, NodeMode::Worker) {
+        let detected = DetectedHardware {
+            cpu_cores: std::thread::available_parallelism().map(|n| n.get() as u32).unwrap_or(1),
+            ram_gb: benchmark.as_ref().map(|b| b.ram_available_gb as u32).unwrap_or(node_caps.ram_gb),
+            gpu_available: benchmark.as_ref().map(|b| b.gpu_available).unwrap_or(node_caps.gpu_type.is_some()),
+            disk_available_gb: node_caps.storage_available_gb,
+        };
+        Some(NodeSetupConfig::load_or_run(&detected)?)
+    } else {
+        None
+    };
+
+    if let Some(cfg) = &worker_setup {
+        cfg.display();
+    }
+
     if matches!(mode, NodeMode::Worker) {
         node_caps.display();
     }
@@ -477,7 +563,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 cpu_score: benchmark.as_ref().map(|b| b.cpu_score as u64).unwrap_or(0),
                 ram_gb: node_caps.ram_gb,
                 gpu_available: benchmark.as_ref().map(|b| b.gpu_available).unwrap_or(false),
-                storage_available_gb: node_caps.storage_available_gb,
+                storage_available_gb: worker_setup
+                    .as_ref()
+                    .map(|cfg| cfg.storage_limit_gb)
+                    .unwrap_or(node_caps.storage_available_gb),
             };
             let recommended = provision.startup_recommendations(&profile);
 
@@ -488,7 +577,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     println!("{} ({:.0}MB)", model.id, model.size_bytes as f64 / 1_048_576.0);
                 }
 
-                if auto_model {
+                let auto_download_enabled = auto_model
+                    || worker_setup
+                        .as_ref()
+                        .map(|cfg| cfg.auto_download_enabled())
+                        .unwrap_or(false);
+
+                if auto_download_enabled {
                     if let Some(model_id) = provision.auto_download_recommended(&profile, None, false).await? {
                         println!("\n⬇ Auto-downloaded: {}", model_id);
                     }

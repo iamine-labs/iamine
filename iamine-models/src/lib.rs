@@ -17,6 +17,7 @@ pub mod model_selector;
 pub mod model_signature;
 pub mod model_events;
 pub mod model_auto_provision;
+pub mod huggingface_search; // ← NUEVO
 
 pub use model_registry::{ModelDescriptor, ModelRegistry};
 pub use model_storage::ModelStorage;
@@ -46,3 +47,4 @@ pub use model_selector::{select_best_model, estimate_tokens, classify_prompt, Pr
 pub use model_signature::{verify_model_hash, verify_model_signature, full_model_verification, SignatureVerification};
 pub use model_events::{ModelInstalledEvent, ModelRemovedEvent, CapabilitiesUpdatedEvent};
 pub use model_auto_provision::{AutoProvisionProfile, ModelAutoProvision};
+pub use huggingface_search::HuggingFaceSearch;
