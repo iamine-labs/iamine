@@ -79,11 +79,17 @@ impl InferenceEngine {
             return Err(format!("Modelo {} no encontrado en ~/.iamine/models/", model_id));
         }
 
-        // Verificar integridad
+        // Verify integrity (skips if hash is empty/placeholder)
         ModelVerifier::verify_file(&path, expected_hash)?;
 
-        println!("🧠 Cargando {} en memoria ({:?})...",
-            model_id, self.hardware.accelerator);
+        // Check file size sanity
+        let size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+        if size < 1000 {
+            return Err(format!("Model file {} too small ({} bytes) — likely a mock or corrupt file", model_id, size));
+        }
+
+        println!("🧠 Cargando {} en memoria ({:?}, {:.1} MB)...",
+            model_id, self.hardware.accelerator, size as f64 / 1_048_576.0);
 
         // TODO v0.6: llamar llama_cpp::LlamaModel::load_from_file(&path, params)
         // Por ahora registramos en cache
@@ -115,7 +121,7 @@ impl InferenceEngine {
             );
         }
 
-        println!("🤖 [Inference] {} | '{}'",
+        println!("🤖 [Inference MOCK] {} | '{}'",
             req.model_id, &req.prompt[..req.prompt.len().min(50)]);
 
         let accel = format!("{:?}", self.hardware.accelerator);
@@ -143,7 +149,7 @@ impl InferenceEngine {
         let ms = start.elapsed().as_millis() as u64;
         let tokens = output.split_whitespace().count() as u32;
 
-        println!("✅ [Inference] {} tokens en {}ms via {}", tokens, ms, accel);
+        println!("✅ [Inference MOCK] {} tokens en {}ms via {}", tokens, ms, accel);
 
         InferenceResult::success(req.task_id, req.model_id, output, tokens, ms, accel)
     }

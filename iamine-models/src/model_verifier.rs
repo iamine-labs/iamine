@@ -1,54 +1,95 @@
 use sha2::{Sha256, Digest};
-use std::fs;
 use std::path::Path;
+use std::io::Read;
 
 pub struct ModelVerifier;
 
 impl ModelVerifier {
-    /// Verifica SHA256 de un archivo en disco
+    /// Verify file against expected SHA256 hash.
+    /// Returns Ok(()) if hash matches or if hash is empty/placeholder (skip).
     pub fn verify_file(path: &Path, expected_hash: &str) -> Result<(), String> {
-        if expected_hash.ends_with("_placeholder") {
-            // Skip en desarrollo
+        if Self::should_skip_verification(expected_hash) {
+            println!("   ⏭️  Hash verification skipped (no known hash)");
             return Ok(());
         }
 
-        let data = fs::read(path)
-            .map_err(|e| format!("Error leyendo {}: {}", path.display(), e))?;
-
-        let hash = Self::sha256_hex(&data);
-
-        if hash != expected_hash {
-            return Err(format!(
-                "Hash inválido para {}\n  esperado: {}\n  obtenido: {}",
-                path.display(), expected_hash, hash
-            ));
+        if !path.exists() {
+            return Err(format!("File not found: {}", path.display()));
         }
 
-        println!("✅ Hash verificado: {}", &hash[..16]);
-        Ok(())
+        println!("   🔐 Verifying SHA256...");
+        let computed = Self::compute_sha256_file(path)?;
+
+        if computed == expected_hash {
+            println!("   ✅ SHA256 verified: {}...{}", &computed[..8], &computed[computed.len()-8..]);
+            Ok(())
+        } else {
+            // Delete corrupt file
+            let _ = std::fs::remove_file(path);
+            Err(format!(
+                "SHA256 mismatch!\n   Expected: {}\n   Got:      {}\n   File deleted.",
+                expected_hash, computed
+            ))
+        }
     }
 
-    /// Verifica SHA256 de bytes en memoria
+    /// Verify raw bytes against expected SHA256.
     pub fn verify_bytes(data: &[u8], expected_hash: &str) -> Result<(), String> {
-        if expected_hash.ends_with("_placeholder") {
+        if Self::should_skip_verification(expected_hash) {
             return Ok(());
         }
 
-        let hash = Self::sha256_hex(data);
-        if hash != expected_hash {
-            return Err(format!("Hash inválido: esperado {}, obtenido {}", expected_hash, hash));
+        let computed = Self::compute_sha256_bytes(data);
+        if computed == expected_hash {
+            Ok(())
+        } else {
+            Err(format!("SHA256 mismatch: expected {} got {}", expected_hash, computed))
         }
-        Ok(())
     }
 
-    pub fn sha256_hex(data: &[u8]) -> String {
+    /// Compute SHA256 of a file (streaming, works with large files)
+    pub fn compute_sha256_file(path: &Path) -> Result<String, String> {
+        let mut file = std::fs::File::open(path)
+            .map_err(|e| format!("Cannot open {}: {}", path.display(), e))?;
+
+        let file_size = file.metadata().map(|m| m.len()).unwrap_or(0);
+        let mut hasher = Sha256::new();
+        let mut buffer = vec![0u8; 8 * 1024 * 1024]; // 8MB chunks
+        let mut processed: u64 = 0;
+        let mut last_report = std::time::Instant::now();
+
+        loop {
+            let n = file.read(&mut buffer)
+                .map_err(|e| format!("Read error: {}", e))?;
+            if n == 0 { break; }
+            hasher.update(&buffer[..n]);
+            processed += n as u64;
+
+            // Progress for large files (>100MB)
+            if file_size > 100_000_000 && last_report.elapsed().as_millis() > 1000 {
+                let pct = processed as f64 / file_size as f64 * 100.0;
+                print!("\r   🔐 Hashing: {:.0}%", pct);
+                let _ = std::io::Write::flush(&mut std::io::stdout());
+                last_report = std::time::Instant::now();
+            }
+        }
+
+        if file_size > 100_000_000 {
+            println!(); // newline after progress
+        }
+
+        Ok(format!("{:x}", hasher.finalize()))
+    }
+
+    /// Compute SHA256 of in-memory bytes
+    pub fn compute_sha256_bytes(data: &[u8]) -> String {
         let mut hasher = Sha256::new();
         hasher.update(data);
-        hex::encode(hasher.finalize())
+        format!("{:x}", hasher.finalize())
     }
 
-    pub fn sha256_file(path: &Path) -> Result<String, String> {
-        let data = fs::read(path).map_err(|e| e.to_string())?;
-        Ok(Self::sha256_hex(&data))
+    /// Check if hash verification should be skipped
+    fn should_skip_verification(hash: &str) -> bool {
+        hash.is_empty() || hash.ends_with("_placeholder") || hash == "skip"
     }
 }

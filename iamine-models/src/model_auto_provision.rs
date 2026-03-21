@@ -30,6 +30,7 @@ impl ModelAutoProvision {
             .list()
             .into_iter()
             .filter(|model| self.is_compatible(profile, model))
+            .cloned()
             .collect();
 
         models.sort_by_key(|m| (m.required_ram_gb, m.size_bytes));

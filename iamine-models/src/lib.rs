@@ -19,9 +19,9 @@ pub mod model_events;
 pub mod model_auto_provision;
 pub mod huggingface_search; // ← NUEVO
 
-pub use model_registry::{ModelDescriptor, ModelRegistry};
+pub use model_registry::{ModelDescriptor, ModelRegistry, ModelManifest};
 pub use model_storage::ModelStorage;
-pub use model_downloader::{ModelDownloader, DownloadProgress};
+pub use model_downloader::{ModelDownloader, DownloadProgress, DownloadPhase};
 pub use model_verifier::ModelVerifier;
 pub use inference::{InferenceEngine, InferenceRequest, InferenceResult};
 pub use inference_engine::{

@@ -32,6 +32,7 @@ pub struct NodeCapability {
     pub active_tasks: u32,
     pub latency_ms: u32,
     pub last_seen: Instant,
+    pub cluster_id: Option<String>,  // ← NEW
 }
 
 pub struct NodeRegistry {
@@ -46,6 +47,9 @@ impl NodeRegistry {
     }
 
     pub fn update_from_heartbeat(&mut self, hb: NodeCapabilityHeartbeat) -> &NodeCapability {
+        let existing_cluster = self.nodes.get(&hb.peer_id)
+            .and_then(|n| n.cluster_id.clone());
+
         let cap = NodeCapability {
             peer_id: hb.peer_id.clone(),
             cpu_score: hb.cpu_score,
@@ -58,6 +62,7 @@ impl NodeRegistry {
             active_tasks: hb.active_tasks,
             latency_ms: hb.latency_ms,
             last_seen: Instant::now(),
+            cluster_id: existing_cluster,  // ← preserve
         };
         self.nodes.insert(hb.peer_id.clone(), cap);
         self.nodes.get(&hb.peer_id).unwrap()
@@ -67,11 +72,25 @@ impl NodeRegistry {
         self.nodes.insert(cap.peer_id.clone(), cap);
     }
 
+    pub fn set_cluster(&mut self, peer_id: &str, cluster_id: &str) {
+        if let Some(node) = self.nodes.get_mut(peer_id) {
+            node.cluster_id = Some(cluster_id.to_string());
+        }
+    }
+
     pub fn select_best_node(&self, model_id: &str) -> Option<String> {
         self.select_best_node_for_model(model_id)
     }
 
     pub fn select_best_node_for_model(&self, model_id: &str) -> Option<String> {
+        self.select_best_node_for_model_with_cluster(model_id, None)
+    }
+
+    pub fn select_best_node_for_model_with_cluster(
+        &self,
+        model_id: &str,
+        local_cluster_id: Option<&str>,
+    ) -> Option<String> {
         let requirements = ModelHardwareRequirements::for_model(model_id)?;
 
         let mut candidates: Vec<&NodeCapability> = self.nodes
@@ -97,7 +116,14 @@ impl NodeRegistry {
             let cpu_score = (node.cpu_score / 10_000).min(40);
             let latency_score = if node.latency_ms == 0 { 20u64 }
                 else { (1000 / node.latency_ms.max(1) as u64).min(20) };
-            std::cmp::Reverse(slot_score + cpu_score + latency_score)
+
+            // Cluster bonus: +50 if same cluster as requester
+            let cluster_bonus = match (&node.cluster_id, local_cluster_id) {
+                (Some(nc), Some(lc)) if nc == lc => 50u64,
+                _ => 0u64,
+            };
+
+            std::cmp::Reverse(slot_score + cpu_score + latency_score + cluster_bonus)
         });
 
         candidates.first().map(|n| n.peer_id.clone())
@@ -137,6 +163,7 @@ mod tests {
             active_tasks,
             latency_ms,
             last_seen: Instant::now(),
+            cluster_id: None,  // ← NEW
         }
     }
 
@@ -174,5 +201,27 @@ mod tests {
         let best = r.select_best_node_for_model("tinyllama-1b");
         assert!(best.is_some());
         assert_eq!(best.unwrap(), "peer2"); // más slots libres y menor latencia
+    }
+
+    #[test]
+    fn test_cluster_routing_preference() {
+        let mut r = NodeRegistry::new();
+
+        // Make peer1 and peer2 very similar so cluster bonus tips the scale
+        let mut cap1 = make_cap("peer1", 150_000, "tinyllama-1b", 8, 2, 10);
+        cap1.cluster_id = Some("cluster-local".to_string());
+        r.register_node(cap1);
+
+        let mut cap2 = make_cap("peer2", 150_000, "tinyllama-1b", 8, 2, 10);
+        cap2.cluster_id = Some("cluster-remote".to_string());
+        r.register_node(cap2);
+
+        // Without cluster preference → either could win (deterministic by HashMap order isn't guaranteed, but both equal)
+        // With cluster preference → peer1 wins (same cluster bonus)
+        let best = r.select_best_node_for_model_with_cluster(
+            "tinyllama-1b",
+            Some("cluster-local"),
+        );
+        assert_eq!(best.unwrap(), "peer1");
     }
 }

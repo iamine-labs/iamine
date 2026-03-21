@@ -32,7 +32,7 @@ use iamine_models::{
     AutoProvisionProfile, ModelAutoProvision,
 };
 
-use iamine_network::{NodeRegistry, SharedNodeRegistry, NodeCapabilityHeartbeat};
+use iamine_network::{NodeRegistry, SharedNodeRegistry, NodeCapabilityHeartbeat, NetworkTopology, SharedNetworkTopology};
 
 use model_selector_cli::ModelSelectorCLI;
 use worker_pool::WorkerPool;
@@ -139,6 +139,7 @@ enum NodeMode {
     Infer { prompt: String, model_id: Option<String> },
     Capabilities,
     Nodes,
+    Topology,  // ← NEW
     ModelsRecommend,
 }
 
@@ -216,6 +217,8 @@ fn parse_args() -> Result<NodeMode, String> {
 
         Some("nodes") => Ok(NodeMode::Nodes),
 
+        Some("topology") => Ok(NodeMode::Topology), // ← NEW
+
         Some(unknown) => Err(format!("Modo desconocido: {}", unknown)),
     }
 }
@@ -242,6 +245,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // v0.6.1: Registry global para smart routing (capabilities + selección de nodo)
     let registry: SharedNodeRegistry = Arc::new(RwLock::new(NodeRegistry::new()));
+    let topology: SharedNetworkTopology = Arc::new(RwLock::new(NetworkTopology::new()));
 
     // ═══════════════════════════════════════════════
     // CLI MODELS + CAPABILITIES — salida temprana
@@ -417,6 +421,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
             println!("╚══════════════════════════════════╝\n");
         }
 
+        NodeMode::Topology => {
+            println!("╔══════════════════════════════════╗");
+            println!("║    IaMine — Network Topology     ║");
+            println!("╚══════════════════════════════════╝\n");
+            // This mode needs to discover peers, so don't return early
+        }
+
         NodeMode::ModelsRecommend => {
             let node_identity = NodeIdentity::load_or_create();
             let caps = ModelNodeCapabilities::detect(&node_identity.peer_id.to_string());
@@ -449,9 +460,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // ════════════════════════════════════════
     // WORKER STARTUP FLOW
     // ════════════════════════════════════════
-    println!("╔══════════════════════════════════╗");
-    println!("║       IaMine Worker v0.6         ║");
-    println!("╚══════════════════════════════════╝\n");
+    if matches!(mode, NodeMode::Worker) {
+        println!("╔══════════════════════════════════╗");
+        println!("║       IaMine Worker v0.6         ║");
+        println!("╚══════════════════════════════════╝\n");
+    }
 
     // 1️⃣ Identidad persistente
     let node_identity = NodeIdentity::load_or_create();
@@ -490,7 +503,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
         println!("  GPU:          {}", if b.gpu_available { "✅" } else { "❌" });
     }
     println!("  Worker Slots: {}", worker_slots);
-    println!("  Modo:         {:?}", mode);
+    if !matches!(mode, NodeMode::Topology) {
+        println!("  Modo:         {:?}", mode);
+    }
     println!("  Balance:      {} $MIND", wallet.balance);
     println!("  Tareas:       {}", wallet.tasks_completed);
     println!("  Reputación:   {:.1}/100", wallet.reputation);
@@ -787,24 +802,41 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     loop {
         tokio::select! {
-            // Ticker dedicado para mostrar nodos/capabilities
-            _ = nodes_tick.tick(), if matches!(mode, NodeMode::Nodes) => {
-                let snapshot = registry.read().await.all_nodes();
-                println!("\nPeer ID        Models                CPU Score    Load");
-                println!("-------------------------------------------------------");
-                if snapshot.is_empty() {
-                    println!("(esperando capabilities de peers...)");
-                } else {
-                    for (pid, c) in snapshot {
-                        let models = if c.models.is_empty() { "-".to_string() } else { c.models.join(",") };
-                        println!(
-                            "{}  {:20} {:10} {}/{}",
-                            &pid.to_string()[..10.min(pid.to_string().len())],
-                            models,
-                            c.cpu_score,
-                            c.active_tasks,
-                            c.worker_slots
-                        );
+            // Ticker dedicado para mostrar nodos/capabilities/topology
+            _ = nodes_tick.tick(), if matches!(mode, NodeMode::Nodes | NodeMode::Topology) => {
+                if matches!(mode, NodeMode::Nodes) {
+                    let snapshot = registry.read().await.all_nodes();
+                    println!("\nPeer ID        Models                CPU Score    Load");
+                    println!("-------------------------------------------------------");
+                    if snapshot.is_empty() {
+                        println!("(esperando capabilities de peers...)");
+                    } else {
+                        for (pid, c) in snapshot {
+                            let models = if c.models.is_empty() { "-".to_string() } else { c.models.join(",") };
+                            println!(
+                                "{}  {:20} {:10} {}/{}",
+                                &pid.to_string()[..10.min(pid.to_string().len())],
+                                models,
+                                c.cpu_score,
+                                c.active_tasks,
+                                c.worker_slots
+                            );
+                        }
+                    }
+                }
+                if matches!(mode, NodeMode::Topology) {
+                    // Assign clusters before display
+                    {
+                        let mut topo = topology.write().await;
+                        topo.assign_clusters(&peer_id.to_string());
+                    }
+                    let topo = topology.read().await;
+                    topo.display();
+                    if topo.peer_count() > 0 {
+                        println!("   ℹ️  Latencias: medidas reales (libp2p ping RTT)");
+                        println!("\n(Ctrl+C para salir)");
+                    } else {
+                        println!("(esperando peers...)");
                     }
                 }
             }
@@ -878,6 +910,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         gossipsub::IdentTopic::new(CAP_TOPIC),
                         serde_json::to_vec(&cap_hb).unwrap(),
                     );
+
+                    // Sync topology clusters to registry
+                    {
+                        let mut topo = topology.write().await;
+                        topo.assign_clusters(&peer_id.to_string());
+                        let mut reg = registry.write().await;
+                        for cluster in topo.all_clusters() {
+                            for node_id in &cluster.nodes {
+                                reg.set_cluster(node_id, &cluster.id);
+                            }
+                        }
+                    }
                 }
 
                 // Smart routing: intento envío directo cuando ya hay registry
@@ -885,8 +929,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     if let NodeMode::Infer { prompt, model_id } = &mode {
                         let model = model_id.clone().unwrap_or_else(|| "tinyllama-1b".to_string());
                         let start = std::time::Instant::now();
+                        let local_cluster = {
+                            let topo = topology.read().await;
+                            topo.cluster_for_peer(&peer_id.to_string()).map(|s| s.to_string())
+                        };
                         let reg = registry.read().await;
-                        let selected = reg.select_best_node(&model);
+                        let selected = reg.select_best_node_for_model_with_cluster(
+                            &model,
+                            local_cluster.as_deref(),
+                        );
                         let total_nodes = reg.all_nodes().len();
                         let nodes_with_model = reg.nodes_with_model(&model).len();
                         drop(reg);
@@ -1532,6 +1583,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     if let Ok(rtt) = result {
                         let rtt_ms = rtt.as_micros() as f64 / 1000.0;
                         peer_tracker.update_latency(&peer.to_string(), rtt_ms);
+                        topology.write().await.update_latency(&peer.to_string(), rtt_ms);
                     }
                 }
 
