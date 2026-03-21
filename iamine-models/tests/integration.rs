@@ -610,15 +610,19 @@ fn test_inference_result_success() {
         "req-001".to_string(),
         "tinyllama-1b".to_string(),
         "Gravity is a force...".to_string(),
-        10, 150,
+        10,
+        false,
+        150,
         "worker_xyz".to_string(),
         "Metal".to_string(),
     );
     assert!(result.success);
     assert_eq!(result.tokens_generated, 10);
+    assert!(!result.truncated);
     let json = result.to_gossip_json();
     assert_eq!(json["type"], "InferenceResult");
     assert_eq!(json["success"], true);
+    assert_eq!(json["truncated"], false);
 }
 
 #[test]

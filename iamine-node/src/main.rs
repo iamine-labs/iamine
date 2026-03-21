@@ -35,11 +35,13 @@ use iamine_models::{
 use iamine_network::{
     analyze_prompt,
     Complexity as PromptComplexityLevel,
+    describe_output_policy,
     Language as PromptLanguage,
     ModelPolicyEngine,
     NodeCapabilityHeartbeat,
     NodeRegistry,
     NetworkTopology,
+    OutputPolicyDecision,
     PromptProfile,
     SharedNetworkTopology,
     SharedNodeRegistry,
@@ -147,7 +149,7 @@ enum NodeMode {
     ModelsMenu,                          // ← nuevo
     ModelsSearch { query: String },      // ← nuevo
     TestInference { prompt: String },
-    Infer { prompt: String, model_id: Option<String> },
+    Infer { prompt: String, model_id: Option<String>, max_tokens_override: Option<u32> },
     Capabilities,
     Nodes,
     Topology,  // ← NEW
@@ -223,7 +225,8 @@ fn parse_args() -> Result<NodeMode, String> {
             let model_id = args.iter()
                 .position(|a| a == "--model")
                 .and_then(|i| args.get(i + 1).cloned());
-            Ok(NodeMode::Infer { prompt, model_id })
+            let max_tokens_override = parse_optional_u32_flag(&args, "--max-tokens")?;
+            Ok(NodeMode::Infer { prompt, model_id, max_tokens_override })
         }
 
         Some("nodes") => Ok(NodeMode::Nodes),
@@ -232,6 +235,20 @@ fn parse_args() -> Result<NodeMode, String> {
 
         Some(unknown) => Err(format!("Modo desconocido: {}", unknown)),
     }
+}
+
+fn parse_optional_u32_flag(args: &[String], flag: &str) -> Result<Option<u32>, String> {
+    let Some(index) = args.iter().position(|arg| arg == flag) else {
+        return Ok(None);
+    };
+
+    let Some(raw) = args.get(index + 1) else {
+        return Err(format!("Falta valor para {}", flag));
+    };
+
+    raw.parse::<u32>()
+        .map(Some)
+        .map_err(|_| format!("Valor invalido para {}: {}", flag, raw))
 }
 
 fn prompt_language_label(language: PromptLanguage) -> &'static str {
@@ -278,12 +295,20 @@ fn resolve_policy_for_prompt(
     (profile, candidates, selected)
 }
 
-fn recommended_max_tokens(profile: &PromptProfile) -> u32 {
-    match profile.complexity {
-        PromptComplexityLevel::Low => 128,
-        PromptComplexityLevel::Medium => 512,
-        PromptComplexityLevel::High => 768,
+fn resolve_output_policy(
+    profile: &PromptProfile,
+    prompt: &str,
+    max_tokens_override: Option<u32>,
+) -> OutputPolicyDecision {
+    if let Some(override_value) = max_tokens_override {
+        let clamped = override_value.clamp(64, 2048) as usize;
+        return OutputPolicyDecision {
+            max_tokens: clamped,
+            reason: "cli override".to_string(),
+        };
     }
+
+    describe_output_policy(profile, prompt)
 }
 
 #[tokio::main]
@@ -421,7 +446,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
             let engine = Arc::new(RealInferenceEngine::new(ModelStorage::new()));
 
             let prompt_profile = analyze_prompt(prompt);
-            let max_tokens = recommended_max_tokens(&prompt_profile);
+            let output_policy = resolve_output_policy(&prompt_profile, prompt, None);
+            println!(
+                "[OutputPolicy] max_tokens: {} (reason: {})",
+                output_policy.max_tokens,
+                output_policy.reason
+            );
 
             // Cargar modelo
             engine.load_model(model_id, &model_desc.hash)?;
@@ -434,14 +464,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 task_id: "test-001".to_string(),
                 model_id: model_id.to_string(),
                 prompt: prompt.clone(),
-                max_tokens,
+                max_tokens: output_policy.max_tokens as u32,
                 temperature: 0.7,
             };
 
             // Spawn inference + print tokens en tiempo real
             let engine_clone = Arc::clone(&engine);
 
-            tokio::spawn(async move {
+            let inference_handle = tokio::spawn(async move {
                 engine_clone.run_inference(req, Some(tx)).await
             });
 
@@ -451,11 +481,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 let _ = std::io::Write::flush(&mut std::io::stdout());
             }
 
+            let result = inference_handle
+                .await
+                .map_err(|e| format!("Inference task join error: {}", e))?;
             println!("\n\n✅ Inference completada");
+            println!("[Inference] tokens_generated: {}", result.tokens_generated);
+            println!("[Inference] truncated: {}", result.truncated);
+            if result.truncated {
+                println!("[Warning] Output truncated at token budget");
+            }
             return Ok(());
         }
 
-        NodeMode::Infer { prompt, model_id } => {
+        NodeMode::Infer { prompt, model_id, max_tokens_override } => {
             println!("╔══════════════════════════════════╗");
             println!("║      IaMine — Inference          ║");
             println!("╚══════════════════════════════════╝\n");
@@ -468,8 +506,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 model_id.as_deref(),
                 &local_models,
             );
-            let max_tokens = recommended_max_tokens(&profile);
-            println!("[Policy] Max tokens: {}", max_tokens);
+            let output_policy = resolve_output_policy(&profile, prompt, *max_tokens_override);
+            println!(
+                "[OutputPolicy] max_tokens: {} (reason: {})",
+                output_policy.max_tokens,
+                output_policy.reason
+            );
 
             if storage.has_model(&selected_model) {
                 println!("🤖 Modelo: {}", selected_model);
@@ -487,13 +529,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     task_id: "infer-local-001".to_string(),
                     model_id: selected_model.clone(),
                     prompt: prompt.clone(),
-                    max_tokens,
+                    max_tokens: output_policy.max_tokens as u32,
                     temperature: 0.7,
                 };
 
                 let engine_clone = Arc::clone(&engine);
 
-                tokio::spawn(async move {
+                let inference_handle = tokio::spawn(async move {
                     engine_clone.run_inference(req, Some(tx)).await
                 });
 
@@ -502,7 +544,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     let _ = std::io::Write::flush(&mut std::io::stdout());
                 }
 
+                let result = inference_handle
+                    .await
+                    .map_err(|e| format!("Inference task join error: {}", e))?;
                 println!("\n\n✅ Inference completada");
+                println!("[Inference] tokens_generated: {}", result.tokens_generated);
+                println!("[Inference] truncated: {}", result.truncated);
+                if result.truncated {
+                    println!("[Warning] Output truncated at token budget");
+                }
                 return Ok(());
             } else if model_id.is_some() {
                 println!("⚠️  Override {} no esta instalado localmente, intentando ruta distribuida.", selected_model);
@@ -909,7 +959,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut next_token_idx: u32 = 0;
     let mut rendered_output = String::new();
 
-    if let NodeMode::Infer { prompt, model_id } = &mode {
+    if let NodeMode::Infer { prompt, model_id, max_tokens_override } = &mode {
         let rid = uuid_simple();
         let local_available = model_storage.list_local_models();
         let (profile, candidates, selected) = resolve_policy_for_prompt(
@@ -917,10 +967,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
             model_id.as_deref(),
             &local_available,
         );
-        let max_tokens = recommended_max_tokens(&profile);
+        let output_policy = resolve_output_policy(&profile, prompt, *max_tokens_override);
         println!("🧠 Distributing inference: model={} prompt='{}'", selected, prompt);
         println!("   Candidates: {}", candidates.join(", "));
-        println!("   Max tokens: {}", max_tokens);
+        println!(
+            "   [OutputPolicy] max_tokens: {} (reason: {})",
+            output_policy.max_tokens,
+            output_policy.reason
+        );
         println!("   Request ID: {}", rid);
         infer_request_id = Some(rid);
         infer_started_at = Some(tokio::time::Instant::now());
@@ -1054,7 +1108,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                 // Smart routing: intento envío directo cuando ya hay registry
                 if matches!(mode, NodeMode::Infer { .. }) && !infer_broadcast_sent {
-                    if let NodeMode::Infer { prompt, model_id } = &mode {
+                    if let NodeMode::Infer { prompt, model_id, max_tokens_override } = &mode {
                         let local_models = model_storage.list_local_models();
                         let start = std::time::Instant::now();
                         let local_cluster = {
@@ -1076,7 +1130,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             model_id.as_deref(),
                             &available_models,
                         );
-                        let max_tokens = recommended_max_tokens(&profile);
+                        let output_policy = resolve_output_policy(&profile, prompt, *max_tokens_override);
                         if !candidates.contains(&selected_model) {
                             candidates.insert(0, selected_model.clone());
                         }
@@ -1094,7 +1148,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 target_peer: best_peer.to_string(),
                                 model: routed_model.clone(),
                                 prompt: prompt.clone(),
-                                max_tokens,
+                                max_tokens: output_policy.max_tokens as u32,
                             };
 
                             let _ = swarm.behaviour_mut().gossipsub.publish(
@@ -1122,7 +1176,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 rid.clone(),
                                 mid,
                                 prompt.clone(),
-                                max_tokens,
+                                output_policy.max_tokens as u32,
                                 peer_id.to_string(),
                             );
 
@@ -1451,6 +1505,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         model_id,
                                         result.output,
                                         result.tokens_generated,
+                                        result.truncated,
                                         result.execution_ms,
                                         peer_id_str,
                                         result.accelerator_used,
@@ -1515,6 +1570,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 if infer_request_id.as_deref() == Some(rid) {
                                     let success = msg["success"].as_bool().unwrap_or(false);
                                     let tokens = msg["tokens_generated"].as_u64().unwrap_or(0);
+                                    let truncated = msg["truncated"].as_bool().unwrap_or(false);
                                     let ms = msg["execution_ms"].as_u64().unwrap_or(0);
                                     let worker = msg["worker_peer"].as_str().unwrap_or("unknown");
                                     let accel = msg["accelerator"].as_str().unwrap_or("unknown");
@@ -1539,8 +1595,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         println!("✅ Distributed inference completada");
                                         println!("   Worker:  {}...", &worker[..12.min(worker.len())]);
                                         println!("   Tokens:  {}", tokens);
+                                        println!("   Truncated: {}", truncated);
                                         println!("   Tiempo:  {}ms", ms);
                                         println!("   Accel:   {}", accel);
+                                        if truncated {
+                                            println!("[Warning] Output truncated at token budget");
+                                        }
                                     } else {
                                         let err = msg["error"].as_str().unwrap_or("unknown");
                                         println!("❌ Inference falló: {}", err);
@@ -1620,6 +1680,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         model_id,
                                         result.output,
                                         result.tokens_generated,
+                                        result.truncated,
                                         result.execution_ms,
                                         peer_id_str,
                                         result.accelerator_used,
@@ -1823,31 +1884,32 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_recommended_max_tokens_low_prompt() {
-        let profile = PromptProfile {
-            language: PromptLanguage::English,
-            complexity: PromptComplexityLevel::Low,
-            length: 12,
-        };
+    fn test_max_tokens_override() {
+        let profile = analyze_prompt("explica la teoria de la relatividad");
+        let decision = resolve_output_policy(&profile, "explica la teoria de la relatividad", Some(100));
 
-        assert_eq!(recommended_max_tokens(&profile), 128);
+        assert_eq!(decision.max_tokens, 100);
+        assert_eq!(decision.reason, "cli override");
     }
 
     #[test]
-    fn test_recommended_max_tokens_medium_prompt() {
-        let profile = analyze_prompt("Explicame que es un agujero negro?");
+    fn test_max_tokens_override_is_clamped() {
+        let profile = analyze_prompt("What is 2+2?");
+        let decision = resolve_output_policy(&profile, "What is 2+2?", Some(10));
 
-        assert_eq!(profile.complexity, PromptComplexityLevel::Medium);
-        assert_eq!(recommended_max_tokens(&profile), 512);
+        assert_eq!(decision.max_tokens, 64);
     }
 
     #[test]
-    fn test_recommended_max_tokens_high_prompt() {
-        let profile = analyze_prompt(
-            "Explain the theory of relativity and why gravity bends space-time around massive objects.",
-        );
+    fn test_parse_optional_u32_flag() {
+        let args = vec![
+            "iamine-node".to_string(),
+            "infer".to_string(),
+            "explica".to_string(),
+            "--max-tokens".to_string(),
+            "1024".to_string(),
+        ];
 
-        assert_eq!(profile.complexity, PromptComplexityLevel::High);
-        assert_eq!(recommended_max_tokens(&profile), 768);
+        assert_eq!(parse_optional_u32_flag(&args, "--max-tokens").unwrap(), Some(1024));
     }
 }

@@ -33,6 +33,7 @@ pub struct InferenceResult {
     pub model_id: String,
     pub output: String,
     pub tokens_generated: u32,
+    pub truncated: bool,
     pub execution_ms: u64,
     pub success: bool,
     pub error: Option<String>,
@@ -88,6 +89,7 @@ impl InferenceResult {
         model_id: String,
         output: String,
         tokens: u32,
+        truncated: bool,
         ms: u64,
         accel: String,
     ) -> Self {
@@ -96,6 +98,7 @@ impl InferenceResult {
             model_id,
             output,
             tokens_generated: tokens,
+            truncated,
             execution_ms: ms,
             success: true,
             error: None,
@@ -109,6 +112,7 @@ impl InferenceResult {
             model_id,
             output: String::new(),
             tokens_generated: 0,
+            truncated: false,
             execution_ms: 0,
             success: false,
             error: Some(error),
@@ -248,6 +252,10 @@ impl InferenceEngine {
             .with_n_ctx(Some(n_ctx))
             .with_n_threads(params.n_threads)
             .with_n_threads_batch(params.n_threads)
+    }
+
+    fn inference_was_truncated(tokens_generated: u32, max_tokens: u32) -> bool {
+        max_tokens > 0 && tokens_generated >= max_tokens
     }
 
     fn ensure_queue_worker(&self) {
@@ -413,7 +421,7 @@ impl InferenceEngine {
         let ctx_params = self.context_params(req.max_tokens);
         let sampling = SamplingConfig::for_model_request(&req.model_id, &req.prompt, req.temperature);
 
-        let inference = tokio::task::spawn_blocking(move || -> Result<(String, u32), String> {
+        let inference = tokio::task::spawn_blocking(move || -> Result<(String, u32, bool), String> {
             let backend = Self::backend()?;
             let mut ctx = model
                 .new_context(backend, ctx_params)
@@ -486,7 +494,8 @@ impl InferenceEngine {
                 generated += 1;
             }
 
-            Ok((output.trim().to_string(), generated))
+            let truncated = Self::inference_was_truncated(generated, max_tokens);
+            Ok((output.trim().to_string(), generated, truncated))
         })
         .await;
 
@@ -494,11 +503,16 @@ impl InferenceEngine {
         drop(permit);
 
         match inference {
-            Ok(Ok((output, tokens))) => {
+            Ok(Ok((output, tokens, truncated))) => {
                 let ms = start.elapsed().as_millis() as u64;
                 let output = clean_output(output);
+                println!("[Inference] tokens_generated: {}", tokens);
+                println!("[Inference] truncated: {}", truncated);
+                if truncated {
+                    println!("[Warning] Output truncated at token budget");
+                }
                 println!("[Inference] {} tokens in {}ms via {}", tokens, ms, accel);
-                InferenceResult::success(req.task_id, req.model_id, output, tokens, ms, accel)
+                InferenceResult::success(req.task_id, req.model_id, output, tokens, truncated, ms, accel)
             }
             Ok(Err(e)) => InferenceResult::failure(req.task_id, req.model_id, e),
             Err(e) => InferenceResult::failure(
@@ -564,5 +578,17 @@ impl InferenceEngine {
 
     pub fn max_active_inferences_observed(&self) -> usize {
         self.inner.max_active_observed.load(Ordering::SeqCst)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::InferenceEngine;
+
+    #[test]
+    fn test_truncation_detection() {
+        assert!(InferenceEngine::inference_was_truncated(100, 100));
+        assert!(!InferenceEngine::inference_was_truncated(99, 100));
+        assert!(!InferenceEngine::inference_was_truncated(0, 0));
     }
 }
