@@ -269,6 +269,13 @@ fn test_hardware_llama_params() {
     println!("Llama params: threads={} gpu_layers={}", params.n_threads, params.n_gpu_layers);
 }
 
+#[test]
+fn test_runtime_backend_name() {
+    let backend = RealInferenceEngine::runtime_backend_name();
+    assert!(matches!(backend, "metal" | "cuda" | "cpu" | "unknown"));
+    println!("Runtime backend: {}", backend);
+}
+
 #[tokio::test]
 async fn test_inference_engine_mock() {
     use iamine_models::{RealInferenceEngine, RealInferenceRequest};

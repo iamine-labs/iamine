@@ -106,6 +106,25 @@ impl InferenceEngine {
         )
     }
 
+    pub fn runtime_backend_name() -> &'static str {
+        #[cfg(feature = "cuda-backend")]
+        {
+            "cuda"
+        }
+        #[cfg(all(not(feature = "cuda-backend"), feature = "metal-backend"))]
+        {
+            "metal"
+        }
+        #[cfg(all(not(feature = "cuda-backend"), not(feature = "metal-backend"), feature = "cpu-backend"))]
+        {
+            "cpu"
+        }
+        #[cfg(all(not(feature = "cuda-backend"), not(feature = "metal-backend"), not(feature = "cpu-backend")))]
+        {
+            "unknown"
+        }
+    }
+
     /// Cargar modelo en cache (verificar SHA256 primero)
     pub fn load_model(&mut self, model_id: &str, expected_hash: &str) -> Result<(), String> {
         if self.cache.contains_key(model_id) {
@@ -132,6 +151,7 @@ impl InferenceEngine {
 
         println!("🧠 Cargando {} en memoria ({:?}, {:.1} MB)...",
             model_id, self.hardware.accelerator, size as f64 / 1_048_576.0);
+        println!("   Backend runtime: {}", Self::runtime_backend_name());
 
         let backend = Self::backend()?;
         let model = LlamaModel::load_from_file(backend, &path, &self.model_params())

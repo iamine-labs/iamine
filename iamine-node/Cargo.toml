@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 iamine-core = { path = "../iamine-core" }
-iamine-models = { path = "../iamine-models" }  # ← nuevo
+iamine-models = { path = "../iamine-models" }
 iamine-network = { path = "../iamine-network" }
 libp2p = { version = "0.53", features = [
     "tcp", "noise", "yamux", "tokio",
@@ -24,3 +24,9 @@ dirs = "5.0"
 
 [dev-dependencies]
 tempfile = "3"
+
+[features]
+default = ["metal-backend"]
+metal-backend = ["iamine-models/metal-backend"]
+cuda-backend = ["iamine-models/cuda-backend"]
+cpu-backend = ["iamine-models/cpu-backend"]
