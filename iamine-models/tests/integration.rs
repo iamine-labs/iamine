@@ -612,6 +612,7 @@ fn test_inference_result_success() {
         "Gravity is a force...".to_string(),
         10,
         false,
+        0,
         150,
         "worker_xyz".to_string(),
         "Metal".to_string(),
@@ -619,10 +620,12 @@ fn test_inference_result_success() {
     assert!(result.success);
     assert_eq!(result.tokens_generated, 10);
     assert!(!result.truncated);
+    assert_eq!(result.continuation_steps, 0);
     let json = result.to_gossip_json();
     assert_eq!(json["type"], "InferenceResult");
     assert_eq!(json["success"], true);
     assert_eq!(json["truncated"], false);
+    assert_eq!(json["continuation_steps"], 0);
 }
 
 #[test]

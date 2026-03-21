@@ -1,3 +1,4 @@
+use crate::continuation_manager::ContinuationManager;
 use crate::hardware_acceleration::{AcceleratorType, HardwareAcceleration};
 use crate::inference_queue::InferenceQueue;
 use crate::model_cache::{LoadedModel, ModelCache};
@@ -34,6 +35,7 @@ pub struct InferenceResult {
     pub output: String,
     pub tokens_generated: u32,
     pub truncated: bool,
+    pub continuation_steps: usize,
     pub execution_ms: u64,
     pub success: bool,
     pub error: Option<String>,
@@ -99,6 +101,7 @@ impl InferenceResult {
             output,
             tokens_generated: tokens,
             truncated,
+            continuation_steps: 0,
             execution_ms: ms,
             success: true,
             error: None,
@@ -113,6 +116,7 @@ impl InferenceResult {
             output: String::new(),
             tokens_generated: 0,
             truncated: false,
+            continuation_steps: 0,
             execution_ms: 0,
             success: false,
             error: Some(error),
@@ -161,6 +165,13 @@ struct EngineInner {
 #[derive(Clone)]
 pub struct InferenceEngine {
     inner: Arc<EngineInner>,
+}
+
+struct GenerationChunk {
+    output: String,
+    tokens_generated: u32,
+    truncated: bool,
+    execution_ms: u64,
 }
 
 impl InferenceEngine {
@@ -256,6 +267,112 @@ impl InferenceEngine {
 
     fn inference_was_truncated(tokens_generated: u32, max_tokens: u32) -> bool {
         max_tokens > 0 && tokens_generated >= max_tokens
+    }
+
+    async fn generate_chunk(
+        &self,
+        model: Arc<LlamaModel>,
+        model_id: String,
+        user_prompt: String,
+        max_tokens: u32,
+        temperature: f32,
+        token_tx: Option<mpsc::Sender<String>>,
+    ) -> Result<GenerationChunk, String> {
+        let prompt_builder = PromptBuilder::new(model_id.clone());
+        let prompt = prompt_builder.build_with_model(
+            model.as_ref(),
+            "You are a helpful assistant. Answer clearly, stay factual, and avoid repetition.",
+            &user_prompt,
+        );
+        let ctx_params = self.context_params(max_tokens);
+        let sampling = SamplingConfig::for_model_request(&model_id, &user_prompt, temperature);
+        let step_start = Instant::now();
+
+        let inference = tokio::task::spawn_blocking(move || -> Result<GenerationChunk, String> {
+            let backend = Self::backend()?;
+            let mut ctx = model
+                .new_context(backend, ctx_params)
+                .map_err(|e| format!("No se pudo crear contexto llama: {}", e))?;
+
+            let prompt_tokens = model
+                .str_to_token(&prompt, AddBos::Always)
+                .map_err(|e| format!("No se pudo tokenizar prompt: {}", e))?;
+
+            if prompt_tokens.is_empty() {
+                return Err("Prompt vacío tras tokenización".to_string());
+            }
+
+            let mut batch = LlamaBatch::new(512, 1);
+            let last_index = (prompt_tokens.len() - 1) as i32;
+            for (i, token) in (0_i32..).zip(prompt_tokens.into_iter()) {
+                batch
+                    .add(token, i, &[0], i == last_index)
+                    .map_err(|e| format!("No se pudo preparar batch inicial: {}", e))?;
+            }
+
+            ctx.decode(&mut batch)
+                .map_err(|e| format!("Fallo evaluando prompt: {}", e))?;
+
+            let mut samplers = vec![LlamaSampler::penalties(64, sampling.repeat_penalty, 0.0, 0.0)];
+            if sampling.top_k > 0 {
+                samplers.push(LlamaSampler::top_k(sampling.top_k));
+            }
+            samplers.push(LlamaSampler::top_p(sampling.top_p, 1));
+            if sampling.temperature <= 0.0 {
+                samplers.push(LlamaSampler::greedy());
+            } else {
+                samplers.push(LlamaSampler::temp(sampling.temperature));
+                samplers.push(LlamaSampler::dist(1234));
+            }
+            let mut sampler = LlamaSampler::chain_simple(samplers);
+            let mut decoder = UTF_8.new_decoder();
+            let mut output = String::new();
+            let mut n_cur = batch.n_tokens();
+            let mut generated = 0u32;
+
+            while generated < max_tokens {
+                let token = sampler.sample(&ctx, batch.n_tokens() - 1);
+                sampler.accept(token);
+
+                if model.is_eog_token(token) {
+                    break;
+                }
+
+                let piece = model
+                    .token_to_piece(token, &mut decoder, true, None)
+                    .map_err(|e| format!("No se pudo decodificar token: {}", e))?;
+
+                if let Some(tx) = &token_tx {
+                    tx.blocking_send(piece.clone())
+                        .map_err(|e| format!("No se pudo enviar token stream: {}", e))?;
+                }
+
+                output.push_str(&piece);
+                batch.clear();
+                batch
+                    .add(token, n_cur, &[0], true)
+                    .map_err(|e| format!("No se pudo preparar batch de generación: {}", e))?;
+                ctx.decode(&mut batch)
+                    .map_err(|e| format!("Fallo evaluando token generado: {}", e))?;
+
+                n_cur += 1;
+                generated += 1;
+            }
+
+            Ok(GenerationChunk {
+                output: output.trim().to_string(),
+                tokens_generated: generated,
+                truncated: Self::inference_was_truncated(generated, max_tokens),
+                execution_ms: 0,
+            })
+        })
+        .await
+        .map_err(|e| format!("Inference task failed: {}", e))?;
+
+        let mut chunk = inference?;
+        chunk.output = clean_output(chunk.output);
+        chunk.execution_ms = step_start.elapsed().as_millis() as u64;
+        Ok(chunk)
     }
 
     fn ensure_queue_worker(&self) {
@@ -399,8 +516,6 @@ impl InferenceEngine {
 
         let current_active = self.inner.active_inferences.fetch_add(1, Ordering::SeqCst) + 1;
         self.update_max_active(current_active);
-
-        let start = Instant::now();
         let accel = match self.inner.selected_backend {
             BackendType::Metal => "Metal".to_string(),
             BackendType::Cuda => "CUDA".to_string(),
@@ -411,115 +526,97 @@ impl InferenceEngine {
         };
 
         let model = Arc::clone(&cached.model);
-        let prompt_builder = PromptBuilder::new(req.model_id.clone());
-        let prompt = prompt_builder.build_with_model(
-            model.as_ref(),
-            "You are a helpful assistant. Answer clearly, stay factual, and avoid repetition.",
-            &req.prompt,
-        );
-        let max_tokens = req.max_tokens;
-        let ctx_params = self.context_params(req.max_tokens);
-        let sampling = SamplingConfig::for_model_request(&req.model_id, &req.prompt, req.temperature);
+        let continuation = ContinuationManager::default();
+        let mut continuation_steps = 0usize;
+        let mut current_prompt = req.prompt.clone();
 
-        let inference = tokio::task::spawn_blocking(move || -> Result<(String, u32, bool), String> {
-            let backend = Self::backend()?;
-            let mut ctx = model
-                .new_context(backend, ctx_params)
-                .map_err(|e| format!("No se pudo crear contexto llama: {}", e))?;
-
-            let prompt_tokens = model
-                .str_to_token(&prompt, AddBos::Always)
-                .map_err(|e| format!("No se pudo tokenizar prompt: {}", e))?;
-
-            if prompt_tokens.is_empty() {
-                return Err("Prompt vacío tras tokenización".to_string());
-            }
-
-            let mut batch = LlamaBatch::new(512, 1);
-            let last_index = (prompt_tokens.len() - 1) as i32;
-            for (i, token) in (0_i32..).zip(prompt_tokens.into_iter()) {
-                batch
-                    .add(token, i, &[0], i == last_index)
-                    .map_err(|e| format!("No se pudo preparar batch inicial: {}", e))?;
-            }
-
-            ctx.decode(&mut batch)
-                .map_err(|e| format!("Fallo evaluando prompt: {}", e))?;
-
-            let mut samplers = vec![
-                LlamaSampler::penalties(64, sampling.repeat_penalty, 0.0, 0.0),
-            ];
-            if sampling.top_k > 0 {
-                samplers.push(LlamaSampler::top_k(sampling.top_k));
-            }
-            samplers.push(LlamaSampler::top_p(sampling.top_p, 1));
-            if sampling.temperature <= 0.0 {
-                samplers.push(LlamaSampler::greedy());
-            } else {
-                samplers.push(LlamaSampler::temp(sampling.temperature));
-                samplers.push(LlamaSampler::dist(1234));
-            }
-            let mut sampler = LlamaSampler::chain_simple(samplers);
-            let mut decoder = UTF_8.new_decoder();
-            let mut output = String::new();
-            let mut n_cur = batch.n_tokens();
-            let mut generated = 0u32;
-
-            while generated < max_tokens {
-                let token = sampler.sample(&ctx, batch.n_tokens() - 1);
-                sampler.accept(token);
-
-                if model.is_eog_token(token) {
-                    break;
-                }
-
-                let piece = model
-                    .token_to_piece(token, &mut decoder, true, None)
-                    .map_err(|e| format!("No se pudo decodificar token: {}", e))?;
-
-                if let Some(tx) = &token_tx {
-                    tx.blocking_send(piece.clone())
-                        .map_err(|e| format!("No se pudo enviar token stream: {}", e))?;
-                }
-
-                output.push_str(&piece);
-                batch.clear();
-                batch
-                    .add(token, n_cur, &[0], true)
-                    .map_err(|e| format!("No se pudo preparar batch de generación: {}", e))?;
-                ctx.decode(&mut batch)
-                    .map_err(|e| format!("Fallo evaluando token generado: {}", e))?;
-
-                n_cur += 1;
-                generated += 1;
-            }
-
-            let truncated = Self::inference_was_truncated(generated, max_tokens);
-            Ok((output.trim().to_string(), generated, truncated))
-        })
-        .await;
+        let initial_chunk = self
+            .generate_chunk(
+                Arc::clone(&model),
+                req.model_id.clone(),
+                current_prompt.clone(),
+                req.max_tokens,
+                req.temperature,
+                token_tx.clone(),
+            )
+            .await;
 
         self.inner.active_inferences.fetch_sub(1, Ordering::SeqCst);
         drop(permit);
 
-        match inference {
-            Ok(Ok((output, tokens, truncated))) => {
-                let ms = start.elapsed().as_millis() as u64;
-                let output = clean_output(output);
-                println!("[Inference] tokens_generated: {}", tokens);
+        match initial_chunk {
+            Ok(chunk) => {
+                let mut total_output = chunk.output.clone();
+                let mut total_tokens = chunk.tokens_generated;
+                let mut total_ms = chunk.execution_ms;
+                let mut truncated = chunk.truncated;
+
+                if truncated {
+                    println!("[Continuation] triggered");
+                }
+
+                while truncated && continuation_steps < continuation.max_steps {
+                    continuation_steps += 1;
+                    println!("[Continuation] step {}", continuation_steps);
+                    current_prompt = ContinuationManager::build_continuation_prompt(
+                        &req.prompt,
+                        &total_output,
+                    );
+
+                    let next_chunk = match self
+                        .generate_chunk(
+                            Arc::clone(&model),
+                            req.model_id.clone(),
+                            current_prompt.clone(),
+                            req.max_tokens,
+                            req.temperature,
+                            token_tx.clone(),
+                        )
+                        .await
+                    {
+                        Ok(chunk) => chunk,
+                        Err(e) => {
+                            return InferenceResult::failure(req.task_id, req.model_id, e);
+                        }
+                    };
+
+                    let cleaned = ContinuationManager::remove_overlap(&total_output, &next_chunk.output);
+                    if !cleaned.trim().is_empty() {
+                        if !total_output.is_empty() && !total_output.ends_with('\n') {
+                            total_output.push('\n');
+                        }
+                        total_output.push_str(cleaned.trim());
+                    }
+
+                    total_tokens += next_chunk.tokens_generated;
+                    total_ms += next_chunk.execution_ms;
+                    truncated = next_chunk.truncated;
+                }
+
+                if continuation_steps > 0 {
+                    println!("[Continuation] completed in {} steps", continuation_steps);
+                }
+
+                println!("[Inference] tokens_generated: {}", total_tokens);
                 println!("[Inference] truncated: {}", truncated);
                 if truncated {
                     println!("[Warning] Output truncated at token budget");
                 }
-                println!("[Inference] {} tokens in {}ms via {}", tokens, ms, accel);
-                InferenceResult::success(req.task_id, req.model_id, output, tokens, truncated, ms, accel)
+                println!("[Inference] {} tokens in {}ms via {}", total_tokens, total_ms, accel);
+
+                let mut result = InferenceResult::success(
+                    req.task_id,
+                    req.model_id,
+                    clean_output(total_output),
+                    total_tokens,
+                    truncated,
+                    total_ms,
+                    accel,
+                );
+                result.continuation_steps = continuation_steps;
+                result
             }
-            Ok(Err(e)) => InferenceResult::failure(req.task_id, req.model_id, e),
-            Err(e) => InferenceResult::failure(
-                req.task_id,
-                req.model_id,
-                format!("Inference task failed: {}", e),
-            ),
+            Err(e) => InferenceResult::failure(req.task_id, req.model_id, e),
         }
     }
 

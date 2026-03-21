@@ -504,6 +504,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             println!("\n\n✅ Inference completada");
             println!("[Inference] tokens_generated: {}", result.tokens_generated);
             println!("[Inference] truncated: {}", result.truncated);
+            println!("[Inference] continuation_steps: {}", result.continuation_steps);
             if result.truncated {
                 println!("[Warning] Output truncated at token budget");
             }
@@ -567,6 +568,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 println!("\n\n✅ Inference completada");
                 println!("[Inference] tokens_generated: {}", result.tokens_generated);
                 println!("[Inference] truncated: {}", result.truncated);
+                println!("[Inference] continuation_steps: {}", result.continuation_steps);
                 if result.truncated {
                     println!("[Warning] Output truncated at token budget");
                 }
@@ -1523,6 +1525,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         result.output,
                                         result.tokens_generated,
                                         result.truncated,
+                                        result.continuation_steps,
                                         result.execution_ms,
                                         peer_id_str,
                                         result.accelerator_used,
@@ -1588,6 +1591,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     let success = msg["success"].as_bool().unwrap_or(false);
                                     let tokens = msg["tokens_generated"].as_u64().unwrap_or(0);
                                     let truncated = msg["truncated"].as_bool().unwrap_or(false);
+                                    let continuation_steps = msg["continuation_steps"].as_u64().unwrap_or(0);
                                     let ms = msg["execution_ms"].as_u64().unwrap_or(0);
                                     let worker = msg["worker_peer"].as_str().unwrap_or("unknown");
                                     let accel = msg["accelerator"].as_str().unwrap_or("unknown");
@@ -1613,6 +1617,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         println!("   Worker:  {}...", &worker[..12.min(worker.len())]);
                                         println!("   Tokens:  {}", tokens);
                                         println!("   Truncated: {}", truncated);
+                                        println!("   Continuations: {}", continuation_steps);
                                         println!("   Tiempo:  {}ms", ms);
                                         println!("   Accel:   {}", accel);
                                         if truncated {
@@ -1698,6 +1703,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         result.output,
                                         result.tokens_generated,
                                         result.truncated,
+                                        result.continuation_steps,
                                         result.execution_ms,
                                         peer_id_str,
                                         result.accelerator_used,

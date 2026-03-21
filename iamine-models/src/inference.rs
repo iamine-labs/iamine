@@ -18,6 +18,7 @@ pub struct InferenceResult {
     pub output: String,
     pub tokens_generated: u32,
     pub truncated: bool,
+    pub continuation_steps: usize,
     pub execution_ms: u64,
     pub success: bool,
     pub error: Option<String>,
@@ -25,11 +26,11 @@ pub struct InferenceResult {
 
 impl InferenceResult {
     pub fn success(task_id: String, model_id: String, output: String, tokens: u32, ms: u64) -> Self {
-        Self { task_id, model_id, output, tokens_generated: tokens, truncated: false, execution_ms: ms, success: true, error: None }
+        Self { task_id, model_id, output, tokens_generated: tokens, truncated: false, continuation_steps: 0, execution_ms: ms, success: true, error: None }
     }
 
     pub fn failure(task_id: String, model_id: String, error: String) -> Self {
-        Self { task_id, model_id, output: String::new(), tokens_generated: 0, truncated: false, execution_ms: 0, success: false, error: Some(error) }
+        Self { task_id, model_id, output: String::new(), tokens_generated: 0, truncated: false, continuation_steps: 0, execution_ms: 0, success: false, error: Some(error) }
     }
 }
 

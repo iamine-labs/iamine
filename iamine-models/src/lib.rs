@@ -6,6 +6,7 @@ pub mod model_cache;
 pub mod inference;
 pub mod inference_engine;
 pub mod inference_queue;
+pub mod continuation_manager;
 pub mod prompt_builder;
 pub mod output_cleaner;
 pub mod hardware_acceleration;
@@ -38,6 +39,7 @@ pub use inference_engine::{
     InferenceResult as RealInferenceResult,
 };
 pub use inference_queue::{InferenceQueue, InferenceRequest as QueuedInferenceRequest};
+pub use continuation_manager::ContinuationManager;
 pub use prompt_builder::{Language, PromptBuilder, TemplateType};
 pub use output_cleaner::clean_output;
 pub use hardware_acceleration::{HardwareAcceleration, AcceleratorType};
