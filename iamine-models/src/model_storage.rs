@@ -1,13 +1,17 @@
 use std::fs;
 use std::path::PathBuf;
 
+#[derive(Clone)]
 pub struct ModelStorage {
     base_path: PathBuf,
 }
 
 impl ModelStorage {
     pub fn new() -> Self {
-        let base_path = Self::models_dir();
+        Self::new_in(Self::models_dir())
+    }
+
+    pub fn new_in(base_path: PathBuf) -> Self {
         fs::create_dir_all(&base_path).expect("No se pudo crear ~/.iamine/models");
         Self { base_path }
     }
@@ -31,7 +35,7 @@ impl ModelStorage {
 
     /// Verifica si el modelo completo está disponible localmente
     pub fn has_model(&self, model_id: &str) -> bool {
-        self.gguf_path(model_id).exists()
+        Self::is_valid_gguf_file(&self.gguf_path(model_id))
     }
 
     /// Verifica si un shard específico existe
@@ -100,6 +104,11 @@ impl ModelStorage {
         Self::dir_size(&self.base_path)
     }
 
+    /// Tamaño total en disco de un modelo específico
+    pub fn model_size_bytes(&self, model_id: &str) -> u64 {
+        Self::dir_size(&self.model_path(model_id))
+    }
+
     fn dir_size(path: &PathBuf) -> u64 {
         let Ok(entries) = fs::read_dir(path) else { return 0 };
         entries.filter_map(|e| e.ok()).map(|e| {
@@ -107,5 +116,20 @@ impl ModelStorage {
             if p.is_dir() { Self::dir_size(&p) }
             else { fs::metadata(&p).map(|m| m.len()).unwrap_or(0) }
         }).sum()
+    }
+
+    fn is_valid_gguf_file(path: &PathBuf) -> bool {
+        let Ok(metadata) = fs::metadata(path) else { return false };
+        if metadata.len() < 1024 {
+            return false;
+        }
+
+        let Ok(mut file) = fs::File::open(path) else { return false };
+        let mut magic = [0u8; 4];
+        std::io::Read::read_exact(&mut file, &mut magic).is_ok() && &magic == b"GGUF"
+    }
+
+    pub fn clone_for_test(&self) -> Self {
+        self.clone()
     }
 }

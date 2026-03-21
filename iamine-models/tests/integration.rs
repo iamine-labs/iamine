@@ -2,6 +2,13 @@ use iamine_models::*;
 use iamine_models::storage_config::StorageConfig;
 use iamine_models::node_models::{NodeModels, ModelId, PeerModelRegistry};
 use iamine_models::model_validator::ModelValidator;
+use tempfile::TempDir;
+
+fn temp_storage() -> (TempDir, ModelStorage) {
+    let dir = TempDir::new().unwrap();
+    let storage = ModelStorage::new_in(dir.path().to_path_buf());
+    (dir, storage)
+}
 
 // ─── Test 1: Model Registry ───────────────────────────────────────────────
 #[test]
@@ -149,11 +156,8 @@ fn test_model_validator_placeholder_hash() {
 // ─── Test 6: ModelStorage ────────────────────────────────────────────────
 #[test]
 fn test_model_storage_shard() {
-    use tempfile::TempDir;
-
     // Usar directorio temporal para no tocar ~/.iamine
-    let _tmp_dir = TempDir::new().unwrap();
-    let storage = ModelStorage::new();
+    let (_tmp_dir, storage) = temp_storage();
 
     // Verificar que list_local_models funciona sin crash
     let models = storage.list_local_models();
@@ -174,6 +178,34 @@ async fn test_installer_list_models() {
     }
 }
 
+#[test]
+fn test_installer_list_models_reports_per_model_disk_usage() {
+    use iamine_models::ModelInstaller;
+
+    let (_tmp_dir, storage) = temp_storage();
+
+    let tiny_path = storage.gguf_path("tinyllama-1b");
+    std::fs::create_dir_all(storage.model_path("tinyllama-1b")).unwrap();
+    let mut tiny = vec![0u8; 1_048_576];
+    tiny[..4].copy_from_slice(b"GGUF");
+    std::fs::write(&tiny_path, tiny).unwrap();
+
+    let llama_path = storage.gguf_path("llama3-3b");
+    std::fs::create_dir_all(storage.model_path("llama3-3b")).unwrap();
+    let mut llama = vec![0u8; 2_097_152];
+    llama[..4].copy_from_slice(b"GGUF");
+    std::fs::write(&llama_path, llama).unwrap();
+
+    let installer = ModelInstaller::with_storage(storage);
+    let models = installer.list_models();
+
+    let tiny_status = models.iter().find(|m| m.id == "tinyllama-1b").unwrap();
+    let llama_status = models.iter().find(|m| m.id == "llama3-3b").unwrap();
+
+    assert_eq!(tiny_status.size_on_disk_mb, Some(1));
+    assert_eq!(llama_status.size_on_disk_mb, Some(2));
+}
+
 #[tokio::test]
 async fn test_installer_storage_limit() {
     use iamine_models::storage_config::StorageConfig;
@@ -188,10 +220,8 @@ async fn test_installer_storage_limit() {
 #[tokio::test]
 async fn test_installer_mock_download() {
     use iamine_models::model_downloader::ModelDownloader;
-    use iamine_models::ModelStorage;
-
-    let storage = ModelStorage::new();
-    let downloader = ModelDownloader::new(ModelStorage::new());
+    let (_tmp_dir, storage) = temp_storage();
+    let downloader = ModelDownloader::new(storage.clone_for_test());
     let registry = iamine_models::ModelRegistry::new();
     let model = registry.get("tinyllama-1b").unwrap();
 
@@ -241,9 +271,9 @@ fn test_hardware_llama_params() {
 
 #[tokio::test]
 async fn test_inference_engine_mock() {
-    use iamine_models::{RealInferenceEngine, RealInferenceRequest, ModelStorage};
+    use iamine_models::{RealInferenceEngine, RealInferenceRequest};
 
-    let storage = ModelStorage::new();
+    let (_tmp_dir, storage) = temp_storage();
     let engine = RealInferenceEngine::new(storage);
 
     // Sin modelo cargado → debe fallar
@@ -261,21 +291,21 @@ async fn test_inference_engine_mock() {
 
 #[tokio::test]
 async fn test_inference_with_mock_model() {
-    use iamine_models::{RealInferenceEngine, RealInferenceRequest, ModelStorage};
+    use iamine_models::{RealInferenceEngine, RealInferenceRequest};
     use iamine_models::model_downloader::ModelDownloader;
     use iamine_models::ModelRegistry;
 
-    let storage = ModelStorage::new();
+    let (_tmp_dir, storage) = temp_storage();
     let registry = ModelRegistry::new();
 
     // Instalar mock de tinyllama si no existe
     if !storage.has_model("tinyllama-1b") {
-        let downloader = ModelDownloader::new(ModelStorage::new());
+        let downloader = ModelDownloader::new(storage.clone_for_test());
         let model = registry.get("tinyllama-1b").unwrap();
         let _ = downloader.download_model_mock(&model).await;
     }
 
-    let mut engine = RealInferenceEngine::new(ModelStorage::new());
+    let mut engine = RealInferenceEngine::new(storage.clone_for_test());
 
     // Cargar con hash placeholder (siempre ok en dev)
     let result = engine.load_model("tinyllama-1b", "tinyllama_hash_placeholder");
@@ -306,11 +336,35 @@ async fn test_inference_with_mock_model() {
     println!("Tokens: {} en {}ms", result.tokens_generated, result.execution_ms);
 }
 
+#[tokio::test]
+async fn test_invalid_existing_mock_is_reinstalled() {
+    use iamine_models::model_downloader::ModelDownloader;
+    use iamine_models::ModelRegistry;
+
+    let (_tmp_dir, storage) = temp_storage();
+    let registry = ModelRegistry::new();
+    let model = registry.get("tinyllama-1b").unwrap();
+    let model_path = storage.gguf_path("tinyllama-1b");
+
+    std::fs::create_dir_all(storage.model_path("tinyllama-1b")).unwrap();
+    std::fs::write(&model_path, b"tiny mock from old versions").unwrap();
+
+    assert!(!storage.has_model("tinyllama-1b"));
+
+    let downloader = ModelDownloader::new(storage.clone_for_test());
+    downloader.download_model_mock(&model).await.unwrap();
+
+    let bytes = std::fs::read(&model_path).unwrap();
+    assert!(bytes.len() >= 2048);
+    assert_eq!(&bytes[..4], b"GGUF");
+    assert!(storage.has_model("tinyllama-1b"));
+}
+
 #[test]
 fn test_inference_cache() {
-    use iamine_models::{RealInferenceEngine, ModelStorage};
+    use iamine_models::RealInferenceEngine;
 
-    let storage = ModelStorage::new();
+    let (_tmp_dir, storage) = temp_storage();
     let mut engine = RealInferenceEngine::new(storage);
 
     // Sin carga → no en cache
@@ -564,7 +618,8 @@ fn test_capabilities_updated_event() {
 
 #[test]
 fn test_model_recommendation() {
-    let provision = ModelAutoProvision::new(ModelRegistry::new(), ModelStorage::new());
+    let (_tmp_dir, storage) = temp_storage();
+    let provision = ModelAutoProvision::new(ModelRegistry::new(), storage);
     let profile = AutoProvisionProfile {
         cpu_score: 120_000,
         ram_gb: 4,
@@ -585,7 +640,8 @@ fn test_model_recommendation() {
 
 #[tokio::test]
 async fn test_auto_model_download() {
-    let provision = ModelAutoProvision::new(ModelRegistry::new(), ModelStorage::new());
+    let (_tmp_dir, storage) = temp_storage();
+    let provision = ModelAutoProvision::new(ModelRegistry::new(), storage);
     let profile = AutoProvisionProfile {
         cpu_score: 200_000,
         ram_gb: 16,
@@ -603,7 +659,8 @@ async fn test_auto_model_download() {
 
 #[test]
 fn test_worker_start_without_models() {
-    let provision = ModelAutoProvision::new(ModelRegistry::new(), ModelStorage::new());
+    let (_tmp_dir, storage) = temp_storage();
+    let provision = ModelAutoProvision::new(ModelRegistry::new(), storage);
     let profile = AutoProvisionProfile {
         cpu_score: 90_000,
         ram_gb: 2,
@@ -617,4 +674,95 @@ fn test_worker_start_without_models() {
     assert!(recommended.is_empty() || !recommended.is_empty()); // environment-dependent installed models
     assert!(!empty_node_recommended.is_empty());
     assert_eq!(empty_node_recommended[0].id, "tinyllama-1b");
+}
+
+// ─── Tests v0.6.7: Real Model Downloads ──────────────────────────────────
+
+#[test]
+fn test_sha256_verification_real() {
+    use iamine_models::ModelVerifier;
+    use std::io::Write;
+
+    let tmp = tempfile::NamedTempFile::new().unwrap();
+    tmp.as_file().write_all(b"hello world").unwrap();
+
+    // Known SHA256 of "hello world"
+    let expected = "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9";
+    let result = ModelVerifier::verify_file(tmp.path(), expected);
+    assert!(result.is_ok(), "Real SHA256 verification should pass: {:?}", result);
+}
+
+#[test]
+fn test_sha256_verification_mismatch() {
+    use iamine_models::ModelVerifier;
+    use std::io::Write;
+
+    let tmp = tempfile::NamedTempFile::new().unwrap();
+    tmp.as_file().write_all(b"hello world").unwrap();
+
+    let wrong_hash = "0000000000000000000000000000000000000000000000000000000000000000";
+    let result = ModelVerifier::verify_file(tmp.path(), wrong_hash);
+    assert!(result.is_err(), "Should fail on hash mismatch");
+}
+
+#[test]
+fn test_sha256_skip_empty_hash() {
+    use iamine_models::ModelVerifier;
+    use std::io::Write;
+
+    let tmp = tempfile::NamedTempFile::new().unwrap();
+    tmp.as_file().write_all(b"data").unwrap();
+
+    // Empty hash → skip verification
+    assert!(ModelVerifier::verify_file(tmp.path(), "").is_ok());
+    // Placeholder hash → skip
+    assert!(ModelVerifier::verify_file(tmp.path(), "tinyllama_hash_placeholder").is_ok());
+}
+
+#[test]
+fn test_compute_sha256_file() {
+    use iamine_models::ModelVerifier;
+    use std::io::Write;
+
+    let tmp = tempfile::NamedTempFile::new().unwrap();
+    tmp.as_file().write_all(b"test data for hashing").unwrap();
+
+    let hash = ModelVerifier::compute_sha256_file(tmp.path()).unwrap();
+    assert_eq!(hash.len(), 64); // SHA256 hex = 64 chars
+    assert!(hash.chars().all(|c| c.is_ascii_hexdigit()));
+
+    // Same file should produce same hash
+    let hash2 = ModelVerifier::compute_sha256_file(tmp.path()).unwrap();
+    assert_eq!(hash, hash2);
+}
+
+#[test]
+fn test_model_manifest() {
+    let registry = iamine_models::ModelRegistry::new();
+    let model = registry.get("tinyllama-1b").unwrap();
+    let manifest = model.to_manifest();
+
+    assert_eq!(manifest.model_id, "tinyllama-1b");
+    assert!(manifest.size_bytes > 0);
+    assert!(!manifest.download_url.is_empty());
+    assert!(manifest.download_url.contains("huggingface.co"));
+}
+
+#[test]
+fn test_model_has_known_hash() {
+    let registry = iamine_models::ModelRegistry::new();
+    let model = registry.get("tinyllama-1b").unwrap();
+    // Empty hash = no known hash
+    assert!(!model.has_known_hash());
+
+    let manifest = model.to_manifest();
+    assert!(!manifest.requires_hash_verification());
+}
+
+#[test]
+fn test_download_phase_enum() {
+    use iamine_models::DownloadPhase;
+    let phase = DownloadPhase::Downloading;
+    assert_eq!(phase, DownloadPhase::Downloading);
+    assert_ne!(phase, DownloadPhase::Verifying);
 }
