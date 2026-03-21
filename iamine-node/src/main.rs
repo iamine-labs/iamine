@@ -278,6 +278,14 @@ fn resolve_policy_for_prompt(
     (profile, candidates, selected)
 }
 
+fn recommended_max_tokens(profile: &PromptProfile) -> u32 {
+    match profile.complexity {
+        PromptComplexityLevel::Low => 128,
+        PromptComplexityLevel::Medium => 512,
+        PromptComplexityLevel::High => 768,
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = std::env::args().collect();
@@ -412,6 +420,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
             let model_desc = registry.get(model_id).unwrap();
             let engine = Arc::new(RealInferenceEngine::new(ModelStorage::new()));
 
+            let prompt_profile = analyze_prompt(prompt);
+            let max_tokens = recommended_max_tokens(&prompt_profile);
+
             // Cargar modelo
             engine.load_model(model_id, &model_desc.hash)?;
 
@@ -423,7 +434,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 task_id: "test-001".to_string(),
                 model_id: model_id.to_string(),
                 prompt: prompt.clone(),
-                max_tokens: 200,
+                max_tokens,
                 temperature: 0.7,
             };
 
@@ -452,11 +463,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
             let registry = ModelRegistry::new();
             let storage = ModelStorage::new();
             let local_models = storage.list_local_models();
-            let (_, candidate_models, selected_model) = resolve_policy_for_prompt(
+            let (profile, candidate_models, selected_model) = resolve_policy_for_prompt(
                 prompt,
                 model_id.as_deref(),
                 &local_models,
             );
+            let max_tokens = recommended_max_tokens(&profile);
+            println!("[Policy] Max tokens: {}", max_tokens);
 
             if storage.has_model(&selected_model) {
                 println!("🤖 Modelo: {}", selected_model);
@@ -474,7 +487,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     task_id: "infer-local-001".to_string(),
                     model_id: selected_model.clone(),
                     prompt: prompt.clone(),
-                    max_tokens: 200,
+                    max_tokens,
                     temperature: 0.7,
                 };
 
@@ -899,13 +912,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
     if let NodeMode::Infer { prompt, model_id } = &mode {
         let rid = uuid_simple();
         let local_available = model_storage.list_local_models();
-        let (_, candidates, selected) = resolve_policy_for_prompt(
+        let (profile, candidates, selected) = resolve_policy_for_prompt(
             prompt,
             model_id.as_deref(),
             &local_available,
         );
+        let max_tokens = recommended_max_tokens(&profile);
         println!("🧠 Distributing inference: model={} prompt='{}'", selected, prompt);
         println!("   Candidates: {}", candidates.join(", "));
+        println!("   Max tokens: {}", max_tokens);
         println!("   Request ID: {}", rid);
         infer_request_id = Some(rid);
         infer_started_at = Some(tokio::time::Instant::now());
@@ -1056,11 +1071,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             }
                         }
 
-                        let (_, mut candidates, selected_model) = resolve_policy_for_prompt(
+                        let (profile, mut candidates, selected_model) = resolve_policy_for_prompt(
                             prompt,
                             model_id.as_deref(),
                             &available_models,
                         );
+                        let max_tokens = recommended_max_tokens(&profile);
                         if !candidates.contains(&selected_model) {
                             candidates.insert(0, selected_model.clone());
                         }
@@ -1078,7 +1094,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 target_peer: best_peer.to_string(),
                                 model: routed_model.clone(),
                                 prompt: prompt.clone(),
-                                max_tokens: 200,
+                                max_tokens,
                             };
 
                             let _ = swarm.behaviour_mut().gossipsub.publish(
@@ -1106,7 +1122,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 rid.clone(),
                                 mid,
                                 prompt.clone(),
-                                200,
+                                max_tokens,
                                 peer_id.to_string(),
                             );
 
@@ -1800,4 +1816,38 @@ async fn simulate_workers(count: usize, _base_peer_id: String) {
     }
     println!("✅ {} workers simulados activos. Ctrl+C para detener.", count);
     tokio::time::sleep(Duration::from_secs(60)).await;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_recommended_max_tokens_low_prompt() {
+        let profile = PromptProfile {
+            language: PromptLanguage::English,
+            complexity: PromptComplexityLevel::Low,
+            length: 12,
+        };
+
+        assert_eq!(recommended_max_tokens(&profile), 128);
+    }
+
+    #[test]
+    fn test_recommended_max_tokens_medium_prompt() {
+        let profile = analyze_prompt("Explicame que es un agujero negro?");
+
+        assert_eq!(profile.complexity, PromptComplexityLevel::Medium);
+        assert_eq!(recommended_max_tokens(&profile), 512);
+    }
+
+    #[test]
+    fn test_recommended_max_tokens_high_prompt() {
+        let profile = analyze_prompt(
+            "Explain the theory of relativity and why gravity bends space-time around massive objects.",
+        );
+
+        assert_eq!(profile.complexity, PromptComplexityLevel::High);
+        assert_eq!(recommended_max_tokens(&profile), 768);
+    }
 }
