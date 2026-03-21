@@ -32,7 +32,18 @@ use iamine_models::{
     AutoProvisionProfile, ModelAutoProvision,
 };
 
-use iamine_network::{NodeRegistry, SharedNodeRegistry, NodeCapabilityHeartbeat, NetworkTopology, SharedNetworkTopology};
+use iamine_network::{
+    analyze_prompt,
+    Complexity as PromptComplexityLevel,
+    Language as PromptLanguage,
+    ModelPolicyEngine,
+    NodeCapabilityHeartbeat,
+    NodeRegistry,
+    NetworkTopology,
+    PromptProfile,
+    SharedNetworkTopology,
+    SharedNodeRegistry,
+};
 
 use model_selector_cli::ModelSelectorCLI;
 use worker_pool::WorkerPool;
@@ -223,6 +234,50 @@ fn parse_args() -> Result<NodeMode, String> {
     }
 }
 
+fn prompt_language_label(language: PromptLanguage) -> &'static str {
+    match language {
+        PromptLanguage::English => "English",
+        PromptLanguage::Spanish => "Spanish",
+        PromptLanguage::Unknown => "Unknown",
+    }
+}
+
+fn prompt_complexity_label(complexity: PromptComplexityLevel) -> &'static str {
+    match complexity {
+        PromptComplexityLevel::Low => "Low",
+        PromptComplexityLevel::Medium => "Medium",
+        PromptComplexityLevel::High => "High",
+    }
+}
+
+fn resolve_policy_for_prompt(
+    prompt: &str,
+    model_override: Option<&str>,
+    available_models: &[String],
+) -> (PromptProfile, Vec<String>, String) {
+    let profile = analyze_prompt(prompt);
+    println!(
+        "[Analyzer] Language: {}, Complexity: {}",
+        prompt_language_label(profile.language),
+        prompt_complexity_label(profile.complexity)
+    );
+
+    if let Some(model_id) = model_override {
+        println!("[Policy] Manual override: {}", model_id);
+        return (profile, vec![model_id.to_string()], model_id.to_string());
+    }
+
+    let policy = ModelPolicyEngine::default();
+    let candidates = policy.candidate_models(&profile);
+    let selected = if available_models.is_empty() {
+        policy.select_model(&profile)
+    } else {
+        policy.select_model_from_available(&profile, available_models)
+    };
+    println!("[Policy] Selected model: {}", selected);
+    (profile, candidates, selected)
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = std::env::args().collect();
@@ -396,23 +451,28 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
             let registry = ModelRegistry::new();
             let storage = ModelStorage::new();
-            let model_id = model_id.clone().unwrap_or_else(|| "tinyllama-1b".to_string());
+            let local_models = storage.list_local_models();
+            let (_, candidate_models, selected_model) = resolve_policy_for_prompt(
+                prompt,
+                model_id.as_deref(),
+                &local_models,
+            );
 
-            if storage.has_model(&model_id) {
-                println!("🤖 Modelo: {}", model_id);
+            if storage.has_model(&selected_model) {
+                println!("🤖 Modelo: {}", selected_model);
                 println!("💬 Prompt: {}\n", prompt);
 
-                let model_desc = registry.get(&model_id)
-                    .ok_or_else(|| format!("Modelo {} no encontrado en registry", model_id))?;
+                let model_desc = registry.get(&selected_model)
+                    .ok_or_else(|| format!("Modelo {} no encontrado en registry", selected_model))?;
                 let engine = Arc::new(RealInferenceEngine::new(ModelStorage::new()));
-                engine.load_model(&model_id, &model_desc.hash)?;
+                engine.load_model(&selected_model, &model_desc.hash)?;
 
                 let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(100);
                 print!("📤 Respuesta: ");
 
                 let req = RealInferenceRequest {
                     task_id: "infer-local-001".to_string(),
-                    model_id: model_id.clone(),
+                    model_id: selected_model.clone(),
                     prompt: prompt.clone(),
                     max_tokens: 200,
                     temperature: 0.7,
@@ -431,6 +491,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                 println!("\n\n✅ Inference completada");
                 return Ok(());
+            } else if model_id.is_some() {
+                println!("⚠️  Override {} no esta instalado localmente, intentando ruta distribuida.", selected_model);
+            } else {
+                println!("🤖 Modelo local preferido no disponible.");
+                println!("   Candidates: {}", candidate_models.join(", "));
+                println!("   Intentando ruta distribuida...\n");
             }
         }
 
@@ -832,8 +898,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     if let NodeMode::Infer { prompt, model_id } = &mode {
         let rid = uuid_simple();
-        let mid = model_id.clone().unwrap_or_else(|| "tinyllama-1b".to_string());
-        println!("🧠 Distributing inference: model={} prompt='{}'", mid, prompt);
+        let local_available = model_storage.list_local_models();
+        let (_, candidates, selected) = resolve_policy_for_prompt(
+            prompt,
+            model_id.as_deref(),
+            &local_available,
+        );
+        println!("🧠 Distributing inference: model={} prompt='{}'", selected, prompt);
+        println!("   Candidates: {}", candidates.join(", "));
         println!("   Request ID: {}", rid);
         infer_request_id = Some(rid);
         infer_started_at = Some(tokio::time::Instant::now());
@@ -968,27 +1040,43 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 // Smart routing: intento envío directo cuando ya hay registry
                 if matches!(mode, NodeMode::Infer { .. }) && !infer_broadcast_sent {
                     if let NodeMode::Infer { prompt, model_id } = &mode {
-                        let model = model_id.clone().unwrap_or_else(|| "tinyllama-1b".to_string());
+                        let local_models = model_storage.list_local_models();
                         let start = std::time::Instant::now();
                         let local_cluster = {
                             let topo = topology.read().await;
                             topo.cluster_for_peer(&peer_id.to_string()).map(|s| s.to_string())
                         };
                         let reg = registry.read().await;
-                        let selected = reg.select_best_node_for_model_with_cluster(
-                            &model,
+                        let total_nodes = reg.all_nodes().len();
+                        let network_models = reg.available_models();
+                        let mut available_models = local_models.clone();
+                        for model in network_models {
+                            if !available_models.contains(&model) {
+                                available_models.push(model);
+                            }
+                        }
+
+                        let (_, mut candidates, selected_model) = resolve_policy_for_prompt(
+                            prompt,
+                            model_id.as_deref(),
+                            &available_models,
+                        );
+                        if !candidates.contains(&selected_model) {
+                            candidates.insert(0, selected_model.clone());
+                        }
+
+                        let selected = reg.select_best_node_for_models_with_cluster(
+                            &candidates,
                             local_cluster.as_deref(),
                         );
-                        let total_nodes = reg.all_nodes().len();
-                        let nodes_with_model = reg.nodes_with_model(&model).len();
                         drop(reg);
 
-                        if let Some(best_peer) = selected {
+                        if let Some((best_peer, routed_model)) = selected {
                             let rid = infer_request_id.clone().unwrap_or_else(uuid_simple);
                             let direct = DirectInferenceRequest {
                                 request_id: rid.clone(),
                                 target_peer: best_peer.to_string(),
-                                model,
+                                model: routed_model.clone(),
                                 prompt: prompt.clone(),
                                 max_tokens: 200,
                             };
@@ -1001,20 +1089,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             metrics.write().await.routing_decision(start.elapsed().as_millis() as u64);
                             infer_broadcast_sent = true;
                             pending_inference.insert(rid.clone(), tokio::time::Instant::now());
+                            println!("[Routing] Sending to node {} with model {}", best_peer, routed_model);
                             println!("🧠 DirectInferenceRequest enviado [{}] → {}", &rid[..8.min(rid.len())], best_peer);
                             print!("📤 Respuesta: ");
                             let _ = std::io::Write::flush(&mut std::io::stdout());
-                        } else if total_nodes > 0 && nodes_with_model == 0 {
-                            // Registry ya tiene nodos pero ninguno tiene el modelo
-                            eprintln!("❌ Ningún nodo en la red tiene el modelo '{}' instalado.", model);
+                        } else if total_nodes > 0 && candidates.iter().all(|m| !available_models.contains(m)) {
+                            eprintln!("❌ Ningún nodo en la red tiene un modelo compatible instalado.");
                             eprintln!("   Nodos conocidos: {}", total_nodes);
-                            eprintln!("   Sugerencia: ejecuta en un worker:");
-                            eprintln!("   iamine-node models download {}", model);
+                            eprintln!("   Candidates: {}", candidates.join(", "));
                             break;
                         } else if infer_started_at.map(|t| t.elapsed().as_millis() as u64).unwrap_or(0) >= INFER_FALLBACK_AFTER_MS {
                             // Fallback automático a broadcast legacy
                             let rid = infer_request_id.clone().unwrap_or_else(uuid_simple);
-                            let mid = model_id.clone().unwrap_or_else(|| "tinyllama-1b".to_string());
+                            let mid = selected_model.clone();
                             let task = InferenceTask::new(
                                 rid.clone(),
                                 mid,

@@ -129,6 +129,39 @@ impl NodeRegistry {
         candidates.first().map(|n| n.peer_id.clone())
     }
 
+    pub fn available_models(&self) -> Vec<String> {
+        let mut models = Vec::new();
+        for node in self.nodes.values() {
+            for model in &node.models {
+                if !models.contains(model) {
+                    models.push(model.clone());
+                }
+            }
+        }
+        models
+    }
+
+    pub fn has_model_available(&self, model_id: &str) -> bool {
+        self.nodes
+            .values()
+            .any(|node| node.models.iter().any(|model| model == model_id))
+    }
+
+    pub fn select_best_node_for_models_with_cluster(
+        &self,
+        model_ids: &[String],
+        local_cluster_id: Option<&str>,
+    ) -> Option<(String, String)> {
+        for model_id in model_ids {
+            if let Some(peer_id) =
+                self.select_best_node_for_model_with_cluster(model_id, local_cluster_id)
+            {
+                return Some((peer_id, model_id.clone()));
+            }
+        }
+        None
+    }
+
     pub fn all_nodes(&self) -> Vec<(String, NodeCapability)> {
         self.nodes.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
     }
@@ -223,5 +256,15 @@ mod tests {
             Some("cluster-local"),
         );
         assert_eq!(best.unwrap(), "peer1");
+    }
+
+    #[test]
+    fn test_available_models_union() {
+        let mut r = NodeRegistry::new();
+        r.register_node(make_cap("peer1", 100, "tinyllama-1b", 8, 0, 20));
+        r.register_node(make_cap("peer2", 100, "llama3-3b", 8, 0, 20));
+        let models = r.available_models();
+        assert!(models.contains(&"tinyllama-1b".to_string()));
+        assert!(models.contains(&"llama3-3b".to_string()));
     }
 }

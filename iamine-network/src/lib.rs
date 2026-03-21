@@ -1,5 +1,7 @@
 pub mod node_registry;
 pub mod model_capability_matcher;
+pub mod model_policy;
+pub mod prompt_analyzer;
 pub mod topology;
 
 pub use node_registry::{
@@ -8,11 +10,13 @@ pub use node_registry::{
     NodeRegistry,
     SharedNodeRegistry,
 };
+pub use model_policy::{ModelPolicyEngine, PolicyRule};
 pub use model_capability_matcher::{
     is_node_compatible_with_model,
     ModelHardwareRequirements,
     NodeHardwareProfile,
 };
+pub use prompt_analyzer::{analyze_prompt, Complexity, Language, PromptProfile};
 pub use topology::{
     NetworkTopology,
     SharedNetworkTopology,
