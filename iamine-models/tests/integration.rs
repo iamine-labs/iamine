@@ -290,50 +290,100 @@ async fn test_inference_engine_mock() {
 }
 
 #[tokio::test]
-async fn test_inference_with_mock_model() {
-    use iamine_models::{RealInferenceEngine, RealInferenceRequest};
-    use iamine_models::model_downloader::ModelDownloader;
+async fn test_model_load() {
+    use iamine_models::RealInferenceEngine;
     use iamine_models::ModelRegistry;
 
-    let (_tmp_dir, storage) = temp_storage();
+    let storage = ModelStorage::new();
     let registry = ModelRegistry::new();
+    let model_id = "tinyllama-1b";
 
-    // Instalar mock de tinyllama si no existe
-    if !storage.has_model("tinyllama-1b") {
-        let downloader = ModelDownloader::new(storage.clone_for_test());
-        let model = registry.get("tinyllama-1b").unwrap();
-        let _ = downloader.download_model_mock(&model).await;
+    if !storage.has_model(model_id) {
+        println!("Skipping real model load test: {} not installed", model_id);
+        return;
     }
 
-    let mut engine = RealInferenceEngine::new(storage.clone_for_test());
-
-    // Cargar con hash placeholder (siempre ok en dev)
-    let result = engine.load_model("tinyllama-1b", "tinyllama_hash_placeholder");
+    let mut engine = RealInferenceEngine::new(storage);
+    let model = registry.get(model_id).unwrap();
+    let result = engine.load_model(model_id, &model.hash);
     assert!(result.is_ok(), "Load failed: {:?}", result);
-    assert!(engine.is_loaded("tinyllama-1b"));
+    assert!(engine.is_loaded(model_id));
+}
 
-    // Ejecutar inferencia
+#[tokio::test]
+async fn test_real_inference() {
+    use iamine_models::{RealInferenceEngine, RealInferenceRequest};
+    use iamine_models::ModelRegistry;
+
+    let storage = ModelStorage::new();
+    let registry = ModelRegistry::new();
+    let model_id = "tinyllama-1b";
+
+    if !storage.has_model(model_id) {
+        println!("Skipping real inference test: {} not installed", model_id);
+        return;
+    }
+
+    let mut engine = RealInferenceEngine::new(storage);
+    let model = registry.get(model_id).unwrap();
+    let result = engine.load_model(model_id, &model.hash);
+    assert!(result.is_ok(), "Load failed: {:?}", result);
+
     let req = RealInferenceRequest {
         task_id: "test-002".to_string(),
-        model_id: "tinyllama-1b".to_string(),
-        prompt: "What is 2+2?".to_string(),
-        max_tokens: 50,
-        temperature: 0.7,
+        model_id: model_id.to_string(),
+        prompt: "Say hello in one short sentence.".to_string(),
+        max_tokens: 32,
+        temperature: 0.1,
+    };
+
+    let result = engine.run_inference(req, None).await;
+
+    assert!(result.success);
+    assert!(!result.output.is_empty());
+    assert!(result.tokens_generated > 0);
+    println!("Output: {}", result.output);
+    println!("Tokens: {} en {}ms", result.tokens_generated, result.execution_ms);
+}
+
+#[tokio::test]
+async fn test_token_streaming() {
+    use iamine_models::{RealInferenceEngine, RealInferenceRequest};
+    use iamine_models::ModelRegistry;
+
+    let storage = ModelStorage::new();
+    let registry = ModelRegistry::new();
+    let model_id = "tinyllama-1b";
+
+    if !storage.has_model(model_id) {
+        println!("Skipping token streaming test: {} not installed", model_id);
+        return;
+    }
+
+    let mut engine = RealInferenceEngine::new(storage);
+    let model = registry.get(model_id).unwrap();
+    let result = engine.load_model(model_id, &model.hash);
+    assert!(result.is_ok(), "Load failed: {:?}", result);
+
+    let req = RealInferenceRequest {
+        task_id: "test-003".to_string(),
+        model_id: model_id.to_string(),
+        prompt: "Say hello in one short sentence.".to_string(),
+        max_tokens: 24,
+        temperature: 0.1,
     };
 
     let (tx, mut rx) = tokio::sync::mpsc::channel(100);
     let result = engine.run_inference(req, Some(tx)).await;
 
-    // Recolectar tokens
     let mut streamed = String::new();
-    while let Ok(t) = rx.try_recv() { streamed.push_str(&t); }
+    while let Ok(token) = rx.try_recv() {
+        streamed.push_str(&token);
+    }
 
     assert!(result.success);
+    assert!(!streamed.is_empty());
     assert!(!result.output.is_empty());
-    assert!(result.tokens_generated > 0);
-    assert!(result.output.contains("4") || result.output.contains("equals"));
-    println!("Output: {}", result.output);
-    println!("Tokens: {} en {}ms", result.tokens_generated, result.execution_ms);
 }
 
 #[tokio::test]

@@ -391,6 +391,53 @@ async fn main() -> Result<(), Box<dyn Error>> {
             return Ok(());
         }
 
+        NodeMode::Infer { prompt, model_id } => {
+            println!("╔══════════════════════════════════╗");
+            println!("║      IaMine — Inference          ║");
+            println!("╚══════════════════════════════════╝\n");
+
+            let registry = ModelRegistry::new();
+            let storage = ModelStorage::new();
+            let model_id = model_id.clone().unwrap_or_else(|| "tinyllama-1b".to_string());
+
+            if storage.has_model(&model_id) {
+                println!("🤖 Modelo: {}", model_id);
+                println!("💬 Prompt: {}\n", prompt);
+
+                let model_desc = registry.get(&model_id)
+                    .ok_or_else(|| format!("Modelo {} no encontrado en registry", model_id))?;
+                let mut engine = RealInferenceEngine::new(ModelStorage::new());
+                engine.load_model(&model_id, &model_desc.hash)?;
+
+                let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(100);
+                print!("📤 Respuesta: ");
+
+                let req = RealInferenceRequest {
+                    task_id: "infer-local-001".to_string(),
+                    model_id: model_id.clone(),
+                    prompt: prompt.clone(),
+                    max_tokens: 200,
+                    temperature: 0.7,
+                };
+
+                let engine_ref = std::sync::Arc::new(tokio::sync::Mutex::new(engine));
+                let engine_clone = std::sync::Arc::clone(&engine_ref);
+
+                tokio::spawn(async move {
+                    let eng = engine_clone.lock().await;
+                    eng.run_inference(req, Some(tx)).await
+                });
+
+                while let Some(token) = rx.recv().await {
+                    print!("{}", token);
+                    let _ = std::io::Write::flush(&mut std::io::stdout());
+                }
+
+                println!("\n\n✅ Inference completada");
+                return Ok(());
+            }
+        }
+
         NodeMode::Capabilities => {
             println!("╔══════════════════════════════════╗");
             println!("║   IaMine — Node Capabilities     ║");
