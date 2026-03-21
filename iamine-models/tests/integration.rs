@@ -2,6 +2,7 @@ use iamine_models::*;
 use iamine_models::storage_config::StorageConfig;
 use iamine_models::node_models::{NodeModels, ModelId, PeerModelRegistry};
 use iamine_models::model_validator::ModelValidator;
+use std::sync::Arc;
 use tempfile::TempDir;
 
 fn temp_storage() -> (TempDir, ModelStorage) {
@@ -270,10 +271,10 @@ fn test_hardware_llama_params() {
 }
 
 #[test]
-fn test_runtime_backend_name() {
+fn test_backend_auto_selection() {
     let backend = RealInferenceEngine::runtime_backend_name();
-    assert!(matches!(backend, "metal" | "cuda" | "cpu" | "unknown"));
-    println!("Runtime backend: {}", backend);
+    assert!(matches!(backend, "metal" | "cuda" | "cpu"));
+    println!("Selected backend: {}", backend);
 }
 
 #[tokio::test]
@@ -310,11 +311,36 @@ async fn test_model_load() {
         return;
     }
 
-    let mut engine = RealInferenceEngine::new(storage);
+    let engine = RealInferenceEngine::new(storage);
     let model = registry.get(model_id).unwrap();
     let result = engine.load_model(model_id, &model.hash);
     assert!(result.is_ok(), "Load failed: {:?}", result);
     assert!(engine.is_loaded(model_id));
+}
+
+#[tokio::test]
+async fn test_model_cache_reuse() {
+    use iamine_models::ModelRegistry;
+
+    let storage = ModelStorage::new();
+    let registry = ModelRegistry::new();
+    let model_id = "tinyllama-1b";
+
+    if !storage.has_model(model_id) {
+        println!("Skipping model cache reuse test: {} not installed", model_id);
+        return;
+    }
+
+    let engine = RealInferenceEngine::new(storage);
+    let model = registry.get(model_id).unwrap();
+
+    engine.load_model(model_id, &model.hash).unwrap();
+    engine.load_model(model_id, &model.hash).unwrap();
+
+    assert!(engine.is_loaded(model_id));
+    assert_eq!(engine.cache_size(), 1);
+    assert_eq!(engine.actual_model_loads(), 1);
+    assert!(engine.model_cache_reuse_hits() >= 1);
 }
 
 #[tokio::test]
@@ -331,7 +357,7 @@ async fn test_real_inference() {
         return;
     }
 
-    let mut engine = RealInferenceEngine::new(storage);
+    let engine = RealInferenceEngine::new(storage);
     let model = registry.get(model_id).unwrap();
     let result = engine.load_model(model_id, &model.hash);
     assert!(result.is_ok(), "Load failed: {:?}", result);
@@ -354,6 +380,86 @@ async fn test_real_inference() {
 }
 
 #[tokio::test]
+async fn test_inference_queue() {
+    use iamine_models::ModelRegistry;
+
+    let storage = ModelStorage::new();
+    let registry = ModelRegistry::new();
+    let model_id = "tinyllama-1b";
+
+    if !storage.has_model(model_id) {
+        println!("Skipping inference queue test: {} not installed", model_id);
+        return;
+    }
+
+    let engine = Arc::new(RealInferenceEngine::new(storage));
+    let model = registry.get(model_id).unwrap();
+    engine.load_model(model_id, &model.hash).unwrap();
+
+    let req_a = RealInferenceRequest {
+        task_id: "queue-a".to_string(),
+        model_id: model_id.to_string(),
+        prompt: "Say hello in one short sentence.".to_string(),
+        max_tokens: 16,
+        temperature: 0.1,
+    };
+    let req_b = RealInferenceRequest {
+        task_id: "queue-b".to_string(),
+        model_id: model_id.to_string(),
+        prompt: "Say bye in one short sentence.".to_string(),
+        max_tokens: 16,
+        temperature: 0.1,
+    };
+
+    let (res_a, res_b) = tokio::join!(
+        engine.run_inference(req_a, None),
+        engine.run_inference(req_b, None),
+    );
+
+    assert!(res_a.success);
+    assert!(res_b.success);
+    assert_eq!(engine.actual_model_loads(), 1);
+}
+
+#[tokio::test]
+async fn test_concurrency_limit() {
+    use iamine_models::ModelRegistry;
+
+    let storage = ModelStorage::new();
+    let registry = ModelRegistry::new();
+    let model_id = "tinyllama-1b";
+
+    if !storage.has_model(model_id) {
+        println!("Skipping concurrency limit test: {} not installed", model_id);
+        return;
+    }
+
+    let engine = Arc::new(RealInferenceEngine::with_limits(storage, 1, 32));
+    let model = registry.get(model_id).unwrap();
+    engine.load_model(model_id, &model.hash).unwrap();
+
+    let reqs = (0..3).map(|idx| {
+        let engine = Arc::clone(&engine);
+        let req = RealInferenceRequest {
+            task_id: format!("concurrency-{}", idx),
+            model_id: model_id.to_string(),
+            prompt: format!("Count to {} in one short sentence.", idx + 1),
+            max_tokens: 12,
+            temperature: 0.1,
+        };
+
+        tokio::spawn(async move { engine.run_inference(req, None).await })
+    });
+
+    for handle in reqs {
+        let result = handle.await.unwrap();
+        assert!(result.success);
+    }
+
+    assert!(engine.max_active_inferences_observed() <= 1);
+}
+
+#[tokio::test]
 async fn test_token_streaming() {
     use iamine_models::{RealInferenceEngine, RealInferenceRequest};
     use iamine_models::ModelRegistry;
@@ -367,7 +473,7 @@ async fn test_token_streaming() {
         return;
     }
 
-    let mut engine = RealInferenceEngine::new(storage);
+    let engine = RealInferenceEngine::new(storage);
     let model = registry.get(model_id).unwrap();
     let result = engine.load_model(model_id, &model.hash);
     assert!(result.is_ok(), "Load failed: {:?}", result);
@@ -422,7 +528,7 @@ fn test_inference_cache() {
     use iamine_models::RealInferenceEngine;
 
     let (_tmp_dir, storage) = temp_storage();
-    let mut engine = RealInferenceEngine::new(storage);
+    let engine = RealInferenceEngine::new(storage);
 
     // Sin carga → no en cache
     assert!(!engine.is_loaded("tinyllama-1b"));

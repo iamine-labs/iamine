@@ -355,7 +355,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             }
 
             let model_desc = registry.get(model_id).unwrap();
-            let mut engine = RealInferenceEngine::new(ModelStorage::new());
+            let engine = Arc::new(RealInferenceEngine::new(ModelStorage::new()));
 
             // Cargar modelo
             engine.load_model(model_id, &model_desc.hash)?;
@@ -373,12 +373,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
             };
 
             // Spawn inference + print tokens en tiempo real
-            let engine_ref = std::sync::Arc::new(tokio::sync::Mutex::new(engine));
-            let engine_clone = std::sync::Arc::clone(&engine_ref);
+            let engine_clone = Arc::clone(&engine);
 
             tokio::spawn(async move {
-                let eng = engine_clone.lock().await;
-                eng.run_inference(req, Some(tx)).await
+                engine_clone.run_inference(req, Some(tx)).await
             });
 
             // Imprimir tokens según llegan
@@ -406,7 +404,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                 let model_desc = registry.get(&model_id)
                     .ok_or_else(|| format!("Modelo {} no encontrado en registry", model_id))?;
-                let mut engine = RealInferenceEngine::new(ModelStorage::new());
+                let engine = Arc::new(RealInferenceEngine::new(ModelStorage::new()));
                 engine.load_model(&model_id, &model_desc.hash)?;
 
                 let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(100);
@@ -420,12 +418,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     temperature: 0.7,
                 };
 
-                let engine_ref = std::sync::Arc::new(tokio::sync::Mutex::new(engine));
-                let engine_clone = std::sync::Arc::clone(&engine_ref);
+                let engine_clone = Arc::clone(&engine);
 
                 tokio::spawn(async move {
-                    let eng = engine_clone.lock().await;
-                    eng.run_inference(req, Some(tx)).await
+                    engine_clone.run_inference(req, Some(tx)).await
                 });
 
                 while let Some(token) = rx.recv().await {
@@ -562,9 +558,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let storage_config = StorageConfig::load();
     let model_registry = ModelRegistry::new();
     let model_storage = ModelStorage::new();
-    let inference_engine = Arc::new(tokio::sync::Mutex::new(
-        RealInferenceEngine::new(ModelStorage::new())
-    ));
+    let inference_engine = Arc::new(RealInferenceEngine::new(ModelStorage::new()));
 
     // v0.5.4: Detectar capabilities del nodo
     let node_caps = ModelNodeCapabilities::detect(&peer_id.to_string());
@@ -1327,7 +1321,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                                 // Spawn inference execution
                                 let inference_handle = tokio::spawn(async move {
-                                    let mut eng = engine_ref.lock().await;
+                                    let eng = Arc::clone(&engine_ref);
 
                                     // Load model if not cached
                                     let hash = registry_clone.get(&model_id)
@@ -1496,7 +1490,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 let (token_tx, mut token_rx) = tokio::sync::mpsc::channel::<String>(100);
 
                                 let inference_handle = tokio::spawn(async move {
-                                    let mut eng = engine_ref.lock().await;
+                                    let eng = Arc::clone(&engine_ref);
 
                                     let hash = registry_clone.get(&model_id)
                                         .map(|m| m.hash.clone())

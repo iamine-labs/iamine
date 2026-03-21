@@ -2,8 +2,10 @@ pub mod model_registry;
 pub mod model_storage;
 pub mod model_downloader;
 pub mod model_verifier;
+pub mod model_cache;
 pub mod inference;
 pub mod inference_engine;
+pub mod inference_queue;
 pub mod hardware_acceleration;
 pub mod node_models;
 pub mod node_capabilities;
@@ -23,12 +25,16 @@ pub use model_registry::{ModelDescriptor, ModelRegistry, ModelManifest};
 pub use model_storage::ModelStorage;
 pub use model_downloader::{ModelDownloader, DownloadProgress, DownloadPhase};
 pub use model_verifier::ModelVerifier;
+pub use model_cache::{ModelCache, LoadedModel};
 pub use inference::{InferenceEngine, InferenceRequest, InferenceResult};
 pub use inference_engine::{
+    BackendType,
     InferenceEngine as RealInferenceEngine,
+    InferenceContext,
     InferenceRequest as RealInferenceRequest,
     InferenceResult as RealInferenceResult,
 };
+pub use inference_queue::{InferenceQueue, InferenceRequest as QueuedInferenceRequest};
 pub use hardware_acceleration::{HardwareAcceleration, AcceleratorType};
 pub use node_models::{NodeModels, ModelId, PeerModelRegistry, DownloadStrategy};
 pub use node_capabilities::NodeCapabilities as ModelNodeCapabilities;
