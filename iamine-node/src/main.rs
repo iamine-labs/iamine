@@ -25,11 +25,13 @@ use iamine_models::{
     StorageConfig,
     ModelInstaller, InstallResult,
     RealInferenceEngine, RealInferenceRequest,
+    RealInferenceResult,
     HardwareAcceleration,
     InferenceTask, InferenceTaskResult, StreamedToken,
     ModelNodeCapabilities, ModelRequirements, can_node_run_model,
     DirectInferenceRequest,
     AutoProvisionProfile, ModelAutoProvision,
+    validate_structured_output,
 };
 
 use iamine_network::{
@@ -271,12 +273,123 @@ fn prompt_complexity_label(complexity: PromptComplexityLevel) -> &'static str {
 fn prompt_task_label(task_type: PromptTaskType) -> &'static str {
     match task_type {
         PromptTaskType::Math => "Math",
+        PromptTaskType::ExactMath => "ExactMath",
+        PromptTaskType::StructuredList => "StructuredList",
+        PromptTaskType::Deterministic => "Deterministic",
         PromptTaskType::Code => "Code",
-        PromptTaskType::Factual => "Factual",
         PromptTaskType::Conceptual => "Conceptual",
         PromptTaskType::Reasoning => "Reasoning",
         PromptTaskType::General => "General",
     }
+}
+
+fn task_requires_validation(task_type: PromptTaskType) -> bool {
+    matches!(
+        task_type,
+        PromptTaskType::ExactMath | PromptTaskType::StructuredList | PromptTaskType::Deterministic
+    )
+}
+
+fn with_task_guard(prompt: &str, task_type: PromptTaskType, retry: bool) -> String {
+    match task_type {
+        PromptTaskType::ExactMath => {
+            let retry_guard = if retry {
+                "Be stricter: return only the final exact result or the exact requested digits in plain text."
+            } else {
+                "Return only the exact result or exact requested digits in plain text."
+            };
+            format!(
+                "Follow these rules: no headings, no markdown, no explanation.\n{}\nTask: {}",
+                retry_guard, prompt
+            )
+        }
+        PromptTaskType::StructuredList => {
+            let retry_guard = if retry {
+                "Be stricter: if the task is the alphabet, return exactly: A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z"
+            } else {
+                "Return only the full ordered list in plain text, with no missing items and no duplicates."
+            };
+            format!(
+                "Follow these rules: no headings, no markdown, no explanation.\n{}\nTask: {}",
+                retry_guard, prompt
+            )
+        }
+        PromptTaskType::Deterministic => {
+            let retry_guard = if retry {
+                "Be stricter: return only the requested data, exactly and in order, in plain text."
+            } else {
+                "Return only the requested data, exactly and in order, in plain text."
+            };
+            format!(
+                "Follow these rules: no headings, no markdown, no explanation.\n{}\nTask: {}",
+                retry_guard, prompt
+            )
+        }
+        _ => prompt.to_string(),
+    }
+}
+
+async fn run_local_inference_with_validation(
+    engine: Arc<RealInferenceEngine>,
+    task_id: String,
+    model_id: String,
+    prompt: String,
+    task_type: PromptTaskType,
+    max_tokens: u32,
+    temperature: f32,
+) -> Result<RealInferenceResult, String> {
+    let mut last_result: Option<RealInferenceResult> = None;
+
+    for attempt in 0..=1 {
+        let guarded_prompt = with_task_guard(&prompt, task_type, attempt == 1);
+        let attempt_temperature = if task_requires_validation(task_type) {
+            temperature.min(0.2)
+        } else {
+            temperature
+        };
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(100);
+        if attempt == 0 {
+            print!("📤 Respuesta: ");
+        } else {
+            print!("\n[Validator] Retrying once with stronger formatting guard...\n📤 Retry: ");
+        }
+
+        let req = RealInferenceRequest {
+            task_id: task_id.clone(),
+            model_id: model_id.clone(),
+            prompt: guarded_prompt,
+            max_tokens,
+            temperature: attempt_temperature,
+        };
+
+        let engine_clone = Arc::clone(&engine);
+        let inference_handle = tokio::spawn(async move {
+            engine_clone.run_inference(req, Some(tx)).await
+        });
+
+        while let Some(token) = rx.recv().await {
+            print!("{}", token);
+            let _ = std::io::Write::flush(&mut std::io::stdout());
+        }
+
+        let result = inference_handle
+            .await
+            .map_err(|e| format!("Inference task join error: {}", e))?;
+
+        let valid = validate_structured_output(prompt_task_label(task_type), &result.output);
+        println!("\n[Validator] Output valid: {}", valid);
+        if task_requires_validation(task_type) && !result.output.trim().is_empty() {
+            println!("[Validator] Final output:\n{}", result.output);
+        }
+
+        let should_retry = task_requires_validation(task_type) && !valid && attempt == 0;
+        last_result = Some(result);
+        if !should_retry {
+            break;
+        }
+    }
+
+    last_result.ok_or_else(|| "Inference returned no result".to_string())
 }
 
 fn resolve_policy_for_prompt(
@@ -474,33 +587,24 @@ async fn main() -> Result<(), Box<dyn Error>> {
             engine.load_model(model_id, &model_desc.hash)?;
 
             // Streaming tokens
-            let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(100);
-
-            print!("📤 Respuesta: ");
             let req = RealInferenceRequest {
                 task_id: "test-001".to_string(),
                 model_id: model_id.to_string(),
-                prompt: prompt.clone(),
+                prompt: with_task_guard(prompt, prompt_profile.task_type, false),
                 max_tokens: output_policy.max_tokens as u32,
                 temperature: 0.7,
             };
 
-            // Spawn inference + print tokens en tiempo real
             let engine_clone = Arc::clone(&engine);
-
-            let inference_handle = tokio::spawn(async move {
-                engine_clone.run_inference(req, Some(tx)).await
-            });
-
-            // Imprimir tokens según llegan
-            while let Some(token) = rx.recv().await {
-                print!("{}", token);
-                let _ = std::io::Write::flush(&mut std::io::stdout());
-            }
-
-            let result = inference_handle
-                .await
-                .map_err(|e| format!("Inference task join error: {}", e))?;
+            let result = run_local_inference_with_validation(
+                engine_clone,
+                req.task_id,
+                req.model_id,
+                prompt.clone(),
+                prompt_profile.task_type,
+                req.max_tokens,
+                req.temperature,
+            ).await?;
             println!("\n\n✅ Inference completada");
             println!("[Inference] tokens_generated: {}", result.tokens_generated);
             println!("[Inference] truncated: {}", result.truncated);
@@ -540,31 +644,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 let engine = Arc::new(RealInferenceEngine::new(ModelStorage::new()));
                 engine.load_model(&selected_model, &model_desc.hash)?;
 
-                let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(100);
-                print!("📤 Respuesta: ");
-
-                let req = RealInferenceRequest {
-                    task_id: "infer-local-001".to_string(),
-                    model_id: selected_model.clone(),
-                    prompt: prompt.clone(),
-                    max_tokens: output_policy.max_tokens as u32,
-                    temperature: 0.7,
-                };
-
                 let engine_clone = Arc::clone(&engine);
-
-                let inference_handle = tokio::spawn(async move {
-                    engine_clone.run_inference(req, Some(tx)).await
-                });
-
-                while let Some(token) = rx.recv().await {
-                    print!("{}", token);
-                    let _ = std::io::Write::flush(&mut std::io::stdout());
-                }
-
-                let result = inference_handle
-                    .await
-                    .map_err(|e| format!("Inference task join error: {}", e))?;
+                let result = run_local_inference_with_validation(
+                    engine_clone,
+                    "infer-local-001".to_string(),
+                    selected_model.clone(),
+                    prompt.clone(),
+                    profile.task_type,
+                    output_policy.max_tokens as u32,
+                    0.7,
+                ).await?;
                 println!("\n\n✅ Inference completada");
                 println!("[Inference] tokens_generated: {}", result.tokens_generated);
                 println!("[Inference] truncated: {}", result.truncated);

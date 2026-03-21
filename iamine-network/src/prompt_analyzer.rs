@@ -33,6 +33,14 @@ pub fn analyze_prompt(prompt: &str) -> PromptProfile {
         " que ",
         " explica",
         " explicame",
+        " dame",
+        " lista",
+        " listalos",
+        " enumera",
+        " escribe",
+        " primeros",
+        " digitos",
+        " dígitos",
         " por que",
         " como ",
         " agujero",
@@ -49,6 +57,10 @@ pub fn analyze_prompt(prompt: &str) -> PromptProfile {
     let english_hits = [
         " what ",
         " explain",
+        " list",
+        " write",
+        " first ",
+        " digits",
         " why ",
         " how ",
         " gravity",
@@ -111,6 +123,13 @@ mod tests {
         let profile = analyze_prompt("explica la teoria de la relatividad");
         assert_eq!(profile.language, Language::Spanish);
         assert_eq!(profile.task_type, TaskType::Conceptual);
+    }
+
+    #[test]
+    fn test_pi_digits_classification() {
+        let profile = analyze_prompt("dame los primeros 100 digitos de pi");
+        assert_eq!(profile.language, Language::Spanish);
+        assert_eq!(profile.task_type, TaskType::ExactMath);
     }
 
     #[test]

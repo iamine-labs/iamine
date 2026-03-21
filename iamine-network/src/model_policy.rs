@@ -28,6 +28,27 @@ impl Default for ModelPolicyEngine {
                 PolicyRule {
                     language: None,
                     complexity: None,
+                    task_type: Some(TaskType::ExactMath),
+                    model: "llama3-3b".to_string(),
+                    reason: "exact math task".to_string(),
+                },
+                PolicyRule {
+                    language: None,
+                    complexity: None,
+                    task_type: Some(TaskType::StructuredList),
+                    model: "llama3-3b".to_string(),
+                    reason: "structured list task".to_string(),
+                },
+                PolicyRule {
+                    language: None,
+                    complexity: None,
+                    task_type: Some(TaskType::Deterministic),
+                    model: "llama3-3b".to_string(),
+                    reason: "deterministic task".to_string(),
+                },
+                PolicyRule {
+                    language: None,
+                    complexity: None,
                     task_type: Some(TaskType::Math),
                     model: "llama3-3b".to_string(),
                     reason: "math task".to_string(),
@@ -55,20 +76,6 @@ impl Default for ModelPolicyEngine {
                 },
                 PolicyRule {
                     language: None,
-                    complexity: None,
-                    task_type: Some(TaskType::Factual),
-                    model: "llama3-3b".to_string(),
-                    reason: "factual task".to_string(),
-                },
-                PolicyRule {
-                    language: Some(Language::Spanish),
-                    complexity: Some(Complexity::High),
-                    task_type: None,
-                    model: "llama3-3b".to_string(),
-                    reason: "spanish + high complexity".to_string(),
-                },
-                PolicyRule {
-                    language: Some(Language::Spanish),
                     complexity: None,
                     task_type: None,
                     model: "llama3-3b".to_string(),
@@ -227,7 +234,7 @@ mod tests {
             language: Language::Unknown,
             complexity: Complexity::Low,
             length: 3,
-            task_type: TaskType::Math,
+            task_type: TaskType::ExactMath,
         });
         assert_eq!(selected, "llama3-3b");
     }
