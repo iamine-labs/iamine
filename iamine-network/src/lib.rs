@@ -3,6 +3,7 @@ pub mod model_capability_matcher;
 pub mod model_policy;
 pub mod output_policy;
 pub mod prompt_analyzer;
+pub mod task_analyzer;
 pub mod topology;
 
 pub use node_registry::{
@@ -19,6 +20,7 @@ pub use model_capability_matcher::{
     NodeHardwareProfile,
 };
 pub use prompt_analyzer::{analyze_prompt, Complexity, Language, PromptProfile};
+pub use task_analyzer::{detect_task_type, TaskProfile, TaskType};
 pub use topology::{
     NetworkTopology,
     SharedNetworkTopology,

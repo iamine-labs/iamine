@@ -66,6 +66,7 @@ fn complexity_label(complexity: Complexity) -> &'static str {
 mod tests {
     use super::*;
     use crate::prompt_analyzer::{Language, PromptProfile};
+    use crate::task_analyzer::TaskType;
 
     #[test]
     fn test_adaptive_token_policy() {
@@ -73,6 +74,7 @@ mod tests {
             language: Language::English,
             complexity: Complexity::Low,
             length: 12,
+            task_type: TaskType::General,
         };
 
         assert_eq!(compute_max_tokens(&profile, "What is 2+2?"), 128);
@@ -84,6 +86,7 @@ mod tests {
             language: Language::Spanish,
             complexity: Complexity::Medium,
             length: 42,
+            task_type: TaskType::Conceptual,
         };
 
         let decision = describe_output_policy(&profile, "explica paso a paso la teoria de la relatividad");

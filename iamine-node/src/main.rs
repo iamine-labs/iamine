@@ -45,6 +45,7 @@ use iamine_network::{
     PromptProfile,
     SharedNetworkTopology,
     SharedNodeRegistry,
+    TaskType as PromptTaskType,
 };
 
 use model_selector_cli::ModelSelectorCLI;
@@ -267,6 +268,17 @@ fn prompt_complexity_label(complexity: PromptComplexityLevel) -> &'static str {
     }
 }
 
+fn prompt_task_label(task_type: PromptTaskType) -> &'static str {
+    match task_type {
+        PromptTaskType::Math => "Math",
+        PromptTaskType::Code => "Code",
+        PromptTaskType::Factual => "Factual",
+        PromptTaskType::Conceptual => "Conceptual",
+        PromptTaskType::Reasoning => "Reasoning",
+        PromptTaskType::General => "General",
+    }
+}
+
 fn resolve_policy_for_prompt(
     prompt: &str,
     model_override: Option<&str>,
@@ -274,9 +286,10 @@ fn resolve_policy_for_prompt(
 ) -> (PromptProfile, Vec<String>, String) {
     let profile = analyze_prompt(prompt);
     println!(
-        "[Analyzer] Language: {}, Complexity: {}",
+        "[Analyzer] Language: {}, Complexity: {}, Task: {}",
         prompt_language_label(profile.language),
-        prompt_complexity_label(profile.complexity)
+        prompt_complexity_label(profile.complexity),
+        prompt_task_label(profile.task_type),
     );
 
     if let Some(model_id) = model_override {
@@ -286,13 +299,17 @@ fn resolve_policy_for_prompt(
 
     let policy = ModelPolicyEngine::default();
     let candidates = policy.candidate_models(&profile);
-    let selected = if available_models.is_empty() {
-        policy.select_model(&profile)
+    let decision = if available_models.is_empty() {
+        policy.select_model_decision(&profile)
     } else {
-        policy.select_model_from_available(&profile, available_models)
+        policy.select_model_decision_from_available(&profile, available_models)
     };
-    println!("[Policy] Selected model: {}", selected);
-    (profile, candidates, selected)
+    println!(
+        "[Policy] Selected model: {} (reason: {})",
+        decision.model,
+        decision.reason
+    );
+    (profile, candidates, decision.model)
 }
 
 fn resolve_output_policy(

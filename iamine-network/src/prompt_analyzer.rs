@@ -1,3 +1,4 @@
+use crate::task_analyzer::{detect_task_type, TaskType};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -19,6 +20,7 @@ pub struct PromptProfile {
     pub language: Language,
     pub complexity: Complexity,
     pub length: usize,
+    pub task_type: TaskType,
 }
 
 pub fn analyze_prompt(prompt: &str) -> PromptProfile {
@@ -96,6 +98,7 @@ pub fn analyze_prompt(prompt: &str) -> PromptProfile {
         language,
         complexity,
         length: chars,
+        task_type: detect_task_type(trimmed),
     }
 }
 
@@ -107,6 +110,7 @@ mod tests {
     fn test_language_detection_spanish() {
         let profile = analyze_prompt("explica la teoria de la relatividad");
         assert_eq!(profile.language, Language::Spanish);
+        assert_eq!(profile.task_type, TaskType::Conceptual);
     }
 
     #[test]
