@@ -57,7 +57,7 @@ impl InferenceQueue {
             response_tx,
         };
 
-        println!("[Queue] Request queued");
+        println!("[Inference] Request queued");
         self.sender
             .send(queued)
             .await

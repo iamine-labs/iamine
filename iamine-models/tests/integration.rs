@@ -277,6 +277,48 @@ fn test_backend_auto_selection() {
     println!("Selected backend: {}", backend);
 }
 
+#[test]
+fn test_prompt_template_applied() {
+    let builder = PromptBuilder::new("tinyllama-1b");
+    let prompt = builder.build_prompt(
+        "You are a helpful assistant.",
+        "Explain gravity in one sentence.",
+    );
+    assert!(prompt.contains("Explain gravity in one sentence."));
+    assert!(prompt.contains("<|assistant|>") || prompt.contains("[/INST]"));
+}
+
+#[test]
+fn test_sampling_config_effect() {
+    let config = SamplingConfig::for_model_request("tinyllama-1b", "Explain gravity.", 0.25);
+    assert!((config.temperature - 0.25).abs() < f32::EPSILON);
+    assert_eq!(config.top_k, 24);
+    assert!((config.top_p - 0.85).abs() < f32::EPSILON);
+    assert!((config.repeat_penalty - 1.15).abs() < f32::EPSILON);
+}
+
+#[test]
+fn test_output_cleaning() {
+    let raw = "Hola hola hola.\nHola hola hola.\n<|assistant|>".to_string();
+    let cleaned = clean_output(raw);
+    assert!(!cleaned.contains("<|assistant|>"));
+    assert!(!cleaned.contains("Hola hola hola. Hola hola hola."));
+}
+
+#[test]
+fn test_spanish_prompt_response() {
+    let builder = PromptBuilder::new("tinyllama-1b");
+    let prompt = builder.build_prompt(
+        "You are a helpful assistant.",
+        "explica la teoria de la relatividad",
+    );
+    assert!(matches!(
+        PromptBuilder::detect_language("explica la teoria de la relatividad"),
+        Language::Spanish
+    ));
+    assert!(prompt.to_lowercase().contains("responde en espanol"));
+}
+
 #[tokio::test]
 async fn test_inference_engine_mock() {
     use iamine_models::{RealInferenceEngine, RealInferenceRequest};

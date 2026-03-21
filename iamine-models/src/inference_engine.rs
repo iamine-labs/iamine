@@ -1,6 +1,8 @@
 use crate::hardware_acceleration::{AcceleratorType, HardwareAcceleration};
 use crate::inference_queue::InferenceQueue;
 use crate::model_cache::{LoadedModel, ModelCache};
+use crate::output_cleaner::clean_output;
+use crate::prompt_builder::PromptBuilder;
 use crate::model_storage::ModelStorage;
 use crate::model_verifier::ModelVerifier;
 use encoding_rs::UTF_8;
@@ -35,6 +37,49 @@ pub struct InferenceResult {
     pub success: bool,
     pub error: Option<String>,
     pub accelerator_used: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct SamplingConfig {
+    pub temperature: f32,
+    pub top_k: i32,
+    pub top_p: f32,
+    pub repeat_penalty: f32,
+}
+
+impl Default for SamplingConfig {
+    fn default() -> Self {
+        Self {
+            temperature: 0.7,
+            top_k: 40,
+            top_p: 0.9,
+            repeat_penalty: 1.1,
+        }
+    }
+}
+
+impl SamplingConfig {
+    pub fn for_model_request(model_id: &str, prompt: &str, temperature: f32) -> Self {
+        let mut config = Self::default();
+        if temperature.is_finite() {
+            config.temperature = temperature.clamp(0.0, 2.0);
+        }
+        let model_id = model_id.to_lowercase();
+        let prompt = prompt.to_lowercase();
+
+        if model_id.contains("tinyllama") {
+            config.temperature = config.temperature.min(0.45);
+            config.top_k = 24;
+            config.top_p = 0.85;
+            config.repeat_penalty = 1.15;
+        }
+
+        if prompt.contains("explica") || prompt.contains("teoria") || prompt.contains("relatividad") {
+            config.temperature = config.temperature.min(0.35);
+            config.top_p = config.top_p.min(0.8);
+        }
+        config
+    }
 }
 
 impl InferenceResult {
@@ -147,7 +192,10 @@ impl InferenceEngine {
         static BACKEND: OnceLock<Result<LlamaBackend, String>> = OnceLock::new();
         BACKEND
             .get_or_init(|| {
-                LlamaBackend::init().map_err(|e| format!("No se pudo inicializar llama backend: {e}"))
+                let mut backend = LlamaBackend::init()
+                    .map_err(|e| format!("No se pudo inicializar llama backend: {e}"))?;
+                backend.void_logs();
+                Ok(backend)
             })
             .as_ref()
             .map_err(Clone::clone)
@@ -202,13 +250,6 @@ impl InferenceEngine {
             .with_n_threads_batch(params.n_threads)
     }
 
-    fn format_prompt(prompt: &str) -> String {
-        format!(
-            "<|system|>\nYou are a concise and helpful assistant.\n<|user|>\n{}\n<|assistant|>\n",
-            prompt.trim()
-        )
-    }
-
     fn ensure_queue_worker(&self) {
         if self
             .inner
@@ -226,7 +267,7 @@ impl InferenceEngine {
         let engine = self.clone();
         tokio::spawn(async move {
             while let Some(request) = receiver.recv().await {
-                println!("[Queue] Processing request");
+                println!("[Inference] Processing request");
                 let crate::inference_queue::InferenceRequest {
                     task_id,
                     prompt,
@@ -253,7 +294,7 @@ impl InferenceEngine {
 
                 let _ = response_tx.send(result);
                 println!(
-                    "[Queue] Request completed: {} / {}",
+                    "[Inference] Request completed: {} / {}",
                     request_id, model_id_for_log
                 );
             }
@@ -298,12 +339,12 @@ impl InferenceEngine {
         }
 
         println!(
-            "🧠 Cargando {} en memoria ({:?}, {:.1} MB)...",
+            "[Inference] Loading {} in memory ({:?}, {:.1} MB)...",
             model_id,
             self.inner.hardware.accelerator,
             size as f64 / 1_048_576.0
         );
-        println!("   Backend runtime: {}", self.selected_backend_name());
+        println!("[Backend] Runtime: {}", self.selected_backend_name());
 
         let backend = Self::backend()?;
         self.inner.model_cache.get_or_load(model_id, || {
@@ -313,10 +354,7 @@ impl InferenceEngine {
             Ok(LoadedModel::new(model_id.to_string(), path.clone(), model))
         })?;
 
-        println!(
-            "✅ Modelo {} listo ({:?})",
-            model_id, self.inner.hardware.accelerator
-        );
+        println!("[Inference] Model {} ready ({:?})", model_id, self.inner.hardware.accelerator);
         Ok(())
     }
 
@@ -346,7 +384,7 @@ impl InferenceEngine {
         };
 
         println!(
-            "🤖 [Inference REAL] {} | '{}'",
+            "[Inference] {} | '{}'",
             req.model_id,
             &req.prompt[..req.prompt.len().min(50)]
         );
@@ -365,9 +403,15 @@ impl InferenceEngine {
         };
 
         let model = Arc::clone(&cached.model);
-        let prompt = Self::format_prompt(&req.prompt);
+        let prompt_builder = PromptBuilder::new(req.model_id.clone());
+        let prompt = prompt_builder.build_with_model(
+            model.as_ref(),
+            "You are a helpful assistant. Answer clearly, stay factual, and avoid repetition.",
+            &req.prompt,
+        );
         let max_tokens = req.max_tokens;
         let ctx_params = self.context_params(req.max_tokens);
+        let sampling = SamplingConfig::for_model_request(&req.model_id, &req.prompt, req.temperature);
 
         let inference = tokio::task::spawn_blocking(move || -> Result<(String, u32), String> {
             let backend = Self::backend()?;
@@ -394,10 +438,20 @@ impl InferenceEngine {
             ctx.decode(&mut batch)
                 .map_err(|e| format!("Fallo evaluando prompt: {}", e))?;
 
-            let mut sampler = LlamaSampler::chain_simple([
-                LlamaSampler::dist(1234),
-                LlamaSampler::greedy(),
-            ]);
+            let mut samplers = vec![
+                LlamaSampler::penalties(64, sampling.repeat_penalty, 0.0, 0.0),
+            ];
+            if sampling.top_k > 0 {
+                samplers.push(LlamaSampler::top_k(sampling.top_k));
+            }
+            samplers.push(LlamaSampler::top_p(sampling.top_p, 1));
+            if sampling.temperature <= 0.0 {
+                samplers.push(LlamaSampler::greedy());
+            } else {
+                samplers.push(LlamaSampler::temp(sampling.temperature));
+                samplers.push(LlamaSampler::dist(1234));
+            }
+            let mut sampler = LlamaSampler::chain_simple(samplers);
             let mut decoder = UTF_8.new_decoder();
             let mut output = String::new();
             let mut n_cur = batch.n_tokens();
@@ -442,7 +496,8 @@ impl InferenceEngine {
         match inference {
             Ok(Ok((output, tokens))) => {
                 let ms = start.elapsed().as_millis() as u64;
-                println!("✅ [Inference REAL] {} tokens en {}ms via {}", tokens, ms, accel);
+                let output = clean_output(output);
+                println!("[Inference] {} tokens in {}ms via {}", tokens, ms, accel);
                 InferenceResult::success(req.task_id, req.model_id, output, tokens, ms, accel)
             }
             Ok(Err(e)) => InferenceResult::failure(req.task_id, req.model_id, e),

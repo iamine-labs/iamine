@@ -6,6 +6,8 @@ pub mod model_cache;
 pub mod inference;
 pub mod inference_engine;
 pub mod inference_queue;
+pub mod prompt_builder;
+pub mod output_cleaner;
 pub mod hardware_acceleration;
 pub mod node_models;
 pub mod node_capabilities;
@@ -31,10 +33,13 @@ pub use inference_engine::{
     BackendType,
     InferenceEngine as RealInferenceEngine,
     InferenceContext,
+    SamplingConfig,
     InferenceRequest as RealInferenceRequest,
     InferenceResult as RealInferenceResult,
 };
 pub use inference_queue::{InferenceQueue, InferenceRequest as QueuedInferenceRequest};
+pub use prompt_builder::{Language, PromptBuilder, TemplateType};
+pub use output_cleaner::clean_output;
 pub use hardware_acceleration::{HardwareAcceleration, AcceleratorType};
 pub use node_models::{NodeModels, ModelId, PeerModelRegistry, DownloadStrategy};
 pub use node_capabilities::NodeCapabilities as ModelNodeCapabilities;
