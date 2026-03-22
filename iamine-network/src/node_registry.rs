@@ -1,6 +1,4 @@
-use crate::model_capability_matcher::{
-    is_node_compatible_with_model, ModelHardwareRequirements, NodeHardwareProfile,
-};
+use crate::scheduler::IntelligentScheduler;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::Instant;
@@ -95,46 +93,9 @@ impl NodeRegistry {
         model_id: &str,
         local_cluster_id: Option<&str>,
     ) -> Option<String> {
-        let requirements = ModelHardwareRequirements::for_model(model_id)?;
-
-        let mut candidates: Vec<&NodeCapability> = self
-            .nodes
-            .values()
-            .filter(|node| node.models.iter().any(|m| m == model_id))
-            .filter(|node| {
-                let profile = NodeHardwareProfile {
-                    ram_gb: node.ram_gb,
-                    gpu_available: node.gpu_available,
-                    storage_available_gb: node.storage_available_gb,
-                };
-                is_node_compatible_with_model(&profile, &requirements)
-            })
-            .collect();
-
-        if candidates.is_empty() {
-            return None;
-        }
-
-        candidates.sort_by_key(|node| {
-            let free_slots = node.worker_slots.saturating_sub(node.active_tasks) as u64;
-            let slot_score = free_slots * 40;
-            let cpu_score = (node.cpu_score / 10_000).min(40);
-            let latency_score = if node.latency_ms == 0 {
-                20u64
-            } else {
-                (1000 / node.latency_ms.max(1) as u64).min(20)
-            };
-
-            // Cluster bonus: +50 if same cluster as requester
-            let cluster_bonus = match (&node.cluster_id, local_cluster_id) {
-                (Some(nc), Some(lc)) if nc == lc => 50u64,
-                _ => 0u64,
-            };
-
-            std::cmp::Reverse(slot_score + cpu_score + latency_score + cluster_bonus)
-        });
-
-        candidates.first().map(|n| n.peer_id.clone())
+        IntelligentScheduler::new()
+            .select_best_node(self, model_id, local_cluster_id)
+            .map(|decision| decision.peer_id)
     }
 
     pub fn available_models(&self) -> Vec<String> {
@@ -160,14 +121,9 @@ impl NodeRegistry {
         model_ids: &[String],
         local_cluster_id: Option<&str>,
     ) -> Option<(String, String)> {
-        for model_id in model_ids {
-            if let Some(peer_id) =
-                self.select_best_node_for_model_with_cluster(model_id, local_cluster_id)
-            {
-                return Some((peer_id, model_id.clone()));
-            }
-        }
-        None
+        IntelligentScheduler::new()
+            .select_best_node_for_models(self, model_ids, local_cluster_id)
+            .map(|decision| (decision.peer_id, decision.model_id))
     }
 
     pub fn all_nodes(&self) -> Vec<(String, NodeCapability)> {

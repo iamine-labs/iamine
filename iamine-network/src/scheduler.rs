@@ -1,0 +1,214 @@
+use crate::model_capability_matcher::{
+    is_node_compatible_with_model, ModelHardwareRequirements, NodeHardwareProfile,
+};
+use crate::node_registry::{NodeCapability, NodeRegistry};
+use crate::node_scoring::{free_slots, score_node, NodeScore};
+
+#[derive(Debug, Clone, Default)]
+pub struct IntelligentScheduler;
+
+impl IntelligentScheduler {
+    pub fn new() -> Self {
+        Self
+    }
+
+    pub fn select_best_node(
+        &self,
+        registry: &NodeRegistry,
+        model_id: &str,
+        local_cluster_id: Option<&str>,
+    ) -> Option<NodeScore> {
+        println!("[Scheduler] Evaluating nodes for model {}", model_id);
+
+        let requirements = ModelHardwareRequirements::for_model(model_id)?;
+        let mut candidates = self.filter_nodes(registry.all_nodes(), model_id, &requirements);
+
+        candidates.sort_by(|left, right| {
+            let left_score = score_node(left, local_cluster_id);
+            let right_score = score_node(right, local_cluster_id);
+            right_score
+                .partial_cmp(&left_score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| left.peer_id.cmp(&right.peer_id))
+        });
+
+        let best = candidates.first()?;
+        let score = score_node(best, local_cluster_id);
+        println!(
+            "[Scheduler] Selected node {} with score {:.3}",
+            best.peer_id, score
+        );
+
+        Some(NodeScore {
+            peer_id: best.peer_id.clone(),
+            model_id: model_id.to_string(),
+            score,
+            free_slots: free_slots(best),
+        })
+    }
+
+    pub fn select_best_node_for_models(
+        &self,
+        registry: &NodeRegistry,
+        model_ids: &[String],
+        local_cluster_id: Option<&str>,
+    ) -> Option<NodeScore> {
+        let mut best: Option<NodeScore> = None;
+
+        for model_id in model_ids {
+            if let Some(candidate) = self.select_best_node(registry, model_id, local_cluster_id) {
+                let should_replace = match &best {
+                    Some(current) => candidate.score > current.score,
+                    None => true,
+                };
+                if should_replace {
+                    best = Some(candidate);
+                }
+            }
+        }
+
+        best
+    }
+
+    fn filter_nodes(
+        &self,
+        nodes: Vec<(String, NodeCapability)>,
+        model_id: &str,
+        requirements: &ModelHardwareRequirements,
+    ) -> Vec<NodeCapability> {
+        nodes
+            .into_iter()
+            .map(|(_, node)| node)
+            .filter(|node| node.models.iter().any(|model| model == model_id))
+            .filter(|node| {
+                let profile = NodeHardwareProfile {
+                    ram_gb: node.ram_gb,
+                    gpu_available: node.gpu_available,
+                    storage_available_gb: node.storage_available_gb,
+                };
+                is_node_compatible_with_model(&profile, requirements)
+            })
+            .filter(|node| free_slots(node) > 0)
+            .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::IntelligentScheduler;
+    use crate::node_registry::{NodeCapability, NodeRegistry};
+    use std::time::Instant;
+
+    fn make_cap(
+        peer_id: &str,
+        cpu_score: u64,
+        model: &str,
+        ram_gb: u32,
+        worker_slots: u32,
+        active_tasks: u32,
+        latency_ms: u32,
+        cluster_id: Option<&str>,
+    ) -> NodeCapability {
+        NodeCapability {
+            peer_id: peer_id.to_string(),
+            cpu_score,
+            ram_gb,
+            gpu_available: false,
+            storage_available_gb: 50,
+            accelerator: "CPU".to_string(),
+            models: vec![model.to_string()],
+            worker_slots,
+            active_tasks,
+            latency_ms,
+            last_seen: Instant::now(),
+            cluster_id: cluster_id.map(|value| value.to_string()),
+        }
+    }
+
+    #[test]
+    fn test_scheduler_selects_best_node() {
+        let scheduler = IntelligentScheduler::new();
+        let mut registry = NodeRegistry::new();
+        registry.register_node(make_cap(
+            "peer1",
+            120_000,
+            "tinyllama-1b",
+            8,
+            8,
+            6,
+            20,
+            None,
+        ));
+        registry.register_node(make_cap(
+            "peer2",
+            180_000,
+            "tinyllama-1b",
+            8,
+            8,
+            1,
+            8,
+            Some("local"),
+        ));
+
+        let best = scheduler
+            .select_best_node(&registry, "tinyllama-1b", Some("local"))
+            .unwrap();
+        assert_eq!(best.peer_id, "peer2");
+    }
+
+    #[test]
+    fn test_scheduler_respects_capacity() {
+        let scheduler = IntelligentScheduler::new();
+        let mut registry = NodeRegistry::new();
+        registry.register_node(make_cap("peer1", 180_000, "tinyllama-1b", 8, 8, 8, 5, None));
+        registry.register_node(make_cap(
+            "peer2",
+            100_000,
+            "tinyllama-1b",
+            8,
+            8,
+            4,
+            20,
+            None,
+        ));
+
+        let best = scheduler
+            .select_best_node(&registry, "tinyllama-1b", None)
+            .unwrap();
+        assert_eq!(best.peer_id, "peer2");
+    }
+
+    #[test]
+    fn test_scheduler_prefers_low_latency() {
+        let scheduler = IntelligentScheduler::new();
+        let mut registry = NodeRegistry::new();
+        registry.register_node(make_cap("peer1", 160_000, "tinyllama-1b", 8, 8, 1, 5, None));
+        registry.register_node(make_cap(
+            "peer2",
+            160_000,
+            "tinyllama-1b",
+            8,
+            8,
+            1,
+            80,
+            None,
+        ));
+
+        let best = scheduler
+            .select_best_node(&registry, "tinyllama-1b", None)
+            .unwrap();
+        assert_eq!(best.peer_id, "peer1");
+    }
+
+    #[test]
+    fn test_scheduler_filters_invalid_nodes() {
+        let scheduler = IntelligentScheduler::new();
+        let mut registry = NodeRegistry::new();
+        registry.register_node(make_cap("peer1", 160_000, "llama3-3b", 2, 8, 1, 5, None));
+        registry.register_node(make_cap("peer2", 160_000, "tinyllama-1b", 16, 8, 8, 10, None));
+
+        assert!(scheduler
+            .select_best_node(&registry, "llama3-3b", None)
+            .is_none());
+    }
+}

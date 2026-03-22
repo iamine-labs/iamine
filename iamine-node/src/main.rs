@@ -37,11 +37,11 @@ use iamine_network::{
     detect_exact_subtype, evaluate_default_dataset, normalize_expression,
     validate_semantic_decision, Complexity as PromptComplexityLevel,
     DeterministicLevel as PromptDeterministicLevel, DistributedTask, DistributedTaskResult,
-    Domain as PromptDomain, ExactSubtype as PromptExactSubtype, Language as PromptLanguage,
-    ModelPolicyEngine, NetworkTopology, NodeCapabilityHeartbeat, NodeRegistry,
-    OutputPolicyDecision, OutputStyle as PromptOutputStyle, PromptProfile, SemanticFeedbackEngine,
-    SemanticRoutingDecision, SharedNetworkTopology, SharedNodeRegistry, TaskManager,
-    TaskType as PromptTaskType, ValidationResult as SemanticValidationResult,
+    Domain as PromptDomain, ExactSubtype as PromptExactSubtype, IntelligentScheduler,
+    Language as PromptLanguage, ModelPolicyEngine, NetworkTopology, NodeCapabilityHeartbeat,
+    NodeRegistry, OutputPolicyDecision, OutputStyle as PromptOutputStyle, PromptProfile,
+    SemanticFeedbackEngine, SemanticRoutingDecision, SharedNetworkTopology, SharedNodeRegistry,
+    TaskManager, TaskType as PromptTaskType, ValidationResult as SemanticValidationResult,
 };
 
 #[cfg(test)]
@@ -1857,13 +1857,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             candidates.insert(0, selected_model.clone());
                         }
 
-                        let selected = reg.select_best_node_for_models_with_cluster(
-                            &candidates,
-                            local_cluster.as_deref(),
-                        );
+                        let scheduler = IntelligentScheduler::new();
+                        let selected = scheduler
+                            .select_best_node_for_models(
+                                &reg,
+                                &candidates,
+                                local_cluster.as_deref(),
+                            )
+                            .map(|decision| (decision.peer_id, decision.model_id, decision.score));
                         drop(reg);
 
-                        if let Some((best_peer, routed_model)) = selected {
+                        if let Some((best_peer, routed_model, node_score)) = selected {
                             let rid = infer_request_id.clone().unwrap_or_else(uuid_simple);
                             let target_peer = known_workers
                                 .iter()
@@ -1890,7 +1894,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 infer_broadcast_sent = true;
                                 waiting_for_response = true;
                                 pending_inference.insert(rid.clone(), tokio::time::Instant::now());
-                                println!("[Routing] Sending to node {} with model {}", best_peer, routed_model);
+                                println!(
+                                    "[Routing] Sending to node {} with model {}",
+                                    best_peer, routed_model
+                                );
+                                println!(
+                                    "[Scheduler] Selected node {} with score {:.3}",
+                                    best_peer, node_score
+                                );
                                 println!("[Task] Sent to peer {}", best_peer);
                                 print!("📤 Respuesta: ");
                                 let _ = std::io::Write::flush(&mut std::io::stdout());
@@ -1914,7 +1925,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     .routing_decision(start.elapsed().as_millis() as u64);
                                 infer_broadcast_sent = true;
                                 pending_inference.insert(rid.clone(), tokio::time::Instant::now());
-                                println!("[Routing] Sending to node {} with model {}", best_peer, routed_model);
+                                println!(
+                                    "[Routing] Sending to node {} with model {}",
+                                    best_peer, routed_model
+                                );
+                                println!(
+                                    "[Scheduler] Selected node {} with score {:.3}",
+                                    best_peer, node_score
+                                );
                                 println!(
                                     "🧠 DirectInferenceRequest enviado [{}] → {}",
                                     &rid[..8.min(rid.len())],
