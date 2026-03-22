@@ -23,7 +23,9 @@ impl NodeIdentity {
                 .expect("node_key corrupto — borra ~/.iamine/node_key")
         } else {
             let kp = identity::Keypair::generate_ed25519();
-            let bytes = kp.to_protobuf_encoding().expect("Error serializando keypair");
+            let bytes = kp
+                .to_protobuf_encoding()
+                .expect("Error serializando keypair");
             fs::write(&key_path, &bytes).expect("Error guardando node_key");
             println!("🆕 Identidad nueva generada → ~/.iamine/node_key");
             kp

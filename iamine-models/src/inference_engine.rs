@@ -2,10 +2,10 @@ use crate::continuation_manager::ContinuationManager;
 use crate::hardware_acceleration::{AcceleratorType, HardwareAcceleration};
 use crate::inference_queue::InferenceQueue;
 use crate::model_cache::{LoadedModel, ModelCache};
-use crate::output_cleaner::clean_output;
-use crate::prompt_builder::PromptBuilder;
 use crate::model_storage::ModelStorage;
 use crate::model_verifier::ModelVerifier;
+use crate::output_cleaner::clean_output;
+use crate::prompt_builder::PromptBuilder;
 use encoding_rs::UTF_8;
 use llama_cpp_2::context::params::LlamaContextParams;
 use llama_cpp_2::llama_backend::LlamaBackend;
@@ -77,7 +77,8 @@ impl SamplingConfig {
             config.repeat_penalty = 1.15;
         }
 
-        if prompt.contains("explica") || prompt.contains("teoria") || prompt.contains("relatividad") {
+        if prompt.contains("explica") || prompt.contains("teoria") || prompt.contains("relatividad")
+        {
             config.temperature = config.temperature.min(0.35);
             config.top_p = config.top_p.min(0.8);
         }
@@ -313,7 +314,12 @@ impl InferenceEngine {
             ctx.decode(&mut batch)
                 .map_err(|e| format!("Fallo evaluando prompt: {}", e))?;
 
-            let mut samplers = vec![LlamaSampler::penalties(64, sampling.repeat_penalty, 0.0, 0.0)];
+            let mut samplers = vec![LlamaSampler::penalties(
+                64,
+                sampling.repeat_penalty,
+                0.0,
+                0.0,
+            )];
             if sampling.top_k > 0 {
                 samplers.push(LlamaSampler::top_k(sampling.top_k));
             }
@@ -450,7 +456,10 @@ impl InferenceEngine {
 
         let path = self.inner.storage.gguf_path(model_id);
         if !path.exists() {
-            return Err(format!("Modelo {} no encontrado en ~/.iamine/models/", model_id));
+            return Err(format!(
+                "Modelo {} no encontrado en ~/.iamine/models/",
+                model_id
+            ));
         }
 
         ModelVerifier::verify_file(&path, expected_hash)?;
@@ -479,7 +488,10 @@ impl InferenceEngine {
             Ok(LoadedModel::new(model_id.to_string(), path.clone(), model))
         })?;
 
-        println!("[Inference] Model {} ready ({:?})", model_id, self.inner.hardware.accelerator);
+        println!(
+            "[Inference] Model {} ready ({:?})",
+            model_id, self.inner.hardware.accelerator
+        );
         Ok(())
     }
 
@@ -496,8 +508,13 @@ impl InferenceEngine {
             );
         };
 
-        let _context = InferenceContext { reuse_prefix: false };
-        let permit = match Arc::clone(&self.inner.inference_limit).acquire_owned().await {
+        let _context = InferenceContext {
+            reuse_prefix: false,
+        };
+        let permit = match Arc::clone(&self.inner.inference_limit)
+            .acquire_owned()
+            .await
+        {
             Ok(permit) => permit,
             Err(e) => {
                 return InferenceResult::failure(
@@ -558,10 +575,8 @@ impl InferenceEngine {
                 while truncated && continuation_steps < continuation.max_steps {
                     continuation_steps += 1;
                     println!("[Continuation] step {}", continuation_steps);
-                    current_prompt = ContinuationManager::build_continuation_prompt(
-                        &req.prompt,
-                        &total_output,
-                    );
+                    current_prompt =
+                        ContinuationManager::build_continuation_prompt(&req.prompt, &total_output);
 
                     let next_chunk = match self
                         .generate_chunk(
@@ -580,7 +595,8 @@ impl InferenceEngine {
                         }
                     };
 
-                    let cleaned = ContinuationManager::remove_overlap(&total_output, &next_chunk.output);
+                    let cleaned =
+                        ContinuationManager::remove_overlap(&total_output, &next_chunk.output);
                     if !cleaned.trim().is_empty() {
                         if !total_output.is_empty() && !total_output.ends_with('\n') {
                             total_output.push('\n');
@@ -602,7 +618,10 @@ impl InferenceEngine {
                 if truncated {
                     println!("[Warning] Output truncated at token budget");
                 }
-                println!("[Inference] {} tokens in {}ms via {}", total_tokens, total_ms, accel);
+                println!(
+                    "[Inference] {} tokens in {}ms via {}",
+                    total_tokens, total_ms, accel
+                );
 
                 let mut result = InferenceResult::success(
                     req.task_id,

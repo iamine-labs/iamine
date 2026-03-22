@@ -1,5 +1,5 @@
 use crate::prompt_analyzer::{
-    analyze_prompt_semantics, CONFIDENCE_THRESHOLD, DeterministicLevel, Domain, OutputStyle,
+    analyze_prompt_semantics, DeterministicLevel, Domain, OutputStyle, CONFIDENCE_THRESHOLD,
 };
 use crate::semantic_validator::validate_semantic_decision;
 use crate::task_analyzer::TaskType;
@@ -86,7 +86,8 @@ pub fn evaluate_dataset(entries: &[SemanticDatasetEntry]) -> SemanticEvalReport 
         let predicted_deterministic_level = decision.profile.semantic.deterministic_level;
         let task_ok = predicted_task == entry.expected_task;
         let normalize_ok = predicted_normalize == entry.should_normalize;
-        let secondary_ok = entry.expected_secondary.is_empty() || predicted_secondary == entry.expected_secondary;
+        let secondary_ok =
+            entry.expected_secondary.is_empty() || predicted_secondary == entry.expected_secondary;
         let domain_ok = entry
             .expected_domain
             .map(|expected| Some(expected) == predicted_domain)
@@ -111,7 +112,14 @@ pub fn evaluate_dataset(entries: &[SemanticDatasetEntry]) -> SemanticEvalReport 
             low_confidence_count += 1;
         }
 
-        if task_ok && normalize_ok && secondary_ok && domain_ok && output_style_ok && requires_context_ok && deterministic_ok {
+        if task_ok
+            && normalize_ok
+            && secondary_ok
+            && domain_ok
+            && output_style_ok
+            && requires_context_ok
+            && deterministic_ok
+        {
             correct += 1;
         } else {
             error_cases.push(SemanticEvalError {

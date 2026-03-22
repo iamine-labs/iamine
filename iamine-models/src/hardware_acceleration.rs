@@ -4,9 +4,9 @@ use std::process::Command;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum AcceleratorType {
     CPU,
-    Metal,   // Apple Silicon
-    CUDA,    // NVIDIA
-    ROCm,    // AMD
+    Metal, // Apple Silicon
+    CUDA,  // NVIDIA
+    ROCm,  // AMD
     Vulkan,
     None,
 }
@@ -17,14 +17,15 @@ pub struct HardwareAcceleration {
     pub device_name: String,
     pub vram_gb: u64,
     pub cpu_cores: usize,
-    pub cpu_features: Vec<String>,  // AVX2, AVX512, etc.
+    pub cpu_features: Vec<String>, // AVX2, AVX512, etc.
     pub recommended_threads: usize,
 }
 
 impl HardwareAcceleration {
     pub fn detect() -> Self {
         let cpu_cores = std::thread::available_parallelism()
-            .map(|n| n.get()).unwrap_or(4);
+            .map(|n| n.get())
+            .unwrap_or(4);
 
         let recommended_threads = (cpu_cores / 2).max(1);
 
@@ -72,7 +73,8 @@ impl HardwareAcceleration {
                 let s = String::from_utf8_lossy(&out.stdout);
                 let parts: Vec<&str> = s.trim().splitn(2, ',').collect();
                 let name = parts.first().unwrap_or(&"NVIDIA GPU").trim().to_string();
-                let vram = parts.get(1)
+                let vram = parts
+                    .get(1)
                     .and_then(|v| v.trim().replace(" MiB", "").parse::<u64>().ok())
                     .map(|mb| mb / 1024)
                     .unwrap_or(0);
@@ -95,9 +97,15 @@ impl HardwareAcceleration {
 
         #[cfg(target_arch = "x86_64")]
         {
-            if is_x86_feature_detected!("avx2") { features.push("AVX2".to_string()); }
-            if is_x86_feature_detected!("avx512f") { features.push("AVX512".to_string()); }
-            if is_x86_feature_detected!("fma") { features.push("FMA".to_string()); }
+            if is_x86_feature_detected!("avx2") {
+                features.push("AVX2".to_string());
+            }
+            if is_x86_feature_detected!("avx512f") {
+                features.push("AVX512".to_string());
+            }
+            if is_x86_feature_detected!("fma") {
+                features.push("FMA".to_string());
+            }
         }
 
         #[cfg(target_arch = "aarch64")]
@@ -114,9 +122,7 @@ impl HardwareAcceleration {
         // Apple unified memory — usar RAM disponible / 2 como VRAM efectiva
         for line in s.lines() {
             if line.contains("VRAM") || line.contains("vram") {
-                if let Some(num) = line.split_whitespace()
-                    .find(|w| w.parse::<u64>().is_ok())
-                {
+                if let Some(num) = line.split_whitespace().find(|w| w.parse::<u64>().is_ok()) {
                     return num.parse::<u64>().unwrap_or(0) / 1024;
                 }
             }
@@ -149,10 +155,10 @@ impl HardwareAcceleration {
     /// Parámetros óptimos para llama.cpp
     pub fn llama_params(&self) -> LlamaParams {
         let n_gpu_layers = match &self.accelerator {
-            AcceleratorType::Metal => 99,  // Todas las capas en GPU Metal
+            AcceleratorType::Metal => 99, // Todas las capas en GPU Metal
             AcceleratorType::CUDA => 99,
             AcceleratorType::ROCm => 32,
-            _ => 0,                        // Solo CPU
+            _ => 0, // Solo CPU
         };
 
         LlamaParams {

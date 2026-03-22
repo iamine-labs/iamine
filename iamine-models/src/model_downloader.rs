@@ -40,7 +40,9 @@ impl ModelDownloader {
                 .no_proxy()
                 .build()
         })
-        .map_err(|_| "Error construyendo cliente HTTP: fallo al desactivar el proxy del sistema".to_string())?
+        .map_err(|_| {
+            "Error construyendo cliente HTTP: fallo al desactivar el proxy del sistema".to_string()
+        })?
         .map_err(|e| format!("Error construyendo cliente HTTP: {}", e))
     }
 
@@ -58,19 +60,30 @@ impl ModelDownloader {
         let urls = self.build_url_priority(model);
 
         for (source, url) in &urls {
-            println!("⬇️  [{}] Descargando {} ({:.1} GB)...", source, model.id, model.size_gb());
+            println!(
+                "⬇️  [{}] Descargando {} ({:.1} GB)...",
+                source,
+                model.id,
+                model.size_gb()
+            );
             match self.download_from_url(model, url, &progress_tx).await {
                 Ok(_) => {
                     println!("✅ Descarga completada desde {}", source);
                     return Ok(());
                 }
                 Err(e) => {
-                    eprintln!("⚠️  Falló {}: {} — intentando siguiente fuente...", source, e);
+                    eprintln!(
+                        "⚠️  Falló {}: {} — intentando siguiente fuente...",
+                        source, e
+                    );
                 }
             }
         }
 
-        Err(format!("No se pudo descargar {} desde ninguna fuente", model.id))
+        Err(format!(
+            "No se pudo descargar {} desde ninguna fuente",
+            model.id
+        ))
     }
 
     fn build_url_priority(&self, model: &ModelDescriptor) -> Vec<(&'static str, String)> {
@@ -106,13 +119,14 @@ impl ModelDownloader {
 
         let client = self.build_http_client()?;
 
-        let mut req = client.get(url)
-            .header("User-Agent", "iamine-node/0.6.7");
+        let mut req = client.get(url).header("User-Agent", "iamine-node/0.6.7");
         if resume_from > 0 {
             req = req.header("Range", format!("bytes={}-", resume_from));
         }
 
-        let response = req.send().await
+        let response = req
+            .send()
+            .await
             .map_err(|e| format!("Error de red: {}", e))?;
 
         let status = response.status();
@@ -120,7 +134,8 @@ impl ModelDownloader {
             return Err(format!("HTTP {}", status));
         }
 
-        let total = response.content_length()
+        let total = response
+            .content_length()
             .map(|l| l + resume_from)
             .unwrap_or(model.size_bytes);
 
@@ -151,9 +166,14 @@ impl ModelDownloader {
                 let elapsed = start_time.elapsed().as_secs_f64();
                 let speed_mbps = if elapsed > 0.0 {
                     (downloaded - resume_from) as f64 / 1_048_576.0 / elapsed
-                } else { 0.0 };
+                } else {
+                    0.0
+                };
 
-                print!("\r   📥 {:.1}% ({}/{} MB) {:.1} MB/s", percent, mb, total_mb, speed_mbps);
+                print!(
+                    "\r   📥 {:.1}% ({}/{} MB) {:.1} MB/s",
+                    percent, mb, total_mb, speed_mbps
+                );
                 let _ = std::io::stdout().flush();
 
                 if let Some(tx) = progress_tx {
@@ -174,9 +194,11 @@ impl ModelDownloader {
         println!();
 
         let elapsed = start_time.elapsed();
-        println!("   ⏱️  Descargado en {:.1}s ({:.1} MB/s)",
+        println!(
+            "   ⏱️  Descargado en {:.1}s ({:.1} MB/s)",
             elapsed.as_secs_f64(),
-            (downloaded - resume_from) as f64 / 1_048_576.0 / elapsed.as_secs_f64().max(0.001));
+            (downloaded - resume_from) as f64 / 1_048_576.0 / elapsed.as_secs_f64().max(0.001)
+        );
 
         // Notify verification phase
         if let Some(tx) = progress_tx {
@@ -207,7 +229,10 @@ impl ModelDownloader {
         let final_size = fs::metadata(&tmp_path).map(|m| m.len()).unwrap_or(0);
         if final_size < 1_048_576 {
             let _ = fs::remove_file(&tmp_path);
-            return Err(format!("Downloaded file too small ({} bytes) — likely not a valid GGUF", final_size));
+            return Err(format!(
+                "Downloaded file too small ({} bytes) — likely not a valid GGUF",
+                final_size
+            ));
         }
 
         // Move .tmp → .gguf
@@ -224,7 +249,11 @@ impl ModelDownloader {
             });
         }
 
-        println!("✅ Model {} downloaded and verified ({:.1} MB)", model.id, final_size as f64 / 1_048_576.0);
+        println!(
+            "✅ Model {} downloaded and verified ({:.1} MB)",
+            model.id,
+            final_size as f64 / 1_048_576.0
+        );
         Ok(())
     }
 
@@ -235,7 +264,11 @@ impl ModelDownloader {
         }
         let model_dir = self.storage.model_path(&model.id);
         fs::create_dir_all(&model_dir).map_err(|e| e.to_string())?;
-        let mock_data = format!("GGUF_MOCK:{}:{}:{}\n", model.id, model.version, model.architecture).into_bytes();
+        let mock_data = format!(
+            "GGUF_MOCK:{}:{}:{}\n",
+            model.id, model.version, model.architecture
+        )
+        .into_bytes();
         // Pad to at least 2048 bytes and start with GGUF magic for test/dev compatibility
         let mut padded = Vec::with_capacity(2048);
         padded.extend_from_slice(b"GGUF"); // GGUF magic

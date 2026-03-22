@@ -1,12 +1,12 @@
+use crate::node_identity::iamine_dir;
 use serde::{Deserialize, Serialize};
 use std::fs;
-use crate::node_identity::iamine_dir;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Wallet {
     pub address: String,
-    pub balance: u64,       // en $MIND (lamports)
-    pub reputation: f32,    // 0.0 - 100.0
+    pub balance: u64,    // en $MIND (lamports)
+    pub reputation: f32, // 0.0 - 100.0
     pub tasks_completed: u64,
     pub tasks_failed: u64,
     pub total_uptime_secs: u64,
@@ -69,7 +69,9 @@ impl Wallet {
 
     pub fn success_rate(&self) -> f64 {
         let total = self.tasks_completed + self.tasks_failed;
-        if total == 0 { return 1.0; }
+        if total == 0 {
+            return 1.0;
+        }
         self.tasks_completed as f64 / total as f64
     }
 }

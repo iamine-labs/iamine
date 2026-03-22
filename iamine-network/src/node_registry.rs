@@ -1,9 +1,9 @@
-use std::collections::HashMap;
-use std::time::Instant;
-use serde::{Deserialize, Serialize};
 use crate::model_capability_matcher::{
     is_node_compatible_with_model, ModelHardwareRequirements, NodeHardwareProfile,
 };
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::time::Instant;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NodeCapabilityHeartbeat {
@@ -32,7 +32,7 @@ pub struct NodeCapability {
     pub active_tasks: u32,
     pub latency_ms: u32,
     pub last_seen: Instant,
-    pub cluster_id: Option<String>,  // ← NEW
+    pub cluster_id: Option<String>, // ← NEW
 }
 
 pub struct NodeRegistry {
@@ -43,11 +43,15 @@ pub type SharedNodeRegistry = std::sync::Arc<tokio::sync::RwLock<NodeRegistry>>;
 
 impl NodeRegistry {
     pub fn new() -> Self {
-        Self { nodes: HashMap::new() }
+        Self {
+            nodes: HashMap::new(),
+        }
     }
 
     pub fn update_from_heartbeat(&mut self, hb: NodeCapabilityHeartbeat) -> &NodeCapability {
-        let existing_cluster = self.nodes.get(&hb.peer_id)
+        let existing_cluster = self
+            .nodes
+            .get(&hb.peer_id)
             .and_then(|n| n.cluster_id.clone());
 
         let cap = NodeCapability {
@@ -62,7 +66,7 @@ impl NodeRegistry {
             active_tasks: hb.active_tasks,
             latency_ms: hb.latency_ms,
             last_seen: Instant::now(),
-            cluster_id: existing_cluster,  // ← preserve
+            cluster_id: existing_cluster, // ← preserve
         };
         self.nodes.insert(hb.peer_id.clone(), cap);
         self.nodes.get(&hb.peer_id).unwrap()
@@ -93,7 +97,8 @@ impl NodeRegistry {
     ) -> Option<String> {
         let requirements = ModelHardwareRequirements::for_model(model_id)?;
 
-        let mut candidates: Vec<&NodeCapability> = self.nodes
+        let mut candidates: Vec<&NodeCapability> = self
+            .nodes
             .values()
             .filter(|node| node.models.iter().any(|m| m == model_id))
             .filter(|node| {
@@ -114,8 +119,11 @@ impl NodeRegistry {
             let free_slots = node.worker_slots.saturating_sub(node.active_tasks) as u64;
             let slot_score = free_slots * 40;
             let cpu_score = (node.cpu_score / 10_000).min(40);
-            let latency_score = if node.latency_ms == 0 { 20u64 }
-                else { (1000 / node.latency_ms.max(1) as u64).min(20) };
+            let latency_score = if node.latency_ms == 0 {
+                20u64
+            } else {
+                (1000 / node.latency_ms.max(1) as u64).min(20)
+            };
 
             // Cluster bonus: +50 if same cluster as requester
             let cluster_bonus = match (&node.cluster_id, local_cluster_id) {
@@ -163,7 +171,10 @@ impl NodeRegistry {
     }
 
     pub fn all_nodes(&self) -> Vec<(String, NodeCapability)> {
-        self.nodes.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
+        self.nodes
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect()
     }
 
     pub fn nodes_with_model(&self, model: &str) -> Vec<(String, NodeCapability)> {
@@ -183,7 +194,14 @@ impl NodeRegistry {
 mod tests {
     use super::*;
 
-    fn make_cap(peer_id: &str, cpu_score: u64, model: &str, ram_gb: u32, active_tasks: u32, latency_ms: u32) -> NodeCapability {
+    fn make_cap(
+        peer_id: &str,
+        cpu_score: u64,
+        model: &str,
+        ram_gb: u32,
+        active_tasks: u32,
+        latency_ms: u32,
+    ) -> NodeCapability {
         NodeCapability {
             peer_id: peer_id.to_string(),
             cpu_score,
@@ -196,7 +214,7 @@ mod tests {
             active_tasks,
             latency_ms,
             last_seen: Instant::now(),
-            cluster_id: None,  // ← NEW
+            cluster_id: None, // ← NEW
         }
     }
 
@@ -251,10 +269,7 @@ mod tests {
 
         // Without cluster preference → either could win (deterministic by HashMap order isn't guaranteed, but both equal)
         // With cluster preference → peer1 wins (same cluster bonus)
-        let best = r.select_best_node_for_model_with_cluster(
-            "tinyllama-1b",
-            Some("cluster-local"),
-        );
+        let best = r.select_best_node_for_model_with_cluster("tinyllama-1b", Some("cluster-local"));
         assert_eq!(best.unwrap(), "peer1");
     }
 

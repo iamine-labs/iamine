@@ -67,7 +67,11 @@ impl SemanticFeedbackEngine {
         Ok(())
     }
 
-    pub fn append_from_validation(&self, prompt: &str, validation: &ValidationResult) -> io::Result<()> {
+    pub fn append_from_validation(
+        &self,
+        prompt: &str,
+        validation: &ValidationResult,
+    ) -> io::Result<()> {
         self.append(&SemanticLog {
             prompt: prompt.to_string(),
             predicted_profile: validation.predicted_profile.clone(),
@@ -220,7 +224,10 @@ mod tests {
         let metrics = engine.metrics().unwrap();
         assert_eq!(metrics.total_logs, 1);
         assert_eq!(metrics.corrected_logs, 1);
-        assert_eq!(metrics.top_conflicts[0].conflict, "ideation-vs-deterministic");
+        assert_eq!(
+            metrics.top_conflicts[0].conflict,
+            "ideation-vs-deterministic"
+        );
         let _ = std::fs::remove_file(path);
     }
 }

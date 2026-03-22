@@ -1,7 +1,7 @@
-use serde::{Deserialize, Serialize};
 use crate::hardware_acceleration::HardwareAcceleration;
 use crate::model_storage::ModelStorage;
 use crate::storage_config::StorageConfig;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NodeCapabilities {
@@ -38,7 +38,8 @@ impl NodeCapabilities {
         };
 
         let worker_slots = std::thread::available_parallelism()
-            .map(|n| n.get() as u32).unwrap_or(4);
+            .map(|n| n.get() as u32)
+            .unwrap_or(4);
 
         Self {
             node_id: node_id.to_string(),
@@ -73,19 +74,34 @@ impl NodeCapabilities {
 
     pub fn display(&self) {
         println!("🖥️  Node Capabilities:");
-        println!("   Node ID:     {}", &self.node_id[..12.min(self.node_id.len())]);
-        println!("   CPU:         {} cores [{}]", self.cpu_cores,
-            self.cpu_features.join(", "));
+        println!(
+            "   Node ID:     {}",
+            &self.node_id[..12.min(self.node_id.len())]
+        );
+        println!(
+            "   CPU:         {} cores [{}]",
+            self.cpu_cores,
+            self.cpu_features.join(", ")
+        );
         println!("   RAM:         {} GB", self.ram_gb);
-        println!("   GPU:         {}", self.gpu_type.as_deref().unwrap_or("ninguna"));
+        println!(
+            "   GPU:         {}",
+            self.gpu_type.as_deref().unwrap_or("ninguna")
+        );
         println!("   Accelerator: {}", self.accelerator);
-        println!("   Storage:     {} GB disponibles", self.storage_available_gb);
+        println!(
+            "   Storage:     {} GB disponibles",
+            self.storage_available_gb
+        );
         println!("   Slots:       {}", self.worker_slots);
-        println!("   Modelos:     {}", if self.supported_models.is_empty() {
-            "(ninguno)".to_string()
-        } else {
-            self.supported_models.join(", ")
-        });
+        println!(
+            "   Modelos:     {}",
+            if self.supported_models.is_empty() {
+                "(ninguno)".to_string()
+            } else {
+                self.supported_models.join(", ")
+            }
+        );
     }
 
     pub fn has_model(&self, model_id: &str) -> bool {
@@ -100,7 +116,8 @@ fn sysinfo_ram_gb() -> u32 {
         if let Ok(content) = std::fs::read_to_string("/proc/meminfo") {
             for line in content.lines() {
                 if line.starts_with("MemTotal:") {
-                    let kb: u64 = line.split_whitespace()
+                    let kb: u64 = line
+                        .split_whitespace()
                         .nth(1)
                         .and_then(|s| s.parse().ok())
                         .unwrap_or(0);
@@ -112,7 +129,9 @@ fn sysinfo_ram_gb() -> u32 {
     #[cfg(target_os = "macos")]
     {
         if let Ok(out) = std::process::Command::new("sysctl")
-            .arg("-n").arg("hw.memsize").output()
+            .arg("-n")
+            .arg("hw.memsize")
+            .output()
         {
             let s = String::from_utf8_lossy(&out.stdout);
             if let Ok(bytes) = s.trim().parse::<u64>() {

@@ -1,6 +1,6 @@
-use std::path::Path;
-use sha2::{Sha256, Digest};
+use sha2::{Digest, Sha256};
 use std::io::Read;
+use std::path::Path;
 
 /// Resultado de verificación de firma
 #[derive(Debug, Clone)]
@@ -22,14 +22,18 @@ pub fn verify_model_hash(model_path: &Path, expected_hash: &str) -> Result<bool,
         return Ok(true);
     }
 
-    let mut file = std::fs::File::open(model_path)
-        .map_err(|e| format!("No se puede abrir: {}", e))?;
+    let mut file =
+        std::fs::File::open(model_path).map_err(|e| format!("No se puede abrir: {}", e))?;
     let mut hasher = Sha256::new();
     let mut buf = vec![0u8; 1024 * 1024]; // 1MB chunks
 
     loop {
-        let n = file.read(&mut buf).map_err(|e| format!("Error leyendo: {}", e))?;
-        if n == 0 { break; }
+        let n = file
+            .read(&mut buf)
+            .map_err(|e| format!("Error leyendo: {}", e))?;
+        if n == 0 {
+            break;
+        }
         hasher.update(&buf[..n]);
     }
 
@@ -38,11 +42,9 @@ pub fn verify_model_hash(model_path: &Path, expected_hash: &str) -> Result<bool,
 }
 
 /// Verificar firma criptográfica de un modelo (opcional)
-pub fn verify_model_signature(
-    model_path: &Path,
-    signature_path: &Path,
-) -> SignatureVerification {
-    let model_id = model_path.file_stem()
+pub fn verify_model_signature(model_path: &Path, signature_path: &Path) -> SignatureVerification {
+    let model_id = model_path
+        .file_stem()
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_default();
 

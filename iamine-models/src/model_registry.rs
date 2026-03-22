@@ -10,7 +10,7 @@ pub struct ModelDescriptor {
     pub required_ram_gb: u32,
     pub required_vram_gb: u32,
     pub shards: u32,
-    pub hash: String,           // SHA256 — empty string = skip verification
+    pub hash: String, // SHA256 — empty string = skip verification
     pub download_url: String,
     pub quantization: String,
 }
@@ -127,7 +127,8 @@ impl ModelRegistry {
         available_ram_gb: u64,
         gpu_available: bool,
     ) -> Result<(), String> {
-        let model = self.get(model_id)
+        let model = self
+            .get(model_id)
             .ok_or_else(|| format!("Modelo '{}' no encontrado en registry", model_id))?;
 
         if available_ram_gb < model.required_ram_gb as u64 {

@@ -92,7 +92,10 @@ impl NodeSetupConfig {
         println!("Detected hardware:");
         println!("  CPU cores:      {}", d.cpu_cores);
         println!("  RAM:            {} GB", d.ram_gb);
-        println!("  GPU available:  {}", if d.gpu_available { "yes" } else { "no" });
+        println!(
+            "  GPU available:  {}",
+            if d.gpu_available { "yes" } else { "no" }
+        );
         println!("  Disk available: {} GB", d.disk_available_gb);
 
         let level = prompt_level()?;
@@ -174,13 +177,19 @@ fn prompt_mode() -> Result<ModelDownloadMode, String> {
 }
 
 fn prompt_storage(default_gb: u32, max_gb: u32) -> Result<u32, String> {
-    print!("\nStorage contribution in GB (default {} / max {}): ", default_gb, max_gb);
+    print!(
+        "\nStorage contribution in GB (default {} / max {}): ",
+        default_gb, max_gb
+    );
     let _ = io::stdout().flush();
     let v = read_line()?;
     if v.trim().is_empty() {
         return Ok(default_gb);
     }
-    let n = v.trim().parse::<u32>().map_err(|_| "Storage inválido".to_string())?;
+    let n = v
+        .trim()
+        .parse::<u32>()
+        .map_err(|_| "Storage inválido".to_string())?;
     Ok(n.clamp(1, max_gb.max(1)))
 }
 

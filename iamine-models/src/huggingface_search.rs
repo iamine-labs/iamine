@@ -12,7 +12,7 @@ pub struct HFModel {
     #[serde(default)]
     pub tags: Vec<String>,
     #[serde(default)]
-    pub gated: serde_json::Value,   // ← can be bool, string, or missing
+    pub gated: serde_json::Value, // ← can be bool, string, or missing
     #[serde(default)]
     pub description: Option<String>,
     #[serde(default)]
@@ -35,10 +35,7 @@ pub struct HuggingFaceSearch;
 
 impl HuggingFaceSearch {
     /// Buscar modelos GGUF en HuggingFace (sin descargar catálogo completo)
-    pub async fn search_gguf_models(
-        query: &str,
-        limit: usize,
-    ) -> Result<Vec<HFModel>, String> {
+    pub async fn search_gguf_models(query: &str, limit: usize) -> Result<Vec<HFModel>, String> {
         // API: https://huggingface.co/api/models?search=query&filter=gguf&sort=downloads
         let url = format!(
             "https://huggingface.co/api/models?search={}&filter=gguf&sort=downloads&limit={}",
@@ -47,7 +44,8 @@ impl HuggingFaceSearch {
         );
 
         let client = reqwest::Client::new();
-        let resp = client.get(&url)
+        let resp = client
+            .get(&url)
             .header("User-Agent", "iamine-node/0.6")
             .timeout(std::time::Duration::from_secs(10))
             .send()
@@ -58,7 +56,9 @@ impl HuggingFaceSearch {
             return Err(format!("HF API error: {}", resp.status()));
         }
 
-        let models: Vec<HFModel> = resp.json().await
+        let models: Vec<HFModel> = resp
+            .json()
+            .await
             .map_err(|e| format!("Parse error: {}", e))?;
 
         Ok(models)
@@ -71,18 +71,16 @@ impl HuggingFaceSearch {
 
     /// Filtrar por criterios (tamaño estimado, licencia abierta, etc.)
     pub fn filter_suitable(models: Vec<HFModel>) -> Vec<HFModel> {
-        let filtered: Vec<HFModel> = models.iter()
-            .filter(|m| {
-                !m.is_gated()
-                && !m.private
-                && m.downloads >= 100
-            })
+        let filtered: Vec<HFModel> = models
+            .iter()
+            .filter(|m| !m.is_gated() && !m.private && m.downloads >= 100)
             .cloned()
             .collect();
 
         // Si el filtro deja vacío, devolver todos los no-gated
         if filtered.is_empty() {
-            models.into_iter()
+            models
+                .into_iter()
                 .filter(|m| !m.is_gated() && !m.private)
                 .collect()
         } else {

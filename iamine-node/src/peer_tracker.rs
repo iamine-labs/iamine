@@ -35,7 +35,9 @@ impl PeerStats {
     /// Score combinado para el scheduler (menor latencia = mejor score)
     #[allow(dead_code)]
     pub fn latency_score(&self) -> u64 {
-        if self.avg_latency_ms == 0.0 { return 20; }
+        if self.avg_latency_ms == 0.0 {
+            return 20;
+        }
         (1000.0 / self.avg_latency_ms.max(1.0)).min(20.0) as u64
     }
 
@@ -65,7 +67,8 @@ impl PeerTracker {
     }
 
     pub fn update_heartbeat(&mut self, peer_id: &str, slots: usize, rep: u32) {
-        let stats = self.peers
+        let stats = self
+            .peers
             .entry(peer_id.to_string())
             .or_insert_with(|| PeerStats::new(peer_id.to_string()));
         stats.available_slots = slots;
@@ -74,27 +77,36 @@ impl PeerTracker {
     }
 
     pub fn get_latency(&self, peer_id: &str) -> f64 {
-        self.peers.get(peer_id).map(|s| s.avg_latency_ms).unwrap_or(0.0)
+        self.peers
+            .get(peer_id)
+            .map(|s| s.avg_latency_ms)
+            .unwrap_or(0.0)
     }
 
     #[allow(dead_code)]
     pub fn alive_peers(&self) -> Vec<&PeerStats> {
-        self.peers.values()
+        self.peers
+            .values()
             .filter(|p| p.is_alive(self.timeout))
             .collect()
     }
 
     pub fn peer_count(&self) -> usize {
-        self.peers.values()
+        self.peers
+            .values()
             .filter(|p| p.is_alive(self.timeout))
             .count()
     }
 
     pub fn avg_latency(&self) -> f64 {
-        let alive: Vec<_> = self.peers.values()
+        let alive: Vec<_> = self
+            .peers
+            .values()
             .filter(|p| p.is_alive(self.timeout))
             .collect();
-        if alive.is_empty() { return 0.0; }
+        if alive.is_empty() {
+            return 0.0;
+        }
         alive.iter().map(|p| p.avg_latency_ms).sum::<f64>() / alive.len() as f64
     }
 }

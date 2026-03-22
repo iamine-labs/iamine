@@ -21,7 +21,7 @@ pub struct SignedNodeMetrics {
     pub node_id: String,
     pub timestamp: u64,
     pub payload: NodeMetricsPayload,
-    pub signature: String,  // hex-encoded Ed25519 signature
+    pub signature: String, // hex-encoded Ed25519 signature
 }
 
 impl SignedNodeMetrics {
@@ -30,10 +30,10 @@ impl SignedNodeMetrics {
         payload: NodeMetricsPayload,
         keypair: &libp2p::identity::Keypair,
     ) -> Result<Self, String> {
-        let payload_bytes = serde_json::to_vec(&payload)
-            .map_err(|e| e.to_string())?;
+        let payload_bytes = serde_json::to_vec(&payload).map_err(|e| e.to_string())?;
 
-        let signature = keypair.sign(&payload_bytes)
+        let signature = keypair
+            .sign(&payload_bytes)
             .map_err(|e| format!("Sign error: {}", e))?;
 
         Ok(Self {
@@ -46,8 +46,12 @@ impl SignedNodeMetrics {
 
     /// Verificar firma usando la public key del nodo
     pub fn verify(&self, public_key: &libp2p::identity::PublicKey) -> bool {
-        let Ok(payload_bytes) = serde_json::to_vec(&self.payload) else { return false };
-        let Ok(sig_bytes) = hex::decode(&self.signature) else { return false };
+        let Ok(payload_bytes) = serde_json::to_vec(&self.payload) else {
+            return false;
+        };
+        let Ok(sig_bytes) = hex::decode(&self.signature) else {
+            return false;
+        };
         public_key.verify(&payload_bytes, &sig_bytes)
     }
 }

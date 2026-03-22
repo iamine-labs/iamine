@@ -1,6 +1,6 @@
-use sha2::{Sha256, Digest};
-use std::path::Path;
+use sha2::{Digest, Sha256};
 use std::io::Read;
+use std::path::Path;
 
 pub struct ModelVerifier;
 
@@ -21,7 +21,11 @@ impl ModelVerifier {
         let computed = Self::compute_sha256_file(path)?;
 
         if computed == expected_hash {
-            println!("   ✅ SHA256 verified: {}...{}", &computed[..8], &computed[computed.len()-8..]);
+            println!(
+                "   ✅ SHA256 verified: {}...{}",
+                &computed[..8],
+                &computed[computed.len() - 8..]
+            );
             Ok(())
         } else {
             // Delete corrupt file
@@ -43,7 +47,10 @@ impl ModelVerifier {
         if computed == expected_hash {
             Ok(())
         } else {
-            Err(format!("SHA256 mismatch: expected {} got {}", expected_hash, computed))
+            Err(format!(
+                "SHA256 mismatch: expected {} got {}",
+                expected_hash, computed
+            ))
         }
     }
 
@@ -59,9 +66,12 @@ impl ModelVerifier {
         let mut last_report = std::time::Instant::now();
 
         loop {
-            let n = file.read(&mut buffer)
+            let n = file
+                .read(&mut buffer)
                 .map_err(|e| format!("Read error: {}", e))?;
-            if n == 0 { break; }
+            if n == 0 {
+                break;
+            }
             hasher.update(&buffer[..n]);
             processed += n as u64;
 

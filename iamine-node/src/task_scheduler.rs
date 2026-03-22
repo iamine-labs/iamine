@@ -1,8 +1,8 @@
+use iamine_core::node::NodeCapabilities;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
-use iamine_core::node::NodeCapabilities;
 
 /// Bid de un worker para ejecutar una tarea
 #[allow(dead_code)]
@@ -22,7 +22,10 @@ pub enum SchedulerTaskStatus {
     /// Esperando bids de workers
     CollectingBids { deadline: Instant },
     /// Asignada a un worker
-    Assigned { worker_id: String, assigned_at: Instant },
+    Assigned {
+        worker_id: String,
+        assigned_at: Instant,
+    },
     /// Completada
     Completed { worker_id: String },
     /// Falló — todos los workers rechazaron
@@ -75,12 +78,15 @@ impl TaskScheduler {
     pub async fn register_task(&self, task_id: String, task_type: String) {
         let deadline = Instant::now() + self.bid_window;
         let mut tasks = self.tasks.lock().await;
-        tasks.insert(task_id.clone(), SchedulerTask {
-            task_id,
-            task_type,
-            bids: Vec::new(),
-            status: SchedulerTaskStatus::CollectingBids { deadline },
-        });
+        tasks.insert(
+            task_id.clone(),
+            SchedulerTask {
+                task_id,
+                task_type,
+                bids: Vec::new(),
+                status: SchedulerTaskStatus::CollectingBids { deadline },
+            },
+        );
     }
 
     /// Recibir bid de un worker
@@ -107,17 +113,27 @@ impl TaskScheduler {
                 });
 
                 let bid_count = task.bids.len();
-                println!("📊 [Scheduler] {} bid(s) recibidos para tarea {}", bid_count, task_id);
+                println!(
+                    "📊 [Scheduler] {} bid(s) recibidos para tarea {}",
+                    bid_count, task_id
+                );
 
                 // Asignar si: expiró el deadline O tenemos al menos 2 bids
                 if Instant::now() >= deadline || bid_count >= 2 {
-                    println!("⏱️ [Scheduler] Cerrando bids para {} ({} bids)", task_id, bid_count);
+                    println!(
+                        "⏱️ [Scheduler] Cerrando bids para {} ({} bids)",
+                        task_id, bid_count
+                    );
                     return self.select_winner_internal(task);
                 }
                 None
             }
             SchedulerTaskStatus::Assigned { worker_id, .. } => {
-                println!("⚠️ [Scheduler] Tarea {} ya asignada a {}", task_id, &worker_id[..8.min(worker_id.len())]);
+                println!(
+                    "⚠️ [Scheduler] Tarea {} ya asignada a {}",
+                    task_id,
+                    &worker_id[..8.min(worker_id.len())]
+                );
                 None
             }
             _ => None,
@@ -153,7 +169,10 @@ impl TaskScheduler {
 
     /// Registrar worker con sus capacidades
     pub async fn register_worker(&self, worker_id: String, capabilities: NodeCapabilities) {
-        println!("📋 Scheduler: worker registrado {} ({} cores)", worker_id, capabilities.cores);
+        println!(
+            "📋 Scheduler: worker registrado {} ({} cores)",
+            worker_id, capabilities.cores
+        );
         self.workers.lock().await.insert(worker_id, capabilities);
     }
 
@@ -165,13 +184,16 @@ impl TaskScheduler {
     /// Stats del scheduler
     pub async fn stats(&self) -> (usize, usize, usize) {
         let tasks = self.tasks.lock().await;
-        let collecting = tasks.values()
+        let collecting = tasks
+            .values()
             .filter(|t| matches!(t.status, SchedulerTaskStatus::CollectingBids { .. }))
             .count();
-        let assigned = tasks.values()
+        let assigned = tasks
+            .values()
             .filter(|t| matches!(t.status, SchedulerTaskStatus::Assigned { .. }))
             .count();
-        let completed = tasks.values()
+        let completed = tasks
+            .values()
             .filter(|t| matches!(t.status, SchedulerTaskStatus::Completed { .. }))
             .count();
         (collecting, assigned, completed)
@@ -189,16 +211,20 @@ impl TaskScheduler {
         let winner = task.bids.iter().max_by_key(|bid| {
             let rep_score = bid.reputation_score as u64 * 60;
             let slot_score = (bid.available_slots.min(8) as u64) * 20;
-            let speed_score = if bid.estimated_ms == 0 { 20u64 }
-                              else { (1000 / bid.estimated_ms.max(1)).min(20) };
+            let speed_score = if bid.estimated_ms == 0 {
+                20u64
+            } else {
+                (1000 / bid.estimated_ms.max(1)).min(20)
+            };
             rep_score + slot_score + speed_score
         })?;
 
         let winner_id = winner.worker_id.clone();
 
-        println!("🏆 [Scheduler] Tarea {} asignada a {} (rep:{} slots:{})",
-            task.task_id, winner_id,
-            winner.reputation_score, winner.available_slots);
+        println!(
+            "🏆 [Scheduler] Tarea {} asignada a {} (rep:{} slots:{})",
+            task.task_id, winner_id, winner.reputation_score, winner.available_slots
+        );
 
         task.status = SchedulerTaskStatus::Assigned {
             worker_id: winner_id.clone(),
@@ -211,14 +237,12 @@ impl TaskScheduler {
     async fn cleanup_expired(tasks: &Arc<Mutex<HashMap<String, SchedulerTask>>>) {
         let mut tasks = tasks.lock().await;
         let expired_timeout = Duration::from_secs(120);
-        tasks.retain(|_, task| {
-            match &task.status {
-                SchedulerTaskStatus::Assigned { assigned_at, .. } => {
-                    assigned_at.elapsed() < expired_timeout
-                }
-                SchedulerTaskStatus::Completed { .. } | SchedulerTaskStatus::Failed => false,
-                _ => true,
+        tasks.retain(|_, task| match &task.status {
+            SchedulerTaskStatus::Assigned { assigned_at, .. } => {
+                assigned_at.elapsed() < expired_timeout
             }
+            SchedulerTaskStatus::Completed { .. } | SchedulerTaskStatus::Failed => false,
+            _ => true,
         });
     }
 }

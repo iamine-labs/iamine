@@ -1,10 +1,10 @@
+use crate::solana_config::*;
 use solana_client::rpc_client::RpcClient;
+use solana_sdk::message::Message;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::{Keypair, Signer};
-use solana_sdk::transaction::Transaction;
-use solana_sdk::message::Message;
 use solana_sdk::system_instruction;
-use crate::solana_config::*;
+use solana_sdk::transaction::Transaction;
 use std::str::FromStr;
 
 pub struct SolanaManager {
@@ -21,7 +21,7 @@ impl SolanaManager {
     /// Registrar nodo en blockchain
     pub async fn register_node(&self, cores: u64, ram_gb: u64) -> Result<String, String> {
         println!("\n📝 Registrando nodo en Solana Devnet...");
-        
+
         let pubkey = self.keypair.pubkey();
         println!("   Wallet: {}", pubkey);
         println!("   Cores: {}, RAM: {} GB", cores, ram_gb);
@@ -31,7 +31,7 @@ impl SolanaManager {
             Ok(balance) => {
                 let sol = balance as f64 / 1e9;
                 println!("   Balance: {} SOL", sol);
-                
+
                 if sol < 0.0 {
                     println!("   ⚠️  Balance bajo. Necesitas al menos 0.01 SOL");
                     println!("   Solicita airdrop: solana airdrop 2 --url devnet");

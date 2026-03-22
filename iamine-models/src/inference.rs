@@ -25,12 +25,38 @@ pub struct InferenceResult {
 }
 
 impl InferenceResult {
-    pub fn success(task_id: String, model_id: String, output: String, tokens: u32, ms: u64) -> Self {
-        Self { task_id, model_id, output, tokens_generated: tokens, truncated: false, continuation_steps: 0, execution_ms: ms, success: true, error: None }
+    pub fn success(
+        task_id: String,
+        model_id: String,
+        output: String,
+        tokens: u32,
+        ms: u64,
+    ) -> Self {
+        Self {
+            task_id,
+            model_id,
+            output,
+            tokens_generated: tokens,
+            truncated: false,
+            continuation_steps: 0,
+            execution_ms: ms,
+            success: true,
+            error: None,
+        }
     }
 
     pub fn failure(task_id: String, model_id: String, error: String) -> Self {
-        Self { task_id, model_id, output: String::new(), tokens_generated: 0, truncated: false, continuation_steps: 0, execution_ms: 0, success: false, error: Some(error) }
+        Self {
+            task_id,
+            model_id,
+            output: String::new(),
+            tokens_generated: 0,
+            truncated: false,
+            continuation_steps: 0,
+            execution_ms: 0,
+            success: false,
+            error: Some(error),
+        }
     }
 }
 
@@ -67,10 +93,13 @@ impl InferenceEngine {
         println!("🧠 Cargando modelo {}...", model_id);
         // TODO v0.6: llama_cpp::LlamaModel::load_from_file(&path)
 
-        self.loaded_models.insert(model_id.to_string(), LoadedModel {
-            _model_id: model_id.to_string(),
-            _loaded_at: Instant::now(),
-        });
+        self.loaded_models.insert(
+            model_id.to_string(),
+            LoadedModel {
+                _model_id: model_id.to_string(),
+                _loaded_at: Instant::now(),
+            },
+        );
 
         println!("✅ Modelo {} cargado en memoria", model_id);
         Ok(())
@@ -88,7 +117,10 @@ impl InferenceEngine {
             );
         }
 
-        println!("🤖 [Inference] {} | prompt={:.40}...", req.model_id, req.prompt);
+        println!(
+            "🤖 [Inference] {} | prompt={:.40}...",
+            req.model_id, req.prompt
+        );
 
         // TODO v0.6: llamada real a llama.cpp
         // Por ahora: mock que demuestra el flujo

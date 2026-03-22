@@ -237,13 +237,21 @@ pub async fn run_daemon(socket_path: PathBuf) -> Result<(), String> {
     run_daemon_with_runtime(socket_path, DaemonRuntime::new()).await
 }
 
-async fn run_daemon_with_runtime(socket_path: PathBuf, runtime: DaemonRuntime) -> Result<(), String> {
+async fn run_daemon_with_runtime(
+    socket_path: PathBuf,
+    runtime: DaemonRuntime,
+) -> Result<(), String> {
     if socket_path.exists() {
         let _ = std::fs::remove_file(&socket_path);
     }
 
-    let listener = UnixListener::bind(&socket_path)
-        .map_err(|e| format!("No se pudo abrir socket del daemon {}: {}", socket_path.display(), e))?;
+    let listener = UnixListener::bind(&socket_path).map_err(|e| {
+        format!(
+            "No se pudo abrir socket del daemon {}: {}",
+            socket_path.display(),
+            e
+        )
+    })?;
     println!("[Daemon] Started");
     println!("[Daemon] Listening on {}", socket_path.display());
 
@@ -327,7 +335,10 @@ async fn handle_connection(
                 load_start.elapsed().as_millis() as u64
             };
             if runtime.warmed_models.mark_loaded(&model_id).await && model_load_ms > 0 {
-                println!("[Model] Loaded into memory: {} ({} ms)", model_id, model_load_ms);
+                println!(
+                    "[Model] Loaded into memory: {} ({} ms)",
+                    model_id, model_load_ms
+                );
             }
 
             let (token_tx, mut token_rx) = mpsc::channel::<String>(100);
@@ -340,20 +351,12 @@ async fn handle_connection(
                 temperature,
             };
 
-            let inference_handle = tokio::spawn(async move {
-                engine.run_inference(request, Some(token_tx)).await
-            });
+            let inference_handle =
+                tokio::spawn(async move { engine.run_inference(request, Some(token_tx)).await });
 
             let mut index = 0u32;
             while let Some(token) = token_rx.recv().await {
-                write_event(
-                    &mut stream,
-                    &DaemonEvent::Token {
-                        token,
-                        index,
-                    },
-                )
-                .await?;
+                write_event(&mut stream, &DaemonEvent::Token { token, index }).await?;
                 index += 1;
             }
 
@@ -464,7 +467,11 @@ mod tests {
         .unwrap();
 
         shutdown_daemon(&socket_path).await.unwrap();
-        timeout(Duration::from_secs(2), handle).await.unwrap().unwrap().unwrap();
+        timeout(Duration::from_secs(2), handle)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
     }
 
     #[tokio::test]

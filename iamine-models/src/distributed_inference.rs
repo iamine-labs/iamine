@@ -91,17 +91,38 @@ impl InferenceTaskResult {
         accelerator: String,
     ) -> Self {
         Self {
-            request_id, model_id, output, tokens_generated: tokens, truncated, continuation_steps,
-            execution_ms: ms, worker_peer, accelerator,
-            success: true, error: None,
+            request_id,
+            model_id,
+            output,
+            tokens_generated: tokens,
+            truncated,
+            continuation_steps,
+            execution_ms: ms,
+            worker_peer,
+            accelerator,
+            success: true,
+            error: None,
         }
     }
 
-    pub fn failure(request_id: String, model_id: String, worker_peer: String, error: String) -> Self {
+    pub fn failure(
+        request_id: String,
+        model_id: String,
+        worker_peer: String,
+        error: String,
+    ) -> Self {
         Self {
-            request_id, model_id, output: String::new(), tokens_generated: 0, truncated: false, continuation_steps: 0,
-            execution_ms: 0, worker_peer, accelerator: "none".to_string(),
-            success: false, error: Some(error),
+            request_id,
+            model_id,
+            output: String::new(),
+            tokens_generated: 0,
+            truncated: false,
+            continuation_steps: 0,
+            execution_ms: 0,
+            worker_peer,
+            accelerator: "none".to_string(),
+            success: false,
+            error: Some(error),
         }
     }
 

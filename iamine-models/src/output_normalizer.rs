@@ -1,4 +1,8 @@
-pub fn normalize_output(task_type: &str, exact_subtype: Option<&str>, output: &str) -> (String, Option<String>) {
+pub fn normalize_output(
+    task_type: &str,
+    exact_subtype: Option<&str>,
+    output: &str,
+) -> (String, Option<String>) {
     match task_type {
         "ExactMath" => normalize_exact_math(exact_subtype, output),
         "StructuredList" => normalize_structured_list(output),
@@ -200,25 +204,24 @@ mod tests {
 
     #[test]
     fn test_decimal_normalization() {
-        let (normalized, reason) = normalize_output("ExactMath", Some("DecimalSequence"), "3. 14159");
+        let (normalized, reason) =
+            normalize_output("ExactMath", Some("DecimalSequence"), "3. 14159");
         assert_eq!(normalized, "3.14159");
         assert_eq!(reason.as_deref(), Some("DecimalSequence fix"));
     }
 
     #[test]
     fn test_decimal_normalization_removes_newline_after_decimal() {
-        let (normalized, reason) = normalize_output("ExactMath", Some("DecimalSequence"), "Pi = 3.\n14159");
+        let (normalized, reason) =
+            normalize_output("ExactMath", Some("DecimalSequence"), "Pi = 3.\n14159");
         assert_eq!(normalized, "3.14159");
         assert_eq!(reason.as_deref(), Some("DecimalSequence fix"));
     }
 
     #[test]
     fn test_pi_format_fix() {
-        let (normalized, _) = normalize_output(
-            "ExactMath",
-            Some("DecimalSequence"),
-            "3. 1415926535",
-        );
+        let (normalized, _) =
+            normalize_output("ExactMath", Some("DecimalSequence"), "3. 1415926535");
         assert_eq!(normalized, "3.1415926535");
     }
 

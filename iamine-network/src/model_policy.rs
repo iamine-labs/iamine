@@ -159,7 +159,8 @@ impl ModelPolicyEngine {
         profile: &PromptProfile,
         available_models: &[String],
     ) -> String {
-        self.select_model_decision_from_available(profile, available_models).model
+        self.select_model_decision_from_available(profile, available_models)
+            .model
     }
 
     pub fn select_model_decision_from_available(
@@ -182,7 +183,10 @@ impl ModelPolicyEngine {
         }
 
         for rule in self.matching_rules(profile) {
-            if available_models.iter().any(|available| available == &rule.model) {
+            if available_models
+                .iter()
+                .any(|available| available == &rule.model)
+            {
                 return PolicyDecision {
                     model: rule.model.clone(),
                     reason: rule.reason.clone(),
@@ -191,7 +195,10 @@ impl ModelPolicyEngine {
         }
 
         for fallback in ["llama3-3b", "mistral-7b", "tinyllama-1b"] {
-            if available_models.iter().any(|available| available == fallback) {
+            if available_models
+                .iter()
+                .any(|available| available == fallback)
+            {
                 return PolicyDecision {
                     model: fallback.to_string(),
                     reason: "availability fallback".to_string(),
@@ -208,7 +215,10 @@ impl ModelPolicyEngine {
         }
     }
 
-    fn matching_rules<'a>(&'a self, profile: &'a PromptProfile) -> impl Iterator<Item = &'a PolicyRule> {
+    fn matching_rules<'a>(
+        &'a self,
+        profile: &'a PromptProfile,
+    ) -> impl Iterator<Item = &'a PolicyRule> {
         self.rules.iter().filter(|rule| {
             let task_ok = rule
                 .task_type
@@ -338,7 +348,8 @@ mod tests {
     fn test_model_fallback() {
         let engine = ModelPolicyEngine::default();
         let available = vec!["tinyllama-1b".to_string()];
-        let decision = engine.select_model_decision_from_available(&spanish_high_conceptual(), &available);
+        let decision =
+            engine.select_model_decision_from_available(&spanish_high_conceptual(), &available);
         assert_eq!(decision.model, "tinyllama-1b");
         assert_eq!(decision.reason, "availability fallback");
     }

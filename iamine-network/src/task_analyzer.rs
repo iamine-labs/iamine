@@ -40,8 +40,15 @@ pub fn detect_exact_subtype(prompt: &str, output: &str) -> ExactSubtype {
     let verbal_exact_math = contains_any(&prompt_lower, &["square root of"])
         && prompt.chars().any(|c| c.is_ascii_digit());
 
-    if contains_any(&prompt_lower, &["pi", "π", "digit", "digits", "digito", "digitos", "dígitos"])
-        || (trimmed_output.contains('.') && trimmed_output.chars().filter(|c| c.is_ascii_digit()).count() >= 4)
+    if contains_any(
+        &prompt_lower,
+        &["pi", "π", "digit", "digits", "digito", "digitos", "dígitos"],
+    ) || (trimmed_output.contains('.')
+        && trimmed_output
+            .chars()
+            .filter(|c| c.is_ascii_digit())
+            .count()
+            >= 4)
         || (trimmed_output.contains(". ") && trimmed_output.chars().any(|c| c.is_ascii_digit()))
     {
         return ExactSubtype::DecimalSequence;
@@ -66,7 +73,18 @@ pub fn detect_task_type(prompt: &str) -> TaskType {
     let trimmed = prompt.trim();
     let lower = trimmed.to_lowercase();
 
-    if contains_any(&lower, &["function", "script", "code", "rust", "python", "javascript", "sql"]) {
+    if contains_any(
+        &lower,
+        &[
+            "function",
+            "script",
+            "code",
+            "rust",
+            "python",
+            "javascript",
+            "sql",
+        ],
+    ) {
         return TaskType::Code;
     }
 
@@ -94,7 +112,16 @@ pub fn detect_task_type(prompt: &str) -> TaskType {
         return TaskType::Deterministic;
     }
 
-    if contains_any(&lower, &["step by step", "paso a paso", "solve", "razona", "reason through"]) {
+    if contains_any(
+        &lower,
+        &[
+            "step by step",
+            "paso a paso",
+            "solve",
+            "razona",
+            "reason through",
+        ],
+    ) {
         return TaskType::Reasoning;
     }
 
@@ -102,7 +129,18 @@ pub fn detect_task_type(prompt: &str) -> TaskType {
         return TaskType::Math;
     }
 
-    if contains_any(&lower, &["explica", "describe", "why", "how", "por que", "porque", "como funciona"]) {
+    if contains_any(
+        &lower,
+        &[
+            "explica",
+            "describe",
+            "why",
+            "how",
+            "por que",
+            "porque",
+            "como funciona",
+        ],
+    ) {
         return TaskType::Conceptual;
     }
 
@@ -116,7 +154,9 @@ fn contains_any(prompt: &str, needles: &[&str]) -> bool {
 fn is_math_prompt(trimmed: &str, lower: &str) -> bool {
     let short_math_expression = trimmed.len() <= 24
         && trimmed.chars().any(|c| c.is_ascii_digit())
-        && trimmed.chars().any(|c| matches!(c, '+' | '-' | '*' | '/' | '=' | 'x' | 'X'));
+        && trimmed
+            .chars()
+            .any(|c| matches!(c, '+' | '-' | '*' | '/' | '=' | 'x' | 'X'));
 
     if short_math_expression {
         return true;
@@ -177,14 +217,23 @@ fn is_symbolic_math_prompt(trimmed: &str, lower: &str) -> bool {
 fn is_exact_math_prompt(trimmed: &str, lower: &str) -> bool {
     let exact_expression = trimmed.len() <= 16
         && trimmed.chars().any(|c| c.is_ascii_digit())
-        && trimmed.chars().any(|c| matches!(c, '+' | '-' | '*' | '/' | '=' | 'x' | 'X'));
+        && trimmed
+            .chars()
+            .any(|c| matches!(c, '+' | '-' | '*' | '/' | '=' | 'x' | 'X'));
 
     exact_expression
         || normalize_expression(trimmed).is_some()
         || compact_math_patterns(trimmed, lower)
         || (contains_any(lower, &["square root of"]) && lower.chars().any(|c| c.is_ascii_digit()))
-        || (contains_any(lower, &["pi", "π"]) && contains_any(lower, &["digit", "digits", "digito", "digitos", "dígitos", "primeros", "first"]))
-        || (contains_any(lower, &["exact", "exacto", "exacta", "resultado exacto"]) && lower.chars().any(|c| c.is_ascii_digit()))
+        || (contains_any(lower, &["pi", "π"])
+            && contains_any(
+                lower,
+                &[
+                    "digit", "digits", "digito", "digitos", "dígitos", "primeros", "first",
+                ],
+            ))
+        || (contains_any(lower, &["exact", "exacto", "exacta", "resultado exacto"])
+            && lower.chars().any(|c| c.is_ascii_digit()))
 }
 
 fn compact_math_patterns(trimmed: &str, lower: &str) -> bool {
@@ -357,7 +406,10 @@ mod tests {
     #[test]
     fn test_exact_subtype_detection() {
         assert_eq!(detect_exact_subtype("6x9", "54"), ExactSubtype::Integer);
-        assert_eq!(detect_exact_subtype("What is 2+2?", "2 + 2 = 4."), ExactSubtype::Integer);
+        assert_eq!(
+            detect_exact_subtype("What is 2+2?", "2 + 2 = 4."),
+            ExactSubtype::Integer
+        );
         assert_eq!(
             detect_exact_subtype("square root of 16", "The square root of 16 is 4."),
             ExactSubtype::Integer

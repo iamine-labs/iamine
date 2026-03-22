@@ -1,5 +1,5 @@
-use std::collections::VecDeque;
 use std::collections::HashSet;
+use std::collections::VecDeque;
 
 /// Cache LRU simple para evitar ejecutar tareas duplicadas
 pub struct TaskCache {

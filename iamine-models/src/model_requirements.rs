@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use crate::node_capabilities::NodeCapabilities;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelRequirements {

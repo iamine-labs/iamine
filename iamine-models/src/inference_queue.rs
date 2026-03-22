@@ -1,7 +1,4 @@
-use crate::inference_engine::{
-    InferenceRequest as EngineInferenceRequest,
-    InferenceResult,
-};
+use crate::inference_engine::{InferenceRequest as EngineInferenceRequest, InferenceResult};
 use std::sync::Mutex;
 use tokio::sync::{mpsc, oneshot};
 

@@ -42,7 +42,10 @@ impl ContinuationManager {
             println!("[Continuation] triggered");
         }
 
-        while current_result.success && current_result.truncated && continuation_steps < self.max_steps {
+        while current_result.success
+            && current_result.truncated
+            && continuation_steps < self.max_steps
+        {
             continuation_steps += 1;
             println!("[Continuation] step {}", continuation_steps);
 

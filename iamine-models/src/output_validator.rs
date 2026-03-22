@@ -68,7 +68,9 @@ fn validate_exact_math(exact_subtype: Option<&str>, output: &str) -> bool {
             let decimal_points = trimmed.chars().filter(|c| *c == '.').count();
             decimal_points <= 1
                 && !trimmed.contains(". ")
-                && trimmed.chars().all(|c| c.is_ascii_digit() || matches!(c, '.' | '-' | '+'))
+                && trimmed
+                    .chars()
+                    .all(|c| c.is_ascii_digit() || matches!(c, '.' | '-' | '+'))
         }
         _ => true,
     }
@@ -146,7 +148,8 @@ mod tests {
     #[test]
     fn test_abecedario_validation() {
         let valid = "A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z";
-        let invalid = "A, B, C, D, E, F, G, H, I, J, K, L, M, N, , O, P, Q, R, S, T, U, V, W, X, Y, Z";
+        let invalid =
+            "A, B, C, D, E, F, G, H, I, J, K, L, M, N, , O, P, Q, R, S, T, U, V, W, X, Y, Z";
 
         assert!(validate_structured_output("StructuredList", valid));
         assert!(!validate_structured_output("StructuredList", invalid));
@@ -154,7 +157,15 @@ mod tests {
 
     #[test]
     fn test_decimal_exactness() {
-        assert!(!validate_exactness("ExactMath", Some("DecimalSequence"), "3. 14159"));
-        assert!(validate_exactness("ExactMath", Some("DecimalSequence"), "3.14159"));
+        assert!(!validate_exactness(
+            "ExactMath",
+            Some("DecimalSequence"),
+            "3. 14159"
+        ));
+        assert!(validate_exactness(
+            "ExactMath",
+            Some("DecimalSequence"),
+            "3.14159"
+        ));
     }
 }

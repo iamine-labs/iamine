@@ -1,7 +1,7 @@
-use iamine_models::*;
-use iamine_models::storage_config::StorageConfig;
-use iamine_models::node_models::{NodeModels, ModelId, PeerModelRegistry};
 use iamine_models::model_validator::ModelValidator;
+use iamine_models::node_models::{ModelId, NodeModels, PeerModelRegistry};
+use iamine_models::storage_config::StorageConfig;
+use iamine_models::*;
 use std::sync::Arc;
 use tempfile::TempDir;
 
@@ -27,7 +27,7 @@ fn test_registry_can_run_check() {
     // tinyllama necesita 2GB RAM
     assert!(registry.can_run("tinyllama-1b", 4, false).is_ok());
     assert!(registry.can_run("tinyllama-1b", 1, false).is_err()); // RAM insuficiente
-    // mistral necesita 8GB
+                                                                  // mistral necesita 8GB
     assert!(registry.can_run("mistral-7b", 4, false).is_err());
     assert!(registry.can_run("mistral-7b", 8, false).is_ok());
 }
@@ -35,13 +35,16 @@ fn test_registry_can_run_check() {
 // ─── Test 2: Storage Config ───────────────────────────────────────────────
 #[test]
 fn test_storage_config_space_check() {
-    let cfg = StorageConfig { max_storage_gb: 10, models_path: "/tmp".to_string() };
+    let cfg = StorageConfig {
+        max_storage_gb: 10,
+        models_path: "/tmp".to_string(),
+    };
     let ten_gb = 10 * 1_073_741_824u64;
     let one_gb = 1_073_741_824u64;
 
-    assert!(cfg.has_space_for(one_gb, 0));              // 1GB en 10GB → ok
-    assert!(!cfg.has_space_for(ten_gb + 1, 0));         // 10GB+1 → no cabe
-    assert!(!cfg.has_space_for(one_gb, ten_gb));        // ya lleno → no cabe
+    assert!(cfg.has_space_for(one_gb, 0)); // 1GB en 10GB → ok
+    assert!(!cfg.has_space_for(ten_gb + 1, 0)); // 10GB+1 → no cabe
+    assert!(!cfg.has_space_for(one_gb, ten_gb)); // ya lleno → no cabe
 }
 
 // ─── Test 3: NodeModels P2P ───────────────────────────────────────────────
@@ -71,7 +74,10 @@ fn test_download_strategy() {
 
     // Sin peers → oficial
     let strategy = registry.download_strategy("tinyllama-1b", "https://example.com/model");
-    assert!(matches!(strategy, iamine_models::node_models::DownloadStrategy::Official(_)));
+    assert!(matches!(
+        strategy,
+        iamine_models::node_models::DownloadStrategy::Official(_)
+    ));
 
     // Con peer → peer first
     let mut peer = NodeModels::new("peer_xyz".to_string());
@@ -84,13 +90,16 @@ fn test_download_strategy() {
     registry.update_peer(peer);
 
     let strategy = registry.download_strategy("tinyllama-1b", "https://example.com/model");
-    assert!(matches!(strategy, iamine_models::node_models::DownloadStrategy::PeerFirst { .. }));
+    assert!(matches!(
+        strategy,
+        iamine_models::node_models::DownloadStrategy::PeerFirst { .. }
+    ));
 }
 
 // ─── Test 4: NodeCapabilities ─────────────────────────────────────────────
 #[test]
 fn test_node_capabilities() {
-    use iamine_models::{ModelNodeCapabilities, ModelRequirements, can_node_run_model};
+    use iamine_models::{can_node_run_model, ModelNodeCapabilities, ModelRequirements};
 
     let cap = ModelNodeCapabilities {
         node_id: "test-node".to_string(),
@@ -210,7 +219,10 @@ fn test_installer_list_models_reports_per_model_disk_usage() {
 #[tokio::test]
 async fn test_installer_storage_limit() {
     use iamine_models::storage_config::StorageConfig;
-    let cfg = StorageConfig { max_storage_gb: 1, models_path: "/tmp".to_string() };
+    let cfg = StorageConfig {
+        max_storage_gb: 1,
+        models_path: "/tmp".to_string(),
+    };
     // mistral-7b necesita 4.1 GB, límite es 1 GB
     let registry = iamine_models::ModelRegistry::new();
     let model = registry.get("mistral-7b").unwrap();
@@ -267,7 +279,10 @@ fn test_hardware_llama_params() {
     assert!(params.n_threads >= 1);
     // Metal/CUDA → GPU layers > 0
     // CPU → 0 GPU layers
-    println!("Llama params: threads={} gpu_layers={}", params.n_threads, params.n_gpu_layers);
+    println!(
+        "Llama params: threads={} gpu_layers={}",
+        params.n_threads, params.n_gpu_layers
+    );
 }
 
 #[test]
@@ -341,8 +356,8 @@ async fn test_inference_engine_mock() {
 
 #[tokio::test]
 async fn test_model_load() {
-    use iamine_models::RealInferenceEngine;
     use iamine_models::ModelRegistry;
+    use iamine_models::RealInferenceEngine;
 
     let storage = ModelStorage::new();
     let registry = ModelRegistry::new();
@@ -369,7 +384,10 @@ async fn test_model_cache_reuse() {
     let model_id = "tinyllama-1b";
 
     if !storage.has_model(model_id) {
-        println!("Skipping model cache reuse test: {} not installed", model_id);
+        println!(
+            "Skipping model cache reuse test: {} not installed",
+            model_id
+        );
         return;
     }
 
@@ -387,8 +405,8 @@ async fn test_model_cache_reuse() {
 
 #[tokio::test]
 async fn test_real_inference() {
-    use iamine_models::{RealInferenceEngine, RealInferenceRequest};
     use iamine_models::ModelRegistry;
+    use iamine_models::{RealInferenceEngine, RealInferenceRequest};
 
     let storage = ModelStorage::new();
     let registry = ModelRegistry::new();
@@ -418,7 +436,10 @@ async fn test_real_inference() {
     assert!(!result.output.is_empty());
     assert!(result.tokens_generated > 0);
     println!("Output: {}", result.output);
-    println!("Tokens: {} en {}ms", result.tokens_generated, result.execution_ms);
+    println!(
+        "Tokens: {} en {}ms",
+        result.tokens_generated, result.execution_ms
+    );
 }
 
 #[tokio::test]
@@ -472,7 +493,10 @@ async fn test_concurrency_limit() {
     let model_id = "tinyllama-1b";
 
     if !storage.has_model(model_id) {
-        println!("Skipping concurrency limit test: {} not installed", model_id);
+        println!(
+            "Skipping concurrency limit test: {} not installed",
+            model_id
+        );
         return;
     }
 
@@ -503,8 +527,8 @@ async fn test_concurrency_limit() {
 
 #[tokio::test]
 async fn test_token_streaming() {
-    use iamine_models::{RealInferenceEngine, RealInferenceRequest};
     use iamine_models::ModelRegistry;
+    use iamine_models::{RealInferenceEngine, RealInferenceRequest};
 
     let storage = ModelStorage::new();
     let registry = ModelRegistry::new();
@@ -662,7 +686,7 @@ fn test_streamed_token() {
 
 #[test]
 fn test_model_requirements() {
-    use iamine_models::{ModelRequirements, ModelNodeCapabilities, can_node_run_model};
+    use iamine_models::{can_node_run_model, ModelNodeCapabilities, ModelRequirements};
     let req = ModelRequirements::for_model("tinyllama-1b").unwrap();
     assert_eq!(req.min_ram_gb, 2);
     assert!(!req.requires_gpu);
@@ -684,7 +708,7 @@ fn test_model_requirements() {
 
 #[test]
 fn test_model_requirements_insufficient_ram() {
-    use iamine_models::{ModelRequirements, ModelNodeCapabilities, can_node_run_model};
+    use iamine_models::{can_node_run_model, ModelNodeCapabilities, ModelRequirements};
     let req = ModelRequirements::for_model("mistral-7b").unwrap();
     let cap = ModelNodeCapabilities {
         node_id: "test".to_string(),
@@ -758,7 +782,11 @@ fn test_model_selector_complex_prompt() {
         cpu_features: vec![],
         accelerator: "CPU".to_string(),
     };
-    let available = vec!["tinyllama-1b".to_string(), "llama3-3b".to_string(), "mistral-7b".to_string()];
+    let available = vec![
+        "tinyllama-1b".to_string(),
+        "llama3-3b".to_string(),
+        "mistral-7b".to_string(),
+    ];
     let long_prompt = "Explain in great detail the theory of general relativity as proposed by Albert Einstein, including the mathematical framework of tensor calculus, the curvature of spacetime, geodesics, the Einstein field equations, and their implications for modern cosmology, black holes, gravitational waves, and the expansion of the universe. Also discuss the experimental confirmations.";
     let result = select_best_model(long_prompt, &available, &cap);
     assert!(result.is_some());
@@ -777,7 +805,10 @@ fn test_estimate_tokens() {
 fn test_classify_prompt() {
     use iamine_models::{classify_prompt, PromptComplexity};
     assert_eq!(classify_prompt("Hi"), PromptComplexity::Simple);
-    assert_eq!(classify_prompt("What is gravity?"), PromptComplexity::Simple);
+    assert_eq!(
+        classify_prompt("What is gravity?"),
+        PromptComplexity::Simple
+    );
     // 100+ tokens ≈ 400+ characters
     let long = "a ".repeat(250);
     assert_eq!(classify_prompt(&long), PromptComplexity::Complex);
@@ -861,7 +892,9 @@ async fn test_auto_model_download() {
         storage_available_gb: 50,
     };
 
-    let result = provision.auto_download_recommended(&profile, None, true).await;
+    let result = provision
+        .auto_download_recommended(&profile, None, true)
+        .await;
     assert!(result.is_ok());
 
     if let Some(model_id) = result.unwrap() {
@@ -901,7 +934,11 @@ fn test_sha256_verification_real() {
     // Known SHA256 of "hello world"
     let expected = "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9";
     let result = ModelVerifier::verify_file(tmp.path(), expected);
-    assert!(result.is_ok(), "Real SHA256 verification should pass: {:?}", result);
+    assert!(
+        result.is_ok(),
+        "Real SHA256 verification should pass: {:?}",
+        result
+    );
 }
 
 #[test]

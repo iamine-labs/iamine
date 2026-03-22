@@ -92,12 +92,7 @@ impl ModelCache {
     }
 
     pub fn loaded_models(&self) -> Vec<String> {
-        self.models
-            .read()
-            .unwrap()
-            .keys()
-            .cloned()
-            .collect()
+        self.models.read().unwrap().keys().cloned().collect()
     }
 
     pub fn len(&self) -> usize {

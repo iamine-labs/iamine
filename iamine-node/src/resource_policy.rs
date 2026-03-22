@@ -1,7 +1,7 @@
 #[derive(Debug, Clone)]
 pub struct ResourcePolicy {
     pub cpu_cores: usize,
-    pub max_cpu_load: u8,    // 0-100 %
+    pub max_cpu_load: u8, // 0-100 %
     pub ram_limit_gb: u64,
     pub gpu_enabled: bool,
     pub disk_limit_gb: u64,
@@ -11,15 +11,18 @@ pub struct ResourcePolicy {
 impl ResourcePolicy {
     /// Parsea desde args de CLI
     pub fn from_args(args: &[String]) -> Self {
-        let cpu_cores = parse_arg(args, "--cpu")
-            .unwrap_or_else(|| std::thread::available_parallelism()
-                .map(|n| n.get()).unwrap_or(2) as u64) as usize;
+        let cpu_cores = parse_arg(args, "--cpu").unwrap_or_else(|| {
+            std::thread::available_parallelism()
+                .map(|n| n.get())
+                .unwrap_or(2) as u64
+        }) as usize;
 
         let max_cpu_load = parse_arg(args, "--max-load").unwrap_or(80) as u8;
         let ram_limit_gb = parse_arg(args, "--ram").unwrap_or(4);
         let gpu_enabled = args.iter().any(|a| a == "--gpu");
         let disk_limit_gb = parse_arg(args, "--disk-limit").unwrap_or(10);
-        let disk_path = args.iter()
+        let disk_path = args
+            .iter()
             .find(|a| a.starts_with("--disk-path="))
             .map(|a| a.replace("--disk-path=", ""))
             .unwrap_or_else(|| "/tmp/iamine".to_string());
@@ -39,8 +42,14 @@ impl ResourcePolicy {
         println!("   CPU cores:    {}", self.cpu_cores);
         println!("   Max CPU load: {}%", self.max_cpu_load);
         println!("   RAM limit:    {} GB", self.ram_limit_gb);
-        println!("   GPU:          {}", if self.gpu_enabled { "✅" } else { "❌" });
-        println!("   Disk limit:   {} GB @ {}", self.disk_limit_gb, self.disk_path);
+        println!(
+            "   GPU:          {}",
+            if self.gpu_enabled { "✅" } else { "❌" }
+        );
+        println!(
+            "   Disk limit:   {} GB @ {}",
+            self.disk_limit_gb, self.disk_path
+        );
     }
 }
 

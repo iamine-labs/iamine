@@ -26,7 +26,8 @@ impl ModelStorage {
     }
 
     pub fn shard_path(&self, model_id: &str, shard_idx: u32) -> PathBuf {
-        self.model_path(model_id).join(format!("shard_{:02}", shard_idx))
+        self.model_path(model_id)
+            .join(format!("shard_{:02}", shard_idx))
     }
 
     pub fn gguf_path(&self, model_id: &str) -> PathBuf {
@@ -51,14 +52,21 @@ impl ModelStorage {
         let path = self.shard_path(model_id, shard_idx);
         fs::write(&path, data).map_err(|e| e.to_string())?;
 
-        println!("💾 Shard {}/{:02} guardado ({} MB)",
-            model_id, shard_idx, data.len() / 1_048_576);
+        println!(
+            "💾 Shard {}/{:02} guardado ({} MB)",
+            model_id,
+            shard_idx,
+            data.len() / 1_048_576
+        );
         Ok(())
     }
 
     /// Ensambla shards en archivo GGUF final
     pub fn assemble_model(&self, model_id: &str, total_shards: u32) -> Result<PathBuf, String> {
-        println!("🔧 Ensamblando {} shards para {}...", total_shards, model_id);
+        println!(
+            "🔧 Ensamblando {} shards para {}...",
+            total_shards, model_id
+        );
 
         let output = self.gguf_path(model_id);
         let mut assembled = Vec::new();
@@ -73,7 +81,11 @@ impl ModelStorage {
         }
 
         fs::write(&output, &assembled).map_err(|e| e.to_string())?;
-        println!("✅ Modelo {} ensamblado: {:.1} MB", model_id, assembled.len() as f64 / 1_048_576.0);
+        println!(
+            "✅ Modelo {} ensamblado: {:.1} MB",
+            model_id,
+            assembled.len() as f64 / 1_048_576.0
+        );
 
         Ok(output)
     }
@@ -90,7 +102,9 @@ impl ModelStorage {
 
     /// Lista modelos disponibles localmente
     pub fn list_local_models(&self) -> Vec<String> {
-        let Ok(entries) = fs::read_dir(&self.base_path) else { return vec![] };
+        let Ok(entries) = fs::read_dir(&self.base_path) else {
+            return vec![];
+        };
         entries
             .filter_map(|e| e.ok())
             .filter(|e| e.path().is_dir())
@@ -110,21 +124,33 @@ impl ModelStorage {
     }
 
     fn dir_size(path: &PathBuf) -> u64 {
-        let Ok(entries) = fs::read_dir(path) else { return 0 };
-        entries.filter_map(|e| e.ok()).map(|e| {
-            let p = e.path();
-            if p.is_dir() { Self::dir_size(&p) }
-            else { fs::metadata(&p).map(|m| m.len()).unwrap_or(0) }
-        }).sum()
+        let Ok(entries) = fs::read_dir(path) else {
+            return 0;
+        };
+        entries
+            .filter_map(|e| e.ok())
+            .map(|e| {
+                let p = e.path();
+                if p.is_dir() {
+                    Self::dir_size(&p)
+                } else {
+                    fs::metadata(&p).map(|m| m.len()).unwrap_or(0)
+                }
+            })
+            .sum()
     }
 
     fn is_valid_gguf_file(path: &PathBuf) -> bool {
-        let Ok(metadata) = fs::metadata(path) else { return false };
+        let Ok(metadata) = fs::metadata(path) else {
+            return false;
+        };
         if metadata.len() < 1024 {
             return false;
         }
 
-        let Ok(mut file) = fs::File::open(path) else { return false };
+        let Ok(mut file) = fs::File::open(path) else {
+            return false;
+        };
         let mut magic = [0u8; 4];
         std::io::Read::read_exact(&mut file, &mut magic).is_ok() && &magic == b"GGUF"
     }

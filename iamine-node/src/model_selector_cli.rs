@@ -1,8 +1,7 @@
-use std::io::{self, Write};
 use iamine_models::{
-    ModelRegistry, ModelStorage, ModelNodeCapabilities,
-    ModelRequirements, can_node_run_model,
+    can_node_run_model, ModelNodeCapabilities, ModelRegistry, ModelRequirements, ModelStorage,
 };
+use std::io::{self, Write};
 
 pub struct ModelSelectorCLI;
 
@@ -14,8 +13,12 @@ impl ModelSelectorCLI {
         let caps = ModelNodeCapabilities::detect(peer_id);
 
         let all_models = registry.list();
-        let installed: Vec<_> = all_models.iter().filter(|m| storage.has_model(&m.id)).collect();
-        let available: Vec<_> = all_models.iter()
+        let installed: Vec<_> = all_models
+            .iter()
+            .filter(|m| storage.has_model(&m.id))
+            .collect();
+        let available: Vec<_> = all_models
+            .iter()
             .filter(|m| !storage.has_model(&m.id) && Self::is_runnable(&m.id, &caps))
             .collect();
 
@@ -25,16 +28,27 @@ impl ModelSelectorCLI {
         println!("🖥️  Tu Nodo:");
         println!("   CPU Cores:    {}", caps.cpu_cores);
         println!("   RAM:          {} GB", caps.ram_gb);
-        println!("   GPU:          {}", caps.gpu_type.as_deref().unwrap_or("❌"));
-        println!("   Storage:      {} GB disponibles\n", caps.storage_available_gb);
+        println!(
+            "   GPU:          {}",
+            caps.gpu_type.as_deref().unwrap_or("❌")
+        );
+        println!(
+            "   Storage:      {} GB disponibles\n",
+            caps.storage_available_gb
+        );
 
         println!("✅ Modelos Instalados ({}):", installed.len());
         if installed.is_empty() {
             println!("   (ninguno)");
         } else {
             for (i, m) in installed.iter().enumerate() {
-                println!("   {}. {} ({:.1} GB, {} GB RAM)",
-                    i + 1, m.id, m.size_bytes as f64 / 1_073_741_824.0, m.required_ram_gb);
+                println!(
+                    "   {}. {} ({:.1} GB, {} GB RAM)",
+                    i + 1,
+                    m.id,
+                    m.size_bytes as f64 / 1_073_741_824.0,
+                    m.required_ram_gb
+                );
             }
         }
 
@@ -44,8 +58,14 @@ impl ModelSelectorCLI {
         } else {
             for (i, m) in available.iter().enumerate() {
                 let badge = Self::badge(&m.id);
-                println!("   {}. {} {} ({:.1} GB, {} GB RAM)",
-                    i + 1, m.id, badge, m.size_bytes as f64 / 1_073_741_824.0, m.required_ram_gb);
+                println!(
+                    "   {}. {} {} ({:.1} GB, {} GB RAM)",
+                    i + 1,
+                    m.id,
+                    badge,
+                    m.size_bytes as f64 / 1_073_741_824.0,
+                    m.required_ram_gb
+                );
             }
         }
         Ok(())
@@ -58,7 +78,8 @@ impl ModelSelectorCLI {
         let caps = ModelNodeCapabilities::detect(peer_id);
 
         let all_models = registry.list();
-        let available: Vec<_> = all_models.iter()
+        let available: Vec<_> = all_models
+            .iter()
             .filter(|m| !storage.has_model(&m.id) && Self::is_runnable(&m.id, &caps))
             .collect();
 
@@ -69,8 +90,13 @@ impl ModelSelectorCLI {
         println!("\n📥 Selecciona modelo a descargar:");
         for (i, m) in available.iter().enumerate() {
             let badge = Self::badge(&m.id);
-            println!("   [{}] {} {} ({:.1} GB)",
-                i + 1, m.id, badge, m.size_bytes as f64 / 1_073_741_824.0);
+            println!(
+                "   [{}] {} {} ({:.1} GB)",
+                i + 1,
+                m.id,
+                badge,
+                m.size_bytes as f64 / 1_073_741_824.0
+            );
         }
         print!("Elige [1-{}]: ", available.len());
         let _ = io::stdout().flush();
@@ -100,7 +126,14 @@ impl ModelSelectorCLI {
     fn read_num(min: u32, max: u32) -> Result<u32, String> {
         let mut buf = String::new();
         io::stdin().read_line(&mut buf).map_err(|e| e.to_string())?;
-        let n: u32 = buf.trim().parse().map_err(|_| "Entrada inválida".to_string())?;
-        if n >= min && n <= max { Ok(n) } else { Err(format!("Elige entre {} y {}", min, max)) }
+        let n: u32 = buf
+            .trim()
+            .parse()
+            .map_err(|_| "Entrada inválida".to_string())?;
+        if n >= min && n <= max {
+            Ok(n)
+        } else {
+            Err(format!("Elige entre {} y {}", min, max))
+        }
     }
 }

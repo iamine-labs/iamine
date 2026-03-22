@@ -109,8 +109,10 @@ pub fn analyze_prompt_semantics_with_context(
     let complexity = detect_complexity(trimmed, &lower, words, chars);
     let detected_task_type = detect_task_type(trimmed);
     let requires_context = is_context_dependent_prompt(&lower);
-    let original_task_type = determine_primary_task(trimmed, &lower, detected_task_type, requires_context);
-    let secondary_tasks = detect_secondary_tasks(trimmed, &lower, original_task_type, requires_context);
+    let original_task_type =
+        determine_primary_task(trimmed, &lower, detected_task_type, requires_context);
+    let secondary_tasks =
+        detect_secondary_tasks(trimmed, &lower, original_task_type, requires_context);
     let domain = detect_domain(trimmed, &lower, original_task_type, &secondary_tasks);
     let signals = collect_signals(
         trimmed,
@@ -124,12 +126,18 @@ pub fn analyze_prompt_semantics_with_context(
     );
     let confidence = estimate_confidence(trimmed, &signals);
 
-    let fallback_applied =
-        (requires_context && !has_context) || (confidence < CONFIDENCE_THRESHOLD && original_task_type != TaskType::General);
+    let fallback_applied = (requires_context && !has_context)
+        || (confidence < CONFIDENCE_THRESHOLD && original_task_type != TaskType::General);
     let final_task_type = if requires_context && !has_context {
         TaskType::General
     } else if fallback_applied {
-        fallback_task_type(trimmed, &lower, original_task_type, &secondary_tasks, complexity)
+        fallback_task_type(
+            trimmed,
+            &lower,
+            original_task_type,
+            &secondary_tasks,
+            complexity,
+        )
     } else {
         original_task_type
     };
@@ -319,7 +327,15 @@ fn determine_primary_task(
     requires_context: bool,
 ) -> TaskType {
     if requires_context {
-        if contains_any(lower, &["hazlo mas simple", "hazlo más simple", "simplifica", "explain it simply"]) {
+        if contains_any(
+            lower,
+            &[
+                "hazlo mas simple",
+                "hazlo más simple",
+                "simplifica",
+                "explain it simply",
+            ],
+        ) {
             return TaskType::Conceptual;
         }
         return TaskType::General;
@@ -371,13 +387,19 @@ fn detect_secondary_tasks(
         return tasks;
     }
 
-    if contains_any(lower, &["explica", "explain", "que es", "qué es", "como", "how", "por que", "why"])
-        && primary_task != TaskType::Conceptual
+    if contains_any(
+        lower,
+        &[
+            "explica", "explain", "que es", "qué es", "como", "how", "por que", "why",
+        ],
+    ) && primary_task != TaskType::Conceptual
     {
         push_task(&mut tasks, TaskType::Conceptual);
     }
 
-    if is_ideation_prompt(lower) || contains_any(lower, &["ejemplo", "example", "ejercicio", "exercise"]) {
+    if is_ideation_prompt(lower)
+        || contains_any(lower, &["ejemplo", "example", "ejercicio", "exercise"])
+    {
         push_task(&mut tasks, TaskType::Generative);
     }
 
@@ -389,7 +411,10 @@ fn detect_secondary_tasks(
     if symbolic_markers && primary_task != TaskType::SymbolicMath {
         push_task(&mut tasks, TaskType::SymbolicMath);
     } else if has_math_domain_markers(trimmed, lower)
-        && !matches!(primary_task, TaskType::Math | TaskType::ExactMath | TaskType::SymbolicMath)
+        && !matches!(
+            primary_task,
+            TaskType::Math | TaskType::ExactMath | TaskType::SymbolicMath
+        )
     {
         push_task(&mut tasks, TaskType::Math);
     }
@@ -401,13 +426,23 @@ fn detect_secondary_tasks(
         push_task(&mut tasks, TaskType::ExactMath);
     }
 
-    if contains_any(lower, &["step by step", "paso a paso", "que pasaria", "qué pasaría", "what would happen"])
-        && primary_task != TaskType::Reasoning
+    if contains_any(
+        lower,
+        &[
+            "step by step",
+            "paso a paso",
+            "que pasaria",
+            "qué pasaría",
+            "what would happen",
+        ],
+    ) && primary_task != TaskType::Reasoning
     {
         push_task(&mut tasks, TaskType::Reasoning);
     }
 
-    if contains_any(lower, &["resume", "resumen", "summarize", "summary"]) && primary_task != TaskType::Summarization {
+    if contains_any(lower, &["resume", "resumen", "summarize", "summary"])
+        && primary_task != TaskType::Summarization
+    {
         push_task(&mut tasks, TaskType::Summarization);
     }
 
@@ -466,8 +501,12 @@ fn detect_domain(
     if matches!(
         primary_task,
         TaskType::Math | TaskType::ExactMath | TaskType::SymbolicMath
-    ) || secondary_tasks.iter().any(|task| matches!(task, TaskType::Math | TaskType::ExactMath | TaskType::SymbolicMath))
-        || has_math_domain_markers(trimmed, lower)
+    ) || secondary_tasks.iter().any(|task| {
+        matches!(
+            task,
+            TaskType::Math | TaskType::ExactMath | TaskType::SymbolicMath
+        )
+    }) || has_math_domain_markers(trimmed, lower)
     {
         return Some(Domain::Math);
     }
@@ -499,14 +538,19 @@ fn detect_deterministic_level(
     secondary_tasks: &[TaskType],
     output_style: OutputStyle,
 ) -> DeterministicLevel {
-    if matches!(primary_task, TaskType::ExactMath | TaskType::StructuredList | TaskType::Deterministic)
-        && secondary_tasks.is_empty()
+    if matches!(
+        primary_task,
+        TaskType::ExactMath | TaskType::StructuredList | TaskType::Deterministic
+    ) && secondary_tasks.is_empty()
     {
         return DeterministicLevel::High;
     }
 
     if matches!(output_style, OutputStyle::Generative)
-        || matches!(primary_task, TaskType::Generative | TaskType::General | TaskType::Conceptual | TaskType::Reasoning)
+        || matches!(
+            primary_task,
+            TaskType::Generative | TaskType::General | TaskType::Conceptual | TaskType::Reasoning
+        )
     {
         return DeterministicLevel::Low;
     }
@@ -545,8 +589,16 @@ fn fallback_task_type(
 
     if matches!(complexity, Complexity::High)
         || reasoning_hint
-        || matches!(original_task_type, TaskType::Reasoning | TaskType::SymbolicMath | TaskType::Conceptual)
-        || secondary_tasks.iter().any(|task| matches!(task, TaskType::Reasoning | TaskType::Conceptual | TaskType::SymbolicMath))
+        || matches!(
+            original_task_type,
+            TaskType::Reasoning | TaskType::SymbolicMath | TaskType::Conceptual
+        )
+        || secondary_tasks.iter().any(|task| {
+            matches!(
+                task,
+                TaskType::Reasoning | TaskType::Conceptual | TaskType::SymbolicMath
+            )
+        })
         || (trimmed.chars().any(|c| c.is_ascii_digit()) && trimmed.split_whitespace().count() >= 4)
     {
         TaskType::Reasoning
@@ -580,8 +632,13 @@ fn collect_signals(
     ];
 
     let keyword_hits = task_keyword_hits(raw_lower, primary_task);
-    let pattern_strength =
-        task_pattern_strength(trimmed, raw_lower, primary_task, secondary_tasks, requires_context);
+    let pattern_strength = task_pattern_strength(
+        trimmed,
+        raw_lower,
+        primary_task,
+        secondary_tasks,
+        requires_context,
+    );
     let competing_families = family_counts.into_iter().filter(|count| *count > 0).count();
     let ambiguity_strength = ambiguity_strength(
         trimmed,
@@ -594,8 +651,13 @@ fn collect_signals(
         requires_context,
         has_context,
     );
-    let conflict_strength =
-        conflict_strength(primary_task, secondary_tasks, competing_families, keyword_hits, raw_lower);
+    let conflict_strength = conflict_strength(
+        primary_task,
+        secondary_tasks,
+        competing_families,
+        keyword_hits,
+        raw_lower,
+    );
 
     let mut signals = Vec::new();
 
@@ -733,21 +795,18 @@ fn task_keyword_hits(lower: &str, task_type: TaskType) -> usize {
             "en orden",
             "in order",
         ],
-        TaskType::Code => &["rust", "python", "javascript", "sql", "function", "script", "code"],
+        TaskType::Code => &[
+            "rust",
+            "python",
+            "javascript",
+            "sql",
+            "function",
+            "script",
+            "code",
+        ],
         TaskType::Conceptual => &[
-            "explica",
-            "explain",
-            "por que",
-            "porque",
-            "why",
-            "how",
-            "describe",
-            "teoria",
-            "theory",
-            "que es",
-            "qué es",
-            "filosof",
-            "concepto",
+            "explica", "explain", "por que", "porque", "why", "how", "describe", "teoria",
+            "theory", "que es", "qué es", "filosof", "concepto",
         ],
         TaskType::Reasoning => &[
             "step by step",
@@ -782,7 +841,10 @@ fn task_keyword_hits(lower: &str, task_type: TaskType) -> usize {
         TaskType::General => &[],
     };
 
-    keywords.iter().filter(|needle| lower.contains(**needle)).count()
+    keywords
+        .iter()
+        .filter(|needle| lower.contains(**needle))
+        .count()
 }
 
 fn task_pattern_strength(
@@ -836,7 +898,10 @@ fn task_pattern_strength(
             }
         }
         TaskType::Code => {
-            if contains_any(lower, &["rust", "python", "javascript", "sql", "fn ", "def "]) {
+            if contains_any(
+                lower,
+                &["rust", "python", "javascript", "sql", "fn ", "def "],
+            ) {
                 0.80
             } else {
                 0.35
@@ -854,7 +919,10 @@ fn task_pattern_strength(
         TaskType::Conceptual => {
             if is_conceptual_math_prompt(trimmed, lower)
                 || is_philosophical_prompt(lower)
-                || contains_any(lower, &["why", "how", "explica", "explain", "que es", "qué es"])
+                || contains_any(
+                    lower,
+                    &["why", "how", "explica", "explain", "que es", "qué es"],
+                )
             {
                 0.68
             } else {
@@ -862,7 +930,9 @@ fn task_pattern_strength(
             }
         }
         TaskType::Math => {
-            if has_math_domain_markers(trimmed, lower) || secondary_tasks.contains(&TaskType::SymbolicMath) {
+            if has_math_domain_markers(trimmed, lower)
+                || secondary_tasks.contains(&TaskType::SymbolicMath)
+            {
                 0.55
             } else {
                 0.20
@@ -896,7 +966,14 @@ fn ambiguity_strength(
             .any(|c| matches!(c, '+' | '-' | '*' | '/' | '=' | '^' | 'x' | 'X' | '(' | ')'));
     let generic_only = contains_any(
         lower,
-        &["solve", "resuelve", "explica", "explain", "resume", "summarize"],
+        &[
+            "solve",
+            "resuelve",
+            "explica",
+            "explain",
+            "resume",
+            "summarize",
+        ],
     ) && words <= 2;
 
     let mut strength: f32 = 0.0;
@@ -906,7 +983,11 @@ fn ambiguity_strength(
     if chars <= 6 && !compact_exact {
         strength += 0.15;
     }
-    if keyword_hits == 0 && !compact_exact && !is_multi_intent_prompt(lower) && !is_hybrid_example_prompt(lower) {
+    if keyword_hits == 0
+        && !compact_exact
+        && !is_multi_intent_prompt(lower)
+        && !is_hybrid_example_prompt(lower)
+    {
         strength += 0.20;
     }
     if generic_only {
@@ -929,10 +1010,10 @@ fn conflict_strength(
     keyword_hits: usize,
     lower: &str,
 ) -> f32 {
-    let summarization_and_conceptual =
-        contains_any(lower, &["resume", "resumen", "summarize"]) && contains_any(lower, &["explica", "explain", "why", "how"]);
-    let exact_and_symbolic =
-        matches!(task_type, TaskType::ExactMath) && contains_any(lower, &["f(x)", "dx", "integral", "derivada"]);
+    let summarization_and_conceptual = contains_any(lower, &["resume", "resumen", "summarize"])
+        && contains_any(lower, &["explica", "explain", "why", "how"]);
+    let exact_and_symbolic = matches!(task_type, TaskType::ExactMath)
+        && contains_any(lower, &["f(x)", "dx", "integral", "derivada"]);
     let composed_prompt = is_multi_intent_prompt(lower);
 
     let mut strength: f32 = 0.0;
@@ -1005,13 +1086,17 @@ fn is_structured_output_request(trimmed: &str, lower: &str) -> bool {
             "all letters",
             "abecedario",
         ],
-    ) || (trimmed.chars().any(|c| c.is_ascii_digit()) && contains_any(lower, &["ideas", "examples", "ejemplos"]))
+    ) || (trimmed.chars().any(|c| c.is_ascii_digit())
+        && contains_any(lower, &["ideas", "examples", "ejemplos"]))
 }
 
 fn is_hybrid_example_prompt(lower: &str) -> bool {
     contains_any(lower, &["ejemplo", "example"])
         && contains_any(lower, &["ejercicio", "exercise"])
-        && contains_any(lower, &["ecuacion", "ecuación", "emc2", "e=mc2", "math", "matem"])
+        && contains_any(
+            lower,
+            &["ecuacion", "ecuación", "emc2", "e=mc2", "math", "matem"],
+        )
 }
 
 fn is_scientific_reasoning_prompt(lower: &str) -> bool {
@@ -1131,7 +1216,16 @@ fn has_exact_math_markers(trimmed: &str, lower: &str) -> bool {
             .chars()
             .any(|c| matches!(c, '+' | '-' | '*' | '/' | '^' | 'x' | 'X')))
         || normalize_expression(trimmed).is_some()
-        || contains_any(lower, &["sqrt(", "log", "digits of pi", "digitos de pi", "dígitos de pi"])
+        || contains_any(
+            lower,
+            &[
+                "sqrt(",
+                "log",
+                "digits of pi",
+                "digitos de pi",
+                "dígitos de pi",
+            ],
+        )
 }
 
 fn has_math_domain_markers(trimmed: &str, lower: &str) -> bool {
@@ -1160,14 +1254,7 @@ fn has_math_domain_markers(trimmed: &str, lower: &str) -> bool {
 fn is_multi_intent_prompt(lower: &str) -> bool {
     contains_any(
         lower,
-        &[
-            " y ",
-            " and ",
-            " luego ",
-            " then ",
-            " además ",
-            " ademas ",
-        ],
+        &[" y ", " and ", " luego ", " then ", " además ", " ademas "],
     )
 }
 
@@ -1211,7 +1298,9 @@ mod tests {
     #[test]
     fn test_complexity_detection() {
         let low = analyze_prompt("What is 2+2?");
-        let high = analyze_prompt("Explain the theory of relativity and why space-time bends around massive objects.");
+        let high = analyze_prompt(
+            "Explain the theory of relativity and why space-time bends around massive objects.",
+        );
 
         assert_eq!(low.complexity, Complexity::Low);
         assert_eq!(high.complexity, Complexity::High);
@@ -1244,8 +1333,16 @@ mod tests {
     fn test_multi_intent_detection() {
         let decision = analyze_prompt_semantics("dame un ejemplo de E=mc2 y un ejercicio");
         assert_eq!(decision.profile.semantic.primary_task, TaskType::Conceptual);
-        assert!(decision.profile.semantic.secondary_tasks.contains(&TaskType::Generative));
-        assert!(decision.profile.semantic.secondary_tasks.contains(&TaskType::Math));
+        assert!(decision
+            .profile
+            .semantic
+            .secondary_tasks
+            .contains(&TaskType::Generative));
+        assert!(decision
+            .profile
+            .semantic
+            .secondary_tasks
+            .contains(&TaskType::Math));
         assert_eq!(decision.profile.semantic.output_style, OutputStyle::Hybrid);
         assert_eq!(decision.profile.semantic.domain, Some(Domain::Physics));
     }
@@ -1254,7 +1351,11 @@ mod tests {
     fn test_hybrid_prompt_classification() {
         let decision = analyze_prompt_semantics("explica y calcula 2+2");
         assert_eq!(decision.profile.semantic.primary_task, TaskType::Conceptual);
-        assert!(decision.profile.semantic.secondary_tasks.contains(&TaskType::ExactMath));
+        assert!(decision
+            .profile
+            .semantic
+            .secondary_tasks
+            .contains(&TaskType::ExactMath));
         assert_eq!(decision.profile.semantic.output_style, OutputStyle::Hybrid);
     }
 
@@ -1270,7 +1371,11 @@ mod tests {
     fn test_ideation_classification() {
         let decision = analyze_prompt_semantics("dame 3 ideas de negocio de IA");
         assert_eq!(decision.profile.semantic.primary_task, TaskType::Generative);
-        assert!(decision.profile.semantic.secondary_tasks.contains(&TaskType::StructuredList));
+        assert!(decision
+            .profile
+            .semantic
+            .secondary_tasks
+            .contains(&TaskType::StructuredList));
         assert_eq!(decision.profile.semantic.output_style, OutputStyle::Hybrid);
         assert_eq!(decision.profile.semantic.domain, Some(Domain::Business));
     }

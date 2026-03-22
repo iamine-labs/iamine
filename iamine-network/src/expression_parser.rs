@@ -31,7 +31,10 @@ fn looks_like_math_expression(prompt: &str) -> bool {
         return false;
     }
 
-    let compact: String = trimmed.chars().filter(|c| !c.is_ascii_whitespace()).collect();
+    let compact: String = trimmed
+        .chars()
+        .filter(|c| !c.is_ascii_whitespace())
+        .collect();
     if compact.is_empty() {
         return false;
     }
@@ -55,7 +58,9 @@ fn looks_like_math_expression(prompt: &str) -> bool {
         return false;
     }
 
-    compact.chars().any(|c| matches!(c, '+' | '-' | '*' | '/' | '^' | '(' | ')'))
+    compact
+        .chars()
+        .any(|c| matches!(c, '+' | '-' | '*' | '/' | '^' | '(' | ')'))
         || lower.starts_with("sqrt(")
 }
 
@@ -86,10 +91,7 @@ fn insert_implicit_multiplication(expr: &str) -> String {
     let mut normalized = String::with_capacity(expr.len() + 4);
 
     for (idx, ch) in chars.iter().copied().enumerate() {
-        if ch == '('
-            && idx > 0
-            && (chars[idx - 1].is_ascii_digit() || chars[idx - 1] == ')')
-        {
+        if ch == '(' && idx > 0 && (chars[idx - 1].is_ascii_digit() || chars[idx - 1] == ')') {
             normalized.push('*');
         }
         normalized.push(ch);

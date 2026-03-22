@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use iamine_models::{HardwareAcceleration, ModelStorage, StorageConfig};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkerCapabilities {
@@ -50,7 +50,8 @@ fn sysinfo_ram_gb() -> u64 {
         if let Ok(content) = std::fs::read_to_string("/proc/meminfo") {
             for line in content.lines() {
                 if line.starts_with("MemTotal:") {
-                    let kb: u64 = line.split_whitespace()
+                    let kb: u64 = line
+                        .split_whitespace()
                         .nth(1)
                         .and_then(|s| s.parse().ok())
                         .unwrap_or(0);
@@ -62,7 +63,9 @@ fn sysinfo_ram_gb() -> u64 {
     #[cfg(target_os = "macos")]
     {
         if let Ok(out) = std::process::Command::new("sysctl")
-            .arg("-n").arg("hw.memsize").output()
+            .arg("-n")
+            .arg("hw.memsize")
+            .output()
         {
             let s = String::from_utf8_lossy(&out.stdout);
             if let Ok(bytes) = s.trim().parse::<u64>() {

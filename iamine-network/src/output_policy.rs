@@ -21,7 +21,10 @@ pub fn describe_output_policy(profile: &PromptProfile, prompt: &str) -> OutputPo
         Complexity::Medium => 512usize,
         Complexity::High => 768usize,
     };
-    let mut reasons = vec![format!("complexity={}", complexity_label(profile.complexity))];
+    let mut reasons = vec![format!(
+        "complexity={}",
+        complexity_label(profile.complexity)
+    )];
 
     if contains_any(&lower, &["explica", "describe", "why", "how", "detalle"]) {
         max_tokens += 200;
@@ -58,7 +61,11 @@ pub fn describe_output_policy(profile: &PromptProfile, prompt: &str) -> OutputPo
         reasons.push("hybrid semantic style".to_string());
     }
 
-    if profile.semantic.secondary_tasks.contains(&TaskType::StructuredList) {
+    if profile
+        .semantic
+        .secondary_tasks
+        .contains(&TaskType::StructuredList)
+    {
         max_tokens += 64;
         reasons.push("secondary structured task".to_string());
     }
@@ -91,8 +98,8 @@ fn complexity_label(complexity: Complexity) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::prompt_analyzer::{Language, PromptProfile};
     use crate::prompt_analyzer::{DeterministicLevel, Domain, SemanticProfile};
+    use crate::prompt_analyzer::{Language, PromptProfile};
     use crate::task_analyzer::TaskType;
 
     fn semantic_profile(
@@ -136,7 +143,8 @@ mod tests {
             semantic: semantic_profile(TaskType::Conceptual, OutputStyle::Explanatory, Vec::new()),
         };
 
-        let decision = describe_output_policy(&profile, "explica paso a paso la teoria de la relatividad");
+        let decision =
+            describe_output_policy(&profile, "explica paso a paso la teoria de la relatividad");
 
         assert!(decision.max_tokens >= 1000);
         assert!(decision.reason.contains("complexity=medium"));
@@ -152,7 +160,11 @@ mod tests {
             length: 38,
             task_type: TaskType::Summarization,
             confidence: 0.9,
-            semantic: semantic_profile(TaskType::Summarization, OutputStyle::Explanatory, Vec::new()),
+            semantic: semantic_profile(
+                TaskType::Summarization,
+                OutputStyle::Explanatory,
+                Vec::new(),
+            ),
         };
 
         let decision = describe_output_policy(&profile, "genera un resumen de la relatividad");
@@ -168,10 +180,15 @@ mod tests {
             length: 48,
             task_type: TaskType::SymbolicMath,
             confidence: 0.9,
-            semantic: semantic_profile(TaskType::SymbolicMath, OutputStyle::Explanatory, Vec::new()),
+            semantic: semantic_profile(
+                TaskType::SymbolicMath,
+                OutputStyle::Explanatory,
+                Vec::new(),
+            ),
         };
 
-        let decision = describe_output_policy(&profile, "Calcula la derivada de f(x)=4x^3+2x^2-7x+5");
+        let decision =
+            describe_output_policy(&profile, "Calcula la derivada de f(x)=4x^3+2x^2-7x+5");
         assert_eq!(decision.max_tokens, 768);
         assert!(decision.reason.contains("symbolic math task"));
     }

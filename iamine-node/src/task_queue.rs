@@ -1,7 +1,7 @@
+use iamine_core::{NodeReputation, TaskResult};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, Mutex};
-use std::sync::Arc;
-use iamine_core::{TaskResult, NodeReputation};
 
 use crate::executor::TaskExecutor;
 
@@ -20,8 +20,8 @@ impl QueuedTask {
     pub fn new(task_id: String, task_type: String, data: String) -> Self {
         let timeout = match task_type.as_str() {
             "reverse_string" => Duration::from_secs(5),
-            "compute_hash"   => Duration::from_secs(10),
-            _                => Duration::from_secs(30),
+            "compute_hash" => Duration::from_secs(10),
+            _ => Duration::from_secs(30),
         };
         Self {
             task_id,
@@ -88,7 +88,12 @@ impl TaskQueue {
     }
 
     /// Encolar tarea
-    pub async fn push(&self, task_id: String, task_type: String, data: String) -> Result<(), String> {
+    pub async fn push(
+        &self,
+        task_id: String,
+        task_type: String,
+        data: String,
+    ) -> Result<(), String> {
         let task = QueuedTask::new(task_id, task_type, data);
         self.tx.send(task).await.map_err(|e| e.to_string())
     }
@@ -114,16 +119,20 @@ impl TaskQueue {
         });
 
         while let Some(task) = internal_rx.recv().await {
-            let attempt = task.attempt;         // ← quitar task_id variable
+            let attempt = task.attempt; // ← quitar task_id variable
             let timeout = task.timeout;
             let otx = outcome_tx.clone();
             let rep = Arc::clone(&reputation);
             let retry_tx = internal_tx.clone();
 
             tokio::spawn(async move {
-                println!("🔄 [Queue] [{}/{}] {} → '{}'",
-                    attempt + 1, task.max_retries + 1,
-                    task.task_id, task.task_type);
+                println!(
+                    "🔄 [Queue] [{}/{}] {} → '{}'",
+                    attempt + 1,
+                    task.max_retries + 1,
+                    task.task_id,
+                    task.task_type
+                );
 
                 let t_id = task.task_id.clone();
                 let t_type = task.task_type.clone();
@@ -135,13 +144,18 @@ impl TaskQueue {
                     tokio::task::spawn_blocking(move || {
                         TaskExecutor::execute_task(t_id, t_type, t_data)
                     }),
-                ).await;
+                )
+                .await;
 
                 match exec_result {
                     // ✅ Completada a tiempo
                     Ok(Ok(response)) if response.success => {
-                        println!("✅ [Queue] [{}] completada (intento {}): {}",
-                            task.task_id, attempt + 1, response.result);
+                        println!(
+                            "✅ [Queue] [{}] completada (intento {}): {}",
+                            task.task_id,
+                            attempt + 1,
+                            response.result
+                        );
 
                         let elapsed = task.enqueued_at.elapsed().as_millis() as u64;
                         let result = TaskResult::success(
@@ -153,51 +167,69 @@ impl TaskQueue {
 
                         rep.lock().await.task_success(0, elapsed);
 
-                        let _ = otx.send(TaskOutcome {
-                            task_id: task.task_id,
-                            result: Some(result),
-                            attempts: attempt + 1,
-                            status: OutcomeStatus::Success,
-                        }).await;
+                        let _ = otx
+                            .send(TaskOutcome {
+                                task_id: task.task_id,
+                                result: Some(result),
+                                attempts: attempt + 1,
+                                status: OutcomeStatus::Success,
+                            })
+                            .await;
                     }
 
                     // ❌ Falló — retry si puede
                     Ok(Ok(response)) => {
-                        println!("❌ [Queue] [{}] falló (intento {}): {}",
-                            task.task_id, attempt + 1, response.result);
+                        println!(
+                            "❌ [Queue] [{}] falló (intento {}): {}",
+                            task.task_id,
+                            attempt + 1,
+                            response.result
+                        );
 
                         if task.can_retry() {
-                            println!("🔁 [Queue] [{}] reintentando ({}/{})",
-                                task.task_id, attempt + 1, task.max_retries);
+                            println!(
+                                "🔁 [Queue] [{}] reintentando ({}/{})",
+                                task.task_id,
+                                attempt + 1,
+                                task.max_retries
+                            );
                             let _ = retry_tx.send(task.retry()).await;
                         } else {
                             println!("💀 [Queue] [{}] max reintentos alcanzados", task.task_id);
                             rep.lock().await.task_failed();
-                            let _ = otx.send(TaskOutcome {
-                                task_id: task.task_id,
-                                result: None,
-                                attempts: attempt + 1,
-                                status: OutcomeStatus::MaxRetriesExceeded,
-                            }).await;
+                            let _ = otx
+                                .send(TaskOutcome {
+                                    task_id: task.task_id,
+                                    result: None,
+                                    attempts: attempt + 1,
+                                    status: OutcomeStatus::MaxRetriesExceeded,
+                                })
+                                .await;
                         }
                     }
 
                     // ⏱️ Timeout
                     Err(_) => {
-                        println!("⏱️ [Queue] [{}] timeout después de {}s (intento {})",
-                            task.task_id, timeout.as_secs(), attempt + 1);
+                        println!(
+                            "⏱️ [Queue] [{}] timeout después de {}s (intento {})",
+                            task.task_id,
+                            timeout.as_secs(),
+                            attempt + 1
+                        );
 
                         if task.can_retry() {
                             println!("🔁 [Queue] [{}] reintentando tras timeout", task.task_id);
                             let _ = retry_tx.send(task.retry()).await;
                         } else {
                             rep.lock().await.task_timed_out();
-                            let _ = otx.send(TaskOutcome {
-                                task_id: task.task_id,
-                                result: None,
-                                attempts: attempt + 1,
-                                status: OutcomeStatus::TimedOut,
-                            }).await;
+                            let _ = otx
+                                .send(TaskOutcome {
+                                    task_id: task.task_id,
+                                    result: None,
+                                    attempts: attempt + 1,
+                                    status: OutcomeStatus::TimedOut,
+                                })
+                                .await;
                         }
                     }
 
@@ -205,12 +237,14 @@ impl TaskQueue {
                     Ok(Err(e)) => {
                         eprintln!("💥 [Queue] Panic en [{}]: {:?}", task.task_id, e);
                         rep.lock().await.task_failed();
-                        let _ = otx.send(TaskOutcome {
-                            task_id: task.task_id,
-                            result: None,
-                            attempts: attempt + 1,
-                            status: OutcomeStatus::Failed,
-                        }).await;
+                        let _ = otx
+                            .send(TaskOutcome {
+                                task_id: task.task_id,
+                                result: None,
+                                attempts: attempt + 1,
+                                status: OutcomeStatus::Failed,
+                            })
+                            .await;
                     }
                 }
             });

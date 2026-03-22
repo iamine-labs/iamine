@@ -26,7 +26,8 @@ impl ModelAutoProvision {
     }
 
     pub fn recommend_for_empty_node(&self, profile: &AutoProvisionProfile) -> Vec<ModelDescriptor> {
-        let mut models: Vec<ModelDescriptor> = self.registry
+        let mut models: Vec<ModelDescriptor> = self
+            .registry
             .list()
             .into_iter()
             .filter(|model| self.is_compatible(profile, model))
@@ -37,7 +38,10 @@ impl ModelAutoProvision {
         models
     }
 
-    pub fn recommend_compatible_models(&self, profile: &AutoProvisionProfile) -> Vec<ModelDescriptor> {
+    pub fn recommend_compatible_models(
+        &self,
+        profile: &AutoProvisionProfile,
+    ) -> Vec<ModelDescriptor> {
         let installed = self.installed_models();
         self.recommend_for_empty_node(profile)
             .into_iter()

@@ -1,7 +1,7 @@
+use iamine_core::TaskResult;
 use std::sync::Arc;
 use std::time::Instant;
-use tokio::sync::{mpsc, Semaphore};
-use iamine_core::TaskResult;  // ← quitar TaskType
+use tokio::sync::{mpsc, Semaphore}; // ← quitar TaskType
 
 use crate::executor::TaskExecutor;
 
@@ -33,13 +33,18 @@ impl WorkerPool {
 
         println!("⚡ WorkerPool iniciado: {} slots paralelos", max_concurrent);
 
-        Self { semaphore, task_tx, max_concurrent }
+        Self {
+            semaphore,
+            task_tx,
+            max_concurrent,
+        }
     }
 
     /// Detectar cores y crear pool automáticamente
     pub fn auto() -> Self {
         let cores = std::thread::available_parallelism()
-            .map(|n| n.get()).unwrap_or(2);
+            .map(|n| n.get())
+            .unwrap_or(2);
         Self::with_slots(cores)
     }
 
@@ -52,16 +57,29 @@ impl WorkerPool {
 
         println!("⚡ WorkerPool iniciado: {} slots paralelos", slots);
 
-        Self { semaphore, task_tx, max_concurrent: slots }
+        Self {
+            semaphore,
+            task_tx,
+            max_concurrent: slots,
+        }
     }
 
     /// Enviar tarea al pool — retorna resultado via oneshot
-    pub async fn submit(&self, task_id: String, task_type: String, data: String)
-        -> Result<TaskResult, String>
-    {
+    pub async fn submit(
+        &self,
+        task_id: String,
+        task_type: String,
+        data: String,
+    ) -> Result<TaskResult, String> {
         let (result_tx, result_rx) = tokio::sync::oneshot::channel();
 
-        self.task_tx.send(PoolTask { task_id, task_type, data, result_tx })
+        self.task_tx
+            .send(PoolTask {
+                task_id,
+                task_type,
+                data,
+                result_tx,
+            })
             .await
             .map_err(|e| format!("Pool channel cerrado: {}", e))?;
 
@@ -88,8 +106,10 @@ impl WorkerPool {
                 let _permit = sem.acquire().await.expect("Semaphore cerrado");
 
                 let start = Instant::now();
-                println!("⚙️  [Pool] Ejecutando [{}] {} → '{}'",
-                    pool_task.task_id, pool_task.task_type, pool_task.data);
+                println!(
+                    "⚙️  [Pool] Ejecutando [{}] {} → '{}'",
+                    pool_task.task_id, pool_task.task_type, pool_task.data
+                );
 
                 // Ejecutar en blocking thread para no bloquear tokio runtime
                 let task_id = pool_task.task_id.clone();
@@ -98,15 +118,19 @@ impl WorkerPool {
 
                 let result = tokio::task::spawn_blocking(move || {
                     TaskExecutor::execute_task(task_id, task_type, data)
-                }).await;
+                })
+                .await;
 
                 let elapsed = start.elapsed().as_millis() as u64;
 
                 match result {
-                    Ok(response) => {  // ← quitar mut
+                    Ok(response) => {
+                        // ← quitar mut
                         let task_result = if response.success {
-                            println!("✅ [Pool] [{}] completada en {}ms: {}",
-                                pool_task.task_id, elapsed, response.result);
+                            println!(
+                                "✅ [Pool] [{}] completada en {}ms: {}",
+                                pool_task.task_id, elapsed, response.result
+                            );
                             TaskResult::success(
                                 pool_task.task_id.clone(),
                                 "local_worker".to_string(),
@@ -114,7 +138,10 @@ impl WorkerPool {
                                 elapsed,
                             )
                         } else {
-                            println!("❌ [Pool] [{}] falló: {}", pool_task.task_id, response.result);
+                            println!(
+                                "❌ [Pool] [{}] falló: {}",
+                                pool_task.task_id, response.result
+                            );
                             TaskResult::failure(
                                 pool_task.task_id.clone(),
                                 "local_worker".to_string(),
@@ -126,13 +153,11 @@ impl WorkerPool {
                     }
                     Err(e) => {
                         eprintln!("💥 [Pool] Panic en [{}]: {:?}", pool_task.task_id, e);
-                        let _ = pool_task.result_tx.send(
-                            TaskResult::failure(
-                                pool_task.task_id,
-                                "local_worker".to_string(),
-                                format!("Task panicked: {:?}", e),
-                            )
-                        );
+                        let _ = pool_task.result_tx.send(TaskResult::failure(
+                            pool_task.task_id,
+                            "local_worker".to_string(),
+                            format!("Task panicked: {:?}", e),
+                        ));
                     }
                 }
                 // _permit se libera aquí automáticamente

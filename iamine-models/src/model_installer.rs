@@ -1,9 +1,9 @@
+use crate::model_downloader::{DownloadProgress, ModelDownloader};
 use crate::model_registry::ModelRegistry;
 use crate::model_storage::ModelStorage;
-use crate::model_downloader::{ModelDownloader, DownloadProgress};
 use crate::model_validator::ModelValidator;
+use crate::node_models::{ModelId, NodeModels};
 use crate::storage_config::StorageConfig;
-use crate::node_models::{NodeModels, ModelId};
 
 pub struct ModelInstaller {
     pub registry: ModelRegistry,
@@ -47,7 +47,12 @@ impl ModelInstaller {
         // 1️⃣ Check registry
         let model = match self.registry.get(model_id) {
             Some(m) => m.clone(),
-            None => return InstallResult::DownloadFailed(format!("Model '{}' not in registry", model_id)),
+            None => {
+                return InstallResult::DownloadFailed(format!(
+                    "Model '{}' not in registry",
+                    model_id
+                ))
+            }
         };
 
         // 2️⃣ Already installed?
@@ -67,7 +72,12 @@ impl ModelInstaller {
             };
         }
 
-        println!("📦 Installing {} ({:.1} GB, {})...", model_id, model.size_gb(), model.quantization);
+        println!(
+            "📦 Installing {} ({:.1} GB, {})...",
+            model_id,
+            model.size_gb(),
+            model.quantization
+        );
         println!("   URL: {}", model.download_url);
 
         // 4️⃣ Download (real HTTP streaming)
@@ -110,21 +120,27 @@ impl ModelInstaller {
 
     /// Listar modelos: registry + estado local
     pub fn list_models(&self) -> Vec<ModelStatus> {
-        self.registry.list().iter().map(|m| {
-            let installed = self.storage.has_model(&m.id);
-            let size_on_disk = if installed {
-                Some(self.storage.model_size_bytes(&m.id))
-            } else { None };
-            ModelStatus {
-                id: m.id.clone(),
-                version: m.version.clone(),
-                architecture: m.architecture.clone(),
-                required_ram_gb: m.required_ram_gb,
-                size_gb: m.size_gb(),
-                installed,
-                size_on_disk_mb: size_on_disk.map(|s| s / 1_048_576),
-            }
-        }).collect()
+        self.registry
+            .list()
+            .iter()
+            .map(|m| {
+                let installed = self.storage.has_model(&m.id);
+                let size_on_disk = if installed {
+                    Some(self.storage.model_size_bytes(&m.id))
+                } else {
+                    None
+                };
+                ModelStatus {
+                    id: m.id.clone(),
+                    version: m.version.clone(),
+                    architecture: m.architecture.clone(),
+                    required_ram_gb: m.required_ram_gb,
+                    size_gb: m.size_gb(),
+                    installed,
+                    size_on_disk_mb: size_on_disk.map(|s| s / 1_048_576),
+                }
+            })
+            .collect()
     }
 
     /// Generar NodeModels para broadcast P2P
@@ -158,11 +174,13 @@ pub struct ModelStatus {
 impl ModelStatus {
     pub fn display(&self) {
         let status = if self.installed { "✅" } else { "⬜" };
-        let disk = self.size_on_disk_mb
+        let disk = self
+            .size_on_disk_mb
             .map(|s| format!(" ({} MB en disco)", s))
             .unwrap_or_default();
-        println!("  {} {} v{} | {:.1} GB | {}GB RAM{}",
-            status, self.id, self.version,
-            self.size_gb, self.required_ram_gb, disk);
+        println!(
+            "  {} {} v{} | {:.1} GB | {}GB RAM{}",
+            status, self.id, self.version, self.size_gb, self.required_ram_gb, disk
+        );
     }
 }

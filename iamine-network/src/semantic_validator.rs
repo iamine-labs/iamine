@@ -1,6 +1,6 @@
 use crate::prompt_analyzer::{
-    DeterministicLevel, Domain, OutputStyle, PromptProfile, SemanticProfile, SemanticRoutingDecision,
-    Signal, SignalKind, CONFIDENCE_THRESHOLD,
+    DeterministicLevel, Domain, OutputStyle, PromptProfile, SemanticProfile,
+    SemanticRoutingDecision, Signal, SignalKind, CONFIDENCE_THRESHOLD,
 };
 use crate::task_analyzer::TaskType;
 use serde::{Deserialize, Serialize};
@@ -60,8 +60,9 @@ pub fn validate_semantic_decision_with_context(
         .signals
         .iter()
         .any(|signal| matches!(signal.kind, SignalKind::Ambiguity | SignalKind::Conflict));
-    let should_model_validate =
-        adjusted_profile.confidence < CONFIDENCE_THRESHOLD || !conflicts.is_empty() || has_signal_conflict;
+    let should_model_validate = adjusted_profile.confidence < CONFIDENCE_THRESHOLD
+        || !conflicts.is_empty()
+        || has_signal_conflict;
 
     if should_model_validate {
         let model_validation = model_validate_with_context(prompt, &adjusted_profile, has_context);
@@ -125,7 +126,9 @@ fn model_validate_with_context(
         validated.primary_task = TaskType::Conceptual;
         ensure_secondary(&mut validated.secondary_tasks, TaskType::Generative);
         ensure_secondary(&mut validated.secondary_tasks, TaskType::Math);
-        validated.secondary_tasks.retain(|task| *task != TaskType::ExactMath);
+        validated
+            .secondary_tasks
+            .retain(|task| *task != TaskType::ExactMath);
         validated.domain = Some(Domain::Physics);
         validated.output_style = OutputStyle::Hybrid;
         validated.deterministic_level = DeterministicLevel::Low;
@@ -133,7 +136,9 @@ fn model_validate_with_context(
     } else if is_scientific_reasoning_prompt(&lower) {
         validated.primary_task = TaskType::Reasoning;
         ensure_secondary(&mut validated.secondary_tasks, TaskType::Math);
-        validated.secondary_tasks.retain(|task| *task != TaskType::ExactMath);
+        validated
+            .secondary_tasks
+            .retain(|task| *task != TaskType::ExactMath);
         validated.domain = Some(Domain::Physics);
         validated.output_style = OutputStyle::Hybrid;
         validated.deterministic_level = DeterministicLevel::Medium;
@@ -146,7 +151,9 @@ fn model_validate_with_context(
         } else {
             validated.output_style = OutputStyle::Generative;
         }
-        validated.secondary_tasks.retain(|task| *task != TaskType::Deterministic);
+        validated
+            .secondary_tasks
+            .retain(|task| *task != TaskType::Deterministic);
         validated.domain = Some(Domain::Business);
         validated.deterministic_level = DeterministicLevel::Low;
         validated.confidence = profile.confidence.max(0.78);
@@ -155,19 +162,27 @@ fn model_validate_with_context(
         validated.domain = Some(Domain::Philosophy);
         validated.output_style = OutputStyle::Explanatory;
         validated.deterministic_level = DeterministicLevel::Low;
-        validated.secondary_tasks.retain(|task| *task != TaskType::ExactMath);
+        validated
+            .secondary_tasks
+            .retain(|task| *task != TaskType::ExactMath);
         validated.confidence = profile.confidence.max(0.76);
     } else if is_conceptual_math_prompt(prompt, &lower) {
         validated.primary_task = TaskType::Conceptual;
         ensure_secondary(&mut validated.secondary_tasks, TaskType::SymbolicMath);
-        validated.secondary_tasks.retain(|task| *task != TaskType::ExactMath);
+        validated
+            .secondary_tasks
+            .retain(|task| *task != TaskType::ExactMath);
         validated.domain = Some(Domain::Math);
         validated.output_style = OutputStyle::Hybrid;
         validated.deterministic_level = DeterministicLevel::Low;
         validated.confidence = profile.confidence.max(0.68);
-    } else if has_symbolic_math_markers(prompt, &lower) && matches!(profile.primary_task, TaskType::General | TaskType::Math) {
+    } else if has_symbolic_math_markers(prompt, &lower)
+        && matches!(profile.primary_task, TaskType::General | TaskType::Math)
+    {
         validated.primary_task = TaskType::SymbolicMath;
-        validated.secondary_tasks.retain(|task| *task != TaskType::ExactMath);
+        validated
+            .secondary_tasks
+            .retain(|task| *task != TaskType::ExactMath);
         validated.domain = Some(Domain::Math);
         validated.output_style = OutputStyle::Explanatory;
         validated.deterministic_level = DeterministicLevel::Medium;
@@ -257,11 +272,17 @@ fn detect_conflicts(
         conflicts.push("missing-context".to_string());
     }
 
-    if profile.secondary_tasks.contains(&TaskType::ExactMath) && has_symbolic_math_markers(prompt, &lower) {
+    if profile.secondary_tasks.contains(&TaskType::ExactMath)
+        && has_symbolic_math_markers(prompt, &lower)
+    {
         conflicts.push("symbolic-exact-overlap".to_string());
     }
 
-    if matches!(profile.primary_task, TaskType::Deterministic | TaskType::ExactMath) && is_ideation_prompt(&lower) {
+    if matches!(
+        profile.primary_task,
+        TaskType::Deterministic | TaskType::ExactMath
+    ) && is_ideation_prompt(&lower)
+    {
         conflicts.push("ideation-vs-deterministic".to_string());
     }
 
@@ -269,15 +290,23 @@ fn detect_conflicts(
         conflicts.push("philosophy-vs-general".to_string());
     }
 
-    if matches!(profile.primary_task, TaskType::SymbolicMath) && is_conceptual_math_prompt(prompt, &lower) {
+    if matches!(profile.primary_task, TaskType::SymbolicMath)
+        && is_conceptual_math_prompt(prompt, &lower)
+    {
         conflicts.push("conceptual-math-vs-symbolic".to_string());
     }
 
-    if matches!(profile.primary_task, TaskType::SymbolicMath | TaskType::ExactMath) && is_hybrid_example_prompt(&lower) {
+    if matches!(
+        profile.primary_task,
+        TaskType::SymbolicMath | TaskType::ExactMath
+    ) && is_hybrid_example_prompt(&lower)
+    {
         conflicts.push("hybrid-example-vs-math-only".to_string());
     }
 
-    if matches!(profile.primary_task, TaskType::General) && has_symbolic_math_markers(prompt, &lower) {
+    if matches!(profile.primary_task, TaskType::General)
+        && has_symbolic_math_markers(prompt, &lower)
+    {
         conflicts.push("math-vs-general".to_string());
     }
 
@@ -329,14 +358,24 @@ fn is_ideation_prompt(lower: &str) -> bool {
 fn requests_structured_output(lower: &str) -> bool {
     contains_any(
         lower,
-        &["dame 3", "dame tres", "3 ideas", "tres ideas", "lista", "list"],
+        &[
+            "dame 3",
+            "dame tres",
+            "3 ideas",
+            "tres ideas",
+            "lista",
+            "list",
+        ],
     )
 }
 
 fn is_hybrid_example_prompt(lower: &str) -> bool {
     contains_any(lower, &["ejemplo", "example"])
         && contains_any(lower, &["ejercicio", "exercise"])
-        && contains_any(lower, &["ecuacion", "ecuación", "emc2", "e=mc2", "math", "matem"])
+        && contains_any(
+            lower,
+            &["ecuacion", "ecuación", "emc2", "e=mc2", "math", "matem"],
+        )
 }
 
 fn is_scientific_reasoning_prompt(lower: &str) -> bool {
@@ -354,7 +393,14 @@ fn is_scientific_reasoning_prompt(lower: &str) -> bool {
         ],
     ) && contains_any(
         lower,
-        &["calcula", "calculate", "ecuaciones", "equations", "explica", "explain"],
+        &[
+            "calcula",
+            "calculate",
+            "ecuaciones",
+            "equations",
+            "explica",
+            "explain",
+        ],
     )
 }
 
@@ -511,10 +557,17 @@ mod tests {
                 note: "forced conflict".to_string(),
             }],
         };
-        decision.profile.semantic.secondary_tasks.push(TaskType::ExactMath);
+        decision
+            .profile
+            .semantic
+            .secondary_tasks
+            .push(TaskType::ExactMath);
         let validated =
             validate_semantic_decision("dame 3 ideas de negocio de IA", decision).validation;
-        assert!(validated.conflicts.iter().any(|conflict| conflict == "ideation-vs-deterministic"));
+        assert!(validated
+            .conflicts
+            .iter()
+            .any(|conflict| conflict == "ideation-vs-deterministic"));
     }
 
     #[test]
@@ -530,9 +583,13 @@ mod tests {
             }],
         };
         let validated =
-            validate_semantic_decision("Filosoficamente hablando que es dios?", decision).validation;
+            validate_semantic_decision("Filosoficamente hablando que es dios?", decision)
+                .validation;
         assert!(validated.model_validation_used);
-        assert_eq!(validated.validated_profile.primary_task, TaskType::Conceptual);
+        assert_eq!(
+            validated.validated_profile.primary_task,
+            TaskType::Conceptual
+        );
         assert_eq!(validated.validated_profile.domain, Some(Domain::Philosophy));
     }
 
@@ -546,7 +603,10 @@ mod tests {
         };
         let validated = validate_semantic_decision("Que es una derivada?", decision).validation;
         assert!(validated.correction_applied);
-        assert_eq!(validated.validated_profile.primary_task, TaskType::Conceptual);
+        assert_eq!(
+            validated.validated_profile.primary_task,
+            TaskType::Conceptual
+        );
         assert!(validated
             .validated_profile
             .secondary_tasks
