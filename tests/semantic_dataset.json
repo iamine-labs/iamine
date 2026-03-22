@@ -1,0 +1,52 @@
+[
+  {
+    "prompt": "dame el abecedario",
+    "expected_task": "StructuredList",
+    "should_normalize": true
+  },
+  {
+    "prompt": "6*9",
+    "expected_task": "ExactMath",
+    "should_normalize": true
+  },
+  {
+    "prompt": "Calcula la derivada de f(x)=4x^3+2x^2-7x+5",
+    "expected_task": "SymbolicMath",
+    "should_normalize": false
+  },
+  {
+    "prompt": "Evalúa la integral definida de x^2 entre 0 y 3",
+    "expected_task": "SymbolicMath",
+    "should_normalize": false
+  },
+  {
+    "prompt": "genera un resumen de la relatividad",
+    "expected_task": "Summarization",
+    "should_normalize": false
+  },
+  {
+    "prompt": "explica la teoria de la relatividad",
+    "expected_task": "Conceptual",
+    "should_normalize": false
+  },
+  {
+    "prompt": "write a python function to sort a list",
+    "expected_task": "Code",
+    "should_normalize": false
+  },
+  {
+    "prompt": "step by step solve this puzzle",
+    "expected_task": "Reasoning",
+    "should_normalize": false
+  },
+  {
+    "prompt": "Java",
+    "expected_task": "General",
+    "should_normalize": false
+  },
+  {
+    "prompt": "solve",
+    "expected_task": "General",
+    "should_normalize": false
+  }
+]

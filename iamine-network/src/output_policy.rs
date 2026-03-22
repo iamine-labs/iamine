@@ -86,6 +86,7 @@ mod tests {
             complexity: Complexity::Low,
             length: 12,
             task_type: TaskType::General,
+            confidence: 0.9,
         };
 
         assert_eq!(compute_max_tokens(&profile, "What is 2+2?"), 128);
@@ -98,6 +99,7 @@ mod tests {
             complexity: Complexity::Medium,
             length: 42,
             task_type: TaskType::Conceptual,
+            confidence: 0.9,
         };
 
         let decision = describe_output_policy(&profile, "explica paso a paso la teoria de la relatividad");
@@ -115,6 +117,7 @@ mod tests {
             complexity: Complexity::Medium,
             length: 38,
             task_type: TaskType::Summarization,
+            confidence: 0.9,
         };
 
         let decision = describe_output_policy(&profile, "genera un resumen de la relatividad");
@@ -129,6 +132,7 @@ mod tests {
             complexity: Complexity::Medium,
             length: 48,
             task_type: TaskType::SymbolicMath,
+            confidence: 0.9,
         };
 
         let decision = describe_output_policy(&profile, "Calcula la derivada de f(x)=4x^3+2x^2-7x+5");

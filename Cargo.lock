@@ -2494,6 +2494,7 @@ dependencies = [
  "iamine-models",
  "libp2p 0.53.2",
  "serde",
+ "serde_json",
  "tokio",
 ]
 

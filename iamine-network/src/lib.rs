@@ -4,6 +4,7 @@ pub mod model_capability_matcher;
 pub mod model_policy;
 pub mod output_policy;
 pub mod prompt_analyzer;
+pub mod semantic_eval;
 pub mod task_analyzer;
 pub mod topology;
 
@@ -22,6 +23,23 @@ pub use model_capability_matcher::{
 };
 pub use expression_parser::normalize_expression;
 pub use prompt_analyzer::{analyze_prompt, Complexity, Language, PromptProfile};
+pub use prompt_analyzer::{
+    analyze_prompt_semantics,
+    estimate_confidence,
+    SemanticRoutingDecision,
+    Signal,
+    SignalKind,
+    CONFIDENCE_THRESHOLD,
+};
+pub use semantic_eval::{
+    evaluate_dataset,
+    evaluate_default_dataset,
+    load_default_dataset,
+    should_use_strict_handling,
+    SemanticDatasetEntry,
+    SemanticEvalError,
+    SemanticEvalReport,
+};
 pub use task_analyzer::{detect_exact_subtype, detect_task_type, ExactSubtype, TaskProfile, TaskType};
 pub use topology::{
     NetworkTopology,

@@ -231,6 +231,7 @@ mod tests {
             complexity: Complexity::High,
             length: 42,
             task_type: TaskType::Conceptual,
+            confidence: 0.9,
         }
     }
 
@@ -249,6 +250,7 @@ mod tests {
             complexity: Complexity::Low,
             length: 3,
             task_type: TaskType::ExactMath,
+            confidence: 0.9,
         });
         assert_eq!(selected, "llama3-3b");
     }
@@ -261,6 +263,7 @@ mod tests {
             complexity: Complexity::Medium,
             length: 52,
             task_type: TaskType::SymbolicMath,
+            confidence: 0.9,
         });
         assert_eq!(selected, "llama3-3b");
     }
@@ -273,6 +276,7 @@ mod tests {
             complexity: Complexity::Medium,
             length: 32,
             task_type: TaskType::Reasoning,
+            confidence: 0.9,
         });
         assert_eq!(selected, "mistral-7b");
     }
@@ -285,6 +289,7 @@ mod tests {
             complexity: Complexity::Medium,
             length: 36,
             task_type: TaskType::Summarization,
+            confidence: 0.9,
         });
         assert_eq!(selected, "llama3-3b");
     }
@@ -297,6 +302,7 @@ mod tests {
             complexity: Complexity::High,
             length: 80,
             task_type: TaskType::Reasoning,
+            confidence: 0.9,
         });
         assert_eq!(decision.model, "mistral-7b");
         assert_eq!(decision.reason, "reasoning task");

@@ -35,10 +35,11 @@ use iamine_models::{
 };
 
 use iamine_network::{
-    analyze_prompt,
+    analyze_prompt_semantics,
     Complexity as PromptComplexityLevel,
     detect_exact_subtype,
     describe_output_policy,
+    evaluate_default_dataset,
     ExactSubtype as PromptExactSubtype,
     Language as PromptLanguage,
     ModelPolicyEngine,
@@ -48,10 +49,14 @@ use iamine_network::{
     normalize_expression,
     OutputPolicyDecision,
     PromptProfile,
+    SemanticRoutingDecision,
     SharedNetworkTopology,
     SharedNodeRegistry,
     TaskType as PromptTaskType,
 };
+
+#[cfg(test)]
+use iamine_network::analyze_prompt;
 
 use model_selector_cli::ModelSelectorCLI;
 use worker_pool::WorkerPool;
@@ -156,6 +161,7 @@ enum NodeMode {
     ModelsSearch { query: String },      // ← nuevo
     TestInference { prompt: String },
     Infer { prompt: String, model_id: Option<String>, max_tokens_override: Option<u32> },
+    SemanticEval,
     Capabilities,
     Nodes,
     Topology,  // ← NEW
@@ -235,6 +241,8 @@ fn parse_args() -> Result<NodeMode, String> {
             Ok(NodeMode::Infer { prompt, model_id, max_tokens_override })
         }
 
+        Some("semantic-eval") => Ok(NodeMode::SemanticEval),
+
         Some("nodes") => Ok(NodeMode::Nodes),
 
         Some("topology") => Ok(NodeMode::Topology), // ← NEW
@@ -293,6 +301,18 @@ fn exact_subtype_label(exact_subtype: PromptExactSubtype) -> &'static str {
         PromptExactSubtype::Integer => "Integer",
         PromptExactSubtype::DecimalSequence => "DecimalSequence",
         PromptExactSubtype::Sequence => "Sequence",
+    }
+}
+
+fn log_semantic_decision(decision: &SemanticRoutingDecision) {
+    println!("[Semantic] Task: {}", prompt_task_label(decision.profile.task_type));
+    println!("[Semantic] Confidence: {:.2}", decision.profile.confidence);
+    println!("[Semantic] Fallback: {}", decision.fallback_applied);
+    if decision.fallback_applied {
+        println!(
+            "[Semantic] Original task: {}",
+            prompt_task_label(decision.original_task_type)
+        );
     }
 }
 
@@ -466,13 +486,15 @@ fn resolve_policy_for_prompt(
         println!("[Parser] Normalized expression: {} → {}", prompt, semantic_prompt);
     }
 
-    let profile = analyze_prompt(&semantic_prompt);
+    let semantic_decision = analyze_prompt_semantics(&semantic_prompt);
+    let profile = semantic_decision.profile.clone();
     println!(
         "[Analyzer] Language: {}, Complexity: {}, Task: {}",
         prompt_language_label(profile.language),
         prompt_complexity_label(profile.complexity),
         prompt_task_label(profile.task_type),
     );
+    log_semantic_decision(&semantic_decision);
 
     if let Some(model_id) = model_override {
         println!("[Policy] Manual override: {}", model_id);
@@ -530,6 +552,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             eprintln!("  iamine-node models list");
             eprintln!("  iamine-node models download <model_id>");
             eprintln!("  iamine-node models remove <model_id>");
+            eprintln!("  iamine-node semantic-eval");
             // eprintln!("  iamine-node nodes");
             std::process::exit(1);
         }
@@ -621,6 +644,41 @@ async fn main() -> Result<(), Box<dyn Error>> {
             return Ok(());
         }
 
+        NodeMode::SemanticEval => {
+            println!("╔══════════════════════════════════╗");
+            println!("║   IaMine — Semantic Eval         ║");
+            println!("╚══════════════════════════════════╝\n");
+
+            let report = evaluate_default_dataset()
+                .map_err(|e| format!("No se pudo cargar semantic_dataset.json: {}", e))?;
+
+            println!("📊 Accuracy: {:.1}%", report.accuracy * 100.0);
+            println!("📉 Fallback rate: {:.1}%", report.fallback_rate * 100.0);
+            println!(
+                "⚠️  Low-confidence rate: {:.1}%",
+                report.low_confidence_rate * 100.0
+            );
+            println!("🧪 Total prompts: {}", report.total);
+            println!("❌ Error cases: {}", report.error_cases.len());
+
+            if !report.error_cases.is_empty() {
+                println!("\nError breakdown:");
+                for error in &report.error_cases {
+                    println!(
+                        "- prompt='{}' expected={} predicted={} normalize(expected={}, predicted={}) confidence={:.2} fallback={}",
+                        error.prompt,
+                        prompt_task_label(error.expected_task),
+                        prompt_task_label(error.predicted_task),
+                        error.expected_normalize,
+                        error.predicted_normalize,
+                        error.confidence,
+                        error.fallback_applied
+                    );
+                }
+            }
+            return Ok(());
+        }
+
         NodeMode::TestInference { prompt } => {
             println!("╔══════════════════════════════════╗");
             println!("║    IaMine — Test Inference       ║");
@@ -653,7 +711,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
             if semantic_prompt != *prompt {
                 println!("[Parser] Normalized expression: {} → {}", prompt, semantic_prompt);
             }
-            let prompt_profile = analyze_prompt(&semantic_prompt);
+            let semantic_decision = analyze_prompt_semantics(&semantic_prompt);
+            let prompt_profile = semantic_decision.profile.clone();
+            println!(
+                "[Analyzer] Language: {}, Complexity: {}, Task: {}",
+                prompt_language_label(prompt_profile.language),
+                prompt_complexity_label(prompt_profile.complexity),
+                prompt_task_label(prompt_profile.task_type),
+            );
+            log_semantic_decision(&semantic_decision);
             let output_policy = resolve_output_policy(&prompt_profile, &semantic_prompt, None);
             println!(
                 "[OutputPolicy] max_tokens: {} (reason: {})",
