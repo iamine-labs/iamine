@@ -156,4 +156,16 @@ mod tests {
         assert!(!retry_state.can_retry(&policy));
         assert_eq!(FailureKind::Timeout, FailureKind::Timeout);
     }
+
+    #[test]
+    fn test_retry_limit() {
+        let policy = RetryPolicy {
+            max_retries: 1,
+            timeout_ms: 30_000,
+        };
+        let mut retry_state = RetryState::default();
+        assert!(retry_state.can_retry(&policy));
+        retry_state.advance_retry();
+        assert!(!retry_state.can_retry(&policy));
+    }
 }

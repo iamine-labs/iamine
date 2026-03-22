@@ -29,7 +29,7 @@ impl TaskRequest {
 
     pub fn distributed(task: DistributedTask) -> Self {
         Self {
-            task_id: task.id.clone(),
+            task_id: task.attempt_id.clone(),
             task_type: "distributed_inference".to_string(),
             data: task.prompt.clone(),
             distributed_task: Some(task),
@@ -49,7 +49,7 @@ impl TaskResponse {
 
     pub fn distributed(result: DistributedTaskResult) -> Self {
         Self {
-            task_id: result.task_id.clone(),
+            task_id: result.attempt_id.clone(),
             result: result.output.clone(),
             success: result.success,
             distributed_result: Some(result),

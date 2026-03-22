@@ -4,6 +4,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Task {
     pub id: String,
+    pub attempt_id: String,
     pub prompt: String,
     pub model: String,
     pub created_at: u64,
@@ -12,6 +13,7 @@ pub struct Task {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TaskResult {
     pub task_id: String,
+    pub attempt_id: String,
     pub output: String,
     pub success: bool,
 }
@@ -24,8 +26,19 @@ pub enum TaskMessage {
 
 impl Task {
     pub fn new(id: impl Into<String>, prompt: impl Into<String>, model: impl Into<String>) -> Self {
+        let id = id.into();
+        Self::with_attempt(id.clone(), id, prompt, model)
+    }
+
+    pub fn with_attempt(
+        id: impl Into<String>,
+        attempt_id: impl Into<String>,
+        prompt: impl Into<String>,
+        model: impl Into<String>,
+    ) -> Self {
         Self {
             id: id.into(),
+            attempt_id: attempt_id.into(),
             prompt: prompt.into(),
             model: model.into(),
             created_at: now_ms(),
@@ -35,16 +48,36 @@ impl Task {
 
 impl TaskResult {
     pub fn success(task_id: impl Into<String>, output: impl Into<String>) -> Self {
+        let task_id = task_id.into();
+        Self::success_for_attempt(task_id.clone(), task_id, output)
+    }
+
+    pub fn success_for_attempt(
+        task_id: impl Into<String>,
+        attempt_id: impl Into<String>,
+        output: impl Into<String>,
+    ) -> Self {
         Self {
             task_id: task_id.into(),
+            attempt_id: attempt_id.into(),
             output: output.into(),
             success: true,
         }
     }
 
     pub fn failure(task_id: impl Into<String>, output: impl Into<String>) -> Self {
+        let task_id = task_id.into();
+        Self::failure_for_attempt(task_id.clone(), task_id, output)
+    }
+
+    pub fn failure_for_attempt(
+        task_id: impl Into<String>,
+        attempt_id: impl Into<String>,
+        output: impl Into<String>,
+    ) -> Self {
         Self {
             task_id: task_id.into(),
+            attempt_id: attempt_id.into(),
             output: output.into(),
             success: false,
         }
@@ -66,6 +99,7 @@ mod tests {
     fn test_task_creation() {
         let task = Task::new("task-1", "What is 2+2?", "llama3-3b");
         assert_eq!(task.id, "task-1");
+        assert_eq!(task.attempt_id, "task-1");
         assert_eq!(task.prompt, "What is 2+2?");
         assert_eq!(task.model, "llama3-3b");
         assert!(task.created_at > 0);
@@ -85,5 +119,17 @@ mod tests {
         let err = TaskResult::failure("task-3", "model unavailable");
         assert!(ok.success);
         assert!(!err.success);
+        assert_eq!(ok.attempt_id, "task-3");
+        assert_eq!(err.attempt_id, "task-3");
+    }
+
+    #[test]
+    fn test_task_id_consistency() {
+        let task = Task::with_attempt("task-4", "attempt-2", "2+2", "llama3-3b");
+        let result = TaskResult::success_for_attempt("task-4", "attempt-2", "4");
+        assert_eq!(task.id, "task-4");
+        assert_eq!(result.task_id, "task-4");
+        assert_eq!(task.attempt_id, "attempt-2");
+        assert_eq!(result.attempt_id, "attempt-2");
     }
 }

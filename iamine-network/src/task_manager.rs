@@ -4,6 +4,13 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TaskClaim {
+    Started,
+    InProgress,
+    Finished(TaskResult),
+}
+
 #[derive(Clone, Default)]
 pub struct TaskManager {
     tasks: Arc<RwLock<HashMap<String, Task>>>,
@@ -23,6 +30,30 @@ impl TaskManager {
             .write()
             .await
             .insert(task_id, TaskStatus::Pending);
+    }
+
+    pub async fn claim_task(&self, task: Task) -> TaskClaim {
+        let task_id = task.id.clone();
+
+        if let Some(status) = self.statuses.read().await.get(&task_id).cloned() {
+            return match status {
+                TaskStatus::Pending | TaskStatus::Running => TaskClaim::InProgress,
+                TaskStatus::Completed | TaskStatus::Failed => {
+                    if let Some(result) = self.results.read().await.get(&task_id).cloned() {
+                        TaskClaim::Finished(result)
+                    } else {
+                        TaskClaim::InProgress
+                    }
+                }
+            };
+        }
+
+        self.tasks.write().await.insert(task_id.clone(), task);
+        self.statuses
+            .write()
+            .await
+            .insert(task_id, TaskStatus::Running);
+        TaskClaim::Started
     }
 
     pub async fn mark_running(&self, task_id: &str) {
@@ -73,7 +104,7 @@ impl TaskManager {
 
 #[cfg(test)]
 mod tests {
-    use super::TaskManager;
+    use super::{TaskClaim, TaskManager};
     use crate::task::{Task, TaskResult};
     use crate::task_state::TaskStatus;
 
@@ -104,5 +135,14 @@ mod tests {
         manager.register_task(task.clone()).await;
         manager.fail(&task.id, "worker unavailable").await;
         assert_eq!(manager.status(&task.id).await, Some(TaskStatus::Failed));
+    }
+
+    #[tokio::test]
+    async fn test_no_duplicate_task_execution() {
+        let manager = TaskManager::new();
+        let task = Task::new("task-3", "Explain gravity", "llama3-3b");
+
+        assert_eq!(manager.claim_task(task.clone()).await, TaskClaim::Started);
+        assert_eq!(manager.claim_task(task).await, TaskClaim::InProgress);
     }
 }
