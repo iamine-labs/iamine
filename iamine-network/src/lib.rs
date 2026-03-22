@@ -1,3 +1,4 @@
+pub mod expression_parser;
 pub mod node_registry;
 pub mod model_capability_matcher;
 pub mod model_policy;
@@ -19,6 +20,7 @@ pub use model_capability_matcher::{
     ModelHardwareRequirements,
     NodeHardwareProfile,
 };
+pub use expression_parser::normalize_expression;
 pub use prompt_analyzer::{analyze_prompt, Complexity, Language, PromptProfile};
 pub use task_analyzer::{detect_exact_subtype, detect_task_type, ExactSubtype, TaskProfile, TaskType};
 pub use topology::{

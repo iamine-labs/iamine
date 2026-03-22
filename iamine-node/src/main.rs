@@ -45,6 +45,7 @@ use iamine_network::{
     NodeCapabilityHeartbeat,
     NodeRegistry,
     NetworkTopology,
+    normalize_expression,
     OutputPolicyDecision,
     PromptProfile,
     SharedNetworkTopology,
@@ -281,6 +282,7 @@ fn prompt_task_label(task_type: PromptTaskType) -> &'static str {
         PromptTaskType::Code => "Code",
         PromptTaskType::Conceptual => "Conceptual",
         PromptTaskType::Reasoning => "Reasoning",
+        PromptTaskType::Summarization => "Summarization",
         PromptTaskType::General => "General",
     }
 }
@@ -455,8 +457,13 @@ fn resolve_policy_for_prompt(
     prompt: &str,
     model_override: Option<&str>,
     available_models: &[String],
-) -> (PromptProfile, Vec<String>, String) {
-    let profile = analyze_prompt(prompt);
+) -> (PromptProfile, Vec<String>, String, String) {
+    let semantic_prompt = normalize_expression(prompt).unwrap_or_else(|| prompt.to_string());
+    if semantic_prompt != prompt {
+        println!("[Parser] Normalized expression: {} → {}", prompt, semantic_prompt);
+    }
+
+    let profile = analyze_prompt(&semantic_prompt);
     println!(
         "[Analyzer] Language: {}, Complexity: {}, Task: {}",
         prompt_language_label(profile.language),
@@ -466,7 +473,12 @@ fn resolve_policy_for_prompt(
 
     if let Some(model_id) = model_override {
         println!("[Policy] Manual override: {}", model_id);
-        return (profile, vec![model_id.to_string()], model_id.to_string());
+        return (
+            profile,
+            vec![model_id.to_string()],
+            model_id.to_string(),
+            semantic_prompt,
+        );
     }
 
     let policy = ModelPolicyEngine::default();
@@ -481,7 +493,7 @@ fn resolve_policy_for_prompt(
         decision.model,
         decision.reason
     );
-    (profile, candidates, decision.model)
+    (profile, candidates, decision.model, semantic_prompt)
 }
 
 fn resolve_output_policy(
@@ -634,8 +646,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
             let model_desc = registry.get(model_id).unwrap();
             let engine = Arc::new(RealInferenceEngine::new(ModelStorage::new()));
 
-            let prompt_profile = analyze_prompt(prompt);
-            let output_policy = resolve_output_policy(&prompt_profile, prompt, None);
+            let semantic_prompt = normalize_expression(prompt).unwrap_or_else(|| prompt.clone());
+            if semantic_prompt != *prompt {
+                println!("[Parser] Normalized expression: {} → {}", prompt, semantic_prompt);
+            }
+            let prompt_profile = analyze_prompt(&semantic_prompt);
+            let output_policy = resolve_output_policy(&prompt_profile, &semantic_prompt, None);
             println!(
                 "[OutputPolicy] max_tokens: {} (reason: {})",
                 output_policy.max_tokens,
@@ -659,7 +675,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 engine_clone,
                 req.task_id,
                 req.model_id,
-                prompt.clone(),
+                semantic_prompt,
                 prompt_profile.task_type,
                 req.max_tokens,
                 req.temperature,
@@ -682,12 +698,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
             let registry = ModelRegistry::new();
             let storage = ModelStorage::new();
             let local_models = storage.list_local_models();
-            let (profile, candidate_models, selected_model) = resolve_policy_for_prompt(
+            let (profile, candidate_models, selected_model, semantic_prompt) = resolve_policy_for_prompt(
                 prompt,
                 model_id.as_deref(),
                 &local_models,
             );
-            let output_policy = resolve_output_policy(&profile, prompt, *max_tokens_override);
+            let output_policy = resolve_output_policy(&profile, &semantic_prompt, *max_tokens_override);
             println!(
                 "[OutputPolicy] max_tokens: {} (reason: {})",
                 output_policy.max_tokens,
@@ -708,7 +724,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     engine_clone,
                     "infer-local-001".to_string(),
                     selected_model.clone(),
-                    prompt.clone(),
+                    semantic_prompt,
                     profile.task_type,
                     output_policy.max_tokens as u32,
                     0.7,
@@ -1129,13 +1145,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
     if let NodeMode::Infer { prompt, model_id, max_tokens_override } = &mode {
         let rid = uuid_simple();
         let local_available = model_storage.list_local_models();
-        let (profile, candidates, selected) = resolve_policy_for_prompt(
+        let (profile, candidates, selected, semantic_prompt) = resolve_policy_for_prompt(
             prompt,
             model_id.as_deref(),
             &local_available,
         );
-        let output_policy = resolve_output_policy(&profile, prompt, *max_tokens_override);
-        println!("🧠 Distributing inference: model={} prompt='{}'", selected, prompt);
+        let output_policy = resolve_output_policy(&profile, &semantic_prompt, *max_tokens_override);
+        println!("🧠 Distributing inference: model={} prompt='{}'", selected, semantic_prompt);
         println!("   Candidates: {}", candidates.join(", "));
         println!(
             "   [OutputPolicy] max_tokens: {} (reason: {})",
@@ -1292,12 +1308,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             }
                         }
 
-                        let (profile, mut candidates, selected_model) = resolve_policy_for_prompt(
+                        let (profile, mut candidates, selected_model, semantic_prompt) = resolve_policy_for_prompt(
                             prompt,
                             model_id.as_deref(),
                             &available_models,
                         );
-                        let output_policy = resolve_output_policy(&profile, prompt, *max_tokens_override);
+                        let output_policy = resolve_output_policy(&profile, &semantic_prompt, *max_tokens_override);
                         if !candidates.contains(&selected_model) {
                             candidates.insert(0, selected_model.clone());
                         }
@@ -1314,7 +1330,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 request_id: rid.clone(),
                                 target_peer: best_peer.to_string(),
                                 model: routed_model.clone(),
-                                prompt: prompt.clone(),
+                                prompt: semantic_prompt.clone(),
                                 max_tokens: output_policy.max_tokens as u32,
                             };
 
@@ -1342,7 +1358,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             let task = InferenceTask::new(
                                 rid.clone(),
                                 mid,
-                                prompt.clone(),
+                                semantic_prompt.clone(),
                                 output_policy.max_tokens as u32,
                                 peer_id.to_string(),
                             );

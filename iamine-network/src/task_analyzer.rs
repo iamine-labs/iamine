@@ -1,3 +1,4 @@
+use crate::expression_parser::normalize_expression;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -9,6 +10,7 @@ pub enum TaskType {
     Code,
     Conceptual,
     Reasoning,
+    Summarization,
     General,
 }
 
@@ -30,7 +32,11 @@ pub fn detect_exact_subtype(prompt: &str, output: &str) -> ExactSubtype {
     let trimmed_output = output.trim();
     let arithmetic_prompt = prompt.len() <= 32
         && prompt.chars().any(|c| c.is_ascii_digit())
-        && prompt.chars().any(|c| matches!(c, '+' | '-' | '*' | '/' | '=' | 'x' | 'X'));
+        && prompt
+            .chars()
+            .any(|c| matches!(c, '+' | '-' | '*' | '/' | '=' | '^' | 'x' | 'X'));
+    let verbal_exact_math = contains_any(&prompt_lower, &["square root of"])
+        && prompt.chars().any(|c| c.is_ascii_digit());
 
     if contains_any(&prompt_lower, &["pi", "π", "digit", "digits", "digito", "digitos", "dígitos"])
         || (trimmed_output.contains('.') && trimmed_output.chars().filter(|c| c.is_ascii_digit()).count() >= 4)
@@ -43,6 +49,7 @@ pub fn detect_exact_subtype(prompt: &str, output: &str) -> ExactSubtype {
         .chars()
         .all(|c| c.is_ascii_digit() || c.is_ascii_whitespace() || matches!(c, '-' | '+'))
         || arithmetic_prompt
+        || verbal_exact_math
         || (prompt.chars().any(|c| c.is_ascii_digit())
             && !contains_any(&output_lower, &["=", " is "])
             && trimmed_output.chars().any(|c| c.is_ascii_digit()))
@@ -59,6 +66,10 @@ pub fn detect_task_type(prompt: &str) -> TaskType {
 
     if contains_any(&lower, &["function", "script", "code", "rust", "python", "javascript", "sql"]) {
         return TaskType::Code;
+    }
+
+    if is_summarization_prompt(&lower) {
+        return TaskType::Summarization;
     }
 
     if is_exact_math_prompt(trimmed, &lower) {
@@ -123,8 +134,20 @@ fn is_exact_math_prompt(trimmed: &str, lower: &str) -> bool {
         && trimmed.chars().any(|c| matches!(c, '+' | '-' | '*' | '/' | '=' | 'x' | 'X'));
 
     exact_expression
+        || normalize_expression(trimmed).is_some()
+        || compact_math_patterns(trimmed, lower)
+        || (contains_any(lower, &["square root of"]) && lower.chars().any(|c| c.is_ascii_digit()))
         || (contains_any(lower, &["pi", "π"]) && contains_any(lower, &["digit", "digits", "digito", "digitos", "dígitos", "primeros", "first"]))
         || (contains_any(lower, &["exact", "exacto", "exacta", "resultado exacto"]) && lower.chars().any(|c| c.is_ascii_digit()))
+}
+
+fn compact_math_patterns(trimmed: &str, lower: &str) -> bool {
+    let has_digits = trimmed.chars().any(|c| c.is_ascii_digit());
+    let has_parentheses = trimmed.contains('(') && trimmed.contains(')');
+    let has_power = trimmed.contains('^');
+    let has_sqrt = lower.contains("sqrt(");
+
+    has_digits && ((has_parentheses && trimmed.len() <= 32) || has_power || has_sqrt)
 }
 
 fn is_structured_list_prompt(lower: &str) -> bool {
@@ -162,6 +185,20 @@ fn is_deterministic_prompt(trimmed: &str, lower: &str) -> bool {
             "dígitos",
         ],
     ) && (has_number || is_structured_list_prompt(lower))
+}
+
+fn is_summarization_prompt(lower: &str) -> bool {
+    contains_any(
+        lower,
+        &[
+            "resume",
+            "resumen",
+            "haz un resumen",
+            "genera un resumen",
+            "summarize",
+            "summary",
+        ],
+    )
 }
 
 #[cfg(test)]
@@ -215,12 +252,36 @@ mod tests {
     }
 
     #[test]
+    fn test_compact_math_detection() {
+        assert_eq!(detect_task_type("6(9)"), TaskType::ExactMath);
+        assert_eq!(detect_task_type("(2+2)"), TaskType::ExactMath);
+    }
+
+    #[test]
+    fn test_power_expression_detection() {
+        assert_eq!(detect_task_type("2^10"), TaskType::ExactMath);
+        assert_eq!(detect_task_type("sqrt(16)"), TaskType::ExactMath);
+    }
+
+    #[test]
     fn test_exact_subtype_detection() {
         assert_eq!(detect_exact_subtype("6x9", "54"), ExactSubtype::Integer);
         assert_eq!(detect_exact_subtype("What is 2+2?", "2 + 2 = 4."), ExactSubtype::Integer);
         assert_eq!(
+            detect_exact_subtype("square root of 16", "The square root of 16 is 4."),
+            ExactSubtype::Integer
+        );
+        assert_eq!(
             detect_exact_subtype("dame los primeros 100 digitos de pi", "3. 14159"),
             ExactSubtype::DecimalSequence
+        );
+    }
+
+    #[test]
+    fn test_summarization_detection() {
+        assert_eq!(
+            detect_task_type("genera un resumen de la relatividad"),
+            TaskType::Summarization
         );
     }
 }

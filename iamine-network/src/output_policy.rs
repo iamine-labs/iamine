@@ -1,4 +1,5 @@
 use crate::prompt_analyzer::{Complexity, PromptProfile};
+use crate::task_analyzer::TaskType;
 
 const MIN_TOKENS: usize = 64;
 const MAX_TOKENS: usize = 2048;
@@ -35,6 +36,11 @@ pub fn describe_output_policy(profile: &PromptProfile, prompt: &str) -> OutputPo
     if contains_any(&lower, &["define", "que es", "qué es"]) {
         max_tokens = max_tokens.saturating_sub(100);
         reasons.push("definition keyword".to_string());
+    }
+
+    if profile.task_type == TaskType::Summarization {
+        max_tokens = max_tokens.saturating_sub(128);
+        reasons.push("summarization task".to_string());
     }
 
     max_tokens = max_tokens.clamp(MIN_TOKENS, MAX_TOKENS);
@@ -95,5 +101,19 @@ mod tests {
         assert!(decision.reason.contains("complexity=medium"));
         assert!(decision.reason.contains("explain keyword"));
         assert!(decision.reason.contains("step-by-step keyword"));
+    }
+
+    #[test]
+    fn test_summarization_reduces_budget() {
+        let profile = PromptProfile {
+            language: Language::Spanish,
+            complexity: Complexity::Medium,
+            length: 38,
+            task_type: TaskType::Summarization,
+        };
+
+        let decision = describe_output_policy(&profile, "genera un resumen de la relatividad");
+        assert_eq!(decision.max_tokens, 384);
+        assert!(decision.reason.contains("summarization task"));
     }
 }

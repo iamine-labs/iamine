@@ -47,6 +47,7 @@ pub fn analyze_prompt(prompt: &str) -> PromptProfile {
         " negro",
         " relatividad",
         " teoria",
+        " resumen",
         " español",
         " espanol",
     ]
@@ -66,6 +67,8 @@ pub fn analyze_prompt(prompt: &str) -> PromptProfile {
         " gravity",
         " theory",
         " black hole",
+        " summarize",
+        " summary",
     ]
     .iter()
     .filter(|needle| lower.contains(**needle))
@@ -93,6 +96,8 @@ pub fn analyze_prompt(prompt: &str) -> PromptProfile {
         " porque",
         " por que",
         " como funciona",
+        " resumen",
+        " summarize",
     ]
     .iter()
     .filter(|needle| lower.contains(**needle))
@@ -123,6 +128,13 @@ mod tests {
         let profile = analyze_prompt("explica la teoria de la relatividad");
         assert_eq!(profile.language, Language::Spanish);
         assert_eq!(profile.task_type, TaskType::Conceptual);
+    }
+
+    #[test]
+    fn test_summarization_detection() {
+        let profile = analyze_prompt("genera un resumen de la relatividad");
+        assert_eq!(profile.language, Language::Spanish);
+        assert_eq!(profile.task_type, TaskType::Summarization);
     }
 
     #[test]

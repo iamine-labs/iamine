@@ -70,6 +70,13 @@ impl Default for ModelPolicyEngine {
                 PolicyRule {
                     language: None,
                     complexity: None,
+                    task_type: Some(TaskType::Summarization),
+                    model: "llama3-3b".to_string(),
+                    reason: "summarization task".to_string(),
+                },
+                PolicyRule {
+                    language: None,
+                    complexity: None,
                     task_type: Some(TaskType::Conceptual),
                     model: "llama3-3b".to_string(),
                     reason: "conceptual task".to_string(),
@@ -249,6 +256,18 @@ mod tests {
             task_type: TaskType::Reasoning,
         });
         assert_eq!(selected, "mistral-7b");
+    }
+
+    #[test]
+    fn test_model_selection_task_summarization() {
+        let engine = ModelPolicyEngine::default();
+        let selected = engine.select_model(&PromptProfile {
+            language: Language::Spanish,
+            complexity: Complexity::Medium,
+            length: 36,
+            task_type: TaskType::Summarization,
+        });
+        assert_eq!(selected, "llama3-3b");
     }
 
     #[test]
