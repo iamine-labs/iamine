@@ -127,7 +127,13 @@ mod tests {
     use crate::model_karma::{clear_model_karma_store, record_model_metrics};
     use crate::model_metrics::ModelMetrics;
     use crate::node_registry::{NodeCapability, NodeRegistry};
+    use std::sync::{Mutex, OnceLock};
     use std::time::Instant;
+
+    fn karma_test_guard() -> &'static Mutex<()> {
+        static GUARD: OnceLock<Mutex<()>> = OnceLock::new();
+        GUARD.get_or_init(|| Mutex::new(()))
+    }
 
     fn make_cap(
         peer_id: &str,
@@ -253,6 +259,7 @@ mod tests {
 
     #[test]
     fn test_scheduler_prefers_high_karma_model() {
+        let _lock = karma_test_guard().lock().unwrap();
         clear_model_karma_store();
         for _ in 0..20 {
             record_model_metrics("llama3-3b", ModelMetrics::new(true, 150, true, 0));

@@ -3,6 +3,7 @@ pub mod expression_parser;
 pub mod latency;
 pub mod model_capability_matcher;
 pub mod model_karma;
+pub mod model_karma_store;
 pub mod model_metrics;
 pub mod model_policy;
 pub mod node_registry;
@@ -25,9 +26,13 @@ pub use latency::PeerLatency;
 pub use model_capability_matcher::{
     is_node_compatible_with_model, ModelHardwareRequirements, NodeHardwareProfile,
 };
+#[cfg(test)]
+pub use model_karma::clear_model_karma_store;
 pub use model_karma::{
-    global_model_karma_store, model_karma, ranked_models, record_model_metrics, ModelKarma,
-    ModelKarmaStore,
+    model_karma, ranked_models, record_model_metrics, ModelKarma, ModelKarmaStore,
+};
+pub use model_karma_store::{
+    default_model_karma_path, global_model_karma_manager, ModelKarmaManager,
 };
 pub use model_metrics::ModelMetrics;
 pub use model_policy::{ModelPolicyEngine, PolicyRule};

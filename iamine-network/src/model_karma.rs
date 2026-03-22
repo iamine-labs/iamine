@@ -1,8 +1,9 @@
+use crate::model_karma_store::global_model_karma_manager;
 use crate::model_metrics::ModelMetrics;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::{OnceLock, RwLock};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ModelKarma {
     pub model_id: String,
     pub accuracy_score: f32,
@@ -43,7 +44,7 @@ impl ModelKarma {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ModelKarmaStore {
     models: HashMap<String, ModelKarma>,
 }
@@ -51,6 +52,10 @@ pub struct ModelKarmaStore {
 impl ModelKarmaStore {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn from_models(models: HashMap<String, ModelKarma>) -> Self {
+        Self { models }
     }
 
     pub fn update_model(&mut self, model_id: &str, metrics: ModelMetrics) -> ModelKarma {
@@ -77,42 +82,35 @@ impl ModelKarmaStore {
         });
         entries
     }
-}
 
-static GLOBAL_MODEL_KARMA: OnceLock<RwLock<ModelKarmaStore>> = OnceLock::new();
-
-pub fn global_model_karma_store() -> &'static RwLock<ModelKarmaStore> {
-    GLOBAL_MODEL_KARMA.get_or_init(|| RwLock::new(ModelKarmaStore::new()))
+    pub fn models(&self) -> &HashMap<String, ModelKarma> {
+        &self.models
+    }
 }
 
 pub fn record_model_metrics(model_id: &str, metrics: ModelMetrics) -> ModelKarma {
-    let mut store = global_model_karma_store()
-        .write()
-        .expect("model karma store poisoned");
-    store.update_model(model_id, metrics)
+    global_model_karma_manager()
+        .update_model(model_id, metrics)
+        .unwrap_or_else(|error| {
+            eprintln!(
+                "[ModelKarma] Failed to persist metrics for {}: {}",
+                model_id, error
+            );
+            ModelKarma::new(model_id.to_string())
+        })
 }
 
 pub fn model_karma(model_id: &str) -> Option<ModelKarma> {
-    global_model_karma_store()
-        .read()
-        .expect("model karma store poisoned")
-        .get(model_id)
+    global_model_karma_manager().get(model_id)
 }
 
 pub fn ranked_models() -> Vec<ModelKarma> {
-    global_model_karma_store()
-        .read()
-        .expect("model karma store poisoned")
-        .ranking()
+    global_model_karma_manager().ranking()
 }
 
 #[cfg(test)]
 pub fn clear_model_karma_store() {
-    global_model_karma_store()
-        .write()
-        .expect("model karma store poisoned")
-        .models
-        .clear();
+    global_model_karma_manager().clear_for_tests();
 }
 
 #[cfg(test)]
@@ -121,6 +119,12 @@ mod tests {
         clear_model_karma_store, model_karma, ranked_models, record_model_metrics, ModelKarmaStore,
     };
     use crate::model_metrics::ModelMetrics;
+    use std::sync::{Mutex, OnceLock};
+
+    fn karma_test_guard() -> &'static Mutex<()> {
+        static GUARD: OnceLock<Mutex<()>> = OnceLock::new();
+        GUARD.get_or_init(|| Mutex::new(()))
+    }
 
     #[test]
     fn test_model_karma_update() {
@@ -141,6 +145,7 @@ mod tests {
 
     #[test]
     fn test_global_model_karma_tracking() {
+        let _lock = karma_test_guard().lock().unwrap();
         clear_model_karma_store();
         record_model_metrics("tinyllama-1b", ModelMetrics::new(true, 300, true, 0));
         assert!(model_karma("tinyllama-1b").is_some());
