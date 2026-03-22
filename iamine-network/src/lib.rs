@@ -2,6 +2,7 @@ pub mod cluster;
 pub mod expression_parser;
 pub mod fault_handler;
 pub mod latency;
+pub mod metrics;
 pub mod model_capability_matcher;
 pub mod model_karma;
 pub mod model_karma_store;
@@ -20,12 +21,19 @@ pub mod task;
 pub mod task_analyzer;
 pub mod task_manager;
 pub mod task_state;
+pub mod task_trace;
 pub mod topology;
 
 pub use cluster::{relation_for_cluster, Cluster, ClusterRelation, ClusterTier};
 pub use expression_parser::normalize_expression;
 pub use fault_handler::{select_retry_target, FailureKind, RetryPolicy, RetryState, RetryTarget};
 pub use latency::PeerLatency;
+pub use metrics::{
+    default_task_metrics_path, distributed_task_metrics, record_distributed_task_failed,
+    record_distributed_task_fallback, record_distributed_task_latency,
+    record_distributed_task_retry, record_distributed_task_started, DistributedTaskMetrics,
+    DistributedTaskMetricsManager,
+};
 pub use model_capability_matcher::{
     is_node_compatible_with_model, ModelHardwareRequirements, NodeHardwareProfile,
 };
@@ -74,4 +82,8 @@ pub use task_analyzer::{
 };
 pub use task_manager::TaskManager;
 pub use task_state::TaskStatus as DistributedTaskStatus;
+pub use task_trace::{
+    all_task_traces, default_task_trace_path, global_task_trace_manager, record_task_attempt,
+    record_task_latency, task_trace, TaskTrace, TaskTraceManager,
+};
 pub use topology::{NetworkTopology, SharedNetworkTopology};

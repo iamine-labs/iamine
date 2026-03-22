@@ -34,16 +34,20 @@ use iamine_models::{
 
 use iamine_network::{
     analyze_prompt_semantics, default_semantic_log_path, describe_output_policy,
-    detect_exact_subtype, evaluate_default_dataset, normalize_expression, ranked_models,
-    record_model_metrics, select_retry_target, validate_result, validate_semantic_decision,
-    Complexity as PromptComplexityLevel, DeterministicLevel as PromptDeterministicLevel,
-    DistributedTask, DistributedTaskResult, Domain as PromptDomain,
-    ExactSubtype as PromptExactSubtype, FailureKind, IntelligentScheduler,
-    Language as PromptLanguage, ModelKarma, ModelMetrics, ModelPolicyEngine, NetworkTopology,
-    NodeCapabilityHeartbeat, NodeRegistry, OutputPolicyDecision, OutputStyle as PromptOutputStyle,
-    PromptProfile, ResultStatus, RetryPolicy, RetryState, SemanticFeedbackEngine,
-    SemanticRoutingDecision, SharedNetworkTopology, SharedNodeRegistry, TaskManager,
-    TaskType as PromptTaskType, ValidationResult as SemanticValidationResult,
+    detect_exact_subtype, distributed_task_metrics, evaluate_default_dataset, normalize_expression,
+    ranked_models, record_distributed_task_failed, record_distributed_task_fallback,
+    record_distributed_task_latency, record_distributed_task_retry,
+    record_distributed_task_started, record_model_metrics, record_task_attempt,
+    record_task_latency, select_retry_target, task_trace, validate_result,
+    validate_semantic_decision, Complexity as PromptComplexityLevel,
+    DeterministicLevel as PromptDeterministicLevel, DistributedTask, DistributedTaskMetrics,
+    DistributedTaskResult, Domain as PromptDomain, ExactSubtype as PromptExactSubtype, FailureKind,
+    IntelligentScheduler, Language as PromptLanguage, ModelKarma, ModelMetrics, ModelPolicyEngine,
+    NetworkTopology, NodeCapabilityHeartbeat, NodeRegistry, OutputPolicyDecision,
+    OutputStyle as PromptOutputStyle, PromptProfile, ResultStatus, RetryPolicy, RetryState,
+    SemanticFeedbackEngine, SemanticRoutingDecision, SharedNetworkTopology, SharedNodeRegistry,
+    TaskManager, TaskTrace, TaskType as PromptTaskType,
+    ValidationResult as SemanticValidationResult,
 };
 
 #[cfg(test)]
@@ -218,6 +222,10 @@ enum NodeMode {
     CheckCode,
     CheckSecurity,
     ValidateRelease,
+    TasksStats,
+    TasksTrace {
+        task_id: String,
+    },
     Capabilities,
     Nodes,
     Topology, // ← NEW
@@ -332,6 +340,14 @@ fn parse_args() -> Result<NodeMode, String> {
         Some("check-code") => Ok(NodeMode::CheckCode),
         Some("check-security") => Ok(NodeMode::CheckSecurity),
         Some("validate-release") => Ok(NodeMode::ValidateRelease),
+        Some("tasks") => match args.get(2).map(|s| s.as_str()) {
+            Some("stats") => Ok(NodeMode::TasksStats),
+            Some("trace") => {
+                let task_id = args.get(3).ok_or("Falta <task_id>")?.clone();
+                Ok(NodeMode::TasksTrace { task_id })
+            }
+            _ => Err("Uso: iamine-node tasks [stats|trace <task_id>]".to_string()),
+        },
 
         Some("nodes") => Ok(NodeMode::Nodes),
 
@@ -756,6 +772,7 @@ struct PromptResolution {
 }
 
 struct DistributedInferState {
+    trace_task_id: String,
     prompt: String,
     model_override: Option<String>,
     max_tokens_override: Option<u32>,
@@ -776,11 +793,13 @@ impl DistributedInferState {
         model_override: Option<String>,
         max_tokens_override: Option<u32>,
     ) -> Self {
+        let trace_task_id = uuid_simple();
         Self {
+            trace_task_id: trace_task_id.clone(),
             prompt,
             model_override,
             max_tokens_override,
-            current_request_id: uuid_simple(),
+            current_request_id: trace_task_id,
             current_task_type: None,
             current_semantic_prompt: None,
             current_peer: None,
@@ -973,6 +992,56 @@ fn print_model_karma_stats() {
     }
 }
 
+fn print_distributed_task_stats(metrics: &DistributedTaskMetrics) {
+    println!("metric | value");
+    println!("total_tasks | {}", metrics.total_tasks);
+    println!("failed_tasks | {}", metrics.failed_tasks);
+    println!("retries_count | {}", metrics.retries_count);
+    println!("fallback_count | {}", metrics.fallback_count);
+    println!("avg_latency_ms | {:.1}", metrics.avg_latency_ms);
+}
+
+fn print_task_trace_entry(trace: &TaskTrace) {
+    println!("task_id: {}", trace.task_id);
+    println!(
+        "node_history: {}",
+        if trace.node_history.is_empty() {
+            "-".to_string()
+        } else {
+            trace.node_history.join(" -> ")
+        }
+    );
+    println!(
+        "model_history: {}",
+        if trace.model_history.is_empty() {
+            "-".to_string()
+        } else {
+            trace.model_history.join(" -> ")
+        }
+    );
+    println!("retries: {}", trace.retries);
+    println!("fallbacks: {}", trace.fallbacks);
+    println!("total_latency_ms: {}", trace.total_latency_ms);
+}
+
+fn finalize_distributed_task_observability(
+    trace_task_id: &str,
+    started_at: Option<tokio::time::Instant>,
+    failed: bool,
+) -> (Option<TaskTrace>, DistributedTaskMetrics) {
+    if let Some(started_at) = started_at {
+        let latency_ms = started_at.elapsed().as_millis() as u64;
+        let _ = record_task_latency(trace_task_id, latency_ms);
+        let _ = record_distributed_task_latency(latency_ms);
+    }
+
+    if failed {
+        let _ = record_distributed_task_failed();
+    }
+
+    (task_trace(trace_task_id), distributed_task_metrics())
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = std::env::args().collect();
@@ -994,6 +1063,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
             eprintln!("  iamine-node check-code");
             eprintln!("  iamine-node check-security");
             eprintln!("  iamine-node validate-release");
+            eprintln!("  iamine-node tasks stats");
+            eprintln!("  iamine-node tasks trace <task_id>");
             eprintln!("  iamine-node --daemon");
             // eprintln!("  iamine-node nodes");
             std::process::exit(1);
@@ -1034,6 +1105,26 @@ async fn main() -> Result<(), Box<dyn Error>> {
             println!("╚══════════════════════════════════╝\n");
             print_model_karma_stats();
             return Ok(());
+        }
+
+        NodeMode::TasksStats => {
+            println!("╔══════════════════════════════════╗");
+            println!("║   IaMine — Task Observability    ║");
+            println!("╚══════════════════════════════════╝\n");
+            let metrics = distributed_task_metrics();
+            print_distributed_task_stats(&metrics);
+            return Ok(());
+        }
+
+        NodeMode::TasksTrace { task_id } => {
+            println!("╔══════════════════════════════════╗");
+            println!("║    IaMine — Task Trace           ║");
+            println!("╚══════════════════════════════════╝\n");
+            if let Some(trace) = task_trace(task_id) {
+                print_task_trace_entry(&trace);
+                return Ok(());
+            }
+            return Err(format!("No existe trace para task_id={}", task_id).into());
         }
 
         NodeMode::ModelsMenu => {
@@ -1891,9 +1982,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
         );
         let infer_state =
             DistributedInferState::new(prompt.clone(), model_id.clone(), *max_tokens_override);
+        println!("   Task ID: {}", infer_state.trace_task_id);
         println!("   Request ID: {}", infer_state.current_request_id);
         infer_request_id = Some(infer_state.current_request_id.clone());
         infer_started_at = Some(tokio::time::Instant::now());
+        let _ = record_distributed_task_started();
         distributed_infer_state = Some(infer_state);
     }
 
@@ -2088,19 +2181,26 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                         if let Some((best_peer, routed_model, node_score)) = selected {
                             let rid = infer_state.current_request_id.clone();
+                            let trace_task_id = infer_state.trace_task_id.clone();
                             let target_peer = known_workers
                                 .iter()
                                 .find(|peer| peer.to_string() == best_peer)
                                 .copied();
+                            let is_retry_attempt = infer_state.retry_state.retry_count > 0;
+                            let is_fallback_attempt = infer_state
+                                .current_model
+                                .as_ref()
+                                .map(|previous_model| previous_model != &routed_model)
+                                .unwrap_or(false);
 
-                            if infer_state.retry_state.retry_count > 0 {
+                            if is_retry_attempt {
                                 println!(
                                     "[Retry] Dispatching retry attempt {}/{}",
                                     infer_state.retry_state.retry_count,
                                     infer_state.retry_policy.max_retries
                                 );
-                                if let Some(previous_model) = infer_state.current_model.as_ref() {
-                                    if previous_model != &routed_model {
+                                if is_fallback_attempt {
+                                    if let Some(previous_model) = infer_state.current_model.as_ref() {
                                         println!(
                                             "[Fallback] Switching model {} -> {}",
                                             previous_model, routed_model
@@ -2116,6 +2216,23 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 semantic_prompt.clone(),
                                 local_cluster.clone(),
                                 candidates.clone(),
+                            );
+                            let _ = record_task_attempt(
+                                &trace_task_id,
+                                &best_peer,
+                                &routed_model,
+                                is_retry_attempt,
+                                is_fallback_attempt,
+                            );
+                            if is_retry_attempt {
+                                let _ = record_distributed_task_retry();
+                            }
+                            if is_fallback_attempt {
+                                let _ = record_distributed_task_fallback();
+                            }
+                            println!(
+                                "[Trace] Task {} executed on node {}",
+                                trace_task_id, best_peer
                             );
 
                             if let Some(target_peer) = target_peer {
@@ -2238,6 +2355,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     failure_kind, INFER_TIMEOUT_MS
                                 );
                                 if let Some(infer_state) = distributed_infer_state.as_mut() {
+                                    let trace_task_id = infer_state.trace_task_id.clone();
                                     let mut preview_retry = infer_state.retry_state.clone();
                                     preview_retry.record_failure(
                                         infer_state.current_peer.as_deref(),
@@ -2280,6 +2398,25 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         waiting_for_response = false;
                                         continue;
                                     }
+
+                                    let (trace, aggregate_metrics) =
+                                        finalize_distributed_task_observability(
+                                            &trace_task_id,
+                                            infer_started_at,
+                                            true,
+                                        );
+                                    if let Some(trace) = trace {
+                                        println!(
+                                            "[Metrics] latency={} retries={} fallbacks={}",
+                                            trace.total_latency_ms, trace.retries, trace.fallbacks
+                                        );
+                                    }
+                                    println!(
+                                        "[Metrics] totals: tasks={} failed={} avg_latency_ms={:.1}",
+                                        aggregate_metrics.total_tasks,
+                                        aggregate_metrics.failed_tasks,
+                                        aggregate_metrics.avg_latency_ms
+                                    );
                                 }
                                 break;
                             }
@@ -2743,6 +2880,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         );
 
                                         if let Some(infer_state) = distributed_infer_state.as_mut() {
+                                            let trace_task_id = infer_state.trace_task_id.clone();
                                             let failure_kind = if success {
                                                 FailureKind::InvalidOutput
                                             } else {
@@ -2765,6 +2903,27 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                 waiting_for_response = false;
                                                 continue;
                                             }
+
+                                            let (trace, aggregate_metrics) =
+                                                finalize_distributed_task_observability(
+                                                    &trace_task_id,
+                                                    infer_started_at,
+                                                    true,
+                                                );
+                                            if let Some(trace) = trace {
+                                                println!(
+                                                    "[Metrics] latency={} retries={} fallbacks={}",
+                                                    trace.total_latency_ms,
+                                                    trace.retries,
+                                                    trace.fallbacks
+                                                );
+                                            }
+                                            println!(
+                                                "[Metrics] totals: tasks={} failed={} avg_latency_ms={:.1}",
+                                                aggregate_metrics.total_tasks,
+                                                aggregate_metrics.failed_tasks,
+                                                aggregate_metrics.avg_latency_ms
+                                            );
                                         }
 
                                         break;
@@ -2792,6 +2951,31 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         &mut next_token_idx,
                                         &mut rendered_output,
                                     );
+                                    if let Some(infer_state) = distributed_infer_state.as_ref() {
+                                        let (trace, aggregate_metrics) =
+                                            finalize_distributed_task_observability(
+                                                &infer_state.trace_task_id,
+                                                infer_started_at,
+                                                false,
+                                            );
+                                        if let Some(trace) = trace {
+                                            println!(
+                                                "[Trace] nodes={} models={}",
+                                                trace.node_history.join(" -> "),
+                                                trace.model_history.join(" -> ")
+                                            );
+                                            println!(
+                                                "[Metrics] latency={} retries={} fallbacks={}",
+                                                trace.total_latency_ms, trace.retries, trace.fallbacks
+                                            );
+                                        }
+                                        println!(
+                                            "[Metrics] totals: tasks={} failed={} avg_latency_ms={:.1}",
+                                            aggregate_metrics.total_tasks,
+                                            aggregate_metrics.failed_tasks,
+                                            aggregate_metrics.avg_latency_ms
+                                        );
+                                    }
                                     break;
                                 }
                             }
@@ -3225,6 +3409,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     eprintln!("[Fault] {}", reason);
 
                                     if let Some(infer_state) = distributed_infer_state.as_mut() {
+                                        let trace_task_id = infer_state.trace_task_id.clone();
                                         let failure_kind = if distributed_result.success {
                                             FailureKind::InvalidOutput
                                         } else {
@@ -3252,6 +3437,25 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                 Some(infer_state.current_request_id.clone());
                                             continue;
                                         }
+
+                                        let (trace, aggregate_metrics) =
+                                            finalize_distributed_task_observability(
+                                                &trace_task_id,
+                                                infer_started_at,
+                                                true,
+                                            );
+                                        if let Some(trace) = trace {
+                                            println!(
+                                                "[Metrics] latency={} retries={} fallbacks={}",
+                                                trace.total_latency_ms, trace.retries, trace.fallbacks
+                                            );
+                                        }
+                                        println!(
+                                            "[Metrics] totals: tasks={} failed={} avg_latency_ms={:.1}",
+                                            aggregate_metrics.total_tasks,
+                                            aggregate_metrics.failed_tasks,
+                                            aggregate_metrics.avg_latency_ms
+                                        );
                                     }
 
                                     break;
@@ -3260,6 +3464,31 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 task_manager.complete(distributed_result.clone()).await;
                                 println!("{}", distributed_result.output);
                                 println!("\n\n✅ Inference completada");
+                                if let Some(infer_state) = distributed_infer_state.as_ref() {
+                                    let (trace, aggregate_metrics) =
+                                        finalize_distributed_task_observability(
+                                            &infer_state.trace_task_id,
+                                            infer_started_at,
+                                            false,
+                                        );
+                                    if let Some(trace) = trace {
+                                        println!(
+                                            "[Trace] nodes={} models={}",
+                                            trace.node_history.join(" -> "),
+                                            trace.model_history.join(" -> ")
+                                        );
+                                        println!(
+                                            "[Metrics] latency={} retries={} fallbacks={}",
+                                            trace.total_latency_ms, trace.retries, trace.fallbacks
+                                        );
+                                    }
+                                    println!(
+                                        "[Metrics] totals: tasks={} failed={} avg_latency_ms={:.1}",
+                                        aggregate_metrics.total_tasks,
+                                        aggregate_metrics.failed_tasks,
+                                        aggregate_metrics.avg_latency_ms
+                                    );
+                                }
                                 break;
                             } else {
                                 waiting_for_response = false;
