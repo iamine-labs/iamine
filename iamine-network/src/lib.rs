@@ -22,9 +22,13 @@ pub use model_capability_matcher::{
     NodeHardwareProfile,
 };
 pub use expression_parser::normalize_expression;
-pub use prompt_analyzer::{analyze_prompt, Complexity, Language, PromptProfile};
+pub use prompt_analyzer::{
+    analyze_prompt, Complexity, DeterministicLevel, Domain, Language, OutputStyle, PromptProfile,
+    SemanticProfile,
+};
 pub use prompt_analyzer::{
     analyze_prompt_semantics,
+    analyze_prompt_semantics_with_context,
     estimate_confidence,
     SemanticRoutingDecision,
     Signal,

@@ -6,6 +6,7 @@ pub enum TaskType {
     Math,
     ExactMath,
     SymbolicMath,
+    Generative,
     StructuredList,
     Deterministic,
     Code,
@@ -85,6 +86,10 @@ pub fn detect_task_type(prompt: &str) -> TaskType {
         return TaskType::StructuredList;
     }
 
+    if is_generative_prompt(&lower) {
+        return TaskType::Generative;
+    }
+
     if is_deterministic_prompt(trimmed, &lower) {
         return TaskType::Deterministic;
     }
@@ -162,7 +167,6 @@ fn is_symbolic_math_prompt(trimmed: &str, lower: &str) -> bool {
             "derivative",
             "integral",
             "matrix",
-            "function",
             "limit",
         ],
     );
@@ -227,6 +231,27 @@ fn is_deterministic_prompt(trimmed: &str, lower: &str) -> bool {
             "dígitos",
         ],
     ) && (has_number || is_structured_list_prompt(lower))
+}
+
+fn is_generative_prompt(lower: &str) -> bool {
+    contains_any(
+        lower,
+        &[
+            "idea",
+            "ideas",
+            "negocio",
+            "negocios",
+            "brainstorm",
+            "propon",
+            "propón",
+            "sugiere",
+            "suggest",
+            "creative",
+            "creativo",
+            "nombres",
+            "naming",
+        ],
+    )
 }
 
 fn is_summarization_prompt(lower: &str) -> bool {
@@ -356,6 +381,14 @@ mod tests {
         assert_eq!(
             detect_task_type("Calcula el valor de sin(45°) + cos(30°)"),
             TaskType::SymbolicMath
+        );
+    }
+
+    #[test]
+    fn test_generative_detection() {
+        assert_eq!(
+            detect_task_type("dame 3 ideas de negocios para este 2026 acerca de la ia"),
+            TaskType::Generative
         );
     }
 }

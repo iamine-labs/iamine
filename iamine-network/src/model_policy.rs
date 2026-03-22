@@ -42,6 +42,13 @@ impl Default for ModelPolicyEngine {
                 PolicyRule {
                     language: None,
                     complexity: None,
+                    task_type: Some(TaskType::Generative),
+                    model: "llama3-3b".to_string(),
+                    reason: "generative task".to_string(),
+                },
+                PolicyRule {
+                    language: None,
+                    complexity: None,
                     task_type: Some(TaskType::StructuredList),
                     model: "llama3-3b".to_string(),
                     reason: "structured list task".to_string(),
@@ -224,6 +231,19 @@ impl ModelPolicyEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::prompt_analyzer::{DeterministicLevel, Domain, OutputStyle, SemanticProfile};
+
+    fn semantic_profile(task_type: TaskType) -> SemanticProfile {
+        SemanticProfile {
+            primary_task: task_type,
+            secondary_tasks: Vec::new(),
+            domain: Some(Domain::General),
+            output_style: OutputStyle::Explanatory,
+            requires_context: false,
+            deterministic_level: DeterministicLevel::Medium,
+            confidence: 0.9,
+        }
+    }
 
     fn spanish_high_conceptual() -> PromptProfile {
         PromptProfile {
@@ -232,6 +252,7 @@ mod tests {
             length: 42,
             task_type: TaskType::Conceptual,
             confidence: 0.9,
+            semantic: semantic_profile(TaskType::Conceptual),
         }
     }
 
@@ -251,6 +272,7 @@ mod tests {
             length: 3,
             task_type: TaskType::ExactMath,
             confidence: 0.9,
+            semantic: semantic_profile(TaskType::ExactMath),
         });
         assert_eq!(selected, "llama3-3b");
     }
@@ -264,6 +286,7 @@ mod tests {
             length: 52,
             task_type: TaskType::SymbolicMath,
             confidence: 0.9,
+            semantic: semantic_profile(TaskType::SymbolicMath),
         });
         assert_eq!(selected, "llama3-3b");
     }
@@ -277,6 +300,7 @@ mod tests {
             length: 32,
             task_type: TaskType::Reasoning,
             confidence: 0.9,
+            semantic: semantic_profile(TaskType::Reasoning),
         });
         assert_eq!(selected, "mistral-7b");
     }
@@ -290,6 +314,7 @@ mod tests {
             length: 36,
             task_type: TaskType::Summarization,
             confidence: 0.9,
+            semantic: semantic_profile(TaskType::Summarization),
         });
         assert_eq!(selected, "llama3-3b");
     }
@@ -303,6 +328,7 @@ mod tests {
             length: 80,
             task_type: TaskType::Reasoning,
             confidence: 0.9,
+            semantic: semantic_profile(TaskType::Reasoning),
         });
         assert_eq!(decision.model, "mistral-7b");
         assert_eq!(decision.reason, "reasoning task");
@@ -315,5 +341,19 @@ mod tests {
         let decision = engine.select_model_decision_from_available(&spanish_high_conceptual(), &available);
         assert_eq!(decision.model, "tinyllama-1b");
         assert_eq!(decision.reason, "availability fallback");
+    }
+
+    #[test]
+    fn test_model_selection_task_generative() {
+        let engine = ModelPolicyEngine::default();
+        let selected = engine.select_model(&PromptProfile {
+            language: Language::Spanish,
+            complexity: Complexity::Medium,
+            length: 34,
+            task_type: TaskType::Generative,
+            confidence: 0.9,
+            semantic: semantic_profile(TaskType::Generative),
+        });
+        assert_eq!(selected, "llama3-3b");
     }
 }

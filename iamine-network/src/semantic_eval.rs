@@ -1,4 +1,6 @@
-use crate::prompt_analyzer::{analyze_prompt_semantics, CONFIDENCE_THRESHOLD};
+use crate::prompt_analyzer::{
+    analyze_prompt_semantics, CONFIDENCE_THRESHOLD, DeterministicLevel, Domain, OutputStyle,
+};
 use crate::task_analyzer::TaskType;
 use serde::{Deserialize, Serialize};
 
@@ -9,6 +11,16 @@ pub struct SemanticDatasetEntry {
     pub prompt: String,
     pub expected_task: TaskType,
     pub should_normalize: bool,
+    #[serde(default)]
+    pub expected_secondary: Vec<TaskType>,
+    #[serde(default)]
+    pub expected_domain: Option<Domain>,
+    #[serde(default)]
+    pub expected_output_style: Option<OutputStyle>,
+    #[serde(default)]
+    pub expected_requires_context: Option<bool>,
+    #[serde(default)]
+    pub expected_deterministic_level: Option<DeterministicLevel>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -18,6 +30,16 @@ pub struct SemanticEvalError {
     pub predicted_task: TaskType,
     pub expected_normalize: bool,
     pub predicted_normalize: bool,
+    pub expected_secondary: Vec<TaskType>,
+    pub predicted_secondary: Vec<TaskType>,
+    pub expected_domain: Option<Domain>,
+    pub predicted_domain: Option<Domain>,
+    pub expected_output_style: Option<OutputStyle>,
+    pub predicted_output_style: OutputStyle,
+    pub expected_requires_context: Option<bool>,
+    pub predicted_requires_context: bool,
+    pub expected_deterministic_level: Option<DeterministicLevel>,
+    pub predicted_deterministic_level: DeterministicLevel,
     pub confidence: f32,
     pub fallback_applied: bool,
 }
@@ -54,8 +76,30 @@ pub fn evaluate_dataset(entries: &[SemanticDatasetEntry]) -> SemanticEvalReport 
         let decision = analyze_prompt_semantics(&entry.prompt);
         let predicted_task = decision.profile.task_type;
         let predicted_normalize = should_use_strict_handling(predicted_task);
+        let predicted_secondary = decision.profile.semantic.secondary_tasks.clone();
+        let predicted_domain = decision.profile.semantic.domain;
+        let predicted_output_style = decision.profile.semantic.output_style;
+        let predicted_requires_context = decision.profile.semantic.requires_context;
+        let predicted_deterministic_level = decision.profile.semantic.deterministic_level;
         let task_ok = predicted_task == entry.expected_task;
         let normalize_ok = predicted_normalize == entry.should_normalize;
+        let secondary_ok = entry.expected_secondary.is_empty() || predicted_secondary == entry.expected_secondary;
+        let domain_ok = entry
+            .expected_domain
+            .map(|expected| Some(expected) == predicted_domain)
+            .unwrap_or(true);
+        let output_style_ok = entry
+            .expected_output_style
+            .map(|expected| expected == predicted_output_style)
+            .unwrap_or(true);
+        let requires_context_ok = entry
+            .expected_requires_context
+            .map(|expected| expected == predicted_requires_context)
+            .unwrap_or(true);
+        let deterministic_ok = entry
+            .expected_deterministic_level
+            .map(|expected| expected == predicted_deterministic_level)
+            .unwrap_or(true);
 
         if decision.fallback_applied {
             fallback_count += 1;
@@ -64,7 +108,7 @@ pub fn evaluate_dataset(entries: &[SemanticDatasetEntry]) -> SemanticEvalReport 
             low_confidence_count += 1;
         }
 
-        if task_ok && normalize_ok {
+        if task_ok && normalize_ok && secondary_ok && domain_ok && output_style_ok && requires_context_ok && deterministic_ok {
             correct += 1;
         } else {
             error_cases.push(SemanticEvalError {
@@ -73,6 +117,16 @@ pub fn evaluate_dataset(entries: &[SemanticDatasetEntry]) -> SemanticEvalReport 
                 predicted_task,
                 expected_normalize: entry.should_normalize,
                 predicted_normalize,
+                expected_secondary: entry.expected_secondary.clone(),
+                predicted_secondary,
+                expected_domain: entry.expected_domain,
+                predicted_domain,
+                expected_output_style: entry.expected_output_style,
+                predicted_output_style,
+                expected_requires_context: entry.expected_requires_context,
+                predicted_requires_context,
+                expected_deterministic_level: entry.expected_deterministic_level,
+                predicted_deterministic_level,
                 confidence: decision.profile.confidence,
                 fallback_applied: decision.fallback_applied,
             });

@@ -2,51 +2,106 @@
   {
     "prompt": "dame el abecedario",
     "expected_task": "StructuredList",
-    "should_normalize": true
+    "should_normalize": true,
+    "expected_output_style": "Structured",
+    "expected_deterministic_level": "High"
   },
   {
     "prompt": "6*9",
     "expected_task": "ExactMath",
-    "should_normalize": true
+    "should_normalize": true,
+    "expected_output_style": "Exact",
+    "expected_deterministic_level": "High"
   },
   {
     "prompt": "Calcula la derivada de f(x)=4x^3+2x^2-7x+5",
     "expected_task": "SymbolicMath",
-    "should_normalize": false
+    "should_normalize": false,
+    "expected_domain": "Math",
+    "expected_output_style": "Explanatory"
   },
   {
     "prompt": "Evalúa la integral definida de x^2 entre 0 y 3",
     "expected_task": "SymbolicMath",
-    "should_normalize": false
+    "should_normalize": false,
+    "expected_domain": "Math",
+    "expected_output_style": "Explanatory"
   },
   {
     "prompt": "genera un resumen de la relatividad",
     "expected_task": "Summarization",
-    "should_normalize": false
+    "should_normalize": false,
+    "expected_output_style": "Explanatory"
   },
   {
     "prompt": "explica la teoria de la relatividad",
     "expected_task": "Conceptual",
-    "should_normalize": false
+    "should_normalize": false,
+    "expected_output_style": "Explanatory"
   },
   {
     "prompt": "write a python function to sort a list",
     "expected_task": "Code",
-    "should_normalize": false
+    "should_normalize": false,
+    "expected_domain": "Code",
+    "expected_output_style": "Explanatory"
   },
   {
     "prompt": "step by step solve this puzzle",
     "expected_task": "Reasoning",
-    "should_normalize": false
+    "should_normalize": false,
+    "expected_output_style": "Explanatory"
   },
   {
     "prompt": "Java",
     "expected_task": "General",
-    "should_normalize": false
+    "should_normalize": false,
+    "expected_output_style": "Explanatory"
   },
   {
     "prompt": "solve",
     "expected_task": "General",
-    "should_normalize": false
+    "should_normalize": false,
+    "expected_output_style": "Explanatory"
+  },
+  {
+    "prompt": "dame un ejemplo de E=mc2 y un ejercicio",
+    "expected_task": "Conceptual",
+    "should_normalize": false,
+    "expected_secondary": ["Generative", "Math"],
+    "expected_domain": "Physics",
+    "expected_output_style": "Hybrid",
+    "expected_deterministic_level": "Low"
+  },
+  {
+    "prompt": "dame 3 ideas de negocio de IA",
+    "expected_task": "Generative",
+    "should_normalize": false,
+    "expected_secondary": ["StructuredList"],
+    "expected_domain": "Business",
+    "expected_output_style": "Hybrid",
+    "expected_deterministic_level": "Low"
+  },
+  {
+    "prompt": "Complementa la respuesta anterior",
+    "expected_task": "General",
+    "should_normalize": false,
+    "expected_requires_context": true,
+    "expected_output_style": "Explanatory"
+  },
+  {
+    "prompt": "Filosoficamente hablando que es dios?",
+    "expected_task": "Conceptual",
+    "should_normalize": false,
+    "expected_domain": "Philosophy",
+    "expected_output_style": "Explanatory"
+  },
+  {
+    "prompt": "Que es una derivada?",
+    "expected_task": "Conceptual",
+    "should_normalize": false,
+    "expected_secondary": ["SymbolicMath"],
+    "expected_domain": "Math",
+    "expected_output_style": "Hybrid"
   }
 ]

@@ -38,6 +38,8 @@ use iamine_models::{
 use iamine_network::{
     analyze_prompt_semantics,
     Complexity as PromptComplexityLevel,
+    DeterministicLevel as PromptDeterministicLevel,
+    Domain as PromptDomain,
     detect_exact_subtype,
     describe_output_policy,
     evaluate_default_dataset,
@@ -49,6 +51,7 @@ use iamine_network::{
     NetworkTopology,
     normalize_expression,
     OutputPolicyDecision,
+    OutputStyle as PromptOutputStyle,
     PromptProfile,
     SemanticRoutingDecision,
     SharedNetworkTopology,
@@ -291,6 +294,7 @@ fn prompt_task_label(task_type: PromptTaskType) -> &'static str {
         PromptTaskType::Math => "Math",
         PromptTaskType::ExactMath => "ExactMath",
         PromptTaskType::SymbolicMath => "SymbolicMath",
+        PromptTaskType::Generative => "Generative",
         PromptTaskType::StructuredList => "StructuredList",
         PromptTaskType::Deterministic => "Deterministic",
         PromptTaskType::Code => "Code",
@@ -298,6 +302,35 @@ fn prompt_task_label(task_type: PromptTaskType) -> &'static str {
         PromptTaskType::Reasoning => "Reasoning",
         PromptTaskType::Summarization => "Summarization",
         PromptTaskType::General => "General",
+    }
+}
+
+fn prompt_output_style_label(output_style: PromptOutputStyle) -> &'static str {
+    match output_style {
+        PromptOutputStyle::Exact => "Exact",
+        PromptOutputStyle::Explanatory => "Explanatory",
+        PromptOutputStyle::Structured => "Structured",
+        PromptOutputStyle::Generative => "Generative",
+        PromptOutputStyle::Hybrid => "Hybrid",
+    }
+}
+
+fn prompt_deterministic_level_label(level: PromptDeterministicLevel) -> &'static str {
+    match level {
+        PromptDeterministicLevel::High => "High",
+        PromptDeterministicLevel::Medium => "Medium",
+        PromptDeterministicLevel::Low => "Low",
+    }
+}
+
+fn prompt_domain_label(domain: Option<PromptDomain>) -> &'static str {
+    match domain {
+        Some(PromptDomain::Math) => "Math",
+        Some(PromptDomain::Physics) => "Physics",
+        Some(PromptDomain::Business) => "Business",
+        Some(PromptDomain::Philosophy) => "Philosophy",
+        Some(PromptDomain::Code) => "Code",
+        Some(PromptDomain::General) | None => "General",
     }
 }
 
@@ -310,7 +343,42 @@ fn exact_subtype_label(exact_subtype: PromptExactSubtype) -> &'static str {
 }
 
 fn log_semantic_decision(decision: &SemanticRoutingDecision) {
-    println!("[Semantic] Task: {}", prompt_task_label(decision.profile.task_type));
+    let secondary = if decision.profile.semantic.secondary_tasks.is_empty() {
+        "[]".to_string()
+    } else {
+        format!(
+            "[{}]",
+            decision
+                .profile
+                .semantic
+                .secondary_tasks
+                .iter()
+                .map(|task| prompt_task_label(*task))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    };
+    println!(
+        "[Semantic] Primary: {}",
+        prompt_task_label(decision.profile.semantic.primary_task)
+    );
+    println!("[Semantic] Secondary: {}", secondary);
+    println!(
+        "[Semantic] Style: {}",
+        prompt_output_style_label(decision.profile.semantic.output_style)
+    );
+    println!(
+        "[Semantic] Context: {}",
+        decision.profile.semantic.requires_context
+    );
+    println!(
+        "[Semantic] Domain: {}",
+        prompt_domain_label(decision.profile.semantic.domain)
+    );
+    println!(
+        "[Semantic] Deterministic: {}",
+        prompt_deterministic_level_label(decision.profile.semantic.deterministic_level)
+    );
     println!("[Semantic] Confidence: {:.2}", decision.profile.confidence);
     println!("[Semantic] Fallback: {}", decision.fallback_applied);
     if decision.fallback_applied {
@@ -707,10 +775,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 println!("\nError breakdown:");
                 for error in &report.error_cases {
                     println!(
-                        "- prompt='{}' expected={} predicted={} normalize(expected={}, predicted={}) confidence={:.2} fallback={}",
+                        "- prompt='{}' expected={} predicted={} secondary(expected={:?}, predicted={:?}) style(expected={:?}, predicted={:?}) context(expected={:?}, predicted={}) normalize(expected={}, predicted={}) confidence={:.2} fallback={}",
                         error.prompt,
                         prompt_task_label(error.expected_task),
                         prompt_task_label(error.predicted_task),
+                        error.expected_secondary,
+                        error.predicted_secondary,
+                        error.expected_output_style,
+                        error.predicted_output_style,
+                        error.expected_requires_context,
+                        error.predicted_requires_context,
                         error.expected_normalize,
                         error.predicted_normalize,
                         error.confidence,

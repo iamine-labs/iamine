@@ -1,4 +1,4 @@
-use crate::prompt_analyzer::{Complexity, PromptProfile};
+use crate::prompt_analyzer::{Complexity, OutputStyle, PromptProfile};
 use crate::task_analyzer::TaskType;
 
 const MIN_TOKENS: usize = 64;
@@ -38,6 +38,11 @@ pub fn describe_output_policy(profile: &PromptProfile, prompt: &str) -> OutputPo
         reasons.push("definition keyword".to_string());
     }
 
+    if profile.task_type == TaskType::Generative {
+        max_tokens += 160;
+        reasons.push("generative task".to_string());
+    }
+
     if profile.task_type == TaskType::SymbolicMath {
         max_tokens += 256;
         reasons.push("symbolic math task".to_string());
@@ -46,6 +51,16 @@ pub fn describe_output_policy(profile: &PromptProfile, prompt: &str) -> OutputPo
     if profile.task_type == TaskType::Summarization {
         max_tokens = max_tokens.saturating_sub(128);
         reasons.push("summarization task".to_string());
+    }
+
+    if matches!(profile.semantic.output_style, OutputStyle::Hybrid) {
+        max_tokens += 160;
+        reasons.push("hybrid semantic style".to_string());
+    }
+
+    if profile.semantic.secondary_tasks.contains(&TaskType::StructuredList) {
+        max_tokens += 64;
+        reasons.push("secondary structured task".to_string());
     }
 
     max_tokens = max_tokens.clamp(MIN_TOKENS, MAX_TOKENS);
@@ -77,7 +92,24 @@ fn complexity_label(complexity: Complexity) -> &'static str {
 mod tests {
     use super::*;
     use crate::prompt_analyzer::{Language, PromptProfile};
+    use crate::prompt_analyzer::{DeterministicLevel, Domain, SemanticProfile};
     use crate::task_analyzer::TaskType;
+
+    fn semantic_profile(
+        task_type: TaskType,
+        output_style: OutputStyle,
+        secondary_tasks: Vec<TaskType>,
+    ) -> SemanticProfile {
+        SemanticProfile {
+            primary_task: task_type,
+            secondary_tasks,
+            domain: Some(Domain::General),
+            output_style,
+            requires_context: false,
+            deterministic_level: DeterministicLevel::Medium,
+            confidence: 0.9,
+        }
+    }
 
     #[test]
     fn test_adaptive_token_policy() {
@@ -87,6 +119,7 @@ mod tests {
             length: 12,
             task_type: TaskType::General,
             confidence: 0.9,
+            semantic: semantic_profile(TaskType::General, OutputStyle::Explanatory, Vec::new()),
         };
 
         assert_eq!(compute_max_tokens(&profile, "What is 2+2?"), 128);
@@ -100,6 +133,7 @@ mod tests {
             length: 42,
             task_type: TaskType::Conceptual,
             confidence: 0.9,
+            semantic: semantic_profile(TaskType::Conceptual, OutputStyle::Explanatory, Vec::new()),
         };
 
         let decision = describe_output_policy(&profile, "explica paso a paso la teoria de la relatividad");
@@ -118,6 +152,7 @@ mod tests {
             length: 38,
             task_type: TaskType::Summarization,
             confidence: 0.9,
+            semantic: semantic_profile(TaskType::Summarization, OutputStyle::Explanatory, Vec::new()),
         };
 
         let decision = describe_output_policy(&profile, "genera un resumen de la relatividad");
@@ -133,10 +168,33 @@ mod tests {
             length: 48,
             task_type: TaskType::SymbolicMath,
             confidence: 0.9,
+            semantic: semantic_profile(TaskType::SymbolicMath, OutputStyle::Explanatory, Vec::new()),
         };
 
         let decision = describe_output_policy(&profile, "Calcula la derivada de f(x)=4x^3+2x^2-7x+5");
         assert_eq!(decision.max_tokens, 768);
         assert!(decision.reason.contains("symbolic math task"));
+    }
+
+    #[test]
+    fn test_hybrid_prompt_increases_budget() {
+        let profile = PromptProfile {
+            language: Language::Spanish,
+            complexity: Complexity::Medium,
+            length: 40,
+            task_type: TaskType::Generative,
+            confidence: 0.9,
+            semantic: semantic_profile(
+                TaskType::Generative,
+                OutputStyle::Hybrid,
+                vec![TaskType::StructuredList],
+            ),
+        };
+
+        let decision = describe_output_policy(&profile, "dame 3 ideas de negocio de IA");
+        assert_eq!(decision.max_tokens, 896);
+        assert!(decision.reason.contains("generative task"));
+        assert!(decision.reason.contains("hybrid semantic style"));
+        assert!(decision.reason.contains("secondary structured task"));
     }
 }
