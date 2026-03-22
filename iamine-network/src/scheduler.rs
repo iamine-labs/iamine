@@ -2,7 +2,7 @@ use crate::model_capability_matcher::{
     is_node_compatible_with_model, ModelHardwareRequirements, NodeHardwareProfile,
 };
 use crate::node_registry::{NodeCapability, NodeRegistry};
-use crate::node_scoring::{free_slots, score_node, NodeScore};
+use crate::node_scoring::{cluster_priority, free_slots, score_node, NodeScore};
 
 #[derive(Debug, Clone, Default)]
 pub struct IntelligentScheduler;
@@ -24,11 +24,17 @@ impl IntelligentScheduler {
         let mut candidates = self.filter_nodes(registry.all_nodes(), model_id, &requirements);
 
         candidates.sort_by(|left, right| {
+            let left_priority = cluster_priority(left, local_cluster_id);
+            let right_priority = cluster_priority(right, local_cluster_id);
             let left_score = score_node(left, local_cluster_id);
             let right_score = score_node(right, local_cluster_id);
-            right_score
-                .partial_cmp(&left_score)
-                .unwrap_or(std::cmp::Ordering::Equal)
+            right_priority
+                .cmp(&left_priority)
+                .then_with(|| {
+                    right_score
+                        .partial_cmp(&left_score)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
                 .then_with(|| left.peer_id.cmp(&right.peer_id))
         });
 
@@ -205,7 +211,16 @@ mod tests {
         let scheduler = IntelligentScheduler::new();
         let mut registry = NodeRegistry::new();
         registry.register_node(make_cap("peer1", 160_000, "llama3-3b", 2, 8, 1, 5, None));
-        registry.register_node(make_cap("peer2", 160_000, "tinyllama-1b", 16, 8, 8, 10, None));
+        registry.register_node(make_cap(
+            "peer2",
+            160_000,
+            "tinyllama-1b",
+            16,
+            8,
+            8,
+            10,
+            None,
+        ));
 
         assert!(scheduler
             .select_best_node(&registry, "llama3-3b", None)

@@ -1,3 +1,4 @@
+use crate::cluster::{relation_for_cluster, ClusterRelation};
 use crate::node_registry::NodeCapability;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -21,9 +22,18 @@ pub fn latency_score(latency_ms: u32) -> f64 {
 }
 
 pub fn cluster_bonus(node: &NodeCapability, local_cluster_id: Option<&str>) -> f64 {
-    match (&node.cluster_id, local_cluster_id) {
-        (Some(node_cluster), Some(local_cluster)) if node_cluster == local_cluster => 1.0,
-        _ => 0.0,
+    match relation_for_cluster(node.cluster_id.as_deref(), local_cluster_id) {
+        ClusterRelation::Same => 1.0,
+        ClusterRelation::Nearby => 0.5,
+        ClusterRelation::Remote => 0.0,
+    }
+}
+
+pub fn cluster_priority(node: &NodeCapability, local_cluster_id: Option<&str>) -> u8 {
+    match relation_for_cluster(node.cluster_id.as_deref(), local_cluster_id) {
+        ClusterRelation::Same => 3,
+        ClusterRelation::Nearby => 2,
+        ClusterRelation::Remote => 1,
     }
 }
 
@@ -45,7 +55,7 @@ pub fn score_node(node: &NodeCapability, local_cluster_id: Option<&str>) -> f64 
 
 #[cfg(test)]
 mod tests {
-    use super::{cluster_bonus, free_slots, latency_score, score_node};
+    use super::{cluster_bonus, cluster_priority, free_slots, latency_score, score_node};
     use crate::node_registry::NodeCapability;
     use std::time::Instant;
 
@@ -89,6 +99,7 @@ mod tests {
         let node = make_node("peer-a", 120_000, 8, 0, 20, Some("local"));
         assert_eq!(cluster_bonus(&node, Some("local")), 1.0);
         assert_eq!(cluster_bonus(&node, Some("remote")), 0.0);
+        assert_eq!(cluster_priority(&node, Some("local")), 3);
     }
 
     #[test]

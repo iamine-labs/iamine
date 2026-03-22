@@ -1,51 +1,7 @@
+use crate::cluster::{Cluster, ClusterTier};
+use crate::latency::PeerLatency;
+use libp2p::PeerId;
 use std::collections::HashMap;
-
-#[derive(Debug, Clone)]
-pub struct PeerLatency {
-    pub peer_id: String,
-    pub avg_latency_ms: f64,
-    pub sample_count: u64,
-}
-
-impl PeerLatency {
-    pub fn new(peer_id: String) -> Self {
-        Self {
-            peer_id,
-            avg_latency_ms: 0.0,
-            sample_count: 0,
-        }
-    }
-
-    pub fn update(&mut self, rtt_ms: f64) {
-        self.sample_count += 1;
-        let n = self.sample_count as f64;
-        self.avg_latency_ms = self.avg_latency_ms * (n - 1.0) / n + rtt_ms / n;
-    }
-
-    pub fn cluster_tier(&self) -> ClusterTier {
-        if self.avg_latency_ms < 10.0 {
-            ClusterTier::Same
-        } else if self.avg_latency_ms < 30.0 {
-            ClusterTier::Nearby
-        } else {
-            ClusterTier::Remote
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ClusterTier {
-    Same,
-    Nearby,
-    Remote,
-}
-
-#[derive(Debug, Clone)]
-pub struct Cluster {
-    pub id: String,
-    pub nodes: Vec<String>,
-    pub avg_latency_ms: f64,
-}
 
 pub struct NetworkTopology {
     /// peer_id -> latency info
@@ -93,7 +49,7 @@ impl NetworkTopology {
 
         for (pid, lat) in &self.peers {
             match lat.cluster_tier() {
-                ClusterTier::Same => same.push(pid.clone()),
+                ClusterTier::Local => same.push(pid.clone()),
                 ClusterTier::Nearby => nearby.push(pid.clone()),
                 ClusterTier::Remote => remote.push(pid.clone()),
             }
@@ -109,13 +65,15 @@ impl NetworkTopology {
         let cid = format!("cluster-{}-local", local_short);
         for pid in &nodes {
             self.peer_cluster.insert(pid.clone(), cid.clone());
+            println!("[Cluster] Assigned node {} to cluster {}", pid, cid);
         }
         self.clusters.insert(
             cid.clone(),
             Cluster {
                 id: cid,
-                nodes,
-                avg_latency_ms: avg,
+                nodes: parse_peer_ids(&nodes),
+                avg_latency: avg as f32,
+                tier: ClusterTier::Local,
             },
         );
 
@@ -124,13 +82,15 @@ impl NetworkTopology {
             let cid = format!("cluster-{}-nearby", local_short);
             for pid in &nearby {
                 self.peer_cluster.insert(pid.clone(), cid.clone());
+                println!("[Cluster] Assigned node {} to cluster {}", pid, cid);
             }
             self.clusters.insert(
                 cid.clone(),
                 Cluster {
                     id: cid,
-                    nodes: nearby,
-                    avg_latency_ms: avg,
+                    nodes: parse_peer_ids(&nearby),
+                    avg_latency: avg as f32,
+                    tier: ClusterTier::Nearby,
                 },
             );
         }
@@ -140,13 +100,15 @@ impl NetworkTopology {
             let cid = format!("cluster-{}-remote", local_short);
             for pid in &remote {
                 self.peer_cluster.insert(pid.clone(), cid.clone());
+                println!("[Cluster] Assigned node {} to cluster {}", pid, cid);
             }
             self.clusters.insert(
                 cid.clone(),
                 Cluster {
                     id: cid,
-                    nodes: remote,
-                    avg_latency_ms: avg,
+                    nodes: parse_peer_ids(&remote),
+                    avg_latency: avg as f32,
+                    tier: ClusterTier::Remote,
                 },
             );
         }
@@ -166,7 +128,7 @@ impl NetworkTopology {
         };
         self.clusters
             .get(cid)
-            .map(|c| c.nodes.clone())
+            .map(|c| c.nodes.iter().map(ToString::to_string).collect())
             .unwrap_or_default()
     }
 
@@ -177,27 +139,30 @@ impl NetworkTopology {
             self.clusters.len()
         );
         let mut sorted: Vec<&Cluster> = self.clusters.values().collect();
-        sorted.sort_by(|a, b| a.avg_latency_ms.partial_cmp(&b.avg_latency_ms).unwrap());
+        sorted.sort_by(|a, b| {
+            a.avg_latency
+                .partial_cmp(&b.avg_latency)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         for cluster in sorted {
-            let tier = if cluster.avg_latency_ms < 10.0 {
-                "LOCAL"
-            } else if cluster.avg_latency_ms < 30.0 {
-                "NEARBY"
-            } else {
-                "REMOTE"
+            let tier = match cluster.tier {
+                ClusterTier::Local => "LOCAL",
+                ClusterTier::Nearby => "NEARBY",
+                ClusterTier::Remote => "REMOTE",
             };
             println!(
                 "   📦 {} [{}] ({:.1}ms avg, {} nodes)",
                 cluster.id,
                 tier,
-                cluster.avg_latency_ms,
+                cluster.avg_latency,
                 cluster.nodes.len()
             );
             for node in &cluster.nodes {
-                let short = &node[..12.min(node.len())];
+                let node_str = node.to_string();
+                let short = &node_str[..12.min(node_str.len())];
                 let lat = self
                     .peers
-                    .get(node)
+                    .get(&node_str)
                     .map(|p| format!("{:.1}ms", p.avg_latency_ms))
                     .unwrap_or_else(|| "local".to_string());
                 println!("      └─ {} ({})", short, lat);
@@ -220,63 +185,90 @@ impl NetworkTopology {
 
 pub type SharedNetworkTopology = std::sync::Arc<tokio::sync::RwLock<NetworkTopology>>;
 
+fn parse_peer_ids(peer_ids: &[String]) -> Vec<PeerId> {
+    peer_ids
+        .iter()
+        .filter_map(|peer_id| peer_id.parse::<PeerId>().ok())
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use libp2p::identity;
 
-    #[test]
-    fn test_cluster_creation() {
-        let mut topo = NetworkTopology::new();
-        topo.update_latency("peer-A", 5.0);
-        topo.update_latency("peer-B", 20.0);
-        topo.update_latency("peer-C", 50.0);
-        topo.assign_clusters("local-node");
-
-        assert_eq!(topo.all_clusters().len(), 3); // local, nearby, remote
-        assert!(topo.cluster_for_peer("peer-A").unwrap().contains("local"));
-        assert!(topo.cluster_for_peer("peer-B").unwrap().contains("nearby"));
-        assert!(topo.cluster_for_peer("peer-C").unwrap().contains("remote"));
+    fn peer_id() -> String {
+        identity::Keypair::generate_ed25519()
+            .public()
+            .to_peer_id()
+            .to_string()
     }
 
     #[test]
-    fn test_latency_grouping() {
+    fn test_cluster_detection() {
         let mut topo = NetworkTopology::new();
-        topo.update_latency("peer-1", 3.0);
-        topo.update_latency("peer-2", 7.0);
-        topo.update_latency("peer-3", 25.0);
-        topo.update_latency("peer-4", 80.0);
-        topo.assign_clusters("me");
+        let local = peer_id();
+        let peer_a = peer_id();
+        let peer_b = peer_id();
+        let peer_c = peer_id();
+        topo.update_latency(&peer_a, 5.0);
+        topo.update_latency(&peer_b, 20.0);
+        topo.update_latency(&peer_c, 60.0);
+        topo.assign_clusters(&local);
+
+        assert_eq!(topo.all_clusters().len(), 3); // local, nearby, remote
+        assert!(topo.cluster_for_peer(&peer_a).unwrap().contains("local"));
+        assert!(topo.cluster_for_peer(&peer_b).unwrap().contains("nearby"));
+        assert!(topo.cluster_for_peer(&peer_c).unwrap().contains("remote"));
+    }
+
+    #[test]
+    fn test_cluster_assignment() {
+        let mut topo = NetworkTopology::new();
+        let local = peer_id();
+        let peer_1 = peer_id();
+        let peer_2 = peer_id();
+        let peer_3 = peer_id();
+        let peer_4 = peer_id();
+        topo.update_latency(&peer_1, 3.0);
+        topo.update_latency(&peer_2, 7.0);
+        topo.update_latency(&peer_3, 25.0);
+        topo.update_latency(&peer_4, 80.0);
+        topo.assign_clusters(&local);
 
         // peer-1, peer-2 in same (local) cluster
-        let c1 = topo.cluster_for_peer("peer-1").unwrap();
-        let c2 = topo.cluster_for_peer("peer-2").unwrap();
+        let c1 = topo.cluster_for_peer(&peer_1).unwrap();
+        let c2 = topo.cluster_for_peer(&peer_2).unwrap();
         assert_eq!(c1, c2);
 
         // peer-3 in nearby
-        let c3 = topo.cluster_for_peer("peer-3").unwrap();
+        let c3 = topo.cluster_for_peer(&peer_3).unwrap();
         assert_ne!(c1, c3);
         assert!(c3.contains("nearby"));
 
         // peer-4 in remote
-        let c4 = topo.cluster_for_peer("peer-4").unwrap();
+        let c4 = topo.cluster_for_peer(&peer_4).unwrap();
         assert!(c4.contains("remote"));
     }
 
     #[test]
-    fn test_cluster_selection() {
+    fn test_scheduler_prefers_local_cluster() {
         let mut topo = NetworkTopology::new();
-        topo.update_latency("fast-peer", 2.0);
-        topo.update_latency("slow-peer", 100.0);
-        topo.assign_clusters("me");
+        let local = peer_id();
+        let fast_peer = peer_id();
+        let slow_peer = peer_id();
+        topo.update_latency(&fast_peer, 2.0);
+        topo.update_latency(&slow_peer, 100.0);
+        topo.assign_clusters(&local);
 
-        let same = topo.peers_in_same_cluster("me");
-        assert!(same.contains(&"me".to_string()));
-        assert!(same.contains(&"fast-peer".to_string()));
-        assert!(!same.contains(&"slow-peer".to_string()));
+        let same = topo.peers_in_same_cluster(&local);
+        assert!(same.contains(&local));
+        assert!(same.contains(&fast_peer));
+        assert!(!same.contains(&slow_peer));
     }
 
     #[test]
-    fn test_latency_update_averaging() {
+    fn test_latency_update() {
         let mut lat = PeerLatency::new("p1".to_string());
         lat.update(10.0);
         lat.update(20.0);
@@ -287,22 +279,23 @@ mod tests {
     #[test]
     fn test_empty_topology() {
         let mut topo = NetworkTopology::new();
-        topo.assign_clusters("me");
+        let local = peer_id();
+        topo.assign_clusters(&local);
         // Only local cluster with just the local node
         assert_eq!(topo.all_clusters().len(), 1);
-        assert!(topo.cluster_for_peer("me").is_some());
+        assert!(topo.cluster_for_peer(&local).is_some());
     }
 
     #[test]
     fn test_tier_thresholds() {
         let mut p = PeerLatency::new("x".to_string());
         p.avg_latency_ms = 9.9;
-        assert_eq!(p.cluster_tier(), ClusterTier::Same);
+        assert_eq!(p.cluster_tier(), ClusterTier::Local);
         p.avg_latency_ms = 10.0;
         assert_eq!(p.cluster_tier(), ClusterTier::Nearby);
-        p.avg_latency_ms = 29.9;
+        p.avg_latency_ms = 49.9;
         assert_eq!(p.cluster_tier(), ClusterTier::Nearby);
-        p.avg_latency_ms = 30.0;
+        p.avg_latency_ms = 50.0;
         assert_eq!(p.cluster_tier(), ClusterTier::Remote);
     }
 }

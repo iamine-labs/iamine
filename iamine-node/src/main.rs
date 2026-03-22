@@ -1818,7 +1818,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         let mut reg = registry.write().await;
                         for cluster in topo.all_clusters() {
                             for node_id in &cluster.nodes {
-                                reg.set_cluster(node_id, &cluster.id);
+                                reg.set_cluster(&node_id.to_string(), &cluster.id);
                             }
                         }
                     }
@@ -2592,6 +2592,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 SwarmEvent::Behaviour(IaMineEvent::Ping(ping::Event { peer, result, .. })) => {
                     if let Ok(rtt) = result {
                         let rtt_ms = rtt.as_micros() as f64 / 1000.0;
+                        println!(
+                            "[Latency] RTT to peer {} = {:.1} ms",
+                            &peer.to_string()[..12.min(peer.to_string().len())],
+                            rtt_ms
+                        );
                         peer_tracker.update_latency(&peer.to_string(), rtt_ms);
                         topology.write().await.update_latency(&peer.to_string(), rtt_ms);
                     }
