@@ -7,6 +7,7 @@ pub struct NodeScore {
     pub model_id: String,
     pub score: f64,
     pub free_slots: u32,
+    pub model_karma_score: f32,
 }
 
 pub fn free_slots(node: &NodeCapability) -> u32 {

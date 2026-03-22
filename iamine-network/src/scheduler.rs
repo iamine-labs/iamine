@@ -1,6 +1,7 @@
 use crate::model_capability_matcher::{
     is_node_compatible_with_model, ModelHardwareRequirements, NodeHardwareProfile,
 };
+use crate::model_karma::model_karma;
 use crate::node_registry::{NodeCapability, NodeRegistry};
 use crate::node_scoring::{cluster_priority, free_slots, score_node, NodeScore};
 
@@ -50,6 +51,7 @@ impl IntelligentScheduler {
             model_id: model_id.to_string(),
             score,
             free_slots: free_slots(best),
+            model_karma_score: karma_score_for_model(model_id),
         })
     }
 
@@ -63,8 +65,18 @@ impl IntelligentScheduler {
 
         for model_id in model_ids {
             if let Some(candidate) = self.select_best_node(registry, model_id, local_cluster_id) {
+                let candidate_composite = composite_score(&candidate);
                 let should_replace = match &best {
-                    Some(current) => candidate.score > current.score,
+                    Some(current) => {
+                        let current_composite = composite_score(current);
+                        candidate_composite > current_composite
+                            || (candidate_composite - current_composite).abs() < f64::EPSILON
+                                && (candidate.model_karma_score > current.model_karma_score
+                                    || (candidate.model_karma_score - current.model_karma_score)
+                                        .abs()
+                                        < f32::EPSILON
+                                        && candidate.score > current.score)
+                    }
                     None => true,
                 };
                 if should_replace {
@@ -99,9 +111,21 @@ impl IntelligentScheduler {
     }
 }
 
+fn karma_score_for_model(model_id: &str) -> f32 {
+    model_karma(model_id)
+        .map(|karma| karma.karma_score())
+        .unwrap_or(0.5)
+}
+
+fn composite_score(score: &NodeScore) -> f64 {
+    (score.score * 0.8) + (score.model_karma_score as f64 * 0.2)
+}
+
 #[cfg(test)]
 mod tests {
     use super::IntelligentScheduler;
+    use crate::model_karma::{clear_model_karma_store, record_model_metrics};
+    use crate::model_metrics::ModelMetrics;
     use crate::node_registry::{NodeCapability, NodeRegistry};
     use std::time::Instant;
 
@@ -225,5 +249,48 @@ mod tests {
         assert!(scheduler
             .select_best_node(&registry, "llama3-3b", None)
             .is_none());
+    }
+
+    #[test]
+    fn test_scheduler_prefers_high_karma_model() {
+        clear_model_karma_store();
+        for _ in 0..20 {
+            record_model_metrics("llama3-3b", ModelMetrics::new(true, 150, true, 0));
+            record_model_metrics("tinyllama-1b", ModelMetrics::new(false, 2_500, false, 2));
+        }
+
+        let scheduler = IntelligentScheduler::new();
+        let mut registry = NodeRegistry::new();
+        registry.register_node(make_cap(
+            "peer-a",
+            160_000,
+            "llama3-3b",
+            8,
+            8,
+            2,
+            12,
+            Some("local"),
+        ));
+        registry.register_node(make_cap(
+            "peer-b",
+            160_000,
+            "tinyllama-1b",
+            8,
+            8,
+            2,
+            10,
+            Some("local"),
+        ));
+
+        let best = scheduler
+            .select_best_node_for_models(
+                &registry,
+                &["tinyllama-1b".to_string(), "llama3-3b".to_string()],
+                Some("local"),
+            )
+            .unwrap();
+
+        assert_eq!(best.model_id, "llama3-3b");
+        assert!(best.model_karma_score > 0.8);
     }
 }

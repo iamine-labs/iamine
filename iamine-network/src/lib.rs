@@ -2,6 +2,8 @@ pub mod cluster;
 pub mod expression_parser;
 pub mod latency;
 pub mod model_capability_matcher;
+pub mod model_karma;
+pub mod model_metrics;
 pub mod model_policy;
 pub mod node_registry;
 pub mod node_scoring;
@@ -23,6 +25,11 @@ pub use latency::PeerLatency;
 pub use model_capability_matcher::{
     is_node_compatible_with_model, ModelHardwareRequirements, NodeHardwareProfile,
 };
+pub use model_karma::{
+    global_model_karma_store, model_karma, ranked_models, record_model_metrics, ModelKarma,
+    ModelKarmaStore,
+};
+pub use model_metrics::ModelMetrics;
 pub use model_policy::{ModelPolicyEngine, PolicyRule};
 pub use node_registry::{
     NodeCapability, NodeCapabilityHeartbeat, NodeRegistry, SharedNodeRegistry,

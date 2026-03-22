@@ -34,14 +34,15 @@ use iamine_models::{
 
 use iamine_network::{
     analyze_prompt_semantics, default_semantic_log_path, describe_output_policy,
-    detect_exact_subtype, evaluate_default_dataset, normalize_expression,
-    validate_semantic_decision, Complexity as PromptComplexityLevel,
+    detect_exact_subtype, evaluate_default_dataset, normalize_expression, ranked_models,
+    record_model_metrics, validate_semantic_decision, Complexity as PromptComplexityLevel,
     DeterministicLevel as PromptDeterministicLevel, DistributedTask, DistributedTaskResult,
     Domain as PromptDomain, ExactSubtype as PromptExactSubtype, IntelligentScheduler,
-    Language as PromptLanguage, ModelPolicyEngine, NetworkTopology, NodeCapabilityHeartbeat,
-    NodeRegistry, OutputPolicyDecision, OutputStyle as PromptOutputStyle, PromptProfile,
-    SemanticFeedbackEngine, SemanticRoutingDecision, SharedNetworkTopology, SharedNodeRegistry,
-    TaskManager, TaskType as PromptTaskType, ValidationResult as SemanticValidationResult,
+    Language as PromptLanguage, ModelKarma, ModelMetrics, ModelPolicyEngine, NetworkTopology,
+    NodeCapabilityHeartbeat, NodeRegistry, OutputPolicyDecision, OutputStyle as PromptOutputStyle,
+    PromptProfile, SemanticFeedbackEngine, SemanticRoutingDecision, SharedNetworkTopology,
+    SharedNodeRegistry, TaskManager, TaskType as PromptTaskType,
+    ValidationResult as SemanticValidationResult,
 };
 
 #[cfg(test)]
@@ -191,6 +192,7 @@ enum NodeMode {
         count: usize,
     },
     ModelsList,
+    ModelsStats,
     ModelsDownload {
         model_id: String,
     },
@@ -229,6 +231,7 @@ fn parse_args() -> Result<NodeMode, String> {
         Some("--relay") => Ok(NodeMode::Relay),
         Some("models") => match args.get(2).map(|s| s.as_str()) {
             Some("list") => Ok(NodeMode::ModelsList),
+            Some("stats") => Ok(NodeMode::ModelsStats),
             Some("recommend") => Ok(NodeMode::ModelsRecommend),
             Some("menu") => Ok(NodeMode::ModelsMenu),
             Some("search") => {
@@ -244,7 +247,7 @@ fn parse_args() -> Result<NodeMode, String> {
                 Ok(NodeMode::ModelsRemove { model_id: id })
             }
             _ => Err(
-                "Uso: iamine models [list|recommend|menu|search <q>|download <id>|remove <id>]"
+                "Uso: iamine models [list|stats|recommend|menu|search <q>|download <id>|remove <id>]"
                     .to_string(),
             ),
         },
@@ -575,9 +578,14 @@ async fn run_local_inference_with_validation(
     max_tokens: u32,
     temperature: f32,
 ) -> Result<RealInferenceResult, String> {
+    let started_at = std::time::Instant::now();
     let mut last_result: Option<RealInferenceResult> = None;
+    let mut final_success = false;
+    let mut final_semantic_success = false;
+    let mut retry_count = 0u32;
 
     for attempt in 0..=1 {
+        retry_count = attempt as u32;
         let guarded_prompt = with_task_guard(&prompt, task_type, attempt == 1);
         let attempt_temperature = if task_requires_validation(task_type) {
             temperature.min(0.2)
@@ -599,7 +607,7 @@ async fn run_local_inference_with_validation(
             temperature: attempt_temperature,
         };
 
-        let result = match &runtime {
+        let result: Result<RealInferenceResult, String> = match &runtime {
             InferenceRuntime::Engine(engine) => {
                 let engine_clone = Arc::clone(engine);
                 let inference_handle =
@@ -610,9 +618,9 @@ async fn run_local_inference_with_validation(
                     let _ = std::io::Write::flush(&mut std::io::stdout());
                 }
 
-                inference_handle
+                Ok(inference_handle
                     .await
-                    .map_err(|e| format!("Inference task join error: {}", e))?
+                    .map_err(|e| format!("Inference task join error: {}", e))?)
             }
             InferenceRuntime::Daemon(socket_path) => {
                 drop(rx);
@@ -628,11 +636,25 @@ async fn run_local_inference_with_validation(
                     daemon_response.actual_model_loads,
                     daemon_response.reuse_hits
                 );
-                daemon_response.result
+                Ok(daemon_response.result)
             }
         };
 
-        let mut result = result;
+        let mut result = match result {
+            Ok(result) => result,
+            Err(error) => {
+                record_model_metrics(
+                    &model_id,
+                    ModelMetrics::new(
+                        false,
+                        started_at.elapsed().as_millis() as u64,
+                        false,
+                        retry_count,
+                    ),
+                );
+                return Err(error);
+            }
+        };
         let task_label = prompt_task_label(task_type);
         let exact_subtype = if matches!(task_type, PromptTaskType::ExactMath) {
             Some(detect_exact_subtype(&prompt, &result.output))
@@ -668,6 +690,15 @@ async fn run_local_inference_with_validation(
             println!("[Validator] Final output:\n{}", result.output);
         }
 
+        final_semantic_success = if task_requires_validation(task_type) {
+            valid
+        } else {
+            true
+        };
+        final_success = result.success
+            && final_semantic_success
+            && result.error.is_none()
+            && !result.output.trim().is_empty();
         let should_retry = task_requires_validation(task_type) && !valid && attempt == 0;
         last_result = Some(result);
         if !should_retry {
@@ -675,7 +706,29 @@ async fn run_local_inference_with_validation(
         }
     }
 
-    last_result.ok_or_else(|| "Inference returned no result".to_string())
+    if let Some(result) = last_result {
+        record_model_metrics(
+            &model_id,
+            ModelMetrics::new(
+                final_success,
+                started_at.elapsed().as_millis() as u64,
+                final_semantic_success,
+                retry_count,
+            ),
+        );
+        Ok(result)
+    } else {
+        record_model_metrics(
+            &model_id,
+            ModelMetrics::new(
+                false,
+                started_at.elapsed().as_millis() as u64,
+                false,
+                retry_count,
+            ),
+        );
+        Err("Inference returned no result".to_string())
+    }
 }
 
 async fn choose_inference_runtime() -> Option<InferenceRuntime> {
@@ -772,6 +825,38 @@ fn resolve_output_policy(
     describe_output_policy(profile, prompt)
 }
 
+fn print_model_karma_stats() {
+    let registry = ModelRegistry::new();
+    let mut stats = ranked_models();
+
+    for descriptor in registry.list() {
+        if !stats.iter().any(|entry| entry.model_id == descriptor.id) {
+            stats.push(ModelKarma::new(descriptor.id.clone()));
+        }
+    }
+
+    stats.sort_by(|left, right| {
+        right
+            .karma_score()
+            .partial_cmp(&left.karma_score())
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| left.model_id.cmp(&right.model_id))
+    });
+
+    println!("model | score | latency | success rate | semantic | runs");
+    for entry in stats {
+        println!(
+            "{} | {:.3} | {:.3} | {:.1}% | {:.1}% | {}",
+            entry.model_id,
+            entry.karma_score(),
+            entry.latency_score,
+            entry.accuracy_score * 100.0,
+            entry.semantic_success_rate * 100.0,
+            entry.total_runs
+        );
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = std::env::args().collect();
@@ -785,6 +870,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             eprintln!("  iamine-node --relay");
             eprintln!("  iamine-node --broadcast <type> <data>");
             eprintln!("  iamine-node models list");
+            eprintln!("  iamine-node models stats");
             eprintln!("  iamine-node models download <model_id>");
             eprintln!("  iamine-node models remove <model_id>");
             eprintln!("  iamine-node semantic-eval");
@@ -823,6 +909,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 used as f64 / 1_073_741_824.0,
                 cfg.max_storage_gb
             );
+            return Ok(());
+        }
+
+        NodeMode::ModelsStats => {
+            println!("╔══════════════════════════════════╗");
+            println!("║    IaMine — Model Karma          ║");
+            println!("╚══════════════════════════════════╝\n");
+            print_model_karma_stats();
             return Ok(());
         }
 
