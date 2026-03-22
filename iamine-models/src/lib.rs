@@ -9,6 +9,7 @@ pub mod inference_queue;
 pub mod continuation_manager;
 pub mod prompt_builder;
 pub mod output_cleaner;
+pub mod output_normalizer;
 pub mod output_validator;
 pub mod hardware_acceleration;
 pub mod node_models;
@@ -43,6 +44,7 @@ pub use inference_queue::{InferenceQueue, InferenceRequest as QueuedInferenceReq
 pub use continuation_manager::ContinuationManager;
 pub use prompt_builder::{Language, PromptBuilder, TemplateType};
 pub use output_cleaner::clean_output;
+pub use output_normalizer::normalize_output;
 pub use output_validator::validate_structured_output;
 pub use hardware_acceleration::{HardwareAcceleration, AcceleratorType};
 pub use node_models::{NodeModels, ModelId, PeerModelRegistry, DownloadStrategy};

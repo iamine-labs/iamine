@@ -1,7 +1,18 @@
 pub fn validate_structured_output(task_type: &str, output: &str) -> bool {
+    validate_structure(task_type, output) && validate_exactness(task_type, None, output)
+}
+
+pub fn validate_structure(task_type: &str, output: &str) -> bool {
     match task_type {
         "StructuredList" => validate_structured_list(output),
-        "ExactMath" => validate_exact_math(output),
+        "ExactMath" | "Deterministic" => validate_deterministic(output),
+        _ => true,
+    }
+}
+
+pub fn validate_exactness(task_type: &str, exact_subtype: Option<&str>, output: &str) -> bool {
+    match task_type {
+        "ExactMath" => validate_exact_math(exact_subtype, output),
         "Deterministic" => validate_deterministic(output),
         _ => true,
     }
@@ -31,7 +42,7 @@ fn validate_structured_list(output: &str) -> bool {
     !compact.trim().is_empty()
 }
 
-fn validate_exact_math(output: &str) -> bool {
+fn validate_exact_math(exact_subtype: Option<&str>, output: &str) -> bool {
     let trimmed = output.trim();
     let has_digits = trimmed.chars().any(|c| c.is_ascii_digit());
     let refusal = contains_any(
@@ -45,7 +56,22 @@ fn validate_exact_math(output: &str) -> bool {
         ],
     );
 
-    has_digits && !refusal
+    if !has_digits || refusal {
+        return false;
+    }
+
+    match exact_subtype {
+        Some("Integer") => trimmed
+            .chars()
+            .all(|c| c.is_ascii_digit() || c.is_ascii_whitespace() || matches!(c, '-' | '+')),
+        Some("DecimalSequence") => {
+            let decimal_points = trimmed.chars().filter(|c| *c == '.').count();
+            decimal_points <= 1
+                && !trimmed.contains(". ")
+                && trimmed.chars().all(|c| c.is_ascii_digit() || matches!(c, '.' | '-' | '+'))
+        }
+        _ => true,
+    }
 }
 
 fn validate_deterministic(output: &str) -> bool {
@@ -115,7 +141,7 @@ fn contains_any(haystack: &str, needles: &[&str]) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::validate_structured_output;
+    use super::{validate_exactness, validate_structured_output};
 
     #[test]
     fn test_abecedario_validation() {
@@ -124,5 +150,11 @@ mod tests {
 
         assert!(validate_structured_output("StructuredList", valid));
         assert!(!validate_structured_output("StructuredList", invalid));
+    }
+
+    #[test]
+    fn test_decimal_exactness() {
+        assert!(!validate_exactness("ExactMath", Some("DecimalSequence"), "3. 14159"));
+        assert!(validate_exactness("ExactMath", Some("DecimalSequence"), "3.14159"));
     }
 }

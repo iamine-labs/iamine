@@ -20,7 +20,7 @@ pub use model_capability_matcher::{
     NodeHardwareProfile,
 };
 pub use prompt_analyzer::{analyze_prompt, Complexity, Language, PromptProfile};
-pub use task_analyzer::{detect_task_type, TaskProfile, TaskType};
+pub use task_analyzer::{detect_exact_subtype, detect_task_type, ExactSubtype, TaskProfile, TaskType};
 pub use topology::{
     NetworkTopology,
     SharedNetworkTopology,

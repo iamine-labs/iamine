@@ -31,13 +31,15 @@ use iamine_models::{
     ModelNodeCapabilities, ModelRequirements, can_node_run_model,
     DirectInferenceRequest,
     AutoProvisionProfile, ModelAutoProvision,
-    validate_structured_output,
+    normalize_output,
 };
 
 use iamine_network::{
     analyze_prompt,
     Complexity as PromptComplexityLevel,
+    detect_exact_subtype,
     describe_output_policy,
+    ExactSubtype as PromptExactSubtype,
     Language as PromptLanguage,
     ModelPolicyEngine,
     NodeCapabilityHeartbeat,
@@ -283,6 +285,14 @@ fn prompt_task_label(task_type: PromptTaskType) -> &'static str {
     }
 }
 
+fn exact_subtype_label(exact_subtype: PromptExactSubtype) -> &'static str {
+    match exact_subtype {
+        PromptExactSubtype::Integer => "Integer",
+        PromptExactSubtype::DecimalSequence => "DecimalSequence",
+        PromptExactSubtype::Sequence => "Sequence",
+    }
+}
+
 fn task_requires_validation(task_type: PromptTaskType) -> bool {
     matches!(
         task_type,
@@ -290,38 +300,59 @@ fn task_requires_validation(task_type: PromptTaskType) -> bool {
     )
 }
 
+fn prompt_requests_decimal_sequence(prompt: &str) -> bool {
+    let lower = prompt.to_lowercase();
+    ["pi", "π", "digit", "digits", "digito", "digitos", "dígitos"]
+        .iter()
+        .any(|needle| lower.contains(needle))
+}
+
 fn with_task_guard(prompt: &str, task_type: PromptTaskType, retry: bool) -> String {
     match task_type {
         PromptTaskType::ExactMath => {
-            let retry_guard = if retry {
-                "Be stricter: return only the final exact result or the exact requested digits in plain text."
+            if !retry {
+                return prompt.to_string();
+            }
+
+            if prompt_requests_decimal_sequence(prompt) {
+                format!(
+                    "Return only the requested numeric sequence in plain text. Do not add words. Keep the decimal point attached to the digits.\n\n{}",
+                    prompt
+                )
             } else {
-                "Return only the exact result or exact requested digits in plain text."
-            };
-            format!(
-                "Follow these rules: no headings, no markdown, no explanation.\n{}\nTask: {}",
-                retry_guard, prompt
-            )
+                format!(
+                    "Return only the final numeric answer in plain text. Do not add words or extra symbols.\n\n{}",
+                    prompt
+                )
+            }
         }
         PromptTaskType::StructuredList => {
+            if !retry {
+                return prompt.to_string();
+            }
+
             let retry_guard = if retry {
                 "Be stricter: if the task is the alphabet, return exactly: A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z"
             } else {
                 "Return only the full ordered list in plain text, with no missing items and no duplicates."
             };
             format!(
-                "Follow these rules: no headings, no markdown, no explanation.\n{}\nTask: {}",
+                "{}\n\n{}",
                 retry_guard, prompt
             )
         }
         PromptTaskType::Deterministic => {
+            if !retry {
+                return prompt.to_string();
+            }
+
             let retry_guard = if retry {
                 "Be stricter: return only the requested data, exactly and in order, in plain text."
             } else {
                 "Return only the requested data, exactly and in order, in plain text."
             };
             format!(
-                "Follow these rules: no headings, no markdown, no explanation.\n{}\nTask: {}",
+                "{}\n\n{}",
                 retry_guard, prompt
             )
         }
@@ -376,8 +407,36 @@ async fn run_local_inference_with_validation(
             .await
             .map_err(|e| format!("Inference task join error: {}", e))?;
 
-        let valid = validate_structured_output(prompt_task_label(task_type), &result.output);
-        println!("\n[Validator] Output valid: {}", valid);
+        let mut result = result;
+        let task_label = prompt_task_label(task_type);
+        let exact_subtype = if matches!(task_type, PromptTaskType::ExactMath) {
+            Some(detect_exact_subtype(&prompt, &result.output))
+        } else {
+            None
+        };
+        let exact_subtype_label = exact_subtype.map(exact_subtype_label);
+        let (normalized_output, normalization_reason) =
+            normalize_output(task_label, exact_subtype_label, &result.output);
+        if let Some(reason) = normalization_reason {
+            println!("\n[Normalizer] Applied: {}", reason);
+            println!("[Normalizer] Output corrected");
+            result.output = normalized_output;
+        }
+
+        let valid = if task_requires_validation(task_type) {
+            iamine_models::output_validator::validate_structure(task_label, &result.output)
+                && iamine_models::output_validator::validate_exactness(
+                    task_label,
+                    exact_subtype_label,
+                    &result.output,
+                )
+        } else {
+            true
+        };
+
+        if task_requires_validation(task_type) {
+            println!("\n[Validator] Output valid: {}", valid);
+        }
         if task_requires_validation(task_type) && !result.output.trim().is_empty() {
             println!("[Validator] Final output:\n{}", result.output);
         }
@@ -2023,5 +2082,30 @@ mod tests {
         ];
 
         assert_eq!(parse_optional_u32_flag(&args, "--max-tokens").unwrap(), Some(1024));
+    }
+
+    #[test]
+    fn test_exact_math_uses_natural_prompt_on_first_attempt() {
+        assert_eq!(
+            with_task_guard("What is 2+2?", PromptTaskType::ExactMath, false),
+            "What is 2+2?"
+        );
+    }
+
+    #[test]
+    fn test_exact_math_retry_guard_is_simple() {
+        let guarded = with_task_guard("6x9", PromptTaskType::ExactMath, true);
+        assert!(guarded.contains("Return only the final numeric answer"));
+        assert!(guarded.ends_with("\n\n6x9"));
+    }
+
+    #[test]
+    fn test_decimal_sequence_retry_guard_mentions_decimal_point() {
+        let guarded = with_task_guard(
+            "dame los primeros 100 digitos de pi",
+            PromptTaskType::ExactMath,
+            true,
+        );
+        assert!(guarded.contains("Keep the decimal point attached"));
     }
 }

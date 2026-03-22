@@ -12,9 +12,45 @@ pub enum TaskType {
     General,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ExactSubtype {
+    Integer,
+    DecimalSequence,
+    Sequence,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TaskProfile {
     pub task_type: TaskType,
+}
+
+pub fn detect_exact_subtype(prompt: &str, output: &str) -> ExactSubtype {
+    let prompt_lower = prompt.to_lowercase();
+    let output_lower = output.to_lowercase();
+    let trimmed_output = output.trim();
+    let arithmetic_prompt = prompt.len() <= 32
+        && prompt.chars().any(|c| c.is_ascii_digit())
+        && prompt.chars().any(|c| matches!(c, '+' | '-' | '*' | '/' | '=' | 'x' | 'X'));
+
+    if contains_any(&prompt_lower, &["pi", "π", "digit", "digits", "digito", "digitos", "dígitos"])
+        || (trimmed_output.contains('.') && trimmed_output.chars().filter(|c| c.is_ascii_digit()).count() >= 4)
+        || (trimmed_output.contains(". ") && trimmed_output.chars().any(|c| c.is_ascii_digit()))
+    {
+        return ExactSubtype::DecimalSequence;
+    }
+
+    if trimmed_output
+        .chars()
+        .all(|c| c.is_ascii_digit() || c.is_ascii_whitespace() || matches!(c, '-' | '+'))
+        || arithmetic_prompt
+        || (prompt.chars().any(|c| c.is_ascii_digit())
+            && !contains_any(&output_lower, &["=", " is "])
+            && trimmed_output.chars().any(|c| c.is_ascii_digit()))
+    {
+        return ExactSubtype::Integer;
+    }
+
+    ExactSubtype::Sequence
 }
 
 pub fn detect_task_type(prompt: &str) -> TaskType {
@@ -175,6 +211,16 @@ mod tests {
         assert_eq!(
             detect_task_type("dame los primeros 100 digitos de pi"),
             TaskType::ExactMath
+        );
+    }
+
+    #[test]
+    fn test_exact_subtype_detection() {
+        assert_eq!(detect_exact_subtype("6x9", "54"), ExactSubtype::Integer);
+        assert_eq!(detect_exact_subtype("What is 2+2?", "2 + 2 = 4."), ExactSubtype::Integer);
+        assert_eq!(
+            detect_exact_subtype("dame los primeros 100 digitos de pi", "3. 14159"),
+            ExactSubtype::DecimalSequence
         );
     }
 }
