@@ -1,107 +1,101 @@
-mod protocol;
-mod network;
+mod benchmark;
+mod code_quality;
+mod daemon_runtime;
 mod executor;
-mod task_protocol;
-mod task_codec;
-mod worker_pool;
-mod task_queue;
-mod task_scheduler;
 mod heartbeat;
 mod metrics;
-mod worker_capabilities;
-mod task_cache;
-mod peer_tracker;
-mod result_protocol;
-mod rate_limiter;
-mod node_identity;
-mod wallet;
-mod benchmark;
-mod resource_policy;
-mod setup_wizard;
 mod model_selector_cli;
-mod daemon_runtime;
+mod network;
+mod node_identity;
+mod peer_tracker;
+mod protocol;
+mod quality_gate;
+mod rate_limiter;
+mod regression_runner;
+mod resource_policy;
+mod result_protocol;
+mod security_checks;
+mod setup_wizard;
+mod task_cache;
+mod task_codec;
+mod task_protocol;
+mod task_queue;
+mod task_scheduler;
+mod wallet;
+mod worker_capabilities;
+mod worker_pool;
 
 use iamine_models::{
-    ModelRegistry, ModelStorage,
-    StorageConfig,
-    ModelInstaller, InstallResult,
-    RealInferenceEngine, RealInferenceRequest,
-    RealInferenceResult,
-    HardwareAcceleration,
-    InferenceTask, InferenceTaskResult, StreamedToken,
-    ModelNodeCapabilities, ModelRequirements, can_node_run_model,
-    DirectInferenceRequest,
-    AutoProvisionProfile, ModelAutoProvision,
-    normalize_output,
+    can_node_run_model, normalize_output, AutoProvisionProfile, DirectInferenceRequest,
+    HardwareAcceleration, InferenceTask, InferenceTaskResult, InstallResult, ModelAutoProvision,
+    ModelInstaller, ModelNodeCapabilities, ModelRegistry, ModelRequirements, ModelStorage,
+    RealInferenceEngine, RealInferenceRequest, RealInferenceResult, StorageConfig, StreamedToken,
 };
 
 use iamine_network::{
-    analyze_prompt_semantics,
-    Complexity as PromptComplexityLevel,
-    default_semantic_log_path,
-    DeterministicLevel as PromptDeterministicLevel,
-    Domain as PromptDomain,
-    detect_exact_subtype,
-    describe_output_policy,
-    evaluate_default_dataset,
-    ExactSubtype as PromptExactSubtype,
-    Language as PromptLanguage,
-    ModelPolicyEngine,
-    NodeCapabilityHeartbeat,
-    NodeRegistry,
-    NetworkTopology,
-    normalize_expression,
-    OutputPolicyDecision,
-    OutputStyle as PromptOutputStyle,
-    PromptProfile,
-    SemanticRoutingDecision,
-    SemanticFeedbackEngine,
-    SharedNetworkTopology,
-    SharedNodeRegistry,
-    TaskType as PromptTaskType,
+    analyze_prompt_semantics, default_semantic_log_path, describe_output_policy,
+    detect_exact_subtype, evaluate_default_dataset, normalize_expression,
+    validate_semantic_decision, Complexity as PromptComplexityLevel,
+    DeterministicLevel as PromptDeterministicLevel, Domain as PromptDomain,
+    ExactSubtype as PromptExactSubtype, Language as PromptLanguage, ModelPolicyEngine,
+    NetworkTopology, NodeCapabilityHeartbeat, NodeRegistry, OutputPolicyDecision,
+    OutputStyle as PromptOutputStyle, PromptProfile, SemanticFeedbackEngine,
+    SemanticRoutingDecision, SharedNetworkTopology, SharedNodeRegistry, TaskType as PromptTaskType,
     ValidationResult as SemanticValidationResult,
-    validate_semantic_decision,
 };
 
 #[cfg(test)]
 use iamine_network::analyze_prompt;
 
+use benchmark::NodeBenchmark;
+use code_quality::run_code_quality_checks;
 use daemon_runtime::{daemon_is_available, daemon_socket_path, infer_via_daemon, run_daemon};
+use heartbeat::HeartbeatService;
+use metrics::{start_metrics_server, NodeMetrics};
 use model_selector_cli::ModelSelectorCLI;
-use worker_pool::WorkerPool;
+use node_identity::NodeIdentity; // ← actualizado
+use peer_tracker::PeerTracker;
+use quality_gate::{current_release_version, run_release_validation};
+use rate_limiter::RateLimiter;
+use regression_runner::run_default_regression_suite;
+use resource_policy::ResourcePolicy;
+use result_protocol::{TaskResultRequest, TaskResultResponse};
+use security_checks::run_security_checks;
+use setup_wizard::{DetectedHardware, NodeSetupConfig};
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
+use task_cache::TaskCache;
 use task_queue::TaskQueue;
 use task_scheduler::TaskScheduler;
-use heartbeat::HeartbeatService;
-use metrics::{NodeMetrics, start_metrics_server};
-use worker_capabilities::WorkerCapabilities;
-use task_cache::TaskCache;
-use peer_tracker::PeerTracker;
-use result_protocol::{TaskResultRequest, TaskResultResponse};
-use rate_limiter::RateLimiter;
-use node_identity::NodeIdentity;  // ← actualizado
-use wallet::Wallet;
-use benchmark::NodeBenchmark;
-use resource_policy::ResourcePolicy;
-use setup_wizard::{DetectedHardware, NodeSetupConfig};
-use std::sync::Arc;
 use tokio::sync::RwLock;
-use std::collections::{HashMap, HashSet};
+use wallet::Wallet;
+use worker_capabilities::WorkerCapabilities;
+use worker_pool::WorkerPool;
 
+use futures::StreamExt;
 use libp2p::{
-    gossipsub, identify, kad, mdns, noise, ping,  // ← quitado identity de aquí
+    gossipsub,
+    identify,
+    kad,
+    mdns,
+    noise,
+    ping, // ← quitado identity de aquí
     request_response::{self, cbor, Event as RREvent, Message, ProtocolSupport},
     swarm::{NetworkBehaviour, Swarm, SwarmEvent},
-    tcp, yamux,
-    Multiaddr, PeerId, StreamProtocol, Transport,
+    tcp,
+    yamux,
+    Multiaddr,
+    PeerId,
+    StreamProtocol,
+    Transport,
 };
-use futures::StreamExt;
 use std::error::Error;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::Duration;
 
-use task_protocol::{TaskRequest, TaskResponse};
 use executor::TaskExecutor;
+use task_protocol::{TaskRequest, TaskResponse};
 
 const TASK_TOPIC: &str = "iamine-tasks";
 const CAP_TOPIC: &str = "iamine-capabilities";
@@ -134,25 +128,39 @@ enum IaMineEvent {
 }
 
 impl From<ping::Event> for IaMineEvent {
-    fn from(e: ping::Event) -> Self { IaMineEvent::Ping(e) }
+    fn from(e: ping::Event) -> Self {
+        IaMineEvent::Ping(e)
+    }
 }
 impl From<identify::Event> for IaMineEvent {
-    fn from(e: identify::Event) -> Self { IaMineEvent::Identify(e) }
+    fn from(e: identify::Event) -> Self {
+        IaMineEvent::Identify(e)
+    }
 }
 impl From<RREvent<TaskRequest, TaskResponse>> for IaMineEvent {
-    fn from(e: RREvent<TaskRequest, TaskResponse>) -> Self { IaMineEvent::RequestResponse(e) }
+    fn from(e: RREvent<TaskRequest, TaskResponse>) -> Self {
+        IaMineEvent::RequestResponse(e)
+    }
 }
 impl From<RREvent<TaskResultRequest, TaskResultResponse>> for IaMineEvent {
-    fn from(e: RREvent<TaskResultRequest, TaskResultResponse>) -> Self { IaMineEvent::ResultResponse(e) }
+    fn from(e: RREvent<TaskResultRequest, TaskResultResponse>) -> Self {
+        IaMineEvent::ResultResponse(e)
+    }
 }
 impl From<kad::Event> for IaMineEvent {
-    fn from(e: kad::Event) -> Self { IaMineEvent::Kademlia(e) }
+    fn from(e: kad::Event) -> Self {
+        IaMineEvent::Kademlia(e)
+    }
 }
 impl From<mdns::Event> for IaMineEvent {
-    fn from(e: mdns::Event) -> Self { IaMineEvent::Mdns(e) }
+    fn from(e: mdns::Event) -> Self {
+        IaMineEvent::Mdns(e)
+    }
 }
 impl From<gossipsub::Event> for IaMineEvent {
-    fn from(e: gossipsub::Event) -> Self { IaMineEvent::Gossipsub(e) }
+    fn from(e: gossipsub::Event) -> Self {
+        IaMineEvent::Gossipsub(e)
+    }
 }
 
 #[allow(dead_code)]
@@ -161,21 +169,49 @@ enum NodeMode {
     Daemon,
     Worker,
     Relay,
-    Client { peer: Option<Multiaddr>, task_type: String, data: String },
-    Stress { peer: Option<Multiaddr>, count: usize },
-    Broadcast { task_type: String, data: String },
-    SimulateWorkers { count: usize },
+    Client {
+        peer: Option<Multiaddr>,
+        task_type: String,
+        data: String,
+    },
+    Stress {
+        peer: Option<Multiaddr>,
+        count: usize,
+    },
+    Broadcast {
+        task_type: String,
+        data: String,
+    },
+    SimulateWorkers {
+        count: usize,
+    },
     ModelsList,
-    ModelsDownload { model_id: String },
-    ModelsRemove { model_id: String },
-    ModelsMenu,                          // ← nuevo
-    ModelsSearch { query: String },      // ← nuevo
-    TestInference { prompt: String },
-    Infer { prompt: String, model_id: Option<String>, max_tokens_override: Option<u32> },
+    ModelsDownload {
+        model_id: String,
+    },
+    ModelsRemove {
+        model_id: String,
+    },
+    ModelsMenu, // ← nuevo
+    ModelsSearch {
+        query: String,
+    }, // ← nuevo
+    TestInference {
+        prompt: String,
+    },
+    Infer {
+        prompt: String,
+        model_id: Option<String>,
+        max_tokens_override: Option<u32>,
+    },
     SemanticEval,
+    RegressionRun,
+    CheckCode,
+    CheckSecurity,
+    ValidateRelease,
     Capabilities,
     Nodes,
-    Topology,  // ← NEW
+    Topology, // ← NEW
     ModelsRecommend,
 }
 
@@ -186,40 +222,59 @@ fn parse_args() -> Result<NodeMode, String> {
         Some("--daemon") => Ok(NodeMode::Daemon),
         Some("--worker") | None => Ok(NodeMode::Worker),
         Some("--relay") => Ok(NodeMode::Relay),
-        Some("models") => {
-            match args.get(2).map(|s| s.as_str()) {
-                Some("list") => Ok(NodeMode::ModelsList),
-                Some("recommend") => Ok(NodeMode::ModelsRecommend),
-                Some("menu") => Ok(NodeMode::ModelsMenu),
-                Some("search") => {
-                    let query = args.get(3).ok_or("Falta <query>")?.clone();
-                    Ok(NodeMode::ModelsSearch { query })
-                }
-                Some("download") => {
-                    let id = args.get(3).ok_or("Falta <model_id>")?.clone();
-                    Ok(NodeMode::ModelsDownload { model_id: id })
-                }
-                Some("remove") => {
-                    let id = args.get(3).ok_or("Falta <model_id>")?.clone();
-                    Ok(NodeMode::ModelsRemove { model_id: id })
-                }
-                _ => Err("Uso: iamine models [list|recommend|menu|search <q>|download <id>|remove <id>]".to_string()),
+        Some("models") => match args.get(2).map(|s| s.as_str()) {
+            Some("list") => Ok(NodeMode::ModelsList),
+            Some("recommend") => Ok(NodeMode::ModelsRecommend),
+            Some("menu") => Ok(NodeMode::ModelsMenu),
+            Some("search") => {
+                let query = args.get(3).ok_or("Falta <query>")?.clone();
+                Ok(NodeMode::ModelsSearch { query })
             }
-        }
+            Some("download") => {
+                let id = args.get(3).ok_or("Falta <model_id>")?.clone();
+                Ok(NodeMode::ModelsDownload { model_id: id })
+            }
+            Some("remove") => {
+                let id = args.get(3).ok_or("Falta <model_id>")?.clone();
+                Ok(NodeMode::ModelsRemove { model_id: id })
+            }
+            _ => Err(
+                "Uso: iamine models [list|recommend|menu|search <q>|download <id>|remove <id>]"
+                    .to_string(),
+            ),
+        },
         Some("--client") => {
             let (peer, offset) = if args.get(2).map(|s| s.starts_with("/ip4")).unwrap_or(false) {
-                (Some(Multiaddr::from_str(args.get(2).unwrap()).map_err(|e| e.to_string())?), 3)
-            } else { (None, 2) };
+                (
+                    Some(Multiaddr::from_str(args.get(2).unwrap()).map_err(|e| e.to_string())?),
+                    3,
+                )
+            } else {
+                (None, 2)
+            };
             let task_type = args.get(offset).ok_or("Falta <task_type>")?.clone();
             let data = args.get(offset + 1).ok_or("Falta <data>")?.clone();
-            Ok(NodeMode::Client { peer, task_type, data })
+            Ok(NodeMode::Client {
+                peer,
+                task_type,
+                data,
+            })
         }
 
         Some("--stress") => {
             let (peer, offset) = if args.get(2).map(|s| s.starts_with("/ip4")).unwrap_or(false) {
-                (Some(Multiaddr::from_str(args.get(2).unwrap()).map_err(|e| e.to_string())?), 3)
-            } else { (None, 2) };
-            let count = args.get(offset).unwrap_or(&"10".to_string()).parse::<usize>().unwrap_or(10);
+                (
+                    Some(Multiaddr::from_str(args.get(2).unwrap()).map_err(|e| e.to_string())?),
+                    3,
+                )
+            } else {
+                (None, 2)
+            };
+            let count = args
+                .get(offset)
+                .unwrap_or(&"10".to_string())
+                .parse::<usize>()
+                .unwrap_or(10);
             Ok(NodeMode::Stress { peer, count })
         }
 
@@ -230,13 +285,17 @@ fn parse_args() -> Result<NodeMode, String> {
         }
 
         Some("--simulate-workers") => {
-            let count = args.get(2).unwrap_or(&"10".to_string())
-                .parse::<usize>().unwrap_or(10);
+            let count = args
+                .get(2)
+                .unwrap_or(&"10".to_string())
+                .parse::<usize>()
+                .unwrap_or(10);
             Ok(NodeMode::SimulateWorkers { count })
         }
 
         Some("test-inference") => {
-            let prompt = args.get(2)
+            let prompt = args
+                .get(2)
                 .cloned()
                 .unwrap_or_else(|| "What is 2+2?".to_string());
             Ok(NodeMode::TestInference { prompt })
@@ -246,14 +305,23 @@ fn parse_args() -> Result<NodeMode, String> {
 
         Some("infer") => {
             let prompt = args.get(2).ok_or("Falta <prompt>")?.clone();
-            let model_id = args.iter()
+            let model_id = args
+                .iter()
                 .position(|a| a == "--model")
                 .and_then(|i| args.get(i + 1).cloned());
             let max_tokens_override = parse_optional_u32_flag(&args, "--max-tokens")?;
-            Ok(NodeMode::Infer { prompt, model_id, max_tokens_override })
+            Ok(NodeMode::Infer {
+                prompt,
+                model_id,
+                max_tokens_override,
+            })
         }
 
         Some("semantic-eval") => Ok(NodeMode::SemanticEval),
+        Some("regression-run") => Ok(NodeMode::RegressionRun),
+        Some("check-code") => Ok(NodeMode::CheckCode),
+        Some("check-security") => Ok(NodeMode::CheckSecurity),
+        Some("validate-release") => Ok(NodeMode::ValidateRelease),
 
         Some("nodes") => Ok(NodeMode::Nodes),
 
@@ -396,8 +464,7 @@ fn log_semantic_decision(decision: &SemanticRoutingDecision) {
 fn log_semantic_validation(validation: &SemanticValidationResult) {
     println!(
         "[SemanticValidator] Confidence: {:.2} -> {:.2}",
-        validation.confidence_before,
-        validation.confidence_after
+        validation.confidence_before, validation.confidence_after
     );
     println!(
         "[SemanticValidator] Model validation: {}",
@@ -420,7 +487,10 @@ fn record_semantic_feedback(prompt: &str, validation: &SemanticValidationResult)
     if let Err(error) = engine.append_from_validation(prompt, validation) {
         eprintln!("[Feedback] Logging failed: {}", error);
     } else {
-        println!("[Feedback] Logged: {}", default_semantic_log_path().display());
+        println!(
+            "[Feedback] Logged: {}",
+            default_semantic_log_path().display()
+        );
     }
 }
 
@@ -473,10 +543,7 @@ fn with_task_guard(prompt: &str, task_type: PromptTaskType, retry: bool) -> Stri
             } else {
                 "Return only the full ordered list in plain text, with no missing items and no duplicates."
             };
-            format!(
-                "{}\n\n{}",
-                retry_guard, prompt
-            )
+            format!("{}\n\n{}", retry_guard, prompt)
         }
         PromptTaskType::Deterministic => {
             if !retry {
@@ -488,10 +555,7 @@ fn with_task_guard(prompt: &str, task_type: PromptTaskType, retry: bool) -> Stri
             } else {
                 "Return only the requested data, exactly and in order, in plain text."
             };
-            format!(
-                "{}\n\n{}",
-                retry_guard, prompt
-            )
+            format!("{}\n\n{}", retry_guard, prompt)
         }
         _ => prompt.to_string(),
     }
@@ -533,9 +597,8 @@ async fn run_local_inference_with_validation(
         let result = match &runtime {
             InferenceRuntime::Engine(engine) => {
                 let engine_clone = Arc::clone(engine);
-                let inference_handle = tokio::spawn(async move {
-                    engine_clone.run_inference(req, Some(tx)).await
-                });
+                let inference_handle =
+                    tokio::spawn(async move { engine_clone.run_inference(req, Some(tx)).await });
 
                 while let Some(token) = rx.recv().await {
                     print!("{}", token);
@@ -613,7 +676,10 @@ async fn run_local_inference_with_validation(
 async fn choose_inference_runtime() -> Option<InferenceRuntime> {
     let socket = daemon_socket_path();
     if daemon_is_available(&socket).await {
-        println!("[Daemon] Connected to persistent runtime: {}", socket.display());
+        println!(
+            "[Daemon] Connected to persistent runtime: {}",
+            socket.display()
+        );
         Some(InferenceRuntime::Daemon(socket))
     } else {
         None
@@ -636,7 +702,10 @@ fn resolve_policy_for_prompt(
 ) -> PromptResolution {
     let semantic_prompt = normalize_expression(prompt).unwrap_or_else(|| prompt.to_string());
     if semantic_prompt != prompt {
-        println!("[Parser] Normalized expression: {} → {}", prompt, semantic_prompt);
+        println!(
+            "[Parser] Normalized expression: {} → {}",
+            prompt, semantic_prompt
+        );
     }
 
     let semantic_decision = analyze_prompt_semantics(&semantic_prompt);
@@ -671,8 +740,7 @@ fn resolve_policy_for_prompt(
     };
     println!(
         "[Policy] Selected model: {} (reason: {})",
-        decision.model,
-        decision.reason
+        decision.model, decision.reason
     );
     PromptResolution {
         profile,
@@ -715,6 +783,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
             eprintln!("  iamine-node models download <model_id>");
             eprintln!("  iamine-node models remove <model_id>");
             eprintln!("  iamine-node semantic-eval");
+            eprintln!("  iamine-node regression-run");
+            eprintln!("  iamine-node check-code");
+            eprintln!("  iamine-node check-security");
+            eprintln!("  iamine-node validate-release");
             eprintln!("  iamine-node --daemon");
             // eprintln!("  iamine-node nodes");
             std::process::exit(1);
@@ -736,11 +808,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
             let installer = ModelInstaller::new();
             let models = installer.list_models();
             println!("📋 Modelos disponibles:\n");
-            for m in &models { m.display(); }
+            for m in &models {
+                m.display();
+            }
             let used = ModelStorage::new().total_size_bytes();
             let cfg = StorageConfig::load();
-            println!("\n💾 Storage: {:.1}/{} GB usados",
-                used as f64 / 1_073_741_824.0, cfg.max_storage_gb);
+            println!(
+                "\n💾 Storage: {:.1}/{} GB usados",
+                used as f64 / 1_073_741_824.0,
+                cfg.max_storage_gb
+            );
             return Ok(());
         }
 
@@ -754,20 +831,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
             println!("╔══════════════════════════════════╗");
             println!("║   IaMine — Buscar en HF          ║");
             println!("╚══════════════════════════════════╝\n");
-            
+
             println!("🔍 Buscando '{}' en HuggingFace...", query);
-            
+
             match iamine_models::HuggingFaceSearch::search_gguf_models(query, 10).await {
                 Ok(models) => {
                     let filtered = iamine_models::HuggingFaceSearch::filter_suitable(models);
-                    
+
                     if filtered.is_empty() {
                         println!("❌ Sin modelos encontrados para '{}'", query);
                     } else {
                         println!("\n📦 {} modelos encontrados:\n", filtered.len());
                         println!("{:<50} {:>12} {:>8}", "Modelo", "Downloads", "Likes");
                         println!("{}", "─".repeat(72));
-                        
+
                         for m in &filtered {
                             let name = if m.id.len() > 48 {
                                 format!("{}…", &m.id[..47])
@@ -776,7 +853,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             };
                             println!("{:<50} {:>12} {:>8}", name, m.downloads, m.likes);
                         }
-                        
+
                         println!("\n💡 Descarga:");
                         println!("   iamine-node models download <model_id>");
                     }
@@ -793,16 +870,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
             let installer = ModelInstaller::new();
             let (tx, _rx) = tokio::sync::mpsc::channel(10);
             match installer.install(model_id, "local", Some(tx)).await {
-                InstallResult::Installed(id) =>
-                    println!("✅ Modelo {} instalado en ~/.iamine/models/", id),
-                InstallResult::AlreadyExists(id) =>
-                    println!("ℹ️  Modelo {} ya está instalado", id),
-                InstallResult::InsufficientStorage { needed_gb, available_gb } =>
-                    println!("❌ Espacio insuficiente: necesita {:.1} GB, disponible {:.1} GB", needed_gb, available_gb),
-                InstallResult::DownloadFailed(e) =>
-                    println!("❌ Descarga fallida: {}", e),
-                InstallResult::ValidationFailed(e) =>
-                    println!("❌ Validación fallida: {}", e),
+                InstallResult::Installed(id) => {
+                    println!("✅ Modelo {} instalado en ~/.iamine/models/", id)
+                }
+                InstallResult::AlreadyExists(id) => println!("ℹ️  Modelo {} ya está instalado", id),
+                InstallResult::InsufficientStorage {
+                    needed_gb,
+                    available_gb,
+                } => println!(
+                    "❌ Espacio insuficiente: necesita {:.1} GB, disponible {:.1} GB",
+                    needed_gb, available_gb
+                ),
+                InstallResult::DownloadFailed(e) => println!("❌ Descarga fallida: {}", e),
+                InstallResult::ValidationFailed(e) => println!("❌ Validación fallida: {}", e),
             }
             return Ok(());
         }
@@ -848,6 +928,122 @@ async fn main() -> Result<(), Box<dyn Error>> {
             return Ok(());
         }
 
+        NodeMode::RegressionRun => {
+            println!("╔══════════════════════════════════╗");
+            println!("║   IaMine — Regression Runner     ║");
+            println!("╚══════════════════════════════════╝\n");
+
+            let report = run_default_regression_suite()?;
+            println!("🧪 Versions covered: {}", report.total_versions);
+            println!("🧪 Total prompts: {}", report.total_prompts);
+            println!("❌ Total failures: {}", report.total_failures);
+
+            for version in &report.version_results {
+                println!(
+                    "- {}: {}/{} passed",
+                    version.version, version.passed, version.total
+                );
+                for failure in &version.failures {
+                    println!(
+                        "  prompt='{}' expected={} predicted={} normalize(expected={}, predicted={})",
+                        failure.prompt,
+                        prompt_task_label(failure.expected_task),
+                        prompt_task_label(failure.predicted_task),
+                        failure.expected_normalize,
+                        failure.predicted_normalize
+                    );
+                }
+            }
+
+            if !report.passed() {
+                return Err("Regression suite detecto fallos".into());
+            }
+
+            return Ok(());
+        }
+
+        NodeMode::CheckCode => {
+            println!("╔══════════════════════════════════╗");
+            println!("║     IaMine — Code Quality        ║");
+            println!("╚══════════════════════════════════╝\n");
+
+            let report = run_code_quality_checks()?;
+            println!("✅ fmt passed: {}", report.format_passed);
+            println!("✅ clippy passed: {}", report.clippy_passed);
+            println!("⚠️  warnings: {}", report.warning_count);
+            println!("🚦 minor gate pass: {}", report.passed_for_minor());
+
+            for command in &report.commands {
+                println!(
+                    "- {} => success={} warnings={}",
+                    command.name, command.success, command.warning_count
+                );
+                if !command.output_excerpt.is_empty() {
+                    println!("{}", command.output_excerpt);
+                }
+            }
+
+            if !report.passed_for_minor() {
+                return Err("Code quality checks fallaron".into());
+            }
+
+            return Ok(());
+        }
+
+        NodeMode::CheckSecurity => {
+            println!("╔══════════════════════════════════╗");
+            println!("║     IaMine — Security Check      ║");
+            println!("╚══════════════════════════════════╝\n");
+
+            let report = run_security_checks()?;
+            println!("✅ security passed: {}", report.passed);
+            println!("⚠️  warnings: {}", report.warning_count);
+            println!("❌ errors: {}", report.error_count);
+
+            for finding in &report.findings {
+                println!(
+                    "- {:?} {}:{} {}",
+                    finding.severity, finding.path, finding.line, finding.message
+                );
+            }
+
+            if !report.passed {
+                return Err("Security checks detectaron hallazgos bloqueantes".into());
+            }
+
+            return Ok(());
+        }
+
+        NodeMode::ValidateRelease => {
+            println!("╔══════════════════════════════════╗");
+            println!("║   IaMine — Release Validation    ║");
+            println!("╚══════════════════════════════════╝\n");
+
+            let report = run_release_validation()?;
+            println!("🏷️  Version: {}", current_release_version());
+            println!("✅ tests_passed: {}", report.quality.tests_passed);
+            println!("✅ regression_passed: {}", report.quality.regression_passed);
+            println!("✅ security_passed: {}", report.quality.security_passed);
+            println!("✅ code_clean_passed: {}", report.quality.code_clean_passed);
+            println!("🚦 release_blocked: {}", report.quality.blocks_release());
+            println!("⚠️  code warnings: {}", report.code_quality.warning_count);
+            println!("⚠️  security warnings: {}", report.security.warning_count);
+
+            if let Some(semantic_eval) = &report.semantic_eval {
+                println!(
+                    "🧠 semantic accuracy: {:.1}% (errors={})",
+                    semantic_eval.accuracy * 100.0,
+                    semantic_eval.error_cases.len()
+                );
+            }
+
+            if report.quality.blocks_release() {
+                return Err("Release bloqueada por quality gates".into());
+            }
+
+            return Ok(());
+        }
+
         NodeMode::Daemon => {
             println!("╔══════════════════════════════════╗");
             println!("║   IaMine — Inference Daemon      ║");
@@ -890,8 +1086,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             let output_policy = resolve_output_policy(&prompt_profile, &semantic_prompt, None);
             println!(
                 "[OutputPolicy] max_tokens: {} (reason: {})",
-                output_policy.max_tokens,
-                output_policy.reason
+                output_policy.max_tokens, output_policy.reason
             );
 
             let req = RealInferenceRequest {
@@ -917,19 +1112,27 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 prompt_profile.task_type,
                 req.max_tokens,
                 req.temperature,
-            ).await?;
+            )
+            .await?;
             record_semantic_feedback(prompt, &resolution.validation);
             println!("\n\n✅ Inference completada");
             println!("[Inference] tokens_generated: {}", result.tokens_generated);
             println!("[Inference] truncated: {}", result.truncated);
-            println!("[Inference] continuation_steps: {}", result.continuation_steps);
+            println!(
+                "[Inference] continuation_steps: {}",
+                result.continuation_steps
+            );
             if result.truncated {
                 println!("[Warning] Output truncated at token budget");
             }
             return Ok(());
         }
 
-        NodeMode::Infer { prompt, model_id, max_tokens_override } => {
+        NodeMode::Infer {
+            prompt,
+            model_id,
+            max_tokens_override,
+        } => {
             println!("╔══════════════════════════════════╗");
             println!("║      IaMine — Inference          ║");
             println!("╚══════════════════════════════════╝\n");
@@ -942,19 +1145,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
             let candidate_models = resolution.candidate_models.clone();
             let selected_model = resolution.selected_model.clone();
             let semantic_prompt = resolution.semantic_prompt.clone();
-            let output_policy = resolve_output_policy(&profile, &semantic_prompt, *max_tokens_override);
+            let output_policy =
+                resolve_output_policy(&profile, &semantic_prompt, *max_tokens_override);
             println!(
                 "[OutputPolicy] max_tokens: {} (reason: {})",
-                output_policy.max_tokens,
-                output_policy.reason
+                output_policy.max_tokens, output_policy.reason
             );
 
             if storage.has_model(&selected_model) {
                 println!("🤖 Modelo: {}", selected_model);
                 println!("💬 Prompt: {}\n", prompt);
 
-                let model_desc = registry.get(&selected_model)
-                    .ok_or_else(|| format!("Modelo {} no encontrado en registry", selected_model))?;
+                let model_desc = registry.get(&selected_model).ok_or_else(|| {
+                    format!("Modelo {} no encontrado en registry", selected_model)
+                })?;
                 let runtime = if let Some(runtime) = choose_inference_runtime().await {
                     runtime
                 } else {
@@ -970,18 +1174,25 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     profile.task_type,
                     output_policy.max_tokens as u32,
                     0.7,
-                ).await?;
+                )
+                .await?;
                 record_semantic_feedback(prompt, &resolution.validation);
                 println!("\n\n✅ Inference completada");
                 println!("[Inference] tokens_generated: {}", result.tokens_generated);
                 println!("[Inference] truncated: {}", result.truncated);
-                println!("[Inference] continuation_steps: {}", result.continuation_steps);
+                println!(
+                    "[Inference] continuation_steps: {}",
+                    result.continuation_steps
+                );
                 if result.truncated {
                     println!("[Warning] Output truncated at token budget");
                 }
                 return Ok(());
             } else if model_id.is_some() {
-                println!("⚠️  Override {} no esta instalado localmente, intentando ruta distribuida.", selected_model);
+                println!(
+                    "⚠️  Override {} no esta instalado localmente, intentando ruta distribuida.",
+                    selected_model
+                );
             } else {
                 println!("🤖 Modelo local preferido no disponible.");
                 println!("   Candidates: {}", candidate_models.join(", "));
@@ -1005,9 +1216,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 let installed = caps.has_model(mid);
                 let icon = if installed { "✅" } else { "⬜" };
                 let req = ModelRequirements::for_model(mid).unwrap();
-                println!("   {} {} (min {}GB RAM, {}GB storage{})",
-                    icon, mid, req.min_ram_gb, req.min_storage_gb,
-                    if req.requires_gpu { ", GPU requerida" } else { "" });
+                println!(
+                    "   {} {} (min {}GB RAM, {}GB storage{})",
+                    icon,
+                    mid,
+                    req.min_ram_gb,
+                    req.min_storage_gb,
+                    if req.requires_gpu {
+                        ", GPU requerida"
+                    } else {
+                        ""
+                    }
+                );
             }
             return Ok(());
         }
@@ -1089,7 +1309,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let worker_slots = if let Some(ref b) = benchmark {
         b.calculate_slots(&resource_policy)
     } else {
-        std::thread::available_parallelism().map(|n| n.get()).unwrap_or(2)
+        std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(2)
     };
 
     println!("\n═══════════════════════════════════");
@@ -1098,7 +1320,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
     if let Some(ref b) = benchmark {
         println!("  CPU Score:    {:.0}", b.cpu_score);
         println!("  RAM:          {} GB", b.ram_available_gb);
-        println!("  GPU:          {}", if b.gpu_available { "✅" } else { "❌" });
+        println!(
+            "  GPU:          {}",
+            if b.gpu_available { "✅" } else { "❌" }
+        );
     }
     println!("  Worker Slots: {}", worker_slots);
     if !matches!(mode, NodeMode::Topology) {
@@ -1120,9 +1345,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let worker_setup = if matches!(mode, NodeMode::Worker) {
         let detected = DetectedHardware {
-            cpu_cores: std::thread::available_parallelism().map(|n| n.get() as u32).unwrap_or(1),
-            ram_gb: benchmark.as_ref().map(|b| b.ram_available_gb as u32).unwrap_or(node_caps.ram_gb),
-            gpu_available: benchmark.as_ref().map(|b| b.gpu_available).unwrap_or(node_caps.gpu_type.is_some()),
+            cpu_cores: std::thread::available_parallelism()
+                .map(|n| n.get() as u32)
+                .unwrap_or(1),
+            ram_gb: benchmark
+                .as_ref()
+                .map(|b| b.ram_available_gb as u32)
+                .unwrap_or(node_caps.ram_gb),
+            gpu_available: benchmark
+                .as_ref()
+                .map(|b| b.gpu_available)
+                .unwrap_or(node_caps.gpu_type.is_some()),
             disk_available_gb: node_caps.storage_available_gb,
         };
         Some(NodeSetupConfig::load_or_run(&detected)?)
@@ -1161,7 +1394,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 println!("\n⚠ No models installed\n");
                 println!("Recommended:");
                 for model in &recommended {
-                    println!("{} ({:.0}MB)", model.id, model.size_bytes as f64 / 1_048_576.0);
+                    println!(
+                        "{} ({:.0}MB)",
+                        model.id,
+                        model.size_bytes as f64 / 1_048_576.0
+                    );
                 }
 
                 let auto_download_enabled = auto_model
@@ -1171,7 +1408,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         .unwrap_or(false);
 
                 if auto_download_enabled {
-                    if let Some(model_id) = provision.auto_download_recommended(&profile, None, false).await? {
+                    if let Some(model_id) = provision
+                        .auto_download_recommended(&profile, None, false)
+                        .await?
+                    {
                         println!("\n⬇ Auto-downloaded: {}", model_id);
                     }
                 } else {
@@ -1180,8 +1420,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     let mut input = String::new();
                     let _ = std::io::stdin().read_line(&mut input);
 
-                    if input.trim().is_empty() || matches!(input.trim(), "y" | "Y" | "yes" | "YES") {
-                        if let Some(model_id) = provision.auto_download_recommended(&profile, None, false).await? {
+                    if input.trim().is_empty() || matches!(input.trim(), "y" | "Y" | "yes" | "YES")
+                    {
+                        if let Some(model_id) = provision
+                            .auto_download_recommended(&profile, None, false)
+                            .await?
+                        {
                             println!("✅ Modelo descargado: {}", model_id);
                         }
                     }
@@ -1191,18 +1435,27 @@ async fn main() -> Result<(), Box<dyn Error>> {
             for m in &local {
                 // Verificar espacio antes de mostrar
                 let used = model_storage.total_size_bytes();
-                println!("   ✅ {} (storage: {:.1}/{} GB)",
+                println!(
+                    "   ✅ {} (storage: {:.1}/{} GB)",
                     m,
                     used as f64 / 1_073_741_824.0,
-                    storage_config.max_storage_gb);
+                    storage_config.max_storage_gb
+                );
             }
         }
         println!("📋 Modelos en registry:");
         for m in model_registry.list() {
-            let available = if model_storage.has_model(&m.id) { "✅" } else { "⬜" };
+            let available = if model_storage.has_model(&m.id) {
+                "✅"
+            } else {
+                "⬜"
+            };
             let fits = storage_config.has_space_for(m.size_bytes, model_storage.total_size_bytes());
             let fits_str = if fits { "" } else { " ⚠️ sin espacio" };
-            println!("   {} {} v{} ({}GB RAM){}", available, m.id, m.version, m.required_ram_gb, fits_str);
+            println!(
+                "   {} {} v{} ({}GB RAM){}",
+                available, m.id, m.version, m.required_ram_gb, fits_str
+            );
         }
     }
 
@@ -1228,7 +1481,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut gossipsub_behaviour = gossipsub::Behaviour::new(
         gossipsub::MessageAuthenticity::Signed(id_keys.clone()),
         gossipsub_config,
-    ).map_err(|e| format!("Gossipsub error: {}", e))?;
+    )
+    .map_err(|e| format!("Gossipsub error: {}", e))?;
 
     let task_topic = gossipsub::IdentTopic::new(TASK_TOPIC);
     gossipsub_behaviour.subscribe(&task_topic)?;
@@ -1241,11 +1495,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let mut kad_cfg = kad::Config::default();
     kad_cfg.set_query_timeout(Duration::from_secs(30));
-    let kademlia = kad::Behaviour::with_config(
-        peer_id,
-        kad::store::MemoryStore::new(peer_id),
-        kad_cfg,
-    );
+    let kademlia =
+        kad::Behaviour::with_config(peer_id, kad::store::MemoryStore::new(peer_id), kad_cfg);
 
     let behaviour = IamineBehaviour {
         ping: ping::Behaviour::default(),
@@ -1254,12 +1505,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
             id_keys.public(),
         )),
         request_response: cbor::Behaviour::<TaskRequest, TaskResponse>::new(
-            [(StreamProtocol::new("/iamine/task/1.0"), ProtocolSupport::Full)],
+            [(
+                StreamProtocol::new("/iamine/task/1.0"),
+                ProtocolSupport::Full,
+            )],
             request_response::Config::default(),
         ),
         // ← Protocolo directo para resultados
         result_response: cbor::Behaviour::<TaskResultRequest, TaskResultResponse>::new(
-            [(StreamProtocol::new("/iamine/result/1.0"), ProtocolSupport::Full)],
+            [(
+                StreamProtocol::new("/iamine/result/1.0"),
+                ProtocolSupport::Full,
+            )],
             request_response::Config::default(),
         ),
         kademlia,
@@ -1315,7 +1572,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let worker_port: u16 = {
         if let Some(port_arg) = args.iter().find(|a| a.starts_with("--port=")) {
             port_arg.replace("--port=", "").parse().unwrap_or(9000)
-        } else { 9000 }
+        } else {
+            9000
+        }
     };
 
     let listen_addr: Multiaddr = if matches!(mode, NodeMode::Worker) {
@@ -1348,11 +1607,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut connected_peer: Option<PeerId> = None;
     let mut known_workers: HashSet<PeerId> = HashSet::new();
     // Map de origin_peer_id → PeerId para direct result routing
-    let mut origin_peer_map: std::collections::HashMap<String, PeerId> = std::collections::HashMap::new();
+    let mut origin_peer_map: std::collections::HashMap<String, PeerId> =
+        std::collections::HashMap::new();
     let mut tasks_sent = false;
 
     match &mode {
-        NodeMode::Client { task_type, data, .. } => {
+        NodeMode::Client {
+            task_type, data, ..
+        } => {
             pending_tasks.push(TaskRequest {
                 task_id: uuid_simple(),
                 task_type: task_type.clone(),
@@ -1377,7 +1639,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // ← v0.6: Si es modo Infer, preparar solicitud de inferencia
     let mut infer_request_id: Option<String> = None;
     let mut infer_broadcast_sent = false;
-    let mut pending_inference: std::collections::HashMap<String, tokio::time::Instant> = std::collections::HashMap::new();
+    let mut pending_inference: std::collections::HashMap<String, tokio::time::Instant> =
+        std::collections::HashMap::new();
     let mut infer_started_at: Option<tokio::time::Instant> = None;
 
     // v0.6.2: estado de streaming ordenado
@@ -1385,7 +1648,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut next_token_idx: u32 = 0;
     let mut rendered_output = String::new();
 
-    if let NodeMode::Infer { prompt, model_id, max_tokens_override } = &mode {
+    if let NodeMode::Infer {
+        prompt,
+        model_id,
+        max_tokens_override,
+    } = &mode
+    {
         let rid = uuid_simple();
         let local_available = model_storage.list_local_models();
         let resolution = resolve_policy_for_prompt(prompt, model_id.as_deref(), &local_available);
@@ -1394,12 +1662,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let selected = resolution.selected_model;
         let semantic_prompt = resolution.semantic_prompt;
         let output_policy = resolve_output_policy(&profile, &semantic_prompt, *max_tokens_override);
-        println!("🧠 Distributing inference: model={} prompt='{}'", selected, semantic_prompt);
+        println!(
+            "🧠 Distributing inference: model={} prompt='{}'",
+            selected, semantic_prompt
+        );
         println!("   Candidates: {}", candidates.join(", "));
         println!(
             "   [OutputPolicy] max_tokens: {} (reason: {})",
-            output_policy.max_tokens,
-            output_policy.reason
+            output_policy.max_tokens, output_policy.reason
         );
         println!("   Request ID: {}", rid);
         infer_request_id = Some(rid);
@@ -2332,7 +2602,10 @@ async fn simulate_workers(count: usize, _base_peer_id: String) {
         });
         handles.push(handle);
     }
-    println!("✅ {} workers simulados activos. Ctrl+C para detener.", count);
+    println!(
+        "✅ {} workers simulados activos. Ctrl+C para detener.",
+        count
+    );
     tokio::time::sleep(Duration::from_secs(60)).await;
 }
 
@@ -2343,7 +2616,8 @@ mod tests {
     #[test]
     fn test_max_tokens_override() {
         let profile = analyze_prompt("explica la teoria de la relatividad");
-        let decision = resolve_output_policy(&profile, "explica la teoria de la relatividad", Some(100));
+        let decision =
+            resolve_output_policy(&profile, "explica la teoria de la relatividad", Some(100));
 
         assert_eq!(decision.max_tokens, 100);
         assert_eq!(decision.reason, "cli override");
@@ -2367,7 +2641,10 @@ mod tests {
             "1024".to_string(),
         ];
 
-        assert_eq!(parse_optional_u32_flag(&args, "--max-tokens").unwrap(), Some(1024));
+        assert_eq!(
+            parse_optional_u32_flag(&args, "--max-tokens").unwrap(),
+            Some(1024)
+        );
     }
 
     #[test]

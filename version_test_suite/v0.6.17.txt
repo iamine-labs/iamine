@@ -1,0 +1,2 @@
+# Generative business ideation prompt
+dame 3 ideas de negocio de IA | Generative | false

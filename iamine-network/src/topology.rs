@@ -9,7 +9,11 @@ pub struct PeerLatency {
 
 impl PeerLatency {
     pub fn new(peer_id: String) -> Self {
-        Self { peer_id, avg_latency_ms: 0.0, sample_count: 0 }
+        Self {
+            peer_id,
+            avg_latency_ms: 0.0,
+            sample_count: 0,
+        }
     }
 
     pub fn update(&mut self, rtt_ms: f64) {
@@ -98,17 +102,22 @@ impl NetworkTopology {
         // Local node is always in the "same" cluster
         let local_short = &local_peer_id[..12.min(local_peer_id.len())];
 
-        if !same.is_empty() || true {
-            // Always create local cluster (even if only local node)
-            let mut nodes = same.clone();
-            nodes.insert(0, local_peer_id.to_string());
-            let avg = self.avg_latency_for(&same);
-            let cid = format!("cluster-{}-local", local_short);
-            for pid in &nodes {
-                self.peer_cluster.insert(pid.clone(), cid.clone());
-            }
-            self.clusters.insert(cid.clone(), Cluster { id: cid, nodes, avg_latency_ms: avg });
+        // Always create local cluster (even if only local node)
+        let mut nodes = same.clone();
+        nodes.insert(0, local_peer_id.to_string());
+        let avg = self.avg_latency_for(&same);
+        let cid = format!("cluster-{}-local", local_short);
+        for pid in &nodes {
+            self.peer_cluster.insert(pid.clone(), cid.clone());
         }
+        self.clusters.insert(
+            cid.clone(),
+            Cluster {
+                id: cid,
+                nodes,
+                avg_latency_ms: avg,
+            },
+        );
 
         if !nearby.is_empty() {
             let avg = self.avg_latency_for(&nearby);
@@ -116,7 +125,14 @@ impl NetworkTopology {
             for pid in &nearby {
                 self.peer_cluster.insert(pid.clone(), cid.clone());
             }
-            self.clusters.insert(cid.clone(), Cluster { id: cid, nodes: nearby, avg_latency_ms: avg });
+            self.clusters.insert(
+                cid.clone(),
+                Cluster {
+                    id: cid,
+                    nodes: nearby,
+                    avg_latency_ms: avg,
+                },
+            );
         }
 
         if !remote.is_empty() {
@@ -125,7 +141,14 @@ impl NetworkTopology {
             for pid in &remote {
                 self.peer_cluster.insert(pid.clone(), cid.clone());
             }
-            self.clusters.insert(cid.clone(), Cluster { id: cid, nodes: remote, avg_latency_ms: avg });
+            self.clusters.insert(
+                cid.clone(),
+                Cluster {
+                    id: cid,
+                    nodes: remote,
+                    avg_latency_ms: avg,
+                },
+            );
         }
     }
 
@@ -148,19 +171,33 @@ impl NetworkTopology {
     }
 
     pub fn display(&self) {
-        println!("🌐 Network Topology ({} peers, {} clusters) [latency: real ping RTT]",
-            self.peers.len(), self.clusters.len());
+        println!(
+            "🌐 Network Topology ({} peers, {} clusters) [latency: real ping RTT]",
+            self.peers.len(),
+            self.clusters.len()
+        );
         let mut sorted: Vec<&Cluster> = self.clusters.values().collect();
         sorted.sort_by(|a, b| a.avg_latency_ms.partial_cmp(&b.avg_latency_ms).unwrap());
         for cluster in sorted {
-            let tier = if cluster.avg_latency_ms < 10.0 { "LOCAL" }
-                else if cluster.avg_latency_ms < 30.0 { "NEARBY" }
-                else { "REMOTE" };
-            println!("   📦 {} [{}] ({:.1}ms avg, {} nodes)",
-                cluster.id, tier, cluster.avg_latency_ms, cluster.nodes.len());
+            let tier = if cluster.avg_latency_ms < 10.0 {
+                "LOCAL"
+            } else if cluster.avg_latency_ms < 30.0 {
+                "NEARBY"
+            } else {
+                "REMOTE"
+            };
+            println!(
+                "   📦 {} [{}] ({:.1}ms avg, {} nodes)",
+                cluster.id,
+                tier,
+                cluster.avg_latency_ms,
+                cluster.nodes.len()
+            );
             for node in &cluster.nodes {
                 let short = &node[..12.min(node.len())];
-                let lat = self.peers.get(node)
+                let lat = self
+                    .peers
+                    .get(node)
                     .map(|p| format!("{:.1}ms", p.avg_latency_ms))
                     .unwrap_or_else(|| "local".to_string());
                 println!("      └─ {} ({})", short, lat);
@@ -169,8 +206,11 @@ impl NetworkTopology {
     }
 
     fn avg_latency_for(&self, peer_ids: &[String]) -> f64 {
-        if peer_ids.is_empty() { return 0.0; }
-        let sum: f64 = peer_ids.iter()
+        if peer_ids.is_empty() {
+            return 0.0;
+        }
+        let sum: f64 = peer_ids
+            .iter()
             .filter_map(|pid| self.peers.get(pid))
             .map(|p| p.avg_latency_ms)
             .sum();

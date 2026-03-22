@@ -1,0 +1,2 @@
+# Compact math normalization
+6(9) | ExactMath | true

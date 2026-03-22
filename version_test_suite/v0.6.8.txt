@@ -1,0 +1,2 @@
+# Parenthesized math normalization
+(2+2) | ExactMath | true
