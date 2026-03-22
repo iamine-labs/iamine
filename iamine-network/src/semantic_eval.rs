@@ -1,6 +1,7 @@
 use crate::prompt_analyzer::{
     analyze_prompt_semantics, CONFIDENCE_THRESHOLD, DeterministicLevel, Domain, OutputStyle,
 };
+use crate::semantic_validator::validate_semantic_decision;
 use crate::task_analyzer::TaskType;
 use serde::{Deserialize, Serialize};
 
@@ -73,7 +74,9 @@ pub fn evaluate_dataset(entries: &[SemanticDatasetEntry]) -> SemanticEvalReport 
     let mut error_cases = Vec::new();
 
     for entry in entries {
-        let decision = analyze_prompt_semantics(&entry.prompt);
+        let analyzed = analyze_prompt_semantics(&entry.prompt);
+        let validated = validate_semantic_decision(&entry.prompt, analyzed);
+        let decision = validated.decision;
         let predicted_task = decision.profile.task_type;
         let predicted_normalize = should_use_strict_handling(predicted_task);
         let predicted_secondary = decision.profile.semantic.secondary_tasks.clone();

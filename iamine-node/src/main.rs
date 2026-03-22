@@ -38,6 +38,7 @@ use iamine_models::{
 use iamine_network::{
     analyze_prompt_semantics,
     Complexity as PromptComplexityLevel,
+    default_semantic_log_path,
     DeterministicLevel as PromptDeterministicLevel,
     Domain as PromptDomain,
     detect_exact_subtype,
@@ -54,9 +55,12 @@ use iamine_network::{
     OutputStyle as PromptOutputStyle,
     PromptProfile,
     SemanticRoutingDecision,
+    SemanticFeedbackEngine,
     SharedNetworkTopology,
     SharedNodeRegistry,
     TaskType as PromptTaskType,
+    ValidationResult as SemanticValidationResult,
+    validate_semantic_decision,
 };
 
 #[cfg(test)]
@@ -389,6 +393,37 @@ fn log_semantic_decision(decision: &SemanticRoutingDecision) {
     }
 }
 
+fn log_semantic_validation(validation: &SemanticValidationResult) {
+    println!(
+        "[SemanticValidator] Confidence: {:.2} -> {:.2}",
+        validation.confidence_before,
+        validation.confidence_after
+    );
+    println!(
+        "[SemanticValidator] Model validation: {}",
+        validation.model_validation_used
+    );
+    println!(
+        "[SemanticValidator] Correction applied: {}",
+        validation.correction_applied
+    );
+    if !validation.conflicts.is_empty() {
+        println!(
+            "[SemanticValidator] Conflicts: {}",
+            validation.conflicts.join(", ")
+        );
+    }
+}
+
+fn record_semantic_feedback(prompt: &str, validation: &SemanticValidationResult) {
+    let engine = SemanticFeedbackEngine::default();
+    if let Err(error) = engine.append_from_validation(prompt, validation) {
+        eprintln!("[Feedback] Logging failed: {}", error);
+    } else {
+        println!("[Feedback] Logged: {}", default_semantic_log_path().display());
+    }
+}
+
 fn task_requires_validation(task_type: PromptTaskType) -> bool {
     matches!(
         task_type,
@@ -585,34 +620,46 @@ async fn choose_inference_runtime() -> Option<InferenceRuntime> {
     }
 }
 
+#[derive(Clone)]
+struct PromptResolution {
+    profile: PromptProfile,
+    candidate_models: Vec<String>,
+    selected_model: String,
+    semantic_prompt: String,
+    validation: SemanticValidationResult,
+}
+
 fn resolve_policy_for_prompt(
     prompt: &str,
     model_override: Option<&str>,
     available_models: &[String],
-) -> (PromptProfile, Vec<String>, String, String) {
+) -> PromptResolution {
     let semantic_prompt = normalize_expression(prompt).unwrap_or_else(|| prompt.to_string());
     if semantic_prompt != prompt {
         println!("[Parser] Normalized expression: {} → {}", prompt, semantic_prompt);
     }
 
     let semantic_decision = analyze_prompt_semantics(&semantic_prompt);
-    let profile = semantic_decision.profile.clone();
+    let validated = validate_semantic_decision(&semantic_prompt, semantic_decision);
+    let profile = validated.decision.profile.clone();
     println!(
         "[Analyzer] Language: {}, Complexity: {}, Task: {}",
         prompt_language_label(profile.language),
         prompt_complexity_label(profile.complexity),
         prompt_task_label(profile.task_type),
     );
-    log_semantic_decision(&semantic_decision);
+    log_semantic_decision(&validated.decision);
+    log_semantic_validation(&validated.validation);
 
     if let Some(model_id) = model_override {
         println!("[Policy] Manual override: {}", model_id);
-        return (
+        return PromptResolution {
             profile,
-            vec![model_id.to_string()],
-            model_id.to_string(),
+            candidate_models: vec![model_id.to_string()],
+            selected_model: model_id.to_string(),
             semantic_prompt,
-        );
+            validation: validated.validation,
+        };
     }
 
     let policy = ModelPolicyEngine::default();
@@ -627,7 +674,13 @@ fn resolve_policy_for_prompt(
         decision.model,
         decision.reason
     );
-    (profile, candidates, decision.model, semantic_prompt)
+    PromptResolution {
+        profile,
+        candidate_models: candidates,
+        selected_model: decision.model,
+        semantic_prompt,
+        validation: validated.validation,
+    }
 }
 
 fn resolve_output_policy(
@@ -831,19 +884,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
             let model_desc = registry.get(model_id).unwrap();
 
-            let semantic_prompt = normalize_expression(prompt).unwrap_or_else(|| prompt.clone());
-            if semantic_prompt != *prompt {
-                println!("[Parser] Normalized expression: {} → {}", prompt, semantic_prompt);
-            }
-            let semantic_decision = analyze_prompt_semantics(&semantic_prompt);
-            let prompt_profile = semantic_decision.profile.clone();
-            println!(
-                "[Analyzer] Language: {}, Complexity: {}, Task: {}",
-                prompt_language_label(prompt_profile.language),
-                prompt_complexity_label(prompt_profile.complexity),
-                prompt_task_label(prompt_profile.task_type),
-            );
-            log_semantic_decision(&semantic_decision);
+            let resolution = resolve_policy_for_prompt(prompt, Some(model_id), &[]);
+            let prompt_profile = resolution.profile.clone();
+            let semantic_prompt = resolution.semantic_prompt.clone();
             let output_policy = resolve_output_policy(&prompt_profile, &semantic_prompt, None);
             println!(
                 "[OutputPolicy] max_tokens: {} (reason: {})",
@@ -875,6 +918,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 req.max_tokens,
                 req.temperature,
             ).await?;
+            record_semantic_feedback(prompt, &resolution.validation);
             println!("\n\n✅ Inference completada");
             println!("[Inference] tokens_generated: {}", result.tokens_generated);
             println!("[Inference] truncated: {}", result.truncated);
@@ -893,11 +937,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
             let registry = ModelRegistry::new();
             let storage = ModelStorage::new();
             let local_models = storage.list_local_models();
-            let (profile, candidate_models, selected_model, semantic_prompt) = resolve_policy_for_prompt(
-                prompt,
-                model_id.as_deref(),
-                &local_models,
-            );
+            let resolution = resolve_policy_for_prompt(prompt, model_id.as_deref(), &local_models);
+            let profile = resolution.profile.clone();
+            let candidate_models = resolution.candidate_models.clone();
+            let selected_model = resolution.selected_model.clone();
+            let semantic_prompt = resolution.semantic_prompt.clone();
             let output_policy = resolve_output_policy(&profile, &semantic_prompt, *max_tokens_override);
             println!(
                 "[OutputPolicy] max_tokens: {} (reason: {})",
@@ -927,6 +971,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     output_policy.max_tokens as u32,
                     0.7,
                 ).await?;
+                record_semantic_feedback(prompt, &resolution.validation);
                 println!("\n\n✅ Inference completada");
                 println!("[Inference] tokens_generated: {}", result.tokens_generated);
                 println!("[Inference] truncated: {}", result.truncated);
@@ -1343,11 +1388,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
     if let NodeMode::Infer { prompt, model_id, max_tokens_override } = &mode {
         let rid = uuid_simple();
         let local_available = model_storage.list_local_models();
-        let (profile, candidates, selected, semantic_prompt) = resolve_policy_for_prompt(
-            prompt,
-            model_id.as_deref(),
-            &local_available,
-        );
+        let resolution = resolve_policy_for_prompt(prompt, model_id.as_deref(), &local_available);
+        let profile = resolution.profile;
+        let candidates = resolution.candidate_models;
+        let selected = resolution.selected_model;
+        let semantic_prompt = resolution.semantic_prompt;
         let output_policy = resolve_output_policy(&profile, &semantic_prompt, *max_tokens_override);
         println!("🧠 Distributing inference: model={} prompt='{}'", selected, semantic_prompt);
         println!("   Candidates: {}", candidates.join(", "));
@@ -1506,11 +1551,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             }
                         }
 
-                        let (profile, mut candidates, selected_model, semantic_prompt) = resolve_policy_for_prompt(
+                        let resolution = resolve_policy_for_prompt(
                             prompt,
                             model_id.as_deref(),
                             &available_models,
                         );
+                        let profile = resolution.profile;
+                        let mut candidates = resolution.candidate_models;
+                        let selected_model = resolution.selected_model;
+                        let semantic_prompt = resolution.semantic_prompt;
                         let output_policy = resolve_output_policy(&profile, &semantic_prompt, *max_tokens_override);
                         if !candidates.contains(&selected_model) {
                             candidates.insert(0, selected_model.clone());
