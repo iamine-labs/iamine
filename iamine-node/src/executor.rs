@@ -36,20 +36,28 @@ impl TaskExecutor {
         match result {
             Ok(output) => {
                 println!("✅ Tarea {} completada: {}", task_id, output);
-                TaskResponse {
-                    task_id,
-                    result: output,
-                    success: true,
-                }
+                TaskResponse::legacy(task_id, output, true)
             }
             Err(e) => {
                 println!("❌ Error en tarea {}: {}", task_id, e);
-                TaskResponse {
-                    task_id,
-                    result: e,
-                    success: false,
-                }
+                TaskResponse::legacy(task_id, e, false)
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::TaskExecutor;
+
+    #[test]
+    fn test_task_execution() {
+        let response = TaskExecutor::execute_task(
+            "task-1".to_string(),
+            "reverse_string".to_string(),
+            "iamine".to_string(),
+        );
+        assert!(response.success);
+        assert_eq!(response.result, "enimai");
     }
 }

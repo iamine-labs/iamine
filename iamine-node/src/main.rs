@@ -36,12 +36,12 @@ use iamine_network::{
     analyze_prompt_semantics, default_semantic_log_path, describe_output_policy,
     detect_exact_subtype, evaluate_default_dataset, normalize_expression,
     validate_semantic_decision, Complexity as PromptComplexityLevel,
-    DeterministicLevel as PromptDeterministicLevel, Domain as PromptDomain,
-    ExactSubtype as PromptExactSubtype, Language as PromptLanguage, ModelPolicyEngine,
-    NetworkTopology, NodeCapabilityHeartbeat, NodeRegistry, OutputPolicyDecision,
-    OutputStyle as PromptOutputStyle, PromptProfile, SemanticFeedbackEngine,
-    SemanticRoutingDecision, SharedNetworkTopology, SharedNodeRegistry, TaskType as PromptTaskType,
-    ValidationResult as SemanticValidationResult,
+    DeterministicLevel as PromptDeterministicLevel, DistributedTask, DistributedTaskResult,
+    Domain as PromptDomain, ExactSubtype as PromptExactSubtype, Language as PromptLanguage,
+    ModelPolicyEngine, NetworkTopology, NodeCapabilityHeartbeat, NodeRegistry,
+    OutputPolicyDecision, OutputStyle as PromptOutputStyle, PromptProfile, SemanticFeedbackEngine,
+    SemanticRoutingDecision, SharedNetworkTopology, SharedNodeRegistry, TaskManager,
+    TaskType as PromptTaskType, ValidationResult as SemanticValidationResult,
 };
 
 #[cfg(test)]
@@ -102,6 +102,11 @@ const CAP_TOPIC: &str = "iamine-capabilities";
 const DIRECT_INF_TOPIC: &str = "iamine-direct-inference";
 const INFER_TIMEOUT_MS: u64 = 30_000;
 const INFER_FALLBACK_AFTER_MS: u64 = 8_000;
+
+struct PendingTaskResponse {
+    channel: request_response::ResponseChannel<TaskResponse>,
+    response: TaskResponse,
+}
 
 #[derive(NetworkBehaviour)]
 #[behaviour(to_swarm = "IaMineEvent")]
@@ -1535,6 +1540,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let pool = Arc::new(WorkerPool::with_slots(worker_slots));
     let queue = Arc::new(TaskQueue::new(peer_id.to_string()));
     let scheduler = Arc::new(TaskScheduler::new());
+    let task_manager = Arc::new(TaskManager::new());
+    let (task_response_tx, mut task_response_rx) =
+        tokio::sync::mpsc::channel::<PendingTaskResponse>(64);
     let heartbeat = Arc::new(HeartbeatService::new());
     let metrics = Arc::new(RwLock::new(NodeMetrics::new()));
     let capabilities = WorkerCapabilities::detect();
@@ -1615,21 +1623,21 @@ async fn main() -> Result<(), Box<dyn Error>> {
         NodeMode::Client {
             task_type, data, ..
         } => {
-            pending_tasks.push(TaskRequest {
-                task_id: uuid_simple(),
-                task_type: task_type.clone(),
-                data: data.clone(),
-            });
+            pending_tasks.push(TaskRequest::legacy(
+                uuid_simple(),
+                task_type.clone(),
+                data.clone(),
+            ));
             total_tasks = 1;
         }
         NodeMode::Stress { count, .. } => {
             total_tasks = *count;
             for i in 0..*count {
-                pending_tasks.push(TaskRequest {
-                    task_id: format!("stress_{:03}", i + 1),
-                    task_type: "reverse_string".to_string(),
-                    data: format!("iamine_{}", i + 1),
-                });
+                pending_tasks.push(TaskRequest::legacy(
+                    format!("stress_{:03}", i + 1),
+                    "reverse_string".to_string(),
+                    format!("iamine_{}", i + 1),
+                ));
             }
             println!("🔥 Stress test: {} tareas preparadas\n", count);
         }
@@ -1716,6 +1724,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     } else {
                         println!("(esperando peers...)");
                     }
+                }
+            }
+
+            Some(completed_response) = task_response_rx.recv() => {
+                let task_id = completed_response.response.task_id.clone();
+                if swarm
+                    .behaviour_mut()
+                    .request_response
+                    .send_response(completed_response.channel, completed_response.response)
+                    .is_ok()
+                {
+                    println!("[Task] Completed {}", task_id);
+                } else {
+                    eprintln!("[Task] Failed to return result for {}", task_id);
                 }
             }
 
@@ -1843,26 +1865,64 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                         if let Some((best_peer, routed_model)) = selected {
                             let rid = infer_request_id.clone().unwrap_or_else(uuid_simple);
-                            let direct = DirectInferenceRequest {
-                                request_id: rid.clone(),
-                                target_peer: best_peer.to_string(),
-                                model: routed_model.clone(),
-                                prompt: semantic_prompt.clone(),
-                                max_tokens: output_policy.max_tokens as u32,
-                            };
+                            let target_peer = known_workers
+                                .iter()
+                                .find(|peer| peer.to_string() == best_peer)
+                                .copied();
 
-                            let _ = swarm.behaviour_mut().gossipsub.publish(
-                                gossipsub::IdentTopic::new(DIRECT_INF_TOPIC),
-                                serde_json::to_vec(&direct.to_gossip_json()).unwrap(),
-                            );
+                            if let Some(target_peer) = target_peer {
+                                let task = DistributedTask::new(
+                                    rid.clone(),
+                                    semantic_prompt.clone(),
+                                    routed_model.clone(),
+                                );
+                                task_manager.register_task(task.clone()).await;
+                                println!("[Task] Created {}", task.id);
+                                swarm
+                                    .behaviour_mut()
+                                    .request_response
+                                    .send_request(&target_peer, TaskRequest::distributed(task));
 
-                            metrics.write().await.routing_decision(start.elapsed().as_millis() as u64);
-                            infer_broadcast_sent = true;
-                            pending_inference.insert(rid.clone(), tokio::time::Instant::now());
-                            println!("[Routing] Sending to node {} with model {}", best_peer, routed_model);
-                            println!("🧠 DirectInferenceRequest enviado [{}] → {}", &rid[..8.min(rid.len())], best_peer);
-                            print!("📤 Respuesta: ");
-                            let _ = std::io::Write::flush(&mut std::io::stdout());
+                                metrics
+                                    .write()
+                                    .await
+                                    .routing_decision(start.elapsed().as_millis() as u64);
+                                infer_broadcast_sent = true;
+                                waiting_for_response = true;
+                                pending_inference.insert(rid.clone(), tokio::time::Instant::now());
+                                println!("[Routing] Sending to node {} with model {}", best_peer, routed_model);
+                                println!("[Task] Sent to peer {}", best_peer);
+                                print!("📤 Respuesta: ");
+                                let _ = std::io::Write::flush(&mut std::io::stdout());
+                            } else {
+                                let direct = DirectInferenceRequest {
+                                    request_id: rid.clone(),
+                                    target_peer: best_peer.to_string(),
+                                    model: routed_model.clone(),
+                                    prompt: semantic_prompt.clone(),
+                                    max_tokens: output_policy.max_tokens as u32,
+                                };
+
+                                let _ = swarm.behaviour_mut().gossipsub.publish(
+                                    gossipsub::IdentTopic::new(DIRECT_INF_TOPIC),
+                                    serde_json::to_vec(&direct.to_gossip_json()).unwrap(),
+                                );
+
+                                metrics
+                                    .write()
+                                    .await
+                                    .routing_decision(start.elapsed().as_millis() as u64);
+                                infer_broadcast_sent = true;
+                                pending_inference.insert(rid.clone(), tokio::time::Instant::now());
+                                println!("[Routing] Sending to node {} with model {}", best_peer, routed_model);
+                                println!(
+                                    "🧠 DirectInferenceRequest enviado [{}] → {}",
+                                    &rid[..8.min(rid.len())],
+                                    best_peer
+                                );
+                                print!("📤 Respuesta: ");
+                                let _ = std::io::Write::flush(&mut std::io::stdout());
+                            }
                         } else if total_nodes > 0 && candidates.iter().all(|m| !available_models.contains(m)) {
                             eprintln!("❌ Ningún nodo en la red tiene un modelo compatible instalado.");
                             eprintln!("   Nodos conocidos: {}", total_nodes);
@@ -2526,40 +2586,177 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 SwarmEvent::Behaviour(IaMineEvent::RequestResponse(event)) => {
                     match event {
                         RREvent::Message { peer, message: Message::Request { request, channel, .. } } => {
-                            println!("📨 Tarea P2P de {}: {} → '{}'", peer, request.task_type, request.data);
-                            let queue_ref = Arc::clone(&queue);
-                            let t_id = request.task_id.clone();
-                            let t_type = request.task_type.clone();
-                            let t_data = request.data.clone();
-                            tokio::spawn(async move {
-                                if let Err(e) = queue_ref.push(t_id, t_type, t_data).await {
-                                    eprintln!("❌ Error encolando: {}", e);
-                                }
-                                if let Some(outcome) = queue_ref.outcome_rx.lock().await.recv().await {
-                                    println!("🏁 {} → {:?}", outcome.task_id, outcome.status);
-                                }
-                            });
-                            let response = TaskExecutor::execute_task(
-                                request.task_id, request.task_type, request.data,
-                            );
-                            let _ = swarm.behaviour_mut().request_response.send_response(channel, response);
+                            if let Some(task) = request.distributed_task.clone() {
+                                println!(
+                                    "[Task] Received {} from {} with model {}",
+                                    task.id, peer, task.model
+                                );
+                                let task_manager_ref = Arc::clone(&task_manager);
+                                let task_response_tx_ref = task_response_tx.clone();
+                                let prompt = task.prompt.clone();
+                                let model = task.model.clone();
+                                let task_id = task.id.clone();
+
+                                tokio::spawn(async move {
+                                    task_manager_ref.register_task(task.clone()).await;
+                                    task_manager_ref.mark_running(&task_id).await;
+                                    println!("[Task] Started {}", task_id);
+
+                                    let resolution =
+                                        resolve_policy_for_prompt(&prompt, Some(&model), &[]);
+                                    let profile = resolution.profile.clone();
+                                    let semantic_prompt = resolution.semantic_prompt.clone();
+                                    let output_policy =
+                                        resolve_output_policy(&profile, &semantic_prompt, None);
+
+                                    let result = if let Some(runtime) = choose_inference_runtime().await {
+                                        run_local_inference_with_validation(
+                                            runtime,
+                                            task_id.clone(),
+                                            model.clone(),
+                                            semantic_prompt,
+                                            profile.task_type,
+                                            output_policy.max_tokens as u32,
+                                            0.7,
+                                        )
+                                        .await
+                                    } else {
+                                        let registry = ModelRegistry::new();
+                                        let model_desc = match registry.get(&model) {
+                                            Some(desc) => desc,
+                                            None => {
+                                                let error = format!(
+                                                    "Modelo {} no encontrado en registry",
+                                                    model
+                                                );
+                                                task_manager_ref.fail(&task_id, &error).await;
+                                                let _ = task_response_tx_ref
+                                                    .send(PendingTaskResponse {
+                                                        channel,
+                                                        response: TaskResponse::distributed(
+                                                            DistributedTaskResult::failure(
+                                                                task_id.clone(),
+                                                                error,
+                                                            ),
+                                                        ),
+                                                    })
+                                                    .await;
+                                                return;
+                                            }
+                                        };
+                                        let engine = Arc::new(RealInferenceEngine::new(ModelStorage::new()));
+                                        if let Err(error) = engine.load_model(&model, &model_desc.hash) {
+                                            task_manager_ref.fail(&task_id, &error).await;
+                                            let _ = task_response_tx_ref
+                                                .send(PendingTaskResponse {
+                                                    channel,
+                                                    response: TaskResponse::distributed(
+                                                        DistributedTaskResult::failure(
+                                                            task_id.clone(),
+                                                            error,
+                                                        ),
+                                                    ),
+                                                })
+                                                .await;
+                                            return;
+                                        }
+
+                                        run_local_inference_with_validation(
+                                            InferenceRuntime::Engine(engine),
+                                            task_id.clone(),
+                                            model.clone(),
+                                            semantic_prompt,
+                                            profile.task_type,
+                                            output_policy.max_tokens as u32,
+                                            0.7,
+                                        )
+                                        .await
+                                    };
+
+                                    match result {
+                                        Ok(result) => {
+                                            record_semantic_feedback(&prompt, &resolution.validation);
+                                            let distributed_result = DistributedTaskResult::success(
+                                                task_id.clone(),
+                                                result.output,
+                                            );
+                                            task_manager_ref.complete(distributed_result.clone()).await;
+                                            let _ = task_response_tx_ref
+                                                .send(PendingTaskResponse {
+                                                    channel,
+                                                    response: TaskResponse::distributed(
+                                                        distributed_result,
+                                                    ),
+                                                })
+                                                .await;
+                                        }
+                                        Err(error) => {
+                                            task_manager_ref.fail(&task_id, &error).await;
+                                            let _ = task_response_tx_ref
+                                                .send(PendingTaskResponse {
+                                                    channel,
+                                                    response: TaskResponse::distributed(
+                                                        DistributedTaskResult::failure(
+                                                            task_id.clone(),
+                                                            error,
+                                                        ),
+                                                    ),
+                                                })
+                                                .await;
+                                        }
+                                    }
+                                });
+                            } else {
+                                println!("📨 Tarea P2P de {}: {} → '{}'", peer, request.task_type, request.data);
+                                let queue_ref = Arc::clone(&queue);
+                                let t_id = request.task_id.clone();
+                                let t_type = request.task_type.clone();
+                                let t_data = request.data.clone();
+                                tokio::spawn(async move {
+                                    if let Err(e) = queue_ref.push(t_id, t_type, t_data).await {
+                                        eprintln!("❌ Error encolando: {}", e);
+                                    }
+                                    if let Some(outcome) = queue_ref.outcome_rx.lock().await.recv().await {
+                                        println!("🏁 {} → {:?}", outcome.task_id, outcome.status);
+                                    }
+                                });
+                                let response = TaskExecutor::execute_task(
+                                    request.task_id, request.task_type, request.data,
+                                );
+                                let _ = swarm.behaviour_mut().request_response.send_response(channel, response);
+                            }
                         }
                         RREvent::Message { peer, message: Message::Response { response, .. } } => {
-                            waiting_for_response = false;
-                            completed += 1;
-                            if !pending_tasks.is_empty() { pending_tasks.remove(0); }
-                            println!("📩 [{}/{}] {} de {}: '{}'",
-                                completed, total_tasks,
-                                if response.success { "✅" } else { "❌" },
-                                peer, response.result);
-                            if let Some(next_task) = pending_tasks.first().cloned() {
-                                if let Some(pid) = connected_peer {
-                                    swarm.behaviour_mut().request_response.send_request(&pid, next_task);
-                                    waiting_for_response = true;
+                            if let Some(distributed_result) = response.distributed_result {
+                                pending_inference.remove(&distributed_result.task_id);
+                                if distributed_result.success {
+                                    task_manager.complete(distributed_result.clone()).await;
+                                    println!("{}", distributed_result.output);
+                                    println!("\n\n✅ Inference completada");
+                                } else {
+                                    task_manager
+                                        .fail(&distributed_result.task_id, &distributed_result.output)
+                                        .await;
+                                    eprintln!("❌ Distributed task failed: {}", distributed_result.output);
                                 }
-                            } else {
-                                println!("\n🎉 Completadas: {}/{}", completed, total_tasks);
                                 break;
+                            } else {
+                                waiting_for_response = false;
+                                completed += 1;
+                                if !pending_tasks.is_empty() { pending_tasks.remove(0); }
+                                println!("📩 [{}/{}] {} de {}: '{}'",
+                                    completed, total_tasks,
+                                    if response.success { "✅" } else { "❌" },
+                                    peer, response.result);
+                                if let Some(next_task) = pending_tasks.first().cloned() {
+                                    if let Some(pid) = connected_peer {
+                                        swarm.behaviour_mut().request_response.send_request(&pid, next_task);
+                                        waiting_for_response = true;
+                                    }
+                                } else {
+                                    println!("\n🎉 Completadas: {}/{}", completed, total_tasks);
+                                    break;
+                                }
                             }
                         }
                         RREvent::OutboundFailure { peer, error, .. } => {

@@ -7,7 +7,10 @@ pub mod prompt_analyzer;
 pub mod semantic_eval;
 pub mod semantic_feedback;
 pub mod semantic_validator;
+pub mod task;
 pub mod task_analyzer;
+pub mod task_manager;
+pub mod task_state;
 pub mod topology;
 
 pub use expression_parser::normalize_expression;
@@ -41,7 +44,10 @@ pub use semantic_validator::{
     model_validate, validate_semantic_decision, validate_semantic_decision_with_context,
     ValidatedSemanticDecision, ValidationResult,
 };
+pub use task::{Task as DistributedTask, TaskMessage, TaskResult as DistributedTaskResult};
 pub use task_analyzer::{
     detect_exact_subtype, detect_task_type, ExactSubtype, TaskProfile, TaskType,
 };
+pub use task_manager::TaskManager;
+pub use task_state::TaskStatus as DistributedTaskStatus;
 pub use topology::{Cluster, ClusterTier, NetworkTopology, PeerLatency, SharedNetworkTopology};

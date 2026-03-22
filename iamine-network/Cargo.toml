@@ -8,4 +8,4 @@ libp2p = "0.53"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 iamine-models = { path = "../iamine-models" }
-tokio = { version = "1", features = ["sync"] }
+tokio = { version = "1", features = ["sync", "rt", "macros"] }
