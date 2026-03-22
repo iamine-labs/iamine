@@ -19,10 +19,30 @@ impl IntelligentScheduler {
         model_id: &str,
         local_cluster_id: Option<&str>,
     ) -> Option<NodeScore> {
+        self.select_best_node_excluding(
+            registry,
+            model_id,
+            local_cluster_id,
+            &std::collections::HashSet::new(),
+        )
+    }
+
+    pub fn select_best_node_excluding(
+        &self,
+        registry: &NodeRegistry,
+        model_id: &str,
+        local_cluster_id: Option<&str>,
+        excluded_peers: &std::collections::HashSet<String>,
+    ) -> Option<NodeScore> {
         println!("[Scheduler] Evaluating nodes for model {}", model_id);
 
         let requirements = ModelHardwareRequirements::for_model(model_id)?;
-        let mut candidates = self.filter_nodes(registry.all_nodes(), model_id, &requirements);
+        let mut candidates = self.filter_nodes(
+            registry.all_nodes(),
+            model_id,
+            &requirements,
+            excluded_peers,
+        );
 
         candidates.sort_by(|left, right| {
             let left_priority = cluster_priority(left, local_cluster_id);
@@ -61,10 +81,36 @@ impl IntelligentScheduler {
         model_ids: &[String],
         local_cluster_id: Option<&str>,
     ) -> Option<NodeScore> {
+        self.select_best_node_for_models_excluding(
+            registry,
+            model_ids,
+            local_cluster_id,
+            &std::collections::HashSet::new(),
+            &std::collections::HashSet::new(),
+        )
+    }
+
+    pub fn select_best_node_for_models_excluding(
+        &self,
+        registry: &NodeRegistry,
+        model_ids: &[String],
+        local_cluster_id: Option<&str>,
+        excluded_peers: &std::collections::HashSet<String>,
+        excluded_models: &std::collections::HashSet<String>,
+    ) -> Option<NodeScore> {
         let mut best: Option<NodeScore> = None;
 
         for model_id in model_ids {
-            if let Some(candidate) = self.select_best_node(registry, model_id, local_cluster_id) {
+            if excluded_models.contains(model_id) {
+                continue;
+            }
+
+            if let Some(candidate) = self.select_best_node_excluding(
+                registry,
+                model_id,
+                local_cluster_id,
+                excluded_peers,
+            ) {
                 let candidate_composite = composite_score(&candidate);
                 let should_replace = match &best {
                     Some(current) => {
@@ -93,10 +139,12 @@ impl IntelligentScheduler {
         nodes: Vec<(String, NodeCapability)>,
         model_id: &str,
         requirements: &ModelHardwareRequirements,
+        excluded_peers: &std::collections::HashSet<String>,
     ) -> Vec<NodeCapability> {
         nodes
             .into_iter()
             .map(|(_, node)| node)
+            .filter(|node| !excluded_peers.contains(&node.peer_id))
             .filter(|node| node.models.iter().any(|model| model == model_id))
             .filter(|node| {
                 let profile = NodeHardwareProfile {
@@ -127,6 +175,7 @@ mod tests {
     use crate::model_karma::{clear_model_karma_store, record_model_metrics};
     use crate::model_metrics::ModelMetrics;
     use crate::node_registry::{NodeCapability, NodeRegistry};
+    use std::collections::HashSet;
     use std::sync::{Mutex, OnceLock};
     use std::time::Instant;
 
@@ -255,6 +304,29 @@ mod tests {
         assert!(scheduler
             .select_best_node(&registry, "llama3-3b", None)
             .is_none());
+    }
+
+    #[test]
+    fn test_scheduler_excludes_failed_peer() {
+        let scheduler = IntelligentScheduler::new();
+        let mut registry = NodeRegistry::new();
+        registry.register_node(make_cap("peer1", 180_000, "tinyllama-1b", 8, 8, 1, 5, None));
+        registry.register_node(make_cap(
+            "peer2",
+            170_000,
+            "tinyllama-1b",
+            8,
+            8,
+            1,
+            10,
+            None,
+        ));
+        let excluded = HashSet::from([String::from("peer1")]);
+
+        let best = scheduler
+            .select_best_node_excluding(&registry, "tinyllama-1b", None, &excluded)
+            .unwrap();
+        assert_eq!(best.peer_id, "peer2");
     }
 
     #[test]

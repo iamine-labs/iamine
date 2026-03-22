@@ -35,14 +35,15 @@ use iamine_models::{
 use iamine_network::{
     analyze_prompt_semantics, default_semantic_log_path, describe_output_policy,
     detect_exact_subtype, evaluate_default_dataset, normalize_expression, ranked_models,
-    record_model_metrics, validate_semantic_decision, Complexity as PromptComplexityLevel,
-    DeterministicLevel as PromptDeterministicLevel, DistributedTask, DistributedTaskResult,
-    Domain as PromptDomain, ExactSubtype as PromptExactSubtype, IntelligentScheduler,
+    record_model_metrics, select_retry_target, validate_result, validate_semantic_decision,
+    Complexity as PromptComplexityLevel, DeterministicLevel as PromptDeterministicLevel,
+    DistributedTask, DistributedTaskResult, Domain as PromptDomain,
+    ExactSubtype as PromptExactSubtype, FailureKind, IntelligentScheduler,
     Language as PromptLanguage, ModelKarma, ModelMetrics, ModelPolicyEngine, NetworkTopology,
     NodeCapabilityHeartbeat, NodeRegistry, OutputPolicyDecision, OutputStyle as PromptOutputStyle,
-    PromptProfile, SemanticFeedbackEngine, SemanticRoutingDecision, SharedNetworkTopology,
-    SharedNodeRegistry, TaskManager, TaskType as PromptTaskType,
-    ValidationResult as SemanticValidationResult,
+    PromptProfile, ResultStatus, RetryPolicy, RetryState, SemanticFeedbackEngine,
+    SemanticRoutingDecision, SharedNetworkTopology, SharedNodeRegistry, TaskManager,
+    TaskType as PromptTaskType, ValidationResult as SemanticValidationResult,
 };
 
 #[cfg(test)]
@@ -103,6 +104,7 @@ const CAP_TOPIC: &str = "iamine-capabilities";
 const DIRECT_INF_TOPIC: &str = "iamine-direct-inference";
 const INFER_TIMEOUT_MS: u64 = 30_000;
 const INFER_FALLBACK_AFTER_MS: u64 = 8_000;
+const MAX_DISTRIBUTED_RETRIES: u8 = 2;
 
 struct PendingTaskResponse {
     channel: request_response::ResponseChannel<TaskResponse>,
@@ -751,6 +753,120 @@ struct PromptResolution {
     selected_model: String,
     semantic_prompt: String,
     validation: SemanticValidationResult,
+}
+
+struct DistributedInferState {
+    prompt: String,
+    model_override: Option<String>,
+    max_tokens_override: Option<u32>,
+    current_request_id: String,
+    current_task_type: Option<PromptTaskType>,
+    current_semantic_prompt: Option<String>,
+    current_peer: Option<String>,
+    current_model: Option<String>,
+    candidate_models: Vec<String>,
+    local_cluster_id: Option<String>,
+    retry_policy: RetryPolicy,
+    retry_state: RetryState,
+}
+
+impl DistributedInferState {
+    fn new(
+        prompt: String,
+        model_override: Option<String>,
+        max_tokens_override: Option<u32>,
+    ) -> Self {
+        Self {
+            prompt,
+            model_override,
+            max_tokens_override,
+            current_request_id: uuid_simple(),
+            current_task_type: None,
+            current_semantic_prompt: None,
+            current_peer: None,
+            current_model: None,
+            candidate_models: Vec::new(),
+            local_cluster_id: None,
+            retry_policy: RetryPolicy {
+                max_retries: MAX_DISTRIBUTED_RETRIES,
+                timeout_ms: INFER_TIMEOUT_MS,
+            },
+            retry_state: RetryState::default(),
+        }
+    }
+
+    fn record_attempt(
+        &mut self,
+        peer_id: String,
+        model_id: String,
+        task_type: PromptTaskType,
+        semantic_prompt: String,
+        local_cluster_id: Option<String>,
+        candidate_models: Vec<String>,
+    ) {
+        self.current_peer = Some(peer_id);
+        self.current_model = Some(model_id);
+        self.current_task_type = Some(task_type);
+        self.current_semantic_prompt = Some(semantic_prompt);
+        self.local_cluster_id = local_cluster_id;
+        self.candidate_models = candidate_models;
+    }
+
+    fn schedule_retry(&mut self, failed_peer: Option<&str>, failed_model: Option<&str>) -> bool {
+        self.retry_state.record_failure(failed_peer, failed_model);
+        if !self.retry_state.can_retry(&self.retry_policy) {
+            return false;
+        }
+
+        self.retry_state.advance_retry();
+        self.current_request_id = uuid_simple();
+        self.current_task_type = None;
+        self.current_semantic_prompt = None;
+        self.current_peer = None;
+        self.current_model = None;
+        true
+    }
+}
+
+fn clear_stream_state(
+    token_buffer: &mut HashMap<u32, String>,
+    next_token_idx: &mut u32,
+    rendered_output: &mut String,
+) {
+    token_buffer.clear();
+    *next_token_idx = 0;
+    rendered_output.clear();
+}
+
+async fn run_local_inference_with_timeout(
+    runtime: InferenceRuntime,
+    task_id: String,
+    model_id: String,
+    prompt: String,
+    task_type: PromptTaskType,
+    max_tokens: u32,
+    temperature: f32,
+) -> Result<RealInferenceResult, String> {
+    match tokio::time::timeout(
+        Duration::from_millis(INFER_TIMEOUT_MS),
+        run_local_inference_with_validation(
+            runtime,
+            task_id,
+            model_id,
+            prompt,
+            task_type,
+            max_tokens,
+            temperature,
+        ),
+    )
+    .await
+    {
+        Ok(result) => result,
+        Err(_) => Err(format!(
+            "Inference exceeded timeout of {} ms",
+            INFER_TIMEOUT_MS
+        )),
+    }
 }
 
 fn resolve_policy_for_prompt(
@@ -1744,6 +1860,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut pending_inference: std::collections::HashMap<String, tokio::time::Instant> =
         std::collections::HashMap::new();
     let mut infer_started_at: Option<tokio::time::Instant> = None;
+    let mut distributed_infer_state: Option<DistributedInferState> = None;
 
     // v0.6.2: estado de streaming ordenado
     let mut token_buffer: HashMap<u32, String> = HashMap::new();
@@ -1756,7 +1873,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
         max_tokens_override,
     } = &mode
     {
-        let rid = uuid_simple();
         let local_available = model_storage.list_local_models();
         let resolution = resolve_policy_for_prompt(prompt, model_id.as_deref(), &local_available);
         let profile = resolution.profile;
@@ -1773,9 +1889,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
             "   [OutputPolicy] max_tokens: {} (reason: {})",
             output_policy.max_tokens, output_policy.reason
         );
-        println!("   Request ID: {}", rid);
-        infer_request_id = Some(rid);
+        let infer_state =
+            DistributedInferState::new(prompt.clone(), model_id.clone(), *max_tokens_override);
+        println!("   Request ID: {}", infer_state.current_request_id);
+        infer_request_id = Some(infer_state.current_request_id.clone());
         infer_started_at = Some(tokio::time::Instant::now());
+        distributed_infer_state = Some(infer_state);
     }
 
     let is_client = !matches!(mode, NodeMode::Worker | NodeMode::Relay);
@@ -1920,7 +2039,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                 // Smart routing: intento envío directo cuando ya hay registry
                 if matches!(mode, NodeMode::Infer { .. }) && !infer_broadcast_sent {
-                    if let NodeMode::Infer { prompt, model_id, max_tokens_override } = &mode {
+                    if let Some(infer_state) = distributed_infer_state.as_mut() {
                         let local_models = model_storage.list_local_models();
                         let start = std::time::Instant::now();
                         let local_cluster = {
@@ -1938,35 +2057,66 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         }
 
                         let resolution = resolve_policy_for_prompt(
-                            prompt,
-                            model_id.as_deref(),
+                            &infer_state.prompt,
+                            infer_state.model_override.as_deref(),
                             &available_models,
                         );
                         let profile = resolution.profile;
                         let mut candidates = resolution.candidate_models;
                         let selected_model = resolution.selected_model;
                         let semantic_prompt = resolution.semantic_prompt;
-                        let output_policy = resolve_output_policy(&profile, &semantic_prompt, *max_tokens_override);
+                        let output_policy = resolve_output_policy(
+                            &profile,
+                            &semantic_prompt,
+                            infer_state.max_tokens_override,
+                        );
                         if !candidates.contains(&selected_model) {
                             candidates.insert(0, selected_model.clone());
                         }
 
                         let scheduler = IntelligentScheduler::new();
                         let selected = scheduler
-                            .select_best_node_for_models(
+                            .select_best_node_for_models_excluding(
                                 &reg,
                                 &candidates,
                                 local_cluster.as_deref(),
+                                &infer_state.retry_state.failed_peers,
+                                &infer_state.retry_state.failed_models,
                             )
                             .map(|decision| (decision.peer_id, decision.model_id, decision.score));
                         drop(reg);
 
                         if let Some((best_peer, routed_model, node_score)) = selected {
-                            let rid = infer_request_id.clone().unwrap_or_else(uuid_simple);
+                            let rid = infer_state.current_request_id.clone();
                             let target_peer = known_workers
                                 .iter()
                                 .find(|peer| peer.to_string() == best_peer)
                                 .copied();
+
+                            if infer_state.retry_state.retry_count > 0 {
+                                println!(
+                                    "[Retry] Dispatching retry attempt {}/{}",
+                                    infer_state.retry_state.retry_count,
+                                    infer_state.retry_policy.max_retries
+                                );
+                                if let Some(previous_model) = infer_state.current_model.as_ref() {
+                                    if previous_model != &routed_model {
+                                        println!(
+                                            "[Fallback] Switching model {} -> {}",
+                                            previous_model, routed_model
+                                        );
+                                    }
+                                }
+                            }
+
+                            infer_state.record_attempt(
+                                best_peer.clone(),
+                                routed_model.clone(),
+                                profile.task_type,
+                                semantic_prompt.clone(),
+                                local_cluster.clone(),
+                                candidates.clone(),
+                            );
 
                             if let Some(target_peer) = target_peer {
                                 let task = DistributedTask::new(
@@ -1988,6 +2138,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 infer_broadcast_sent = true;
                                 waiting_for_response = true;
                                 pending_inference.insert(rid.clone(), tokio::time::Instant::now());
+                                infer_request_id = Some(rid.clone());
                                 println!(
                                     "[Routing] Sending to node {} with model {}",
                                     best_peer, routed_model
@@ -2018,7 +2169,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     .await
                                     .routing_decision(start.elapsed().as_millis() as u64);
                                 infer_broadcast_sent = true;
+                                waiting_for_response = true;
                                 pending_inference.insert(rid.clone(), tokio::time::Instant::now());
+                                infer_request_id = Some(rid.clone());
                                 println!(
                                     "[Routing] Sending to node {} with model {}",
                                     best_peer, routed_model
@@ -2035,14 +2188,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 print!("📤 Respuesta: ");
                                 let _ = std::io::Write::flush(&mut std::io::stdout());
                             }
-                        } else if total_nodes > 0 && candidates.iter().all(|m| !available_models.contains(m)) {
+                        } else if total_nodes > 0
+                            && candidates.iter().all(|m| !available_models.contains(m))
+                        {
                             eprintln!("❌ Ningún nodo en la red tiene un modelo compatible instalado.");
                             eprintln!("   Nodos conocidos: {}", total_nodes);
                             eprintln!("   Candidates: {}", candidates.join(", "));
                             break;
-                        } else if infer_started_at.map(|t| t.elapsed().as_millis() as u64).unwrap_or(0) >= INFER_FALLBACK_AFTER_MS {
+                        } else if infer_started_at
+                            .map(|t| t.elapsed().as_millis() as u64)
+                            .unwrap_or(0)
+                            >= INFER_FALLBACK_AFTER_MS
+                        {
                             // Fallback automático a broadcast legacy
-                            let rid = infer_request_id.clone().unwrap_or_else(uuid_simple);
+                            let rid = infer_state.current_request_id.clone();
                             let mid = selected_model.clone();
                             let task = InferenceTask::new(
                                 rid.clone(),
@@ -2058,7 +2217,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             );
 
                             infer_broadcast_sent = true;
+                            waiting_for_response = true;
                             pending_inference.insert(rid.clone(), tokio::time::Instant::now());
+                            infer_request_id = Some(rid.clone());
                             println!("↪️  Fallback: InferenceRequest broadcast enviado [{}]", &rid[..8.min(rid.len())]);
                             print!("📤 Respuesta: ");
                             let _ = std::io::Write::flush(&mut std::io::stdout());
@@ -2071,7 +2232,55 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     if let Some(rid) = infer_request_id.clone() {
                         if let Some(t0) = pending_inference.get(&rid) {
                             if t0.elapsed().as_millis() as u64 >= INFER_TIMEOUT_MS {
-                                eprintln!("\n❌ Timeout de inferencia distribuida ({} ms)", INFER_TIMEOUT_MS);
+                                let failure_kind = FailureKind::Timeout;
+                                eprintln!(
+                                    "\n[Fault] {:?} de inferencia distribuida ({} ms)",
+                                    failure_kind, INFER_TIMEOUT_MS
+                                );
+                                if let Some(infer_state) = distributed_infer_state.as_mut() {
+                                    let mut preview_retry = infer_state.retry_state.clone();
+                                    preview_retry.record_failure(
+                                        infer_state.current_peer.as_deref(),
+                                        infer_state.current_model.as_deref(),
+                                    );
+                                    let reg = registry.read().await;
+                                    let retry_target = select_retry_target(
+                                        &reg,
+                                        &IntelligentScheduler::new(),
+                                        &infer_state.candidate_models,
+                                        infer_state.local_cluster_id.as_deref(),
+                                        &preview_retry,
+                                    );
+                                    drop(reg);
+                                    task_manager.fail(&rid, "distributed timeout").await;
+                                    let failed_peer = infer_state.current_peer.clone();
+                                    let failed_model = infer_state.current_model.clone();
+                                    let retried = infer_state.schedule_retry(
+                                        failed_peer.as_deref(),
+                                        failed_model.as_deref(),
+                                    );
+                                    pending_inference.remove(&rid);
+                                    clear_stream_state(
+                                        &mut token_buffer,
+                                        &mut next_token_idx,
+                                        &mut rendered_output,
+                                    );
+                                    if retried {
+                                        if let Some(target) = retry_target {
+                                            println!(
+                                                "[Retry] {:?} -> retrying on {} with {}",
+                                                failure_kind, target.peer_id, target.model_id
+                                            );
+                                        } else {
+                                            println!("[Retry] Retrying task on new node");
+                                        }
+                                        infer_request_id =
+                                            Some(infer_state.current_request_id.clone());
+                                        infer_broadcast_sent = false;
+                                        waiting_for_response = false;
+                                        continue;
+                                    }
+                                }
                                 break;
                             }
                         }
@@ -2459,20 +2668,106 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     let ms = msg["execution_ms"].as_u64().unwrap_or(0);
                                     let worker = msg["worker_peer"].as_str().unwrap_or("unknown");
                                     let accel = msg["accelerator"].as_str().unwrap_or("unknown");
+                                    let full_output = msg["output"].as_str().unwrap_or("").to_string();
+                                    let validation_status = if success {
+                                        if let Some(infer_state) = distributed_infer_state.as_ref() {
+                                            validate_result(
+                                                infer_state
+                                                    .current_semantic_prompt
+                                                    .as_deref()
+                                                    .unwrap_or(""),
+                                                infer_state
+                                                    .current_task_type
+                                                    .unwrap_or(PromptTaskType::General),
+                                                &full_output,
+                                            )
+                                        } else {
+                                            ResultStatus::Valid
+                                        }
+                                    } else {
+                                        ResultStatus::Retryable(
+                                            msg["error"]
+                                                .as_str()
+                                                .unwrap_or("unknown inference failure")
+                                                .to_string(),
+                                        )
+                                    };
 
                                     // v0.6.2: solo imprimir parte faltante, sin duplicar
                                     if success {
-                                        if let Some(full_output) = msg["output"].as_str() {
-                                            if rendered_output.is_empty() {
-                                                print!("{}", full_output);
-                                            } else if full_output.starts_with(&rendered_output) {
-                                                let suffix = &full_output[rendered_output.len()..];
-                                                if !suffix.is_empty() {
-                                                    print!("{}", suffix);
-                                                }
+                                        if rendered_output.is_empty() {
+                                            print!("{}", full_output);
+                                        } else if full_output.starts_with(&rendered_output) {
+                                            let suffix = &full_output[rendered_output.len()..];
+                                            if !suffix.is_empty() {
+                                                print!("{}", suffix);
                                             }
                                         }
                                         let _ = std::io::Write::flush(&mut std::io::stdout());
+                                    }
+
+                                    let retry_reason = match validation_status {
+                                        ResultStatus::Valid => None,
+                                        ResultStatus::Invalid(reason)
+                                        | ResultStatus::Retryable(reason) => Some(reason),
+                                    };
+
+                                    if let Some(reason) = retry_reason {
+                                        println!("\n[Fault] {}", reason);
+                                        let retry_target = if let Some(infer_state) =
+                                            distributed_infer_state.as_ref()
+                                        {
+                                            let mut preview_retry = infer_state.retry_state.clone();
+                                            preview_retry.record_failure(
+                                                Some(worker),
+                                                infer_state.current_model.as_deref(),
+                                            );
+                                            let reg = registry.read().await;
+                                            select_retry_target(
+                                                &reg,
+                                                &IntelligentScheduler::new(),
+                                                &infer_state.candidate_models,
+                                                infer_state.local_cluster_id.as_deref(),
+                                                &preview_retry,
+                                            )
+                                        } else {
+                                            None
+                                        };
+
+                                        task_manager.fail(rid, &reason).await;
+                                        pending_inference.remove(rid);
+                                        clear_stream_state(
+                                            &mut token_buffer,
+                                            &mut next_token_idx,
+                                            &mut rendered_output,
+                                        );
+
+                                        if let Some(infer_state) = distributed_infer_state.as_mut() {
+                                            let failure_kind = if success {
+                                                FailureKind::InvalidOutput
+                                            } else {
+                                                FailureKind::TaskFailure
+                                            };
+                                            let failed_model = infer_state.current_model.clone();
+                                            if infer_state.schedule_retry(
+                                                Some(worker),
+                                                failed_model.as_deref(),
+                                            ) && retry_target.is_some()
+                                            {
+                                                let target = retry_target.unwrap();
+                                                println!(
+                                                    "[Retry] {:?} -> retrying on {} with {}",
+                                                    failure_kind, target.peer_id, target.model_id
+                                                );
+                                                infer_request_id =
+                                                    Some(infer_state.current_request_id.clone());
+                                                infer_broadcast_sent = false;
+                                                waiting_for_response = false;
+                                                continue;
+                                            }
+                                        }
+
+                                        break;
                                     }
 
                                     println!("\n\n═══════════════════════════════════");
@@ -2492,8 +2787,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         println!("❌ Inference falló: {}", err);
                                     }
                                     println!("═══════════════════════════════════");
-                                    token_buffer.clear();
-                                    rendered_output.clear(); // <- nuevo
+                                    clear_stream_state(
+                                        &mut token_buffer,
+                                        &mut next_token_idx,
+                                        &mut rendered_output,
+                                    );
                                     break;
                                 }
                             }
@@ -2727,7 +3025,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         resolve_output_policy(&profile, &semantic_prompt, None);
 
                                     let result = if let Some(runtime) = choose_inference_runtime().await {
-                                        run_local_inference_with_validation(
+                                        run_local_inference_with_timeout(
                                             runtime,
                                             task_id.clone(),
                                             model.clone(),
@@ -2778,7 +3076,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                             return;
                                         }
 
-                                        run_local_inference_with_validation(
+                                        run_local_inference_with_timeout(
                                             InferenceRuntime::Engine(engine),
                                             task_id.clone(),
                                             model.clone(),
@@ -2793,6 +3091,30 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     match result {
                                         Ok(result) => {
                                             record_semantic_feedback(&prompt, &resolution.validation);
+                                            match validate_result(
+                                                &resolution.semantic_prompt,
+                                                profile.task_type,
+                                                &result.output,
+                                            ) {
+                                                ResultStatus::Valid => {}
+                                                ResultStatus::Invalid(reason)
+                                                | ResultStatus::Retryable(reason) => {
+                                                    println!("[Fault] {}", reason);
+                                                    task_manager_ref.fail(&task_id, &reason).await;
+                                                    let _ = task_response_tx_ref
+                                                        .send(PendingTaskResponse {
+                                                            channel,
+                                                            response: TaskResponse::distributed(
+                                                                DistributedTaskResult::failure(
+                                                                    task_id.clone(),
+                                                                    reason,
+                                                                ),
+                                                            ),
+                                                        })
+                                                        .await;
+                                                    return;
+                                                }
+                                            }
                                             let distributed_result = DistributedTaskResult::success(
                                                 task_id.clone(),
                                                 result.output,
@@ -2845,17 +3167,99 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         }
                         RREvent::Message { peer, message: Message::Response { response, .. } } => {
                             if let Some(distributed_result) = response.distributed_result {
-                                pending_inference.remove(&distributed_result.task_id);
-                                if distributed_result.success {
-                                    task_manager.complete(distributed_result.clone()).await;
-                                    println!("{}", distributed_result.output);
-                                    println!("\n\n✅ Inference completada");
-                                } else {
-                                    task_manager
-                                        .fail(&distributed_result.task_id, &distributed_result.output)
-                                        .await;
-                                    eprintln!("❌ Distributed task failed: {}", distributed_result.output);
+                                if infer_request_id.as_deref() != Some(distributed_result.task_id.as_str()) {
+                                    println!(
+                                        "[Task] Ignoring stale response {} from {}",
+                                        distributed_result.task_id, peer
+                                    );
+                                    continue;
                                 }
+
+                                pending_inference.remove(&distributed_result.task_id);
+                                let validation_status = if distributed_result.success {
+                                    if let Some(infer_state) = distributed_infer_state.as_ref() {
+                                        validate_result(
+                                            infer_state
+                                                .current_semantic_prompt
+                                                .as_deref()
+                                                .unwrap_or(""),
+                                            infer_state
+                                                .current_task_type
+                                                .unwrap_or(PromptTaskType::General),
+                                            &distributed_result.output,
+                                        )
+                                    } else {
+                                        ResultStatus::Valid
+                                    }
+                                } else {
+                                    ResultStatus::Retryable(distributed_result.output.clone())
+                                };
+
+                                let retry_reason = match validation_status {
+                                    ResultStatus::Valid => None,
+                                    ResultStatus::Invalid(reason)
+                                    | ResultStatus::Retryable(reason) => Some(reason),
+                                };
+
+                                if let Some(reason) = retry_reason {
+                                    let retry_target =
+                                        if let Some(infer_state) = distributed_infer_state.as_ref() {
+                                            let mut preview_retry = infer_state.retry_state.clone();
+                                            preview_retry.record_failure(
+                                                Some(&peer.to_string()),
+                                                infer_state.current_model.as_deref(),
+                                            );
+                                            let reg = registry.read().await;
+                                            select_retry_target(
+                                                &reg,
+                                                &IntelligentScheduler::new(),
+                                                &infer_state.candidate_models,
+                                                infer_state.local_cluster_id.as_deref(),
+                                                &preview_retry,
+                                            )
+                                        } else {
+                                            None
+                                        };
+
+                                    task_manager.fail(&distributed_result.task_id, &reason).await;
+                                    eprintln!("[Fault] {}", reason);
+
+                                    if let Some(infer_state) = distributed_infer_state.as_mut() {
+                                        let failure_kind = if distributed_result.success {
+                                            FailureKind::InvalidOutput
+                                        } else {
+                                            FailureKind::TaskFailure
+                                        };
+                                        let failed_model = infer_state.current_model.clone();
+                                        if infer_state.schedule_retry(
+                                            Some(&peer.to_string()),
+                                            failed_model.as_deref(),
+                                        ) && retry_target.is_some()
+                                        {
+                                            let target = retry_target.unwrap();
+                                            println!(
+                                                "[Retry] {:?} -> retrying on {} with {}",
+                                                failure_kind, target.peer_id, target.model_id
+                                            );
+                                            clear_stream_state(
+                                                &mut token_buffer,
+                                                &mut next_token_idx,
+                                                &mut rendered_output,
+                                            );
+                                            waiting_for_response = false;
+                                            infer_broadcast_sent = false;
+                                            infer_request_id =
+                                                Some(infer_state.current_request_id.clone());
+                                            continue;
+                                        }
+                                    }
+
+                                    break;
+                                }
+
+                                task_manager.complete(distributed_result.clone()).await;
+                                println!("{}", distributed_result.output);
+                                println!("\n\n✅ Inference completada");
                                 break;
                             } else {
                                 waiting_for_response = false;

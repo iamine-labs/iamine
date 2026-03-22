@@ -1,5 +1,6 @@
 pub mod cluster;
 pub mod expression_parser;
+pub mod fault_handler;
 pub mod latency;
 pub mod model_capability_matcher;
 pub mod model_karma;
@@ -10,6 +11,7 @@ pub mod node_registry;
 pub mod node_scoring;
 pub mod output_policy;
 pub mod prompt_analyzer;
+pub mod result_validator;
 pub mod scheduler;
 pub mod semantic_eval;
 pub mod semantic_feedback;
@@ -22,6 +24,7 @@ pub mod topology;
 
 pub use cluster::{relation_for_cluster, Cluster, ClusterRelation, ClusterTier};
 pub use expression_parser::normalize_expression;
+pub use fault_handler::{select_retry_target, FailureKind, RetryPolicy, RetryState, RetryTarget};
 pub use latency::PeerLatency;
 pub use model_capability_matcher::{
     is_node_compatible_with_model, ModelHardwareRequirements, NodeHardwareProfile,
@@ -51,6 +54,7 @@ pub use prompt_analyzer::{
     analyze_prompt_semantics, analyze_prompt_semantics_with_context, estimate_confidence,
     SemanticRoutingDecision, Signal, SignalKind, CONFIDENCE_THRESHOLD,
 };
+pub use result_validator::{validate_result, ResultStatus};
 pub use scheduler::IntelligentScheduler;
 pub use semantic_eval::{
     evaluate_dataset, evaluate_default_dataset, load_default_dataset, should_use_strict_handling,
