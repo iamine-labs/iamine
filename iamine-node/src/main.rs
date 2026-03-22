@@ -19,6 +19,7 @@ mod benchmark;
 mod resource_policy;
 mod setup_wizard;
 mod model_selector_cli;
+mod daemon_runtime;
 
 use iamine_models::{
     ModelRegistry, ModelStorage,
@@ -58,6 +59,7 @@ use iamine_network::{
 #[cfg(test)]
 use iamine_network::analyze_prompt;
 
+use daemon_runtime::{daemon_is_available, daemon_socket_path, infer_via_daemon, run_daemon};
 use model_selector_cli::ModelSelectorCLI;
 use worker_pool::WorkerPool;
 use task_queue::TaskQueue;
@@ -87,6 +89,7 @@ use libp2p::{
 };
 use futures::StreamExt;
 use std::error::Error;
+use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::Duration;
 
@@ -148,6 +151,7 @@ impl From<gossipsub::Event> for IaMineEvent {
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
 enum NodeMode {
+    Daemon,
     Worker,
     Relay,
     Client { peer: Option<Multiaddr>, task_type: String, data: String },
@@ -172,6 +176,7 @@ fn parse_args() -> Result<NodeMode, String> {
     let args: Vec<String> = std::env::args().collect();
 
     match args.get(1).map(|s| s.as_str()) {
+        Some("--daemon") => Ok(NodeMode::Daemon),
         Some("--worker") | None => Ok(NodeMode::Worker),
         Some("--relay") => Ok(NodeMode::Relay),
         Some("models") => {
@@ -323,6 +328,12 @@ fn task_requires_validation(task_type: PromptTaskType) -> bool {
     )
 }
 
+#[derive(Clone)]
+enum InferenceRuntime {
+    Engine(Arc<RealInferenceEngine>),
+    Daemon(PathBuf),
+}
+
 fn prompt_requests_decimal_sequence(prompt: &str) -> bool {
     let lower = prompt.to_lowercase();
     ["pi", "π", "digit", "digits", "digito", "digitos", "dígitos"]
@@ -384,7 +395,7 @@ fn with_task_guard(prompt: &str, task_type: PromptTaskType, retry: bool) -> Stri
 }
 
 async fn run_local_inference_with_validation(
-    engine: Arc<RealInferenceEngine>,
+    runtime: InferenceRuntime,
     task_id: String,
     model_id: String,
     prompt: String,
@@ -416,19 +427,39 @@ async fn run_local_inference_with_validation(
             temperature: attempt_temperature,
         };
 
-        let engine_clone = Arc::clone(&engine);
-        let inference_handle = tokio::spawn(async move {
-            engine_clone.run_inference(req, Some(tx)).await
-        });
+        let result = match &runtime {
+            InferenceRuntime::Engine(engine) => {
+                let engine_clone = Arc::clone(engine);
+                let inference_handle = tokio::spawn(async move {
+                    engine_clone.run_inference(req, Some(tx)).await
+                });
 
-        while let Some(token) = rx.recv().await {
-            print!("{}", token);
-            let _ = std::io::Write::flush(&mut std::io::stdout());
-        }
+                while let Some(token) = rx.recv().await {
+                    print!("{}", token);
+                    let _ = std::io::Write::flush(&mut std::io::stdout());
+                }
 
-        let result = inference_handle
-            .await
-            .map_err(|e| format!("Inference task join error: {}", e))?;
+                inference_handle
+                    .await
+                    .map_err(|e| format!("Inference task join error: {}", e))?
+            }
+            InferenceRuntime::Daemon(socket_path) => {
+                drop(rx);
+                let daemon_response = infer_via_daemon(socket_path, req, |token| {
+                    print!("{}", token);
+                    let _ = std::io::Write::flush(&mut std::io::stdout());
+                })
+                .await?;
+                println!(
+                    "\n[Daemon] requests_handled={} model_load_ms={} actual_loads={} reuse_hits={}",
+                    daemon_response.requests_handled,
+                    daemon_response.model_load_ms,
+                    daemon_response.actual_model_loads,
+                    daemon_response.reuse_hits
+                );
+                daemon_response.result
+            }
+        };
 
         let mut result = result;
         let task_label = prompt_task_label(task_type);
@@ -474,6 +505,16 @@ async fn run_local_inference_with_validation(
     }
 
     last_result.ok_or_else(|| "Inference returned no result".to_string())
+}
+
+async fn choose_inference_runtime() -> Option<InferenceRuntime> {
+    let socket = daemon_socket_path();
+    if daemon_is_available(&socket).await {
+        println!("[Daemon] Connected to persistent runtime: {}", socket.display());
+        Some(InferenceRuntime::Daemon(socket))
+    } else {
+        None
+    }
 }
 
 fn resolve_policy_for_prompt(
@@ -553,6 +594,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             eprintln!("  iamine-node models download <model_id>");
             eprintln!("  iamine-node models remove <model_id>");
             eprintln!("  iamine-node semantic-eval");
+            eprintln!("  iamine-node --daemon");
             // eprintln!("  iamine-node nodes");
             std::process::exit(1);
         }
@@ -679,6 +721,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
             return Ok(());
         }
 
+        NodeMode::Daemon => {
+            println!("╔══════════════════════════════════╗");
+            println!("║   IaMine — Inference Daemon      ║");
+            println!("╚══════════════════════════════════╝\n");
+            let socket = daemon_socket_path();
+            run_daemon(socket).await?;
+            return Ok(());
+        }
+
         NodeMode::TestInference { prompt } => {
             println!("╔══════════════════════════════════╗");
             println!("║    IaMine — Test Inference       ║");
@@ -705,7 +756,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
             }
 
             let model_desc = registry.get(model_id).unwrap();
-            let engine = Arc::new(RealInferenceEngine::new(ModelStorage::new()));
 
             let semantic_prompt = normalize_expression(prompt).unwrap_or_else(|| prompt.clone());
             if semantic_prompt != *prompt {
@@ -727,10 +777,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 output_policy.reason
             );
 
-            // Cargar modelo
-            engine.load_model(model_id, &model_desc.hash)?;
-
-            // Streaming tokens
             let req = RealInferenceRequest {
                 task_id: "test-001".to_string(),
                 model_id: model_id.to_string(),
@@ -739,9 +785,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 temperature: 0.7,
             };
 
-            let engine_clone = Arc::clone(&engine);
+            let runtime = if let Some(runtime) = choose_inference_runtime().await {
+                runtime
+            } else {
+                let engine = Arc::new(RealInferenceEngine::new(ModelStorage::new()));
+                engine.load_model(model_id, &model_desc.hash)?;
+                InferenceRuntime::Engine(engine)
+            };
             let result = run_local_inference_with_validation(
-                engine_clone,
+                runtime,
                 req.task_id,
                 req.model_id,
                 semantic_prompt,
@@ -785,12 +837,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                 let model_desc = registry.get(&selected_model)
                     .ok_or_else(|| format!("Modelo {} no encontrado en registry", selected_model))?;
-                let engine = Arc::new(RealInferenceEngine::new(ModelStorage::new()));
-                engine.load_model(&selected_model, &model_desc.hash)?;
-
-                let engine_clone = Arc::clone(&engine);
+                let runtime = if let Some(runtime) = choose_inference_runtime().await {
+                    runtime
+                } else {
+                    let engine = Arc::new(RealInferenceEngine::new(ModelStorage::new()));
+                    engine.load_model(&selected_model, &model_desc.hash)?;
+                    InferenceRuntime::Engine(engine)
+                };
                 let result = run_local_inference_with_validation(
-                    engine_clone,
+                    runtime,
                     "infer-local-001".to_string(),
                     selected_model.clone(),
                     semantic_prompt,
@@ -1730,18 +1785,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                                 // Spawn inference execution
                                 let inference_handle = tokio::spawn(async move {
-                                    let eng = Arc::clone(&engine_ref);
-
-                                    // Load model if not cached
-                                    let hash = registry_clone.get(&model_id)
-                                        .map(|m| m.hash.clone())
-                                        .unwrap_or_default();
-                                    if let Err(e) = eng.load_model(&model_id, &hash) {
-                                        return InferenceTaskResult::failure(
-                                            request_id_clone, model_id, peer_id_str, e,
-                                        );
-                                    }
-
                                     let req = RealInferenceRequest {
                                         task_id: request_id_clone.clone(),
                                         model_id: model_id.clone(),
@@ -1749,8 +1792,31 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         max_tokens,
                                         temperature,
                                     };
+                                    let daemon_socket = daemon_socket_path();
+                                    let result = if daemon_is_available(&daemon_socket).await {
+                                        match infer_via_daemon(&daemon_socket, req, |token| {
+                                            let _ = token_tx.try_send(token);
+                                        }).await {
+                                            Ok(response) => response.result,
+                                            Err(e) => {
+                                                return InferenceTaskResult::failure(
+                                                    request_id_clone, model_id, peer_id_str, e,
+                                                );
+                                            }
+                                        }
+                                    } else {
+                                        let eng = Arc::clone(&engine_ref);
+                                        let hash = registry_clone.get(&model_id)
+                                            .map(|m| m.hash.clone())
+                                            .unwrap_or_default();
+                                        if let Err(e) = eng.load_model(&model_id, &hash) {
+                                            return InferenceTaskResult::failure(
+                                                request_id_clone, model_id, peer_id_str, e,
+                                            );
+                                        }
 
-                                    let result = eng.run_inference(req, Some(token_tx)).await;
+                                        eng.run_inference(req, Some(token_tx)).await
+                                    };
 
                                     InferenceTaskResult::success(
                                         request_id_clone,
@@ -1908,18 +1974,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 let (token_tx, mut token_rx) = tokio::sync::mpsc::channel::<String>(100);
 
                                 let inference_handle = tokio::spawn(async move {
-                                    let eng = Arc::clone(&engine_ref);
-
-                                    let hash = registry_clone.get(&model_id)
-                                        .map(|m| m.hash.clone())
-                                        .unwrap_or_default();
-
-                                    if let Err(e) = eng.load_model(&model_id, &hash) {
-                                        return InferenceTaskResult::failure(
-                                            request_id_clone, model_id, peer_id_str, e,
-                                        );
-                                    }
-
                                     let req = RealInferenceRequest {
                                         task_id: request_id_clone.clone(),
                                         model_id: model_id.clone(),
@@ -1927,8 +1981,32 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         max_tokens,
                                         temperature: 0.7,
                                     };
+                                    let daemon_socket = daemon_socket_path();
+                                    let result = if daemon_is_available(&daemon_socket).await {
+                                        match infer_via_daemon(&daemon_socket, req, |token| {
+                                            let _ = token_tx.try_send(token);
+                                        }).await {
+                                            Ok(response) => response.result,
+                                            Err(e) => {
+                                                return InferenceTaskResult::failure(
+                                                    request_id_clone, model_id, peer_id_str, e,
+                                                );
+                                            }
+                                        }
+                                    } else {
+                                        let eng = Arc::clone(&engine_ref);
+                                        let hash = registry_clone.get(&model_id)
+                                            .map(|m| m.hash.clone())
+                                            .unwrap_or_default();
 
-                                    let result = eng.run_inference(req, Some(token_tx)).await;
+                                        if let Err(e) = eng.load_model(&model_id, &hash) {
+                                            return InferenceTaskResult::failure(
+                                                request_id_clone, model_id, peer_id_str, e,
+                                            );
+                                        }
+
+                                        eng.run_inference(req, Some(token_tx)).await
+                                    };
 
                                     InferenceTaskResult::success(
                                         request_id_clone,
