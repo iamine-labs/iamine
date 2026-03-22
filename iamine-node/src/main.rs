@@ -277,6 +277,7 @@ fn prompt_task_label(task_type: PromptTaskType) -> &'static str {
     match task_type {
         PromptTaskType::Math => "Math",
         PromptTaskType::ExactMath => "ExactMath",
+        PromptTaskType::SymbolicMath => "SymbolicMath",
         PromptTaskType::StructuredList => "StructuredList",
         PromptTaskType::Deterministic => "Deterministic",
         PromptTaskType::Code => "Code",
@@ -417,12 +418,14 @@ async fn run_local_inference_with_validation(
             None
         };
         let exact_subtype_label = exact_subtype.map(exact_subtype_label);
-        let (normalized_output, normalization_reason) =
-            normalize_output(task_label, exact_subtype_label, &result.output);
-        if let Some(reason) = normalization_reason {
-            println!("\n[Normalizer] Applied: {}", reason);
-            println!("[Normalizer] Output corrected");
-            result.output = normalized_output;
+        if matches!(task_type, PromptTaskType::ExactMath) {
+            let (normalized_output, normalization_reason) =
+                normalize_output(task_label, exact_subtype_label, &result.output);
+            if let Some(reason) = normalization_reason {
+                println!("\n[Normalizer] Applied: {}", reason);
+                println!("[Normalizer] Output corrected");
+                result.output = normalized_output;
+            }
         }
 
         let valid = if task_requires_validation(task_type) {

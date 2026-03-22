@@ -35,6 +35,13 @@ impl Default for ModelPolicyEngine {
                 PolicyRule {
                     language: None,
                     complexity: None,
+                    task_type: Some(TaskType::SymbolicMath),
+                    model: "llama3-3b".to_string(),
+                    reason: "symbolic math task".to_string(),
+                },
+                PolicyRule {
+                    language: None,
+                    complexity: None,
                     task_type: Some(TaskType::StructuredList),
                     model: "llama3-3b".to_string(),
                     reason: "structured list task".to_string(),
@@ -242,6 +249,18 @@ mod tests {
             complexity: Complexity::Low,
             length: 3,
             task_type: TaskType::ExactMath,
+        });
+        assert_eq!(selected, "llama3-3b");
+    }
+
+    #[test]
+    fn test_model_selection_symbolic_math() {
+        let engine = ModelPolicyEngine::default();
+        let selected = engine.select_model(&PromptProfile {
+            language: Language::Spanish,
+            complexity: Complexity::Medium,
+            length: 52,
+            task_type: TaskType::SymbolicMath,
         });
         assert_eq!(selected, "llama3-3b");
     }

@@ -48,6 +48,16 @@ pub fn analyze_prompt(prompt: &str) -> PromptProfile {
         " relatividad",
         " teoria",
         " resumen",
+        " derivada",
+        " integral",
+        " ecuación",
+        " ecuacion",
+        " matriz",
+        " matrices",
+        " calcula",
+        " evalúa",
+        " evalua",
+        " resuelve",
         " español",
         " espanol",
     ]
@@ -69,6 +79,10 @@ pub fn analyze_prompt(prompt: &str) -> PromptProfile {
         " black hole",
         " summarize",
         " summary",
+        " derivative",
+        " integral",
+        " matrix",
+        " function",
     ]
     .iter()
     .filter(|needle| lower.contains(**needle))
@@ -98,6 +112,14 @@ pub fn analyze_prompt(prompt: &str) -> PromptProfile {
         " como funciona",
         " resumen",
         " summarize",
+        " derivada",
+        " integral",
+        " ecuación",
+        " ecuacion",
+        " matriz",
+        " matrices",
+        " derivative",
+        " matrix",
     ]
     .iter()
     .filter(|needle| lower.contains(**needle))

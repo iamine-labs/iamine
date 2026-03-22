@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 pub enum TaskType {
     Math,
     ExactMath,
+    SymbolicMath,
     StructuredList,
     Deterministic,
     Code,
@@ -72,6 +73,10 @@ pub fn detect_task_type(prompt: &str) -> TaskType {
         return TaskType::Summarization;
     }
 
+    if is_symbolic_math_prompt(trimmed, &lower) {
+        return TaskType::SymbolicMath;
+    }
+
     if is_exact_math_prompt(trimmed, &lower) {
         return TaskType::ExactMath;
     }
@@ -126,6 +131,43 @@ fn is_math_prompt(trimmed: &str, lower: &str) -> bool {
             "resta",
         ],
     ) && lower.chars().any(|c| c.is_ascii_digit())
+}
+
+fn is_symbolic_math_prompt(trimmed: &str, lower: &str) -> bool {
+    let has_math_markers = trimmed.contains("f(x)")
+        || trimmed.contains("dx")
+        || trimmed.contains("dy/dx")
+        || trimmed.contains("lim")
+        || trimmed.contains("[[")
+        || trimmed.contains("]]");
+
+    let symbolic_keywords = contains_any(
+        lower,
+        &[
+            "derivada",
+            "integral",
+            "ecuación",
+            "ecuacion",
+            "matriz",
+            "matrices",
+            "función",
+            "funcion",
+            "f(x)",
+            "dx",
+            "dy/dx",
+            "lim",
+            "sin(",
+            "cos(",
+            "tan(",
+            "derivative",
+            "integral",
+            "matrix",
+            "function",
+            "limit",
+        ],
+    );
+
+    symbolic_keywords || has_math_markers
 }
 
 fn is_exact_math_prompt(trimmed: &str, lower: &str) -> bool {
@@ -212,6 +254,30 @@ mod tests {
     }
 
     #[test]
+    fn test_symbolic_derivative() {
+        assert_eq!(
+            detect_task_type("Calcula la derivada de f(x)=4x^3+2x^2-7x+5"),
+            TaskType::SymbolicMath
+        );
+    }
+
+    #[test]
+    fn test_integral_classification() {
+        assert_eq!(
+            detect_task_type("Evalua la integral definida de x^2 entre 0 y 3"),
+            TaskType::SymbolicMath
+        );
+    }
+
+    #[test]
+    fn test_matrix_task() {
+        assert_eq!(
+            detect_task_type("Multiplica las matrices A=[[1,2],[3,4]] y B=[[2,0],[1,2]]"),
+            TaskType::SymbolicMath
+        );
+    }
+
+    #[test]
     fn test_task_detection_code() {
         assert_eq!(
             detect_task_type("write a python function to sort a list"),
@@ -282,6 +348,14 @@ mod tests {
         assert_eq!(
             detect_task_type("genera un resumen de la relatividad"),
             TaskType::Summarization
+        );
+    }
+
+    #[test]
+    fn test_symbolic_no_exact_fallback() {
+        assert_eq!(
+            detect_task_type("Calcula el valor de sin(45°) + cos(30°)"),
+            TaskType::SymbolicMath
         );
     }
 }

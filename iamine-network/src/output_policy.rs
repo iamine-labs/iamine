@@ -38,6 +38,11 @@ pub fn describe_output_policy(profile: &PromptProfile, prompt: &str) -> OutputPo
         reasons.push("definition keyword".to_string());
     }
 
+    if profile.task_type == TaskType::SymbolicMath {
+        max_tokens += 256;
+        reasons.push("symbolic math task".to_string());
+    }
+
     if profile.task_type == TaskType::Summarization {
         max_tokens = max_tokens.saturating_sub(128);
         reasons.push("summarization task".to_string());
@@ -115,5 +120,19 @@ mod tests {
         let decision = describe_output_policy(&profile, "genera un resumen de la relatividad");
         assert_eq!(decision.max_tokens, 384);
         assert!(decision.reason.contains("summarization task"));
+    }
+
+    #[test]
+    fn test_symbolic_math_increases_budget() {
+        let profile = PromptProfile {
+            language: Language::Spanish,
+            complexity: Complexity::Medium,
+            length: 48,
+            task_type: TaskType::SymbolicMath,
+        };
+
+        let decision = describe_output_policy(&profile, "Calcula la derivada de f(x)=4x^3+2x^2-7x+5");
+        assert_eq!(decision.max_tokens, 768);
+        assert!(decision.reason.contains("symbolic math task"));
     }
 }
