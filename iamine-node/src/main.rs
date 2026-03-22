@@ -216,6 +216,9 @@ enum NodeMode {
         prompt: String,
         model_id: Option<String>,
         max_tokens_override: Option<u32>,
+        force_network: bool,
+        no_local: bool,
+        prefer_local: bool,
     },
     SemanticEval,
     RegressionRun,
@@ -237,6 +240,33 @@ struct DebugFlags {
     network: bool,
     scheduler: bool,
     tasks: bool,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct InferenceControlFlags {
+    force_network: bool,
+    no_local: bool,
+    prefer_local: bool,
+}
+
+impl InferenceControlFlags {
+    fn from_args(args: &[String]) -> Self {
+        Self {
+            force_network: args.iter().any(|arg| arg == "--force-network"),
+            no_local: args.iter().any(|arg| arg == "--no-local"),
+            prefer_local: args.iter().any(|arg| arg == "--prefer-local"),
+        }
+    }
+
+    fn should_use_local(self, has_local_model: bool) -> bool {
+        if self.force_network || self.no_local {
+            return false;
+        }
+        if self.prefer_local {
+            return has_local_model;
+        }
+        has_local_model
+    }
 }
 
 impl DebugFlags {
@@ -354,10 +384,14 @@ fn parse_args() -> Result<NodeMode, String> {
                 .position(|a| a == "--model")
                 .and_then(|i| args.get(i + 1).cloned());
             let max_tokens_override = parse_optional_u32_flag(&args, "--max-tokens")?;
+            let control_flags = InferenceControlFlags::from_args(&args);
             Ok(NodeMode::Infer {
                 prompt,
                 model_id,
                 max_tokens_override,
+                force_network: control_flags.force_network,
+                no_local: control_flags.no_local,
+                prefer_local: control_flags.prefer_local,
             })
         }
 
@@ -1102,6 +1136,18 @@ fn finalize_distributed_task_observability(
     (task_trace(trace_task_id), distributed_task_metrics())
 }
 
+fn is_control_plane_mode(mode: &NodeMode) -> bool {
+    matches!(
+        mode,
+        NodeMode::ModelsList
+            | NodeMode::ModelsStats
+            | NodeMode::ModelsDownload { .. }
+            | NodeMode::ModelsRemove { .. }
+            | NodeMode::TasksStats
+            | NodeMode::TasksTrace { .. }
+    )
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = std::env::args().collect();
@@ -1131,6 +1177,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
             eprintln!("  --debug-network");
             eprintln!("  --debug-scheduler");
             eprintln!("  --debug-tasks");
+            eprintln!("  --force-network");
+            eprintln!("  --no-local");
+            eprintln!("  --prefer-local");
             // eprintln!("  iamine-node nodes");
             std::process::exit(1);
         }
@@ -1141,6 +1190,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             debug_flags.network, debug_flags.scheduler, debug_flags.tasks
         );
     }
+    let control_plane_only = is_control_plane_mode(&mode);
 
     // v0.6.1: Registry global para smart routing (capabilities + selección de nodo)
     let registry: SharedNodeRegistry = Arc::new(RwLock::new(NodeRegistry::new()));
@@ -1261,6 +1311,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 InstallResult::DownloadFailed(e) => println!("❌ Descarga fallida: {}", e),
                 InstallResult::ValidationFailed(e) => println!("❌ Validación fallida: {}", e),
             }
+            return Ok(());
+        }
+
+        NodeMode::ModelsRemove { model_id } => {
+            println!("╔══════════════════════════════════╗");
+            println!("║     IaMine — Remove Model        ║");
+            println!("╚══════════════════════════════════╝\n");
+            let installer = ModelInstaller::new();
+            installer.remove(model_id)?;
+            let remaining = ModelStorage::new().list_local_models();
+            println!("📦 Modelos locales restantes: {}", remaining.join(", "));
             return Ok(());
         }
 
@@ -1509,6 +1570,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
             prompt,
             model_id,
             max_tokens_override,
+            force_network,
+            no_local,
+            prefer_local,
         } => {
             println!("╔══════════════════════════════════╗");
             println!("║      IaMine — Inference          ║");
@@ -1524,12 +1588,23 @@ async fn main() -> Result<(), Box<dyn Error>> {
             let semantic_prompt = resolution.semantic_prompt.clone();
             let output_policy =
                 resolve_output_policy(&profile, &semantic_prompt, *max_tokens_override);
+            let control_flags = InferenceControlFlags {
+                force_network: *force_network,
+                no_local: *no_local,
+                prefer_local: *prefer_local,
+            };
             println!(
                 "[OutputPolicy] max_tokens: {} (reason: {})",
                 output_policy.max_tokens, output_policy.reason
             );
+            if control_flags.force_network || control_flags.no_local || control_flags.prefer_local {
+                println!(
+                    "[InferenceControl] force_network={} no_local={} prefer_local={}",
+                    control_flags.force_network, control_flags.no_local, control_flags.prefer_local
+                );
+            }
 
-            if storage.has_model(&selected_model) {
+            if control_flags.should_use_local(storage.has_model(&selected_model)) {
                 println!("🤖 Modelo: {}", selected_model);
                 println!("💬 Prompt: {}\n", prompt);
 
@@ -1565,6 +1640,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     println!("[Warning] Output truncated at token budget");
                 }
                 return Ok(());
+            } else if control_flags.force_network {
+                println!(
+                    "🌐 Flag --force-network activo; omitiendo inferencia local para {}.",
+                    selected_model
+                );
+                println!("   Candidates: {}", candidate_models.join(", "));
+                println!("   Intentando ruta distribuida...\n");
+            } else if control_flags.no_local {
+                println!(
+                    "🚫 Flag --no-local activo; omitiendo inferencia local para {}.",
+                    selected_model
+                );
+                println!("   Candidates: {}", candidate_models.join(", "));
+                println!("   Intentando ruta distribuida...\n");
             } else if model_id.is_some() {
                 println!(
                     "⚠️  Override {} no esta instalado localmente, intentando ruta distribuida.",
@@ -1650,6 +1739,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
 
         _ => {} // continuar con startup normal
+    }
+
+    if control_plane_only {
+        unreachable!("control plane mode should have returned before runtime startup");
     }
 
     // ════════════════════════════════════════
@@ -2033,6 +2126,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         prompt,
         model_id,
         max_tokens_override,
+        ..
     } = &mode
     {
         let local_available = model_storage.list_local_models();
@@ -3929,5 +4023,40 @@ mod tests {
             true,
         );
         assert!(guarded.contains("Keep the decimal point attached"));
+    }
+
+    #[test]
+    fn test_cli_no_runtime_start() {
+        assert!(is_control_plane_mode(&NodeMode::ModelsList));
+        assert!(is_control_plane_mode(&NodeMode::ModelsStats));
+        assert!(is_control_plane_mode(&NodeMode::ModelsDownload {
+            model_id: "llama3-3b".to_string()
+        }));
+        assert!(is_control_plane_mode(&NodeMode::ModelsRemove {
+            model_id: "llama3-3b".to_string()
+        }));
+        assert!(is_control_plane_mode(&NodeMode::TasksStats));
+        assert!(is_control_plane_mode(&NodeMode::TasksTrace {
+            task_id: "task-1".to_string()
+        }));
+        assert!(!is_control_plane_mode(&NodeMode::Worker));
+    }
+
+    #[test]
+    fn test_force_network_routing() {
+        let flags = InferenceControlFlags {
+            force_network: true,
+            no_local: false,
+            prefer_local: true,
+        };
+        assert!(!flags.should_use_local(true));
+
+        let prefer_local = InferenceControlFlags {
+            force_network: false,
+            no_local: false,
+            prefer_local: true,
+        };
+        assert!(prefer_local.should_use_local(true));
+        assert!(!prefer_local.should_use_local(false));
     }
 }

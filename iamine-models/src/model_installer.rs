@@ -110,7 +110,7 @@ impl ModelInstaller {
 
     /// Desinstalar modelo
     pub fn remove(&self, model_id: &str) -> Result<(), String> {
-        if !self.storage.has_model(model_id) {
+        if !self.storage.model_path(model_id).exists() {
             return Err(format!("Modelo '{}' no está instalado", model_id));
         }
         self.storage.delete_model(model_id)?;
@@ -182,5 +182,42 @@ impl ModelStatus {
             "  {} {} v{} | {:.1} GB | {}GB RAM{}",
             status, self.id, self.version, self.size_gb, self.required_ram_gb, disk
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ModelInstaller;
+    use crate::ModelStorage;
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temp_models_dir() -> std::path::PathBuf {
+        let suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!("iamine-model-remove-{}", suffix))
+    }
+
+    #[test]
+    fn test_models_remove() {
+        let path = temp_models_dir();
+        let storage = ModelStorage::new_in(path.clone());
+        let installer = ModelInstaller::with_storage(storage.clone());
+        let model_id = "llama3-3b";
+        let model_dir = storage.model_path(model_id);
+        fs::create_dir_all(&model_dir).unwrap();
+        fs::write(storage.gguf_path(model_id), b"GGUFdemo").unwrap();
+
+        assert!(storage.model_path(model_id).exists());
+        installer.remove(model_id).unwrap();
+        assert!(!storage.model_path(model_id).exists());
+        assert!(!installer
+            .list_models()
+            .iter()
+            .any(|model| model.id == model_id && model.installed));
+
+        let _ = fs::remove_dir_all(path);
     }
 }
