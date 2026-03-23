@@ -34,20 +34,23 @@ use iamine_models::{
 
 use iamine_network::{
     analyze_prompt_semantics, default_semantic_log_path, describe_output_policy,
-    detect_exact_subtype, distributed_task_metrics, evaluate_default_dataset, normalize_expression,
-    ranked_models, record_distributed_task_failed, record_distributed_task_fallback,
-    record_distributed_task_latency, record_distributed_task_retry,
-    record_distributed_task_started, record_model_metrics, record_task_attempt,
-    record_task_latency, select_retry_target, task_trace, validate_result,
-    validate_semantic_decision, Complexity as PromptComplexityLevel,
+    detect_exact_subtype, distributed_task_metrics, evaluate_default_dataset, log_structured,
+    normalize_expression, prompt_log_entry, ranked_models, record_distributed_task_failed,
+    record_distributed_task_fallback, record_distributed_task_latency,
+    record_distributed_task_retry, record_distributed_task_started, record_model_metrics,
+    record_task_attempt, record_task_latency, select_retry_target, set_global_node_id, task_trace,
+    validate_result, validate_semantic_decision, Complexity as PromptComplexityLevel,
     DeterministicLevel as PromptDeterministicLevel, DistributedTask, DistributedTaskMetrics,
     DistributedTaskResult, Domain as PromptDomain, ExactSubtype as PromptExactSubtype, FailureKind,
-    IntelligentScheduler, Language as PromptLanguage, ModelKarma, ModelMetrics, ModelPolicyEngine,
-    NetworkTopology, NodeCapabilityHeartbeat, NodeRegistry, OutputPolicyDecision,
-    OutputStyle as PromptOutputStyle, PromptProfile, ResultStatus, RetryPolicy, RetryState,
-    SemanticFeedbackEngine, SemanticRoutingDecision, SharedNetworkTopology, SharedNodeRegistry,
-    TaskClaim, TaskManager, TaskTrace, TaskType as PromptTaskType,
-    ValidationResult as SemanticValidationResult,
+    IntelligentScheduler, Language as PromptLanguage, LogLevel, ModelKarma, ModelMetrics,
+    ModelPolicyEngine, NetworkTopology, NodeCapabilityHeartbeat, NodeHealth, NodeRegistry,
+    OutputPolicyDecision, OutputStyle as PromptOutputStyle, PromptProfile, ResultStatus,
+    RetryPolicy, RetryState, SemanticFeedbackEngine, SemanticRoutingDecision,
+    SharedNetworkTopology, SharedNodeRegistry, StructuredLogEntry, TaskClaim, TaskManager,
+    TaskTrace, TaskType as PromptTaskType, ValidationResult as SemanticValidationResult,
+    MODEL_LOAD_FAILED_001, MODEL_UNSUPPORTED_HW_002, NET_PEER_DISCONNECTED_002,
+    NODE_BLACKLISTED_001, NODE_UNHEALTHY_002, SCH_NO_NODE_001, TASK_EMPTY_RESULT_003,
+    TASK_FAILED_002, TASK_TIMEOUT_001,
 };
 
 #[cfg(test)]
@@ -67,6 +70,7 @@ use regression_runner::run_default_regression_suite;
 use resource_policy::ResourcePolicy;
 use result_protocol::{TaskResultRequest, TaskResultResponse};
 use security_checks::run_security_checks;
+use serde_json::{Map, Value};
 use setup_wizard::{DetectedHardware, NodeSetupConfig};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -1162,6 +1166,19 @@ fn validate_models_for_advertising(
                     "[Health] Skipping advertisement for {}: hardware requirements not satisfied",
                     model_id
                 );
+                log_observability_event(
+                    LogLevel::Warn,
+                    "model_advertisement_rejected",
+                    "startup",
+                    None,
+                    Some(&model_id),
+                    Some(MODEL_UNSUPPORTED_HW_002),
+                    {
+                        let mut fields = Map::new();
+                        fields.insert("reason".to_string(), "hardware_requirements".into());
+                        fields
+                    },
+                );
                 continue;
             }
         }
@@ -1176,15 +1193,134 @@ fn validate_models_for_advertising(
 
         let engine = RealInferenceEngine::new(ModelStorage::new());
         match engine.load_model(&model_id, &model_desc.hash) {
-            Ok(()) => validated.push(model_id),
-            Err(error) => println!(
-                "[Health] Skipping advertisement for {}: backend validation failed ({})",
-                model_id, error
-            ),
+            Ok(()) => {
+                log_observability_event(
+                    LogLevel::Info,
+                    "model_validated",
+                    "startup",
+                    None,
+                    Some(&model_id),
+                    None,
+                    Map::new(),
+                );
+                validated.push(model_id)
+            }
+            Err(error) => {
+                println!(
+                    "[Health] Skipping advertisement for {}: backend validation failed ({})",
+                    model_id, error
+                );
+                log_observability_event(
+                    LogLevel::Error,
+                    "model_advertisement_rejected",
+                    "startup",
+                    None,
+                    Some(&model_id),
+                    Some(MODEL_LOAD_FAILED_001),
+                    {
+                        let mut fields = Map::new();
+                        fields.insert("reason".to_string(), error.into());
+                        fields
+                    },
+                );
+            }
         }
     }
 
     validated
+}
+
+fn log_observability_event(
+    level: LogLevel,
+    event: &str,
+    trace_id: &str,
+    task_id: Option<&str>,
+    model_id: Option<&str>,
+    error_code: Option<&str>,
+    fields: Map<String, Value>,
+) {
+    let mut entry = StructuredLogEntry::new(level, event, trace_id, "-");
+    if let Some(task_id) = task_id {
+        entry = entry.with_task_id(task_id.to_string());
+    }
+    if let Some(model_id) = model_id {
+        entry = entry.with_model_id(model_id.to_string());
+    }
+    if let Some(error_code) = error_code {
+        entry = entry.with_error_code(error_code.to_string());
+    }
+    entry.fields = fields;
+    let _ = log_structured(entry);
+}
+
+fn health_fields(peer_id: &str, health: &NodeHealth) -> Map<String, Value> {
+    let mut fields = Map::new();
+    fields.insert("peer_id".to_string(), peer_id.into());
+    fields.insert(
+        "success_rate".to_string(),
+        (health.success_rate as f64).into(),
+    );
+    fields.insert(
+        "avg_latency_ms".to_string(),
+        (health.avg_latency_ms as f64).into(),
+    );
+    fields.insert("failure_count".to_string(), health.failure_count.into());
+    fields.insert("timeout_count".to_string(), health.timeout_count.into());
+    fields.insert("blacklisted".to_string(), health.is_blacklisted().into());
+    if let Some(last_success) = health.last_success_timestamp {
+        fields.insert("last_success_timestamp".to_string(), last_success.into());
+    }
+    fields
+}
+
+fn log_health_update(
+    trace_id: &str,
+    peer_id: &str,
+    model_id: Option<&str>,
+    health: &NodeHealth,
+    error_code: Option<&str>,
+) {
+    log_observability_event(
+        LogLevel::Info,
+        "health_update",
+        trace_id,
+        None,
+        model_id,
+        error_code,
+        health_fields(peer_id, health),
+    );
+
+    if health.is_blacklisted() {
+        log_observability_event(
+            LogLevel::Warn,
+            "node_blacklisted",
+            trace_id,
+            None,
+            model_id,
+            Some(NODE_BLACKLISTED_001),
+            health_fields(peer_id, health),
+        );
+    } else if health.last_success_timestamp.is_some() {
+        log_observability_event(
+            LogLevel::Info,
+            "node_recovered",
+            trace_id,
+            None,
+            model_id,
+            None,
+            health_fields(peer_id, health),
+        );
+    }
+}
+
+fn cluster_label_for_latency(latency_ms: f64) -> &'static str {
+    if latency_ms < 10.0 {
+        "LOCAL"
+    } else if latency_ms < 50.0 {
+        "NEARBY"
+    } else {
+        "REMOTE"
+    }
 }
 
 #[tokio::main]
@@ -1796,6 +1932,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // 1️⃣ Identidad persistente
     let node_identity = NodeIdentity::load_or_create();
     let peer_id = node_identity.peer_id;
+    set_global_node_id(&peer_id.to_string());
     let id_keys = node_identity.keypair.clone();
 
     // 2️⃣ Wallet
@@ -2191,6 +2328,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
         );
         let infer_state =
             DistributedInferState::new(prompt.clone(), model_id.clone(), *max_tokens_override);
+        let _ = log_structured(prompt_log_entry(
+            &infer_state.trace_task_id,
+            &semantic_prompt,
+            &format!("{:?}", profile.language),
+            &format!("{:?}", profile.task_type),
+            profile.confidence,
+        ));
         println!("   Task ID: {}", infer_state.trace_task_id);
         println!("   Request ID: {}", infer_state.current_request_id);
         infer_request_id = Some(infer_state.current_request_id.clone());
@@ -2465,6 +2609,35 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 selected_cluster_id.as_deref().unwrap_or("-"),
                                 routed_model
                             );
+                            log_observability_event(
+                                LogLevel::Info,
+                                "node_selected",
+                                &trace_task_id,
+                                Some(&trace_task_id),
+                                Some(&routed_model),
+                                None,
+                                {
+                                    let mut fields = Map::new();
+                                    fields.insert("peer_id".to_string(), best_peer.clone().into());
+                                    fields.insert(
+                                        "cluster_id".to_string(),
+                                        selected_cluster_id
+                                            .clone()
+                                            .unwrap_or_else(|| "-".to_string())
+                                            .into(),
+                                    );
+                                    fields.insert("score".to_string(), node_score.into());
+                                    fields.insert(
+                                        "reason".to_string(),
+                                        "high_success_low_latency".into(),
+                                    );
+                                    fields.insert(
+                                        "candidate_models".to_string(),
+                                        serde_json::json!(candidates),
+                                    );
+                                    fields
+                                },
+                            );
                             debug_scheduler_log(
                                 debug_flags,
                                 format!(
@@ -2505,6 +2678,21 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     selected_cluster_id.as_deref().unwrap_or("-"),
                                     routed_model
                                 );
+                                log_observability_event(
+                                    LogLevel::Info,
+                                    "task_created",
+                                    &trace_task_id,
+                                    Some(&task.id),
+                                    Some(&routed_model),
+                                    None,
+                                    {
+                                        let mut fields = Map::new();
+                                        fields.insert("peer_id".to_string(), best_peer.clone().into());
+                                        fields.insert("attempt_id".to_string(), rid.clone().into());
+                                        fields.insert("success".to_string(), true.into());
+                                        fields
+                                    },
+                                );
                                 swarm
                                     .behaviour_mut()
                                     .request_response
@@ -2533,6 +2721,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 println!(
                                     "[Task] Sent task_id={} attempt_id={} to peer_id={}",
                                     trace_task_id, rid, best_peer
+                                );
+                                log_observability_event(
+                                    LogLevel::Info,
+                                    "task_sent",
+                                    &trace_task_id,
+                                    Some(&trace_task_id),
+                                    Some(&routed_model),
+                                    None,
+                                    {
+                                        let mut fields = Map::new();
+                                        fields.insert("peer_id".to_string(), best_peer.clone().into());
+                                        fields.insert("attempt_id".to_string(), rid.clone().into());
+                                        fields
+                                    },
                                 );
                                 print!("📤 Respuesta: ");
                                 let _ = std::io::Write::flush(&mut std::io::stdout());
@@ -2575,12 +2777,45 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     &rid[..8.min(rid.len())],
                                     best_peer
                                 );
+                                log_observability_event(
+                                    LogLevel::Info,
+                                    "task_sent",
+                                    &trace_task_id,
+                                    Some(&trace_task_id),
+                                    Some(&routed_model),
+                                    None,
+                                    {
+                                        let mut fields = Map::new();
+                                        fields.insert("peer_id".to_string(), best_peer.clone().into());
+                                        fields.insert("attempt_id".to_string(), rid.clone().into());
+                                        fields.insert("transport".to_string(), "gossipsub".into());
+                                        fields
+                                    },
+                                );
                                 print!("📤 Respuesta: ");
                                 let _ = std::io::Write::flush(&mut std::io::stdout());
                             }
                         } else if total_nodes > 0
                             && candidates.iter().all(|m| !available_models.contains(m))
                         {
+                            log_observability_event(
+                                LogLevel::Error,
+                                "node_rejected",
+                                &infer_state.trace_task_id,
+                                Some(&infer_state.trace_task_id),
+                                None,
+                                Some(SCH_NO_NODE_001),
+                                {
+                                    let mut fields = Map::new();
+                                    fields.insert("reason".to_string(), "no_compatible_model".into());
+                                    fields.insert("known_nodes".to_string(), (total_nodes as u64).into());
+                                    fields.insert(
+                                        "candidate_models".to_string(),
+                                        serde_json::json!(candidates),
+                                    );
+                                    fields
+                                },
+                            );
                             eprintln!("❌ Ningún nodo en la red tiene un modelo compatible instalado.");
                             eprintln!("   Nodos conocidos: {}", total_nodes);
                             eprintln!("   Candidates: {}", candidates.join(", "));
@@ -2643,8 +2878,36 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 if let Some(infer_state) = distributed_infer_state.as_mut() {
                                     let trace_task_id = infer_state.trace_task_id.clone();
                                     if let Some(current_peer) = infer_state.current_peer.as_deref() {
-                                        registry.write().await.record_timeout(current_peer);
+                                        if let Some(health) =
+                                            registry.write().await.record_timeout(current_peer)
+                                        {
+                                            log_health_update(
+                                                &trace_task_id,
+                                                current_peer,
+                                                infer_state.current_model.as_deref(),
+                                                &health,
+                                                Some(NODE_UNHEALTHY_002),
+                                            );
+                                        }
                                     }
+                                    log_observability_event(
+                                        LogLevel::Error,
+                                        "task_timeout",
+                                        &trace_task_id,
+                                        Some(&trace_task_id),
+                                        infer_state.current_model.as_deref(),
+                                        Some(TASK_TIMEOUT_001),
+                                        {
+                                            let mut fields = Map::new();
+                                            fields.insert("attempt_id".to_string(), rid.clone().into());
+                                            fields.insert("latency_ms".to_string(), INFER_TIMEOUT_MS.into());
+                                            fields.insert("retry".to_string(), true.into());
+                                            if let Some(current_peer) = infer_state.current_peer.as_deref() {
+                                                fields.insert("peer_id".to_string(), current_peer.into());
+                                            }
+                                            fields
+                                        },
+                                    );
                                     let mut preview_retry = infer_state.retry_state.clone();
                                     preview_retry.record_failure(
                                         infer_state.current_peer.as_deref(),
@@ -2734,6 +2997,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     for (pid, addr) in peers {
                         if pid != peer_id {
                             println!("🔍 mDNS descubrió: {} @ {}", pid, addr);
+                            log_observability_event(
+                                LogLevel::Info,
+                                "peer_connected",
+                                "network",
+                                None,
+                                None,
+                                None,
+                                {
+                                    let mut fields = Map::new();
+                                    fields.insert("peer_id".to_string(), pid.to_string().into());
+                                    fields.insert("address".to_string(), addr.to_string().into());
+                                    fields
+                                },
+                            );
                             debug_network_log(
                                 debug_flags,
                                 format!("mdns discovered peer_id={} addr={}", pid, addr),
@@ -2750,6 +3027,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                 SwarmEvent::Behaviour(IaMineEvent::Mdns(mdns::Event::Expired(peers))) => {
                     for (pid, _) in peers {
+                        log_observability_event(
+                            LogLevel::Warn,
+                            "peer_disconnected",
+                            "network",
+                            None,
+                            None,
+                            Some(NET_PEER_DISCONNECTED_002),
+                            {
+                                let mut fields = Map::new();
+                                fields.insert("peer_id".to_string(), pid.to_string().into());
+                                fields
+                            },
+                        );
                         known_workers.remove(&pid);
                         swarm.behaviour_mut().gossipsub.remove_explicit_peer(&pid);
                     }
@@ -3152,7 +3442,50 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     };
 
                                     if let Some(reason) = retry_reason {
-                                        registry.write().await.record_failure(worker);
+                                        if let Some(health) =
+                                            registry.write().await.record_failure(worker)
+                                        {
+                                            log_health_update(
+                                                distributed_infer_state
+                                                    .as_ref()
+                                                    .map(|state| state.trace_task_id.as_str())
+                                                    .unwrap_or("-"),
+                                                worker,
+                                                distributed_infer_state
+                                                    .as_ref()
+                                                    .and_then(|state| state.current_model.as_deref()),
+                                                &health,
+                                                Some(NODE_UNHEALTHY_002),
+                                            );
+                                        }
+                                        let error_code = if full_output.trim().is_empty() {
+                                            TASK_EMPTY_RESULT_003
+                                        } else {
+                                            TASK_FAILED_002
+                                        };
+                                        log_observability_event(
+                                            LogLevel::Error,
+                                            "task_failed",
+                                            distributed_infer_state
+                                                .as_ref()
+                                                .map(|state| state.trace_task_id.as_str())
+                                                .unwrap_or("-"),
+                                            distributed_infer_state
+                                                .as_ref()
+                                                .map(|state| state.trace_task_id.as_str()),
+                                            distributed_infer_state
+                                                .as_ref()
+                                                .and_then(|state| state.current_model.as_deref()),
+                                            Some(error_code),
+                                            {
+                                                let mut fields = Map::new();
+                                                fields.insert("peer_id".to_string(), worker.to_string().into());
+                                                fields.insert("attempt_id".to_string(), rid.into());
+                                                fields.insert("reason".to_string(), reason.clone().into());
+                                                fields.insert("retry".to_string(), true.into());
+                                                fields
+                                            },
+                                        );
                                         println!(
                                             "\n[Fault] task_id={} attempt_id={} peer_id={} model_id={} reason={}",
                                             distributed_infer_state
@@ -3251,7 +3584,43 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         break;
                                     }
 
-                                    registry.write().await.record_success(worker, ms);
+                                    if let Some(health) = registry.write().await.record_success(worker, ms) {
+                                        log_health_update(
+                                            distributed_infer_state
+                                                .as_ref()
+                                                .map(|state| state.trace_task_id.as_str())
+                                                .unwrap_or("-"),
+                                            worker,
+                                            distributed_infer_state
+                                                .as_ref()
+                                                .and_then(|state| state.current_model.as_deref()),
+                                            &health,
+                                            None,
+                                        );
+                                    }
+                                    log_observability_event(
+                                        LogLevel::Info,
+                                        "task_completed",
+                                        distributed_infer_state
+                                            .as_ref()
+                                            .map(|state| state.trace_task_id.as_str())
+                                            .unwrap_or("-"),
+                                        distributed_infer_state
+                                            .as_ref()
+                                            .map(|state| state.trace_task_id.as_str()),
+                                        distributed_infer_state
+                                            .as_ref()
+                                            .and_then(|state| state.current_model.as_deref()),
+                                        None,
+                                        {
+                                            let mut fields = Map::new();
+                                            fields.insert("peer_id".to_string(), worker.to_string().into());
+                                            fields.insert("attempt_id".to_string(), rid.into());
+                                            fields.insert("latency_ms".to_string(), ms.into());
+                                            fields.insert("success".to_string(), true.into());
+                                            fields
+                                        },
+                                    );
                                     println!("\n\n═══════════════════════════════════");
                                     if success {
                                         println!(
@@ -3488,6 +3857,23 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                 SwarmEvent::ConnectionEstablished { peer_id: pid, endpoint, .. } => {
                     println!("✅ Conectado a: {} ({})", pid, endpoint.get_remote_address());
+                    log_observability_event(
+                        LogLevel::Info,
+                        "peer_connected",
+                        "network",
+                        None,
+                        None,
+                        None,
+                        {
+                            let mut fields = Map::new();
+                            fields.insert("peer_id".to_string(), pid.to_string().into());
+                            fields.insert(
+                                "address".to_string(),
+                                endpoint.get_remote_address().to_string().into(),
+                            );
+                            fields
+                        },
+                    );
                     connected_peer = Some(pid);
                     known_workers.insert(pid);
                     if is_client && !tasks_sent && !matches!(mode, NodeMode::Broadcast { .. }) {
@@ -3502,6 +3888,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 }
 
                 SwarmEvent::ConnectionClosed { peer_id: pid, .. } => {
+                    log_observability_event(
+                        LogLevel::Warn,
+                        "peer_disconnected",
+                        "network",
+                        None,
+                        None,
+                        Some(NET_PEER_DISCONNECTED_002),
+                        {
+                            let mut fields = Map::new();
+                            fields.insert("peer_id".to_string(), pid.to_string().into());
+                            fields
+                        },
+                    );
                     known_workers.remove(&pid);
                     if is_client && !waiting_for_response && !matches!(mode, NodeMode::Broadcast { .. }) {
                         println!("\n📊 Completado: {}/{} tareas", completed, total_tasks);
@@ -3519,6 +3918,24 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         );
                         peer_tracker.update_latency(&peer.to_string(), rtt_ms);
                         topology.write().await.update_latency(&peer.to_string(), rtt_ms);
+                        log_observability_event(
+                            LogLevel::Info,
+                            "peer_latency",
+                            "network",
+                            None,
+                            None,
+                            None,
+                            {
+                                let mut fields = Map::new();
+                                fields.insert("peer_id".to_string(), peer.to_string().into());
+                                fields.insert("latency_ms".to_string(), rtt_ms.into());
+                                fields.insert(
+                                    "cluster".to_string(),
+                                    cluster_label_for_latency(rtt_ms).into(),
+                                );
+                                fields
+                            },
+                        );
                     }
                 }
 
@@ -3545,6 +3962,27 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     peer,
                                     local_cluster_id.as_deref().unwrap_or("-"),
                                     task.model
+                                );
+                                log_observability_event(
+                                    LogLevel::Info,
+                                    "task_received",
+                                    &task.id,
+                                    Some(&task.id),
+                                    Some(&task.model),
+                                    None,
+                                    {
+                                        let mut fields = Map::new();
+                                        fields.insert("peer_id".to_string(), peer.to_string().into());
+                                        fields.insert("attempt_id".to_string(), task.attempt_id.clone().into());
+                                        fields.insert(
+                                            "cluster_id".to_string(),
+                                            local_cluster_id
+                                                .clone()
+                                                .unwrap_or_else(|| "-".to_string())
+                                                .into(),
+                                        );
+                                        fields
+                                    },
                                 );
                                 debug_network_log(
                                     debug_flags,
@@ -3823,7 +4261,43 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                                 if let Some(reason) = retry_reason {
                                     let peer_id = peer.to_string();
-                                    registry.write().await.record_failure(&peer_id);
+                                    if let Some(health) = registry.write().await.record_failure(&peer_id) {
+                                        log_health_update(
+                                            &distributed_result.task_id,
+                                            &peer_id,
+                                            distributed_infer_state
+                                                .as_ref()
+                                                .and_then(|state| state.current_model.as_deref()),
+                                            &health,
+                                            Some(NODE_UNHEALTHY_002),
+                                        );
+                                    }
+                                    let error_code = if distributed_result.output.trim().is_empty() {
+                                        TASK_EMPTY_RESULT_003
+                                    } else {
+                                        TASK_FAILED_002
+                                    };
+                                    log_observability_event(
+                                        LogLevel::Error,
+                                        "task_failed",
+                                        &distributed_result.task_id,
+                                        Some(&distributed_result.task_id),
+                                        distributed_infer_state
+                                            .as_ref()
+                                            .and_then(|state| state.current_model.as_deref()),
+                                        Some(error_code),
+                                        {
+                                            let mut fields = Map::new();
+                                            fields.insert("peer_id".to_string(), peer_id.clone().into());
+                                            fields.insert(
+                                                "attempt_id".to_string(),
+                                                distributed_result.attempt_id.clone().into(),
+                                            );
+                                            fields.insert("reason".to_string(), reason.clone().into());
+                                            fields.insert("retry".to_string(), true.into());
+                                            fields
+                                        },
+                                    );
                                     let retry_target =
                                         if let Some(infer_state) = distributed_infer_state.as_ref() {
                                             let mut preview_retry = infer_state.retry_state.clone();
@@ -3918,7 +4392,40 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     .as_ref()
                                     .map(|started| started.elapsed().as_millis() as u64)
                                     .unwrap_or_default();
-                                registry.write().await.record_success(&peer_id, latency_ms);
+                                if let Some(health) =
+                                    registry.write().await.record_success(&peer_id, latency_ms)
+                                {
+                                    log_health_update(
+                                        &distributed_result.task_id,
+                                        &peer_id,
+                                        distributed_infer_state
+                                            .as_ref()
+                                            .and_then(|state| state.current_model.as_deref()),
+                                        &health,
+                                        None,
+                                    );
+                                }
+                                log_observability_event(
+                                    LogLevel::Info,
+                                    "task_completed",
+                                    &distributed_result.task_id,
+                                    Some(&distributed_result.task_id),
+                                    distributed_infer_state
+                                        .as_ref()
+                                        .and_then(|state| state.current_model.as_deref()),
+                                    None,
+                                    {
+                                        let mut fields = Map::new();
+                                        fields.insert("peer_id".to_string(), peer_id.clone().into());
+                                        fields.insert(
+                                            "attempt_id".to_string(),
+                                            distributed_result.attempt_id.clone().into(),
+                                        );
+                                        fields.insert("latency_ms".to_string(), latency_ms.into());
+                                        fields.insert("success".to_string(), true.into());
+                                        fields
+                                    },
+                                );
                                 task_manager.complete(distributed_result.clone()).await;
                                 println!("{}", distributed_result.output);
                                 println!(

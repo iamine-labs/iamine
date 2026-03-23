@@ -1,4 +1,5 @@
 pub mod cluster;
+pub mod error_codes;
 pub mod expression_parser;
 pub mod fault_handler;
 pub mod latency;
@@ -11,6 +12,7 @@ pub mod model_policy;
 pub mod node_health;
 pub mod node_registry;
 pub mod node_scoring;
+pub mod observability;
 pub mod output_policy;
 pub mod prompt_analyzer;
 pub mod result_validator;
@@ -26,6 +28,12 @@ pub mod task_trace;
 pub mod topology;
 
 pub use cluster::{relation_for_cluster, Cluster, ClusterRelation, ClusterTier};
+pub use error_codes::{
+    is_standard_error_code, MODEL_LOAD_FAILED_001, MODEL_UNSUPPORTED_HW_002,
+    NET_PEER_DISCONNECTED_002, NET_TIMEOUT_001, NODE_BLACKLISTED_001, NODE_UNHEALTHY_002,
+    SCH_NODE_UNHEALTHY_002, SCH_NO_NODE_001, TASK_EMPTY_RESULT_003, TASK_FAILED_002,
+    TASK_TIMEOUT_001,
+};
 pub use expression_parser::normalize_expression;
 pub use fault_handler::{select_retry_target, FailureKind, RetryPolicy, RetryState, RetryTarget};
 pub use latency::PeerLatency;
@@ -53,6 +61,11 @@ pub use node_registry::{
     NodeCapability, NodeCapabilityHeartbeat, NodeRegistry, SharedNodeRegistry,
 };
 pub use node_scoring::{score_node, NodeScore};
+pub use observability::{
+    default_node_log_path, flush_structured_logs, global_structured_logger, log_structured,
+    normalize_prompt_for_log, prompt_log_entry, read_log_entries, set_global_node_id, LogLevel,
+    StructuredLogEntry, StructuredLogger,
+};
 pub use output_policy::{
     compute_max_tokens, continue_inference, describe_output_policy, OutputPolicyDecision,
 };

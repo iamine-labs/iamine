@@ -88,22 +88,25 @@ impl NodeRegistry {
         }
     }
 
-    pub fn record_success(&mut self, peer_id: &str, latency_ms: u64) {
-        if let Some(node) = self.nodes.get_mut(peer_id) {
+    pub fn record_success(&mut self, peer_id: &str, latency_ms: u64) -> Option<NodeHealth> {
+        self.nodes.get_mut(peer_id).map(|node| {
             node.health.record_success(latency_ms);
-        }
+            node.health.clone()
+        })
     }
 
-    pub fn record_failure(&mut self, peer_id: &str) {
-        if let Some(node) = self.nodes.get_mut(peer_id) {
+    pub fn record_failure(&mut self, peer_id: &str) -> Option<NodeHealth> {
+        self.nodes.get_mut(peer_id).map(|node| {
             node.health.record_failure();
-        }
+            node.health.clone()
+        })
     }
 
-    pub fn record_timeout(&mut self, peer_id: &str) {
-        if let Some(node) = self.nodes.get_mut(peer_id) {
+    pub fn record_timeout(&mut self, peer_id: &str) -> Option<NodeHealth> {
+        self.nodes.get_mut(peer_id).map(|node| {
             node.health.record_timeout();
-        }
+            node.health.clone()
+        })
     }
 
     pub fn select_best_node(&self, model_id: &str) -> Option<String> {
