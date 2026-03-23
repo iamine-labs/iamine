@@ -106,8 +106,8 @@ use task_protocol::{TaskRequest, TaskResponse};
 const TASK_TOPIC: &str = "iamine-tasks";
 const CAP_TOPIC: &str = "iamine-capabilities";
 const DIRECT_INF_TOPIC: &str = "iamine-direct-inference";
-const INFER_TIMEOUT_MS: u64 = 30_000;
-const INFER_FALLBACK_AFTER_MS: u64 = 8_000;
+const INFER_TIMEOUT_MS: u64 = 5_000;
+const INFER_FALLBACK_AFTER_MS: u64 = 2_000;
 const MAX_DISTRIBUTED_RETRIES: u8 = 2;
 
 struct PendingTaskResponse {
@@ -1148,6 +1148,45 @@ fn is_control_plane_mode(mode: &NodeMode) -> bool {
     )
 }
 
+fn validate_models_for_advertising(
+    registry: &ModelRegistry,
+    storage: &ModelStorage,
+    node_caps: &ModelNodeCapabilities,
+) -> Vec<String> {
+    let mut validated = Vec::new();
+
+    for model_id in storage.list_local_models() {
+        if let Some(requirements) = ModelRequirements::for_model(&model_id) {
+            if !can_node_run_model(node_caps, &requirements) {
+                println!(
+                    "[Health] Skipping advertisement for {}: hardware requirements not satisfied",
+                    model_id
+                );
+                continue;
+            }
+        }
+
+        let Some(model_desc) = registry.get(&model_id) else {
+            println!(
+                "[Health] Skipping advertisement for {}: missing registry descriptor",
+                model_id
+            );
+            continue;
+        };
+
+        let engine = RealInferenceEngine::new(ModelStorage::new());
+        match engine.load_model(&model_id, &model_desc.hash) {
+            Ok(()) => validated.push(model_id),
+            Err(error) => println!(
+                "[Health] Skipping advertisement for {}: backend validation failed ({})",
+                model_id, error
+            ),
+        }
+    }
+
+    validated
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = std::env::args().collect();
@@ -1812,6 +1851,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // v0.5.4: Detectar capabilities del nodo
     let node_caps = ModelNodeCapabilities::detect(&peer_id.to_string());
+    let validated_advertised_models = if matches!(mode, NodeMode::Worker) {
+        validate_models_for_advertising(&model_registry, &model_storage, &node_caps)
+    } else {
+        model_storage.list_local_models()
+    };
 
     let worker_setup = if matches!(mode, NodeMode::Worker) {
         let detected = DetectedHardware {
@@ -2251,7 +2295,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                     // ─── Broadcast NodeModelsBroadcast
                     let installer = ModelInstaller::new();
-                    let nm = installer.build_node_models(&peer_id.to_string());
+                    let allowed_model_ids: HashSet<_> =
+                        validated_advertised_models.iter().cloned().collect();
+                    let mut nm = installer.build_node_models(&peer_id.to_string());
+                    nm.models
+                        .retain(|model| allowed_model_ids.contains(&model.id));
                     if !nm.models.is_empty() {
                         let payload = serde_json::json!({
                             "type": "NodeModelsBroadcast",
@@ -2272,7 +2320,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         gpu_available: benchmark.as_ref().map(|b| b.gpu_available).unwrap_or(false),
                         storage_available_gb: node_caps.storage_available_gb,
                         accelerator: node_caps.accelerator.clone(),
-                        models: model_storage.list_local_models(),
+                        models: validated_advertised_models.clone(),
                         worker_slots: worker_slots as u32,
                         active_tasks: (pool.max_concurrent - pool.available_slots()) as u32,
                         latency_ms: peer_tracker.avg_latency().max(1.0) as u32,
@@ -2594,6 +2642,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 );
                                 if let Some(infer_state) = distributed_infer_state.as_mut() {
                                     let trace_task_id = infer_state.trace_task_id.clone();
+                                    if let Some(current_peer) = infer_state.current_peer.as_deref() {
+                                        registry.write().await.record_timeout(current_peer);
+                                    }
                                     let mut preview_retry = infer_state.retry_state.clone();
                                     preview_retry.record_failure(
                                         infer_state.current_peer.as_deref(),
@@ -3101,6 +3152,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     };
 
                                     if let Some(reason) = retry_reason {
+                                        registry.write().await.record_failure(worker);
                                         println!(
                                             "\n[Fault] task_id={} attempt_id={} peer_id={} model_id={} reason={}",
                                             distributed_infer_state
@@ -3199,6 +3251,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         break;
                                     }
 
+                                    registry.write().await.record_success(worker, ms);
                                     println!("\n\n═══════════════════════════════════");
                                     if success {
                                         println!(
@@ -3769,6 +3822,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 };
 
                                 if let Some(reason) = retry_reason {
+                                    let peer_id = peer.to_string();
+                                    registry.write().await.record_failure(&peer_id);
                                     let retry_target =
                                         if let Some(infer_state) = distributed_infer_state.as_ref() {
                                             let mut preview_retry = infer_state.retry_state.clone();
@@ -3858,6 +3913,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     break;
                                 }
 
+                                let peer_id = peer.to_string();
+                                let latency_ms = infer_started_at
+                                    .as_ref()
+                                    .map(|started| started.elapsed().as_millis() as u64)
+                                    .unwrap_or_default();
+                                registry.write().await.record_success(&peer_id, latency_ms);
                                 task_manager.complete(distributed_result.clone()).await;
                                 println!("{}", distributed_result.output);
                                 println!(

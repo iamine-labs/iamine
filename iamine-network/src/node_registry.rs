@@ -1,3 +1,4 @@
+use crate::node_health::NodeHealth;
 use crate::scheduler::IntelligentScheduler;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -31,6 +32,7 @@ pub struct NodeCapability {
     pub latency_ms: u32,
     pub last_seen: Instant,
     pub cluster_id: Option<String>, // ← NEW
+    pub health: NodeHealth,
 }
 
 pub struct NodeRegistry {
@@ -51,6 +53,11 @@ impl NodeRegistry {
             .nodes
             .get(&hb.peer_id)
             .and_then(|n| n.cluster_id.clone());
+        let existing_health = self
+            .nodes
+            .get(&hb.peer_id)
+            .map(|n| n.health.clone())
+            .unwrap_or_default();
 
         let cap = NodeCapability {
             peer_id: hb.peer_id.clone(),
@@ -65,6 +72,7 @@ impl NodeRegistry {
             latency_ms: hb.latency_ms,
             last_seen: Instant::now(),
             cluster_id: existing_cluster, // ← preserve
+            health: existing_health,
         };
         self.nodes.insert(hb.peer_id.clone(), cap);
         self.nodes.get(&hb.peer_id).unwrap()
@@ -77,6 +85,24 @@ impl NodeRegistry {
     pub fn set_cluster(&mut self, peer_id: &str, cluster_id: &str) {
         if let Some(node) = self.nodes.get_mut(peer_id) {
             node.cluster_id = Some(cluster_id.to_string());
+        }
+    }
+
+    pub fn record_success(&mut self, peer_id: &str, latency_ms: u64) {
+        if let Some(node) = self.nodes.get_mut(peer_id) {
+            node.health.record_success(latency_ms);
+        }
+    }
+
+    pub fn record_failure(&mut self, peer_id: &str) {
+        if let Some(node) = self.nodes.get_mut(peer_id) {
+            node.health.record_failure();
+        }
+    }
+
+    pub fn record_timeout(&mut self, peer_id: &str) {
+        if let Some(node) = self.nodes.get_mut(peer_id) {
+            node.health.record_timeout();
         }
     }
 
@@ -171,6 +197,7 @@ mod tests {
             latency_ms,
             last_seen: Instant::now(),
             cluster_id: None, // ← NEW
+            health: NodeHealth::default(),
         }
     }
 

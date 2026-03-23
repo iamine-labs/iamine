@@ -39,19 +39,21 @@ pub fn cluster_priority(node: &NodeCapability, local_cluster_id: Option<&str>) -
 }
 
 pub fn score_node(node: &NodeCapability, local_cluster_id: Option<&str>) -> f64 {
-    let free_slots_component = if node.worker_slots == 0 {
+    let availability_component = if node.worker_slots == 0 {
         0.0
     } else {
         free_slots(node) as f64 / node.worker_slots as f64
     };
-    let cpu_component = (node.cpu_score as f64 / 200_000.0).min(1.0);
-    let latency_component = latency_score(node.latency_ms);
-    let cluster_component = cluster_bonus(node, local_cluster_id);
+    let success_component = node.health.success_rate as f64;
+    let latency_penalty = ((node.latency_ms as f64) / 200.0).min(1.0);
+    let failure_penalty = node.health.failure_penalty();
+    let cluster_component = cluster_bonus(node, local_cluster_id) * 0.1;
+    let cpu_component = ((node.cpu_score as f64) / 200_000.0).min(1.0) * 0.1;
 
-    (free_slots_component * 0.4)
-        + (cpu_component * 0.3)
-        + (latency_component * 0.2)
-        + (cluster_component * 0.1)
+    success_component - latency_penalty - failure_penalty
+        + availability_component
+        + cluster_component
+        + cpu_component
 }
 
 #[cfg(test)]
@@ -81,6 +83,7 @@ mod tests {
             latency_ms,
             last_seen: Instant::now(),
             cluster_id: cluster_id.map(|value| value.to_string()),
+            health: crate::node_health::NodeHealth::default(),
         }
     }
 

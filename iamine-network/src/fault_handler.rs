@@ -99,6 +99,7 @@ mod tests {
             latency_ms,
             last_seen: Instant::now(),
             cluster_id: Some("local".to_string()),
+            health: crate::node_health::NodeHealth::default(),
         }
     }
 
@@ -122,6 +123,28 @@ mod tests {
         .unwrap();
 
         assert_eq!(target.peer_id, "peer-b");
+    }
+
+    #[test]
+    fn test_retry_excludes_failed_nodes() {
+        let scheduler = IntelligentScheduler::new();
+        let mut registry = NodeRegistry::new();
+        registry.register_node(make_cap("peer-a", "llama3-3b", 170_000, 10));
+        registry.register_node(make_cap("peer-b", "llama3-3b", 160_000, 12));
+
+        let mut retry_state = RetryState::default();
+        retry_state.record_failure(Some("peer-a"), None);
+
+        let target = select_retry_target(
+            &registry,
+            &scheduler,
+            &["llama3-3b".to_string()],
+            Some("local"),
+            &retry_state,
+        )
+        .unwrap();
+
+        assert_ne!(target.peer_id, "peer-a");
     }
 
     #[test]

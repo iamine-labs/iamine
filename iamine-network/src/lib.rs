@@ -8,6 +8,7 @@ pub mod model_karma;
 pub mod model_karma_store;
 pub mod model_metrics;
 pub mod model_policy;
+pub mod node_health;
 pub mod node_registry;
 pub mod node_scoring;
 pub mod output_policy;
@@ -47,6 +48,7 @@ pub use model_karma_store::{
 };
 pub use model_metrics::ModelMetrics;
 pub use model_policy::{ModelPolicyEngine, PolicyRule};
+pub use node_health::NodeHealth;
 pub use node_registry::{
     NodeCapability, NodeCapabilityHeartbeat, NodeRegistry, SharedNodeRegistry,
 };

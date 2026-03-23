@@ -154,6 +154,7 @@ impl IntelligentScheduler {
                 };
                 is_node_compatible_with_model(&profile, requirements)
             })
+            .filter(|node| node.health.is_schedulable())
             .filter(|node| free_slots(node) > 0)
             .collect()
     }
@@ -207,6 +208,7 @@ mod tests {
             latency_ms,
             last_seen: Instant::now(),
             cluster_id: cluster_id.map(|value| value.to_string()),
+            health: crate::node_health::NodeHealth::default(),
         }
     }
 
@@ -371,5 +373,29 @@ mod tests {
 
         assert_eq!(best.model_id, "llama3-3b");
         assert!(best.model_karma_score > 0.8);
+    }
+
+    #[test]
+    fn test_scheduler_filters_unhealthy_nodes() {
+        let scheduler = IntelligentScheduler::new();
+        let mut registry = NodeRegistry::new();
+        let mut unhealthy = make_cap("peer-bad", 180_000, "tinyllama-1b", 8, 8, 0, 8, None);
+        unhealthy.health.record_timeout();
+        registry.register_node(unhealthy);
+        registry.register_node(make_cap(
+            "peer-good",
+            120_000,
+            "tinyllama-1b",
+            8,
+            8,
+            1,
+            12,
+            None,
+        ));
+
+        let best = scheduler
+            .select_best_node(&registry, "tinyllama-1b", None)
+            .unwrap();
+        assert_eq!(best.peer_id, "peer-good");
     }
 }
