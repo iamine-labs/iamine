@@ -33,24 +33,27 @@ use iamine_models::{
 };
 
 use iamine_network::{
-    analyze_prompt_semantics, default_semantic_log_path, describe_output_policy,
-    detect_exact_subtype, distributed_task_metrics, evaluate_default_dataset, log_structured,
-    normalize_expression, prompt_log_entry, ranked_models, record_distributed_task_failed,
-    record_distributed_task_fallback, record_distributed_task_latency,
-    record_distributed_task_retry, record_distributed_task_started, record_model_metrics,
-    record_task_attempt, record_task_latency, select_retry_target, set_global_node_id, task_trace,
-    validate_result, validate_semantic_decision, Complexity as PromptComplexityLevel,
+    analyze_prompt_semantics, default_node_log_path, default_semantic_log_path,
+    default_task_metrics_path, default_task_trace_path, describe_output_policy,
+    detect_exact_subtype, distributed_task_metrics, evaluate_default_dataset,
+    is_node_compatible_with_model, log_structured, normalize_expression, prompt_log_entry,
+    ranked_models, record_distributed_task_failed, record_distributed_task_fallback,
+    record_distributed_task_latency, record_distributed_task_retry,
+    record_distributed_task_started, record_model_metrics, record_task_attempt,
+    record_task_latency, select_retry_target, set_global_node_id, task_trace, validate_result,
+    validate_semantic_decision, Complexity as PromptComplexityLevel,
     DeterministicLevel as PromptDeterministicLevel, DistributedTask, DistributedTaskMetrics,
     DistributedTaskResult, Domain as PromptDomain, ExactSubtype as PromptExactSubtype, FailureKind,
-    IntelligentScheduler, Language as PromptLanguage, LogLevel, ModelKarma, ModelMetrics,
-    ModelPolicyEngine, NetworkTopology, NodeCapabilityHeartbeat, NodeHealth, NodeRegistry,
-    OutputPolicyDecision, OutputStyle as PromptOutputStyle, PromptProfile, ResultStatus,
-    RetryPolicy, RetryState, SemanticFeedbackEngine, SemanticRoutingDecision,
-    SharedNetworkTopology, SharedNodeRegistry, StructuredLogEntry, TaskClaim, TaskManager,
-    TaskTrace, TaskType as PromptTaskType, ValidationResult as SemanticValidationResult,
-    MODEL_LOAD_FAILED_001, MODEL_UNSUPPORTED_HW_002, NET_PEER_DISCONNECTED_002,
-    NODE_BLACKLISTED_001, NODE_UNHEALTHY_002, SCH_NO_NODE_001, TASK_EMPTY_RESULT_003,
-    TASK_FAILED_002, TASK_TIMEOUT_001,
+    IntelligentScheduler, Language as PromptLanguage, LogLevel, ModelHardwareRequirements,
+    ModelKarma, ModelMetrics, ModelPolicyEngine, NetworkTopology, NodeCapability,
+    NodeCapabilityHeartbeat, NodeHardwareProfile, NodeHealth, NodeRegistry, OutputPolicyDecision,
+    OutputStyle as PromptOutputStyle, PromptProfile, ResultStatus, RetryPolicy, RetryState,
+    SemanticFeedbackEngine, SemanticRoutingDecision, SharedNetworkTopology, SharedNodeRegistry,
+    StructuredLogEntry, TaskClaim, TaskManager, TaskTrace, TaskType as PromptTaskType,
+    ValidationResult as SemanticValidationResult, MODEL_LOAD_FAILED_001, MODEL_UNSUPPORTED_HW_002,
+    NET_PEER_DISCONNECTED_002, NODE_BLACKLISTED_001, NODE_UNHEALTHY_002, SCH_NODE_BUSY_004,
+    SCH_NODE_EXCLUDED_003, SCH_NODE_UNHEALTHY_002, SCH_NO_NODE_001, TASK_DUPLICATE_004,
+    TASK_EMPTY_RESULT_003, TASK_FAILED_002, TASK_STALE_RESPONSE_005, TASK_TIMEOUT_001,
 };
 
 #[cfg(test)]
@@ -229,6 +232,7 @@ enum NodeMode {
     CheckCode,
     CheckSecurity,
     ValidateRelease,
+    ValidateLan,
     TasksStats,
     TasksTrace {
         task_id: String,
@@ -404,6 +408,7 @@ fn parse_args() -> Result<NodeMode, String> {
         Some("check-code") => Ok(NodeMode::CheckCode),
         Some("check-security") => Ok(NodeMode::CheckSecurity),
         Some("validate-release") => Ok(NodeMode::ValidateRelease),
+        Some("validate-lan") => Ok(NodeMode::ValidateLan),
         Some("tasks") => match args.get(2).map(|s| s.as_str()) {
             Some("stats") => Ok(NodeMode::TasksStats),
             Some("trace") => {
@@ -1149,6 +1154,7 @@ fn is_control_plane_mode(mode: &NodeMode) -> bool {
             | NodeMode::ModelsRemove { .. }
             | NodeMode::TasksStats
             | NodeMode::TasksTrace { .. }
+            | NodeMode::ValidateLan
     )
 }
 
@@ -1323,6 +1329,171 @@ fn cluster_label_for_latency(latency_ms: f64) -> &'static str {
     }
 }
 
+fn task_observability_fields(
+    peer_id: &str,
+    attempt_id: &str,
+    success: bool,
+    latency_ms: Option<u64>,
+    retry: Option<bool>,
+    cluster_id: Option<&str>,
+) -> Map<String, Value> {
+    let mut fields = Map::new();
+    fields.insert("peer_id".to_string(), peer_id.to_string().into());
+    fields.insert("attempt_id".to_string(), attempt_id.to_string().into());
+    fields.insert("success".to_string(), success.into());
+    if let Some(latency_ms) = latency_ms {
+        fields.insert("latency_ms".to_string(), latency_ms.into());
+    }
+    if let Some(retry) = retry {
+        fields.insert("retry".to_string(), retry.into());
+    }
+    if let Some(cluster_id) = cluster_id {
+        fields.insert("cluster_id".to_string(), cluster_id.to_string().into());
+    }
+    fields
+}
+
+fn scheduler_selection_fields(
+    peer_id: &str,
+    cluster_id: Option<&str>,
+    score: f64,
+    reason: &str,
+    candidate_models: &[String],
+    total_nodes: usize,
+) -> Map<String, Value> {
+    let mut fields = Map::new();
+    fields.insert("peer_id".to_string(), peer_id.to_string().into());
+    fields.insert(
+        "cluster_id".to_string(),
+        cluster_id.unwrap_or("-").to_string().into(),
+    );
+    fields.insert("score".to_string(), score.into());
+    fields.insert("reason".to_string(), reason.to_string().into());
+    fields.insert(
+        "candidate_models".to_string(),
+        serde_json::json!(candidate_models),
+    );
+    fields.insert("total_nodes".to_string(), (total_nodes as u64).into());
+    fields
+}
+
+fn scheduler_rejection_reason(
+    node: &NodeCapability,
+    candidate_models: &[String],
+    excluded_peers: &HashSet<String>,
+    excluded_models: &HashSet<String>,
+) -> Option<(&'static str, &'static str, Option<String>)> {
+    if excluded_peers.contains(&node.peer_id) {
+        return Some((SCH_NODE_EXCLUDED_003, "excluded_peer", None));
+    }
+
+    let available_candidate_model = candidate_models.iter().find(|model_id| {
+        !excluded_models.contains(*model_id) && node.models.iter().any(|model| model == *model_id)
+    });
+
+    let Some(model_id) = available_candidate_model.cloned() else {
+        return Some((SCH_NO_NODE_001, "no_candidate_model", None));
+    };
+
+    let Some(requirements) = ModelHardwareRequirements::for_model(&model_id) else {
+        return Some((
+            SCH_NO_NODE_001,
+            "missing_requirements",
+            Some(model_id.clone()),
+        ));
+    };
+
+    let profile = NodeHardwareProfile {
+        ram_gb: node.ram_gb,
+        gpu_available: node.gpu_available,
+        storage_available_gb: node.storage_available_gb,
+    };
+    if !is_node_compatible_with_model(&profile, &requirements) {
+        return Some((
+            MODEL_UNSUPPORTED_HW_002,
+            "hardware_incompatible",
+            Some(model_id.clone()),
+        ));
+    }
+    if !node.health.is_schedulable() {
+        return Some((
+            SCH_NODE_UNHEALTHY_002,
+            "node_unhealthy",
+            Some(model_id.clone()),
+        ));
+    }
+    if node.active_tasks >= node.worker_slots {
+        return Some((SCH_NODE_BUSY_004, "no_capacity", Some(model_id.clone())));
+    }
+
+    None
+}
+
+fn emit_scheduler_evidence(
+    trace_id: &str,
+    registry: &NodeRegistry,
+    candidate_models: &[String],
+    excluded_peers: &HashSet<String>,
+    excluded_models: &HashSet<String>,
+) {
+    for (_, node) in registry.all_nodes() {
+        if let Some((error_code, reason, model_id)) =
+            scheduler_rejection_reason(&node, candidate_models, excluded_peers, excluded_models)
+        {
+            log_observability_event(
+                LogLevel::Info,
+                "node_rejected",
+                trace_id,
+                Some(trace_id),
+                model_id.as_deref(),
+                Some(error_code),
+                {
+                    let mut fields = Map::new();
+                    fields.insert("peer_id".to_string(), node.peer_id.clone().into());
+                    fields.insert(
+                        "cluster_id".to_string(),
+                        node.cluster_id
+                            .clone()
+                            .unwrap_or_else(|| "-".to_string())
+                            .into(),
+                    );
+                    fields.insert("reason".to_string(), reason.into());
+                    fields.insert(
+                        "candidate_models".to_string(),
+                        serde_json::json!(candidate_models),
+                    );
+                    fields
+                },
+            );
+        }
+    }
+}
+
+fn live_validation_guide() -> String {
+    format!(
+        "IAMINE LAN validation guide\n\
+1. Start two or more workers:\n\
+   iamine-node --worker --port=9000 --debug-network --debug-scheduler --debug-tasks\n\
+   iamine-node --worker --port=9001 --debug-network --debug-scheduler --debug-tasks\n\
+2. Run distributed inference from another node:\n\
+   iamine-node infer \"What is 2+2?\" --force-network --debug-network --debug-scheduler --debug-tasks\n\
+3. Inspect observability artifacts:\n\
+   node log: {}\n\
+   task traces: {}\n\
+   task metrics: {}\n\
+4. Useful verification commands:\n\
+   iamine-node tasks stats\n\
+   iamine-node tasks trace <task_id>\n\
+   iamine-node topology\n\
+   iamine-node nodes\n\
+5. High-value events to confirm in node.log:\n\
+   prompt_received, node_selected, node_rejected, task_created, task_sent, task_received, task_started, task_completed, task_failed, task_timeout, task_retry_scheduled, task_fallback, health_update, node_blacklisted, node_recovered",
+        default_node_log_path().display(),
+        default_task_trace_path().display(),
+        default_task_metrics_path().display(),
+    )
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = std::env::args().collect();
@@ -1345,6 +1516,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             eprintln!("  iamine-node check-code");
             eprintln!("  iamine-node check-security");
             eprintln!("  iamine-node validate-release");
+            eprintln!("  iamine-node validate-lan");
             eprintln!("  iamine-node tasks stats");
             eprintln!("  iamine-node tasks trace <task_id>");
             eprintln!("  iamine-node --daemon");
@@ -1421,6 +1593,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 return Ok(());
             }
             return Err(format!("No existe trace para task_id={}", task_id).into());
+        }
+
+        NodeMode::ValidateLan => {
+            println!("╔══════════════════════════════════╗");
+            println!("║   IaMine — LAN Validation        ║");
+            println!("╚══════════════════════════════════╝\n");
+            println!("{}", live_validation_guide());
+            return Ok(());
         }
 
         NodeMode::ModelsMenu => {
@@ -2525,6 +2705,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         }
 
                         let scheduler = IntelligentScheduler::new();
+                        emit_scheduler_evidence(
+                            &infer_state.trace_task_id,
+                            &reg,
+                            &candidates,
+                            &infer_state.retry_state.failed_peers,
+                            &infer_state.retry_state.failed_models,
+                        );
                         let selected = scheduler
                             .select_best_node_for_models_excluding(
                                 &reg,
@@ -2576,6 +2763,30 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                             "[Fallback] Switching model {} -> {}",
                                             previous_model, routed_model
                                         );
+                                        log_observability_event(
+                                            LogLevel::Info,
+                                            "task_fallback",
+                                            &trace_task_id,
+                                            Some(&trace_task_id),
+                                            Some(&routed_model),
+                                            None,
+                                            {
+                                                let mut fields = Map::new();
+                                                fields.insert(
+                                                    "from_model".to_string(),
+                                                    previous_model.clone().into(),
+                                                );
+                                                fields.insert(
+                                                    "to_model".to_string(),
+                                                    routed_model.clone().into(),
+                                                );
+                                                fields.insert(
+                                                    "attempt_id".to_string(),
+                                                    rid.clone().into(),
+                                                );
+                                                fields
+                                            },
+                                        );
                                     }
                                 }
                             }
@@ -2616,27 +2827,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 Some(&trace_task_id),
                                 Some(&routed_model),
                                 None,
-                                {
-                                    let mut fields = Map::new();
-                                    fields.insert("peer_id".to_string(), best_peer.clone().into());
-                                    fields.insert(
-                                        "cluster_id".to_string(),
-                                        selected_cluster_id
-                                            .clone()
-                                            .unwrap_or_else(|| "-".to_string())
-                                            .into(),
-                                    );
-                                    fields.insert("score".to_string(), node_score.into());
-                                    fields.insert(
-                                        "reason".to_string(),
-                                        "high_success_low_latency".into(),
-                                    );
-                                    fields.insert(
-                                        "candidate_models".to_string(),
-                                        serde_json::json!(candidates),
-                                    );
-                                    fields
-                                },
+                                scheduler_selection_fields(
+                                    &best_peer,
+                                    selected_cluster_id.as_deref(),
+                                    node_score,
+                                    "high_success_low_latency",
+                                    &candidates,
+                                    total_nodes,
+                                ),
                             );
                             debug_scheduler_log(
                                 debug_flags,
@@ -2685,13 +2883,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     Some(&task.id),
                                     Some(&routed_model),
                                     None,
-                                    {
-                                        let mut fields = Map::new();
-                                        fields.insert("peer_id".to_string(), best_peer.clone().into());
-                                        fields.insert("attempt_id".to_string(), rid.clone().into());
-                                        fields.insert("success".to_string(), true.into());
-                                        fields
-                                    },
+                                    task_observability_fields(
+                                        &best_peer,
+                                        &rid,
+                                        true,
+                                        None,
+                                        Some(is_retry_attempt),
+                                        selected_cluster_id.as_deref(),
+                                    ),
                                 );
                                 swarm
                                     .behaviour_mut()
@@ -2729,12 +2928,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     Some(&trace_task_id),
                                     Some(&routed_model),
                                     None,
-                                    {
-                                        let mut fields = Map::new();
-                                        fields.insert("peer_id".to_string(), best_peer.clone().into());
-                                        fields.insert("attempt_id".to_string(), rid.clone().into());
-                                        fields
-                                    },
+                                    task_observability_fields(
+                                        &best_peer,
+                                        &rid,
+                                        true,
+                                        None,
+                                        Some(is_retry_attempt),
+                                        selected_cluster_id.as_deref(),
+                                    ),
                                 );
                                 print!("📤 Respuesta: ");
                                 let _ = std::io::Write::flush(&mut std::io::stdout());
@@ -2785,9 +2986,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     Some(&routed_model),
                                     None,
                                     {
-                                        let mut fields = Map::new();
-                                        fields.insert("peer_id".to_string(), best_peer.clone().into());
-                                        fields.insert("attempt_id".to_string(), rid.clone().into());
+                                        let mut fields = task_observability_fields(
+                                            &best_peer,
+                                            &rid,
+                                            true,
+                                            None,
+                                            Some(is_retry_attempt),
+                                            selected_cluster_id.as_deref(),
+                                        );
                                         fields.insert("transport".to_string(), "gossipsub".into());
                                         fields
                                     },
@@ -2852,6 +3058,25 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     .map(|state| state.trace_task_id.as_str())
                                     .unwrap_or("-"),
                                 rid
+                            );
+                            log_observability_event(
+                                LogLevel::Info,
+                                "task_fallback",
+                                distributed_infer_state
+                                    .as_ref()
+                                    .map(|state| state.trace_task_id.as_str())
+                                    .unwrap_or("-"),
+                                distributed_infer_state
+                                    .as_ref()
+                                    .map(|state| state.trace_task_id.as_str()),
+                                Some(&selected_model),
+                                None,
+                                {
+                                    let mut fields = Map::new();
+                                    fields.insert("attempt_id".to_string(), rid.into());
+                                    fields.insert("transport".to_string(), "legacy_broadcast".into());
+                                    fields
+                                },
                             );
                             print!("📤 Respuesta: ");
                             let _ = std::io::Write::flush(&mut std::io::stdout());
@@ -2947,10 +3172,45 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                 target.peer_id,
                                                 target.model_id
                                             );
+                                            log_observability_event(
+                                                LogLevel::Warn,
+                                                "task_retry_scheduled",
+                                                &trace_task_id,
+                                                Some(&trace_task_id),
+                                                Some(&target.model_id),
+                                                Some(TASK_TIMEOUT_001),
+                                                task_observability_fields(
+                                                    &target.peer_id,
+                                                    &infer_state.current_request_id,
+                                                    false,
+                                                    Some(INFER_TIMEOUT_MS),
+                                                    Some(true),
+                                                    None,
+                                                ),
+                                            );
                                         } else {
                                             println!(
                                                 "[Retry] task_id={} attempt_id={} retrying on new node",
                                                 trace_task_id, infer_state.current_request_id
+                                            );
+                                            log_observability_event(
+                                                LogLevel::Warn,
+                                                "task_retry_scheduled",
+                                                &trace_task_id,
+                                                Some(&trace_task_id),
+                                                infer_state.current_model.as_deref(),
+                                                Some(TASK_TIMEOUT_001),
+                                                task_observability_fields(
+                                                    infer_state
+                                                        .current_peer
+                                                        .as_deref()
+                                                        .unwrap_or("-"),
+                                                    &infer_state.current_request_id,
+                                                    false,
+                                                    Some(INFER_TIMEOUT_MS),
+                                                    Some(true),
+                                                    None,
+                                                ),
                                             );
                                         }
                                         infer_request_id =
@@ -2989,14 +3249,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
             event = swarm.select_next_some() => match event {
 
                 SwarmEvent::NewListenAddr { address, .. } => {
-                    println!("🌐 Escuchando en: {}", address);
+                    println!("🌐 Escuchando en red local");
                     swarm.behaviour_mut().kademlia.add_address(&peer_id, address);
                 }
 
                 SwarmEvent::Behaviour(IaMineEvent::Mdns(mdns::Event::Discovered(peers))) => {
                     for (pid, addr) in peers {
                         if pid != peer_id {
-                            println!("🔍 mDNS descubrió: {} @ {}", pid, addr);
+                            println!("🔍 mDNS descubrió: {}", pid);
                             log_observability_event(
                                 LogLevel::Info,
                                 "peer_connected",
@@ -3007,13 +3267,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 {
                                     let mut fields = Map::new();
                                     fields.insert("peer_id".to_string(), pid.to_string().into());
-                                    fields.insert("address".to_string(), addr.to_string().into());
                                     fields
                                 },
                             );
                             debug_network_log(
                                 debug_flags,
-                                format!("mdns discovered peer_id={} addr={}", pid, addr),
+                                format!("mdns discovered peer_id={}", pid),
                             );
                             swarm.behaviour_mut().kademlia.add_address(&pid, addr.clone());
                             swarm.behaviour_mut().gossipsub.add_explicit_peer(&pid);
@@ -3552,6 +3811,22 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                     target.peer_id,
                                                     target.model_id
                                                 );
+                                                log_observability_event(
+                                                    LogLevel::Warn,
+                                                    "task_retry_scheduled",
+                                                    &trace_task_id,
+                                                    Some(&trace_task_id),
+                                                    Some(&target.model_id),
+                                                    Some(TASK_FAILED_002),
+                                                    task_observability_fields(
+                                                        &target.peer_id,
+                                                        &infer_state.current_request_id,
+                                                        false,
+                                                        None,
+                                                        Some(true),
+                                                        None,
+                                                    ),
+                                                );
                                                 infer_request_id =
                                                     Some(infer_state.current_request_id.clone());
                                                 infer_broadcast_sent = false;
@@ -3855,8 +4130,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     // ...existing code...
                 }
 
-                SwarmEvent::ConnectionEstablished { peer_id: pid, endpoint, .. } => {
-                    println!("✅ Conectado a: {} ({})", pid, endpoint.get_remote_address());
+                SwarmEvent::ConnectionEstablished { peer_id: pid, .. } => {
+                    println!("✅ Conectado a: {}", pid);
                     log_observability_event(
                         LogLevel::Info,
                         "peer_connected",
@@ -3867,10 +4142,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         {
                             let mut fields = Map::new();
                             fields.insert("peer_id".to_string(), pid.to_string().into());
-                            fields.insert(
-                                "address".to_string(),
-                                endpoint.get_remote_address().to_string().into(),
-                            );
                             fields
                         },
                     );
@@ -4015,11 +4286,50 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                 local_cluster_for_task.as_deref().unwrap_or("-"),
                                                 model
                                             );
+                                            log_observability_event(
+                                                LogLevel::Info,
+                                                "task_started",
+                                                &task_id,
+                                                Some(&task_id),
+                                                Some(&model),
+                                                None,
+                                                task_observability_fields(
+                                                    &peer_string,
+                                                    &attempt_id,
+                                                    true,
+                                                    None,
+                                                    None,
+                                                    local_cluster_for_task.as_deref(),
+                                                ),
+                                            );
                                         }
                                         TaskClaim::InProgress => {
                                             let duplicate_message = format!(
                                                 "duplicate task already running on node for task_id={}",
                                                 task_id
+                                            );
+                                            log_observability_event(
+                                                LogLevel::Warn,
+                                                "task_failed",
+                                                &task_id,
+                                                Some(&task_id),
+                                                Some(&model),
+                                                Some(TASK_DUPLICATE_004),
+                                                {
+                                                    let mut fields = task_observability_fields(
+                                                        &peer_string,
+                                                        &attempt_id,
+                                                        false,
+                                                        None,
+                                                        None,
+                                                        local_cluster_for_task.as_deref(),
+                                                    );
+                                                    fields.insert(
+                                                        "reason".to_string(),
+                                                        duplicate_message.clone().into(),
+                                                    );
+                                                    fields
+                                                },
                                             );
                                             let _ = task_response_tx_ref
                                                 .send(PendingTaskResponse {
@@ -4036,6 +4346,26 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                             return;
                                         }
                                         TaskClaim::Finished(existing_result) => {
+                                            log_observability_event(
+                                                LogLevel::Info,
+                                                "task_completed",
+                                                &task_id,
+                                                Some(&task_id),
+                                                Some(&model),
+                                                None,
+                                                {
+                                                    let mut fields = task_observability_fields(
+                                                        &peer_string,
+                                                        &attempt_id,
+                                                        existing_result.success,
+                                                        None,
+                                                        None,
+                                                        local_cluster_for_task.as_deref(),
+                                                    );
+                                                    fields.insert("cached".to_string(), true.into());
+                                                    fields
+                                                },
+                                            );
                                             let cached = if existing_result.success {
                                                 DistributedTaskResult::success_for_attempt(
                                                     existing_result.task_id,
@@ -4086,6 +4416,29 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                     "Modelo {} no encontrado en registry",
                                                     model
                                                 );
+                                                log_observability_event(
+                                                    LogLevel::Error,
+                                                    "task_failed",
+                                                    &task_id,
+                                                    Some(&task_id),
+                                                    Some(&model),
+                                                    Some(MODEL_LOAD_FAILED_001),
+                                                    {
+                                                        let mut fields = task_observability_fields(
+                                                            &peer_string,
+                                                            &attempt_id,
+                                                            false,
+                                                            None,
+                                                            None,
+                                                            local_cluster_for_task.as_deref(),
+                                                        );
+                                                        fields.insert(
+                                                            "reason".to_string(),
+                                                            error.clone().into(),
+                                                        );
+                                                        fields
+                                                    },
+                                                );
                                                 task_manager_ref.fail(&task_id, &error).await;
                                                 let _ = task_response_tx_ref
                                                     .send(PendingTaskResponse {
@@ -4104,6 +4457,29 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         };
                                         let engine = Arc::new(RealInferenceEngine::new(ModelStorage::new()));
                                         if let Err(error) = engine.load_model(&model, &model_desc.hash) {
+                                            log_observability_event(
+                                                LogLevel::Error,
+                                                "task_failed",
+                                                &task_id,
+                                                Some(&task_id),
+                                                Some(&model),
+                                                Some(MODEL_LOAD_FAILED_001),
+                                                {
+                                                    let mut fields = task_observability_fields(
+                                                        &peer_string,
+                                                        &attempt_id,
+                                                        false,
+                                                        None,
+                                                        None,
+                                                        local_cluster_for_task.as_deref(),
+                                                    );
+                                                    fields.insert(
+                                                        "reason".to_string(),
+                                                        error.clone().into(),
+                                                    );
+                                                    fields
+                                                },
+                                            );
                                             task_manager_ref.fail(&task_id, &error).await;
                                             let _ = task_response_tx_ref
                                                 .send(PendingTaskResponse {
@@ -4144,6 +4520,34 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                 ResultStatus::Invalid(reason)
                                                 | ResultStatus::Retryable(reason) => {
                                                     println!("[Fault] {}", reason);
+                                                    let error_code = if reason.trim().is_empty() {
+                                                        TASK_EMPTY_RESULT_003
+                                                    } else {
+                                                        TASK_FAILED_002
+                                                    };
+                                                    log_observability_event(
+                                                        LogLevel::Error,
+                                                        "task_failed",
+                                                        &task_id,
+                                                        Some(&task_id),
+                                                        Some(&model),
+                                                        Some(error_code),
+                                                        {
+                                                            let mut fields = task_observability_fields(
+                                                                &peer_string,
+                                                                &attempt_id,
+                                                                false,
+                                                                None,
+                                                                None,
+                                                                local_cluster_for_task.as_deref(),
+                                                            );
+                                                            fields.insert(
+                                                                "reason".to_string(),
+                                                                reason.clone().into(),
+                                                            );
+                                                            fields
+                                                        },
+                                                    );
                                                     task_manager_ref.fail(&task_id, &reason).await;
                                                     let _ = task_response_tx_ref
                                                         .send(PendingTaskResponse {
@@ -4170,6 +4574,22 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                     attempt_id.clone(),
                                                     distributed_result.output,
                                                 );
+                                            log_observability_event(
+                                                LogLevel::Info,
+                                                "task_completed",
+                                                &task_id,
+                                                Some(&task_id),
+                                                Some(&model),
+                                                None,
+                                                task_observability_fields(
+                                                    &peer_string,
+                                                    &attempt_id,
+                                                    true,
+                                                    Some(result.execution_ms),
+                                                    None,
+                                                    local_cluster_for_task.as_deref(),
+                                                ),
+                                            );
                                             task_manager_ref.complete(distributed_result.clone()).await;
                                             let _ = task_response_tx_ref
                                                 .send(PendingTaskResponse {
@@ -4181,6 +4601,29 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                 .await;
                                         }
                                         Err(error) => {
+                                            log_observability_event(
+                                                LogLevel::Error,
+                                                "task_failed",
+                                                &task_id,
+                                                Some(&task_id),
+                                                Some(&model),
+                                                Some(TASK_FAILED_002),
+                                                {
+                                                    let mut fields = task_observability_fields(
+                                                        &peer_string,
+                                                        &attempt_id,
+                                                        false,
+                                                        None,
+                                                        None,
+                                                        local_cluster_for_task.as_deref(),
+                                                    );
+                                                    fields.insert(
+                                                        "reason".to_string(),
+                                                        error.clone().into(),
+                                                    );
+                                                    fields
+                                                },
+                                            );
                                             task_manager_ref.fail(&task_id, &error).await;
                                             let _ = task_response_tx_ref
                                                 .send(PendingTaskResponse {
@@ -4226,6 +4669,28 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     != Some(distributed_result.attempt_id.as_str())
                                     || expected_task_id != Some(distributed_result.task_id.as_str())
                                 {
+                                    log_observability_event(
+                                        LogLevel::Warn,
+                                        "task_failed",
+                                        expected_task_id.unwrap_or("stale-response"),
+                                        expected_task_id,
+                                        None,
+                                        Some(TASK_STALE_RESPONSE_005),
+                                        {
+                                            let mut fields = Map::new();
+                                            fields.insert("peer_id".to_string(), peer.to_string().into());
+                                            fields.insert(
+                                                "attempt_id".to_string(),
+                                                distributed_result.attempt_id.clone().into(),
+                                            );
+                                            fields.insert(
+                                                "received_task_id".to_string(),
+                                                distributed_result.task_id.clone().into(),
+                                            );
+                                            fields.insert("reason".to_string(), "stale_response".into());
+                                            fields
+                                        },
+                                    );
                                     println!(
                                         "[Task] Ignoring stale response task_id={} attempt_id={} from peer_id={}",
                                         distributed_result.task_id, distributed_result.attempt_id, peer
@@ -4351,6 +4816,22 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                 failure_kind,
                                                 target.peer_id,
                                                 target.model_id
+                                            );
+                                            log_observability_event(
+                                                LogLevel::Warn,
+                                                "task_retry_scheduled",
+                                                &trace_task_id,
+                                                Some(&trace_task_id),
+                                                Some(&target.model_id),
+                                                Some(TASK_FAILED_002),
+                                                task_observability_fields(
+                                                    &target.peer_id,
+                                                    &infer_state.current_request_id,
+                                                    false,
+                                                    None,
+                                                    Some(true),
+                                                    None,
+                                                ),
                                             );
                                             clear_stream_state(
                                                 &mut token_buffer,
@@ -4626,5 +5107,107 @@ mod tests {
         };
         assert!(prefer_local.should_use_local(true));
         assert!(!prefer_local.should_use_local(false));
+    }
+
+    #[test]
+    fn test_validate_lan_is_control_plane_mode() {
+        assert!(is_control_plane_mode(&NodeMode::ValidateLan));
+    }
+
+    #[test]
+    fn test_scheduler_evidence_fields() {
+        let candidates = vec!["llama3-3b".to_string(), "tinyllama-1b".to_string()];
+        let fields = scheduler_selection_fields(
+            "peer-a",
+            Some("cluster-local"),
+            0.91,
+            "selected",
+            &candidates,
+            3,
+        );
+        assert_eq!(
+            fields.get("peer_id").and_then(|v| v.as_str()),
+            Some("peer-a")
+        );
+        assert_eq!(
+            fields.get("cluster_id").and_then(|v| v.as_str()),
+            Some("cluster-local")
+        );
+        assert_eq!(
+            fields
+                .get("candidate_models")
+                .and_then(|v| v.as_array())
+                .map(|v| v.len()),
+            Some(2)
+        );
+    }
+
+    #[test]
+    fn test_task_observability_fields_include_attempt_id() {
+        let fields = task_observability_fields(
+            "peer-a",
+            "attempt-1",
+            false,
+            Some(5000),
+            Some(true),
+            Some("cluster-local"),
+        );
+        assert_eq!(
+            fields.get("attempt_id").and_then(|v| v.as_str()),
+            Some("attempt-1")
+        );
+        assert_eq!(
+            fields.get("peer_id").and_then(|v| v.as_str()),
+            Some("peer-a")
+        );
+        assert_eq!(fields.get("retry").and_then(|v| v.as_bool()), Some(true));
+    }
+
+    #[test]
+    fn test_live_validation_guide_mentions_observability_artifacts() {
+        let guide = live_validation_guide();
+        assert!(guide.contains("node log:"));
+        assert!(guide.contains("task traces:"));
+        assert!(guide.contains("task metrics:"));
+        assert!(!guide.contains("/ip4/"));
+    }
+
+    #[test]
+    fn test_scheduler_rejection_reason_for_unhealthy_node() {
+        let node = NodeCapability {
+            peer_id: "peer-bad".to_string(),
+            cpu_score: 10,
+            ram_gb: 8,
+            gpu_available: false,
+            storage_available_gb: 20,
+            accelerator: "CPU".to_string(),
+            models: vec!["tinyllama-1b".to_string()],
+            worker_slots: 4,
+            active_tasks: 0,
+            latency_ms: 5,
+            last_seen: std::time::Instant::now(),
+            cluster_id: Some("local".to_string()),
+            health: {
+                let mut health = NodeHealth::default();
+                health.record_timeout();
+                health
+            },
+        };
+
+        let reason = scheduler_rejection_reason(
+            &node,
+            &["tinyllama-1b".to_string()],
+            &HashSet::new(),
+            &HashSet::new(),
+        );
+
+        assert_eq!(
+            reason,
+            Some((
+                SCH_NODE_UNHEALTHY_002,
+                "node_unhealthy",
+                Some("tinyllama-1b".to_string())
+            ))
+        );
     }
 }

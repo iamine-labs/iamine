@@ -3,10 +3,14 @@ pub const NET_PEER_DISCONNECTED_002: &str = "NET_PEER_DISCONNECTED_002";
 
 pub const SCH_NO_NODE_001: &str = "SCH_NO_NODE_001";
 pub const SCH_NODE_UNHEALTHY_002: &str = "SCH_NODE_UNHEALTHY_002";
+pub const SCH_NODE_EXCLUDED_003: &str = "SCH_NODE_EXCLUDED_003";
+pub const SCH_NODE_BUSY_004: &str = "SCH_NODE_BUSY_004";
 
 pub const TASK_TIMEOUT_001: &str = "TASK_TIMEOUT_001";
 pub const TASK_FAILED_002: &str = "TASK_FAILED_002";
 pub const TASK_EMPTY_RESULT_003: &str = "TASK_EMPTY_RESULT_003";
+pub const TASK_DUPLICATE_004: &str = "TASK_DUPLICATE_004";
+pub const TASK_STALE_RESPONSE_005: &str = "TASK_STALE_RESPONSE_005";
 
 pub const MODEL_LOAD_FAILED_001: &str = "MODEL_LOAD_FAILED_001";
 pub const MODEL_UNSUPPORTED_HW_002: &str = "MODEL_UNSUPPORTED_HW_002";
@@ -21,9 +25,13 @@ pub fn is_standard_error_code(code: &str) -> bool {
             | NET_PEER_DISCONNECTED_002
             | SCH_NO_NODE_001
             | SCH_NODE_UNHEALTHY_002
+            | SCH_NODE_EXCLUDED_003
+            | SCH_NODE_BUSY_004
             | TASK_TIMEOUT_001
             | TASK_FAILED_002
             | TASK_EMPTY_RESULT_003
+            | TASK_DUPLICATE_004
+            | TASK_STALE_RESPONSE_005
             | MODEL_LOAD_FAILED_001
             | MODEL_UNSUPPORTED_HW_002
             | NODE_BLACKLISTED_001
