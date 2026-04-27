@@ -1,0 +1,2 @@
+# Intelligent scheduler keeps conceptual prompts out of strict mode
+explica la teoria de la relatividad | Conceptual | false

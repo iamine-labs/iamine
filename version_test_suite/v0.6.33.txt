@@ -1,0 +1,2 @@
+# Control-plane separation keeps scalar function exact routing
+sqrt(16) | ExactMath | true

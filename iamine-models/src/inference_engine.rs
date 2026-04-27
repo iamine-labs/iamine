@@ -15,7 +15,7 @@ use llama_cpp_2::model::{AddBos, LlamaModel};
 use llama_cpp_2::sampling::LlamaSampler;
 use std::num::NonZeroU32;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::{mpsc, Semaphore};
 
@@ -204,17 +204,11 @@ impl InferenceEngine {
         }
     }
 
-    fn backend() -> Result<&'static LlamaBackend, String> {
-        static BACKEND: OnceLock<Result<LlamaBackend, String>> = OnceLock::new();
-        BACKEND
-            .get_or_init(|| {
-                let mut backend = LlamaBackend::init()
-                    .map_err(|e| format!("No se pudo inicializar llama backend: {e}"))?;
-                backend.void_logs();
-                Ok(backend)
-            })
-            .as_ref()
-            .map_err(Clone::clone)
+    fn backend() -> Result<LlamaBackend, String> {
+        let mut backend = LlamaBackend::init()
+            .map_err(|e| format!("No se pudo inicializar llama backend: {e}"))?;
+        backend.void_logs();
+        Ok(backend)
     }
 
     pub fn select_runtime_backend() -> BackendType {
@@ -223,6 +217,16 @@ impl InferenceEngine {
     }
 
     fn select_runtime_backend_for(hardware: &HardwareAcceleration) -> BackendType {
+        if std::env::var("IAMINE_FORCE_CPU")
+            .map(|value| {
+                let normalized = value.trim().to_ascii_lowercase();
+                normalized == "1" || normalized == "true" || normalized == "yes"
+            })
+            .unwrap_or(false)
+        {
+            return BackendType::Cpu;
+        }
+
         #[cfg(feature = "metal-backend")]
         if hardware.supports_metal() {
             return BackendType::Metal;
@@ -289,96 +293,140 @@ impl InferenceEngine {
         let sampling = SamplingConfig::for_model_request(&model_id, &user_prompt, temperature);
         let step_start = Instant::now();
 
-        let inference = tokio::task::spawn_blocking(move || -> Result<GenerationChunk, String> {
-            let backend = Self::backend()?;
-            let mut ctx = model
-                .new_context(backend, ctx_params)
-                .map_err(|e| format!("No se pudo crear contexto llama: {}", e))?;
+        let backend = Self::backend()?;
+        let mut ctx = model
+            .new_context(&backend, ctx_params)
+            .map_err(|e| format!("No se pudo crear contexto llama: {}", e))?;
 
-            let prompt_tokens = model
-                .str_to_token(&prompt, AddBos::Always)
-                .map_err(|e| format!("No se pudo tokenizar prompt: {}", e))?;
+        let prompt_tokens = model
+            .str_to_token(&prompt, AddBos::Always)
+            .map_err(|e| format!("No se pudo tokenizar prompt: {}", e))?;
 
-            if prompt_tokens.is_empty() {
-                return Err("Prompt vacío tras tokenización".to_string());
+        if prompt_tokens.is_empty() {
+            return Err("Prompt vacío tras tokenización".to_string());
+        }
+
+        let mut batch = LlamaBatch::new(512, 1);
+        let last_index = (prompt_tokens.len() - 1) as i32;
+        for (i, token) in (0_i32..).zip(prompt_tokens.into_iter()) {
+            batch
+                .add(token, i, &[0], i == last_index)
+                .map_err(|e| format!("No se pudo preparar batch inicial: {}", e))?;
+        }
+
+        ctx.decode(&mut batch)
+            .map_err(|e| format!("Fallo evaluando prompt: {}", e))?;
+
+        let mut samplers = vec![LlamaSampler::penalties(
+            64,
+            sampling.repeat_penalty,
+            0.0,
+            0.0,
+        )];
+        if sampling.top_k > 0 {
+            samplers.push(LlamaSampler::top_k(sampling.top_k));
+        }
+        samplers.push(LlamaSampler::top_p(sampling.top_p, 1));
+        if sampling.temperature <= 0.0 {
+            samplers.push(LlamaSampler::greedy());
+        } else {
+            samplers.push(LlamaSampler::temp(sampling.temperature));
+            samplers.push(LlamaSampler::dist(1234));
+        }
+        let mut sampler = LlamaSampler::chain_simple(samplers);
+        let mut decoder = UTF_8.new_decoder();
+        let mut output = String::new();
+        let mut n_cur = batch.n_tokens();
+        let mut generated = 0u32;
+
+        while generated < max_tokens {
+            let token = sampler.sample(&ctx, batch.n_tokens() - 1);
+            sampler.accept(token);
+
+            if model.is_eog_token(token) {
+                break;
             }
 
-            let mut batch = LlamaBatch::new(512, 1);
-            let last_index = (prompt_tokens.len() - 1) as i32;
-            for (i, token) in (0_i32..).zip(prompt_tokens.into_iter()) {
-                batch
-                    .add(token, i, &[0], i == last_index)
-                    .map_err(|e| format!("No se pudo preparar batch inicial: {}", e))?;
+            let piece = model
+                .token_to_piece(token, &mut decoder, true, None)
+                .map_err(|e| format!("No se pudo decodificar token: {}", e))?;
+
+            if let Some(tx) = &token_tx {
+                tx.blocking_send(piece.clone())
+                    .map_err(|e| format!("No se pudo enviar token stream: {}", e))?;
             }
 
+            output.push_str(&piece);
+            batch.clear();
+            batch
+                .add(token, n_cur, &[0], true)
+                .map_err(|e| format!("No se pudo preparar batch de generación: {}", e))?;
             ctx.decode(&mut batch)
-                .map_err(|e| format!("Fallo evaluando prompt: {}", e))?;
+                .map_err(|e| format!("Fallo evaluando token generado: {}", e))?;
 
-            let mut samplers = vec![LlamaSampler::penalties(
-                64,
-                sampling.repeat_penalty,
-                0.0,
-                0.0,
-            )];
-            if sampling.top_k > 0 {
-                samplers.push(LlamaSampler::top_k(sampling.top_k));
-            }
-            samplers.push(LlamaSampler::top_p(sampling.top_p, 1));
-            if sampling.temperature <= 0.0 {
-                samplers.push(LlamaSampler::greedy());
-            } else {
-                samplers.push(LlamaSampler::temp(sampling.temperature));
-                samplers.push(LlamaSampler::dist(1234));
-            }
-            let mut sampler = LlamaSampler::chain_simple(samplers);
-            let mut decoder = UTF_8.new_decoder();
-            let mut output = String::new();
-            let mut n_cur = batch.n_tokens();
-            let mut generated = 0u32;
+            n_cur += 1;
+            generated += 1;
+        }
 
-            while generated < max_tokens {
-                let token = sampler.sample(&ctx, batch.n_tokens() - 1);
-                sampler.accept(token);
-
-                if model.is_eog_token(token) {
-                    break;
-                }
-
-                let piece = model
-                    .token_to_piece(token, &mut decoder, true, None)
-                    .map_err(|e| format!("No se pudo decodificar token: {}", e))?;
-
-                if let Some(tx) = &token_tx {
-                    tx.blocking_send(piece.clone())
-                        .map_err(|e| format!("No se pudo enviar token stream: {}", e))?;
-                }
-
-                output.push_str(&piece);
-                batch.clear();
-                batch
-                    .add(token, n_cur, &[0], true)
-                    .map_err(|e| format!("No se pudo preparar batch de generación: {}", e))?;
-                ctx.decode(&mut batch)
-                    .map_err(|e| format!("Fallo evaluando token generado: {}", e))?;
-
-                n_cur += 1;
-                generated += 1;
-            }
-
-            Ok(GenerationChunk {
-                output: output.trim().to_string(),
-                tokens_generated: generated,
-                truncated: Self::inference_was_truncated(generated, max_tokens),
-                execution_ms: 0,
-            })
-        })
-        .await
-        .map_err(|e| format!("Inference task failed: {}", e))?;
-
-        let mut chunk = inference?;
+        let mut chunk = GenerationChunk {
+            output: output.trim().to_string(),
+            tokens_generated: generated,
+            truncated: Self::inference_was_truncated(generated, max_tokens),
+            execution_ms: 0,
+        };
         chunk.output = clean_output(chunk.output);
         chunk.execution_ms = step_start.elapsed().as_millis() as u64;
         Ok(chunk)
+    }
+
+    async fn generate_chunk_with_retry(
+        &self,
+        model: Arc<LlamaModel>,
+        model_id: String,
+        user_prompt: String,
+        max_tokens: u32,
+        temperature: f32,
+        token_tx: Option<mpsc::Sender<String>>,
+    ) -> Result<GenerationChunk, String> {
+        const MAX_ATTEMPTS: usize = 2;
+        let mut first_error: Option<String> = None;
+
+        for attempt in 1..=MAX_ATTEMPTS {
+            match self
+                .generate_chunk(
+                    Arc::clone(&model),
+                    model_id.clone(),
+                    user_prompt.clone(),
+                    max_tokens,
+                    temperature,
+                    token_tx.clone(),
+                )
+                .await
+            {
+                Ok(chunk) => return Ok(chunk),
+                Err(error) => {
+                    if attempt == MAX_ATTEMPTS {
+                        let combined = match first_error {
+                            Some(initial) => format!(
+                                "Inference failed after {} attempts. first_error='{}' retry_error='{}'",
+                                MAX_ATTEMPTS, initial, error
+                            ),
+                            None => error,
+                        };
+                        return Err(combined);
+                    }
+
+                    println!(
+                        "[Inference][Retry] chunk generation failed (attempt {}): {}",
+                        attempt, error
+                    );
+                    first_error = Some(error);
+                    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                }
+            }
+        }
+
+        Err("Inference failed with unknown retry state".to_string())
     }
 
     fn ensure_queue_worker(&self) {
@@ -482,7 +530,7 @@ impl InferenceEngine {
 
         let backend = Self::backend()?;
         self.inner.model_cache.get_or_load(model_id, || {
-            let model = LlamaModel::load_from_file(backend, &path, &self.model_params())
+            let model = LlamaModel::load_from_file(&backend, &path, &self.model_params())
                 .map_err(|e| format!("No se pudo cargar GGUF {}: {}", model_id, e))?;
 
             Ok(LoadedModel::new(model_id.to_string(), path.clone(), model))
@@ -548,7 +596,7 @@ impl InferenceEngine {
         let mut current_prompt = req.prompt.clone();
 
         let initial_chunk = self
-            .generate_chunk(
+            .generate_chunk_with_retry(
                 Arc::clone(&model),
                 req.model_id.clone(),
                 current_prompt.clone(),
@@ -579,7 +627,7 @@ impl InferenceEngine {
                         ContinuationManager::build_continuation_prompt(&req.prompt, &total_output);
 
                     let next_chunk = match self
-                        .generate_chunk(
+                        .generate_chunk_with_retry(
                             Arc::clone(&model),
                             req.model_id.clone(),
                             current_prompt.clone(),

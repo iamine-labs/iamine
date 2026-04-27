@@ -1,0 +1,2 @@
+# Live multi-node validation keeps context-dependent follow-up as general
+Complementa la respuesta anterior | General | false

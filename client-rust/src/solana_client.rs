@@ -1,10 +1,11 @@
 use crate::solana_config::*;
 use solana_client::rpc_client::RpcClient;
+use solana_sdk::instruction::{AccountMeta, Instruction};
 use solana_sdk::message::Message;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::{Keypair, Signer};
-use solana_sdk::system_instruction;
 use solana_sdk::transaction::Transaction;
+use std::cmp::min;
 use std::str::FromStr;
 
 pub struct SolanaManager {
@@ -13,9 +14,37 @@ pub struct SolanaManager {
 }
 
 impl SolanaManager {
+    const MEMO_PROGRAM_ID: &'static str = "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr";
+    const MIN_BALANCE_SOL: f64 = 0.000_01;
+
     pub fn new(keypair: Keypair) -> Self {
         let client = RpcClient::new(SOLANA_RPC_URL.to_string());
         SolanaManager { client, keypair }
+    }
+
+    fn memo_instruction(&self, memo: &str) -> Result<Instruction, String> {
+        let program_id = Pubkey::from_str(Self::MEMO_PROGRAM_ID)
+            .map_err(|e| format!("Memo program id invalido: {}", e))?;
+        Ok(Instruction {
+            program_id,
+            accounts: vec![AccountMeta::new_readonly(self.keypair.pubkey(), true)],
+            data: memo.as_bytes().to_vec(),
+        })
+    }
+
+    fn send_memo_transaction(&self, memo: &str) -> Result<String, String> {
+        let ix = self.memo_instruction(memo)?;
+        let recent_blockhash = self
+            .client
+            .get_latest_blockhash()
+            .map_err(|e| format!("No se pudo obtener blockhash: {}", e))?;
+        let message = Message::new(&[ix], Some(&self.keypair.pubkey()));
+        let tx = Transaction::new(&[&self.keypair], message, recent_blockhash);
+
+        self.client
+            .send_and_confirm_transaction(&tx)
+            .map(|sig| sig.to_string())
+            .map_err(|e| format!("No se pudo confirmar transaccion: {}", e))
     }
 
     /// Registrar nodo en blockchain
@@ -32,8 +61,11 @@ impl SolanaManager {
                 let sol = balance as f64 / 1e9;
                 println!("   Balance: {} SOL", sol);
 
-                if sol < 0.0 {
-                    println!("   ⚠️  Balance bajo. Necesitas al menos 0.01 SOL");
+                if sol < Self::MIN_BALANCE_SOL {
+                    println!(
+                        "   ⚠️  Balance bajo. Necesitas al menos {} SOL",
+                        Self::MIN_BALANCE_SOL
+                    );
                     println!("   Solicita airdrop: solana airdrop 2 --url devnet");
                     return Err("Insufficient balance".to_string());
                 }
@@ -44,12 +76,17 @@ impl SolanaManager {
             }
         }
 
-        // Simular transacción (en producción aquí irían los datos reales)
-        let tx_sig = format!("tx_{}", uuid::Uuid::new_v4());
-        println!("   ✅ Transacción enviada: {}", &tx_sig[..32]);
-        println!("   ⏳ Confirmando en blockchain...");
+        let memo = serde_json::json!({
+            "action": "register_node",
+            "pubkey": pubkey.to_string(),
+            "cores": cores,
+            "ram_gb": ram_gb
+        })
+        .to_string();
 
-        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+        let tx_sig = self.send_memo_transaction(&memo)?;
+        println!("   ✅ Transacción enviada: {}", tx_sig);
+        println!("   ⏳ Confirmando en blockchain...");
         println!("   ✅ Nodo registrado en blockchain");
 
         Ok(tx_sig)
@@ -63,12 +100,17 @@ impl SolanaManager {
     ) -> Result<String, String> {
         println!("\n📤 Enviando respuesta a Solana...");
         println!("   Challenge: {}", challenge_id);
-        println!("   Hash: {}", &result_hash[..16]);
+        println!("   Hash: {}", &result_hash[..min(16, result_hash.len())]);
 
-        let tx_sig = format!("tx_{}", uuid::Uuid::new_v4());
-        println!("   ✅ Transacción enviada: {}", &tx_sig[..32]);
-
-        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+        let memo = serde_json::json!({
+            "action": "submit_challenge_response",
+            "pubkey": self.keypair.pubkey().to_string(),
+            "challenge_id": challenge_id,
+            "result_hash": result_hash
+        })
+        .to_string();
+        let tx_sig = self.send_memo_transaction(&memo)?;
+        println!("   ✅ Transacción enviada: {}", tx_sig);
         println!("   ✅ Respuesta registrada en blockchain");
 
         Ok(tx_sig)
@@ -78,10 +120,14 @@ impl SolanaManager {
     pub async fn claim_rewards(&self, amount: u64) -> Result<String, String> {
         println!("\n💰 Reclamando {} $MIND...", amount);
 
-        let tx_sig = format!("tx_{}", uuid::Uuid::new_v4());
-        println!("   ✅ Transacción enviada: {}", &tx_sig[..32]);
-
-        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+        let memo = serde_json::json!({
+            "action": "claim_rewards",
+            "pubkey": self.keypair.pubkey().to_string(),
+            "amount": amount
+        })
+        .to_string();
+        let tx_sig = self.send_memo_transaction(&memo)?;
+        println!("   ✅ Transacción enviada: {}", tx_sig);
         println!("   ✅ Rewards reclamados");
 
         Ok(tx_sig)
@@ -91,10 +137,13 @@ impl SolanaManager {
     pub async fn report_task_completed(&self) -> Result<String, String> {
         println!("\n✅ Reportando tarea completada a Solana...");
 
-        let tx_sig = format!("tx_{}", uuid::Uuid::new_v4());
-        println!("   ✅ Transacción enviada: {}", &tx_sig[..32]);
-
-        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+        let memo = serde_json::json!({
+            "action": "report_task_completed",
+            "pubkey": self.keypair.pubkey().to_string(),
+        })
+        .to_string();
+        let tx_sig = self.send_memo_transaction(&memo)?;
+        println!("   ✅ Transacción enviada: {}", tx_sig);
         println!("   ✅ Tarea reportada como completada");
 
         Ok(tx_sig)

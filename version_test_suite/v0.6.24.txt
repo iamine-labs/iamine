@@ -1,0 +1,2 @@
+# Quality gate baseline after release validation rollout
+What is 2+2? | ExactMath | true

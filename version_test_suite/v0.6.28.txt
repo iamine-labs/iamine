@@ -1,0 +1,2 @@
+# Model karma rollout should keep ideation prompts generative
+dame 3 ideas de negocios para este 2026 acerca de la ia | Generative | false

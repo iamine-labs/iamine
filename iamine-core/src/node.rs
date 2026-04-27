@@ -1,5 +1,6 @@
 use crate::task::TaskType;
 use serde::{Deserialize, Serialize};
+use sysinfo::System;
 
 /// Capacidades de un nodo worker
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -16,10 +17,13 @@ impl NodeCapabilities {
         let cores = std::thread::available_parallelism()
             .map(|n| n.get())
             .unwrap_or(1);
+        let mut system = System::new();
+        system.refresh_memory();
+        let ram_gb = (system.total_memory() / 1_073_741_824).max(1);
 
         Self {
             cores,
-            ram_gb: 8, // TODO: detectar real con sysinfo
+            ram_gb,
             supported_tasks: vec![
                 TaskType::ReverseString,
                 TaskType::ComputeHash,

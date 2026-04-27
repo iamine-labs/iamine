@@ -1,0 +1,2 @@
+# Multi-node validation prep keeps power-expression exact routing
+2^10 | ExactMath | true

@@ -1,5 +1,10 @@
+use crate::inference_engine::{
+    InferenceEngine as RealInferenceEngine, InferenceRequest as RealInferenceRequest,
+    InferenceResult as RealInferenceResult,
+};
+use crate::model_registry::ModelRegistry;
 use crate::model_storage::ModelStorage;
-use std::collections::HashMap;
+use std::collections::HashSet;
 use std::time::Instant;
 
 #[derive(Debug, Clone)]
@@ -61,45 +66,34 @@ impl InferenceResult {
 }
 
 pub struct InferenceEngine {
-    storage: ModelStorage,
-    loaded_models: HashMap<String, LoadedModel>,
-}
-
-struct LoadedModel {
-    _model_id: String,
-    _loaded_at: Instant,
+    engine: RealInferenceEngine,
+    registry: ModelRegistry,
+    loaded_models: HashSet<String>,
 }
 
 impl InferenceEngine {
     pub fn new(storage: ModelStorage) -> Self {
         Self {
-            storage,
-            loaded_models: HashMap::new(),
+            engine: RealInferenceEngine::new(storage),
+            registry: ModelRegistry::new(),
+            loaded_models: HashSet::new(),
         }
     }
 
-    /// Carga modelo en memoria (placeholder — en v0.6 usa llama.cpp bindings)
+    /// Carga modelo en memoria usando el runtime real de llama.cpp.
     pub fn load_model(&mut self, model_id: &str) -> Result<(), String> {
-        if self.loaded_models.contains_key(model_id) {
+        if self.loaded_models.contains(model_id) {
             println!("✅ Modelo {} ya cargado", model_id);
             return Ok(());
         }
 
-        let path = self.storage.gguf_path(model_id);
-        if !path.exists() {
-            return Err(format!("Modelo {} no encontrado en disco", model_id));
-        }
-
-        println!("🧠 Cargando modelo {}...", model_id);
-        // TODO v0.6: llama_cpp::LlamaModel::load_from_file(&path)
-
-        self.loaded_models.insert(
-            model_id.to_string(),
-            LoadedModel {
-                _model_id: model_id.to_string(),
-                _loaded_at: Instant::now(),
-            },
-        );
+        let expected_hash = self
+            .registry
+            .get(model_id)
+            .map(|model| model.hash.as_str())
+            .unwrap_or("skip");
+        self.engine.load_model(model_id, expected_hash)?;
+        self.loaded_models.insert(model_id.to_string());
 
         println!("✅ Modelo {} cargado en memoria", model_id);
         Ok(())
@@ -109,7 +103,7 @@ impl InferenceEngine {
     pub async fn run_inference(&self, req: InferenceRequest) -> InferenceResult {
         let start = Instant::now();
 
-        if !self.loaded_models.contains_key(&req.model_id) {
+        if !self.loaded_models.contains(&req.model_id) {
             return InferenceResult::failure(
                 req.task_id,
                 req.model_id,
@@ -117,41 +111,58 @@ impl InferenceEngine {
             );
         }
 
-        println!(
-            "🤖 [Inference] {} | prompt={:.40}...",
-            req.model_id, req.prompt
-        );
+        let task_id = req.task_id.clone();
+        let model_id = req.model_id.clone();
+        let real_req = RealInferenceRequest {
+            task_id: req.task_id,
+            model_id: req.model_id,
+            prompt: req.prompt,
+            max_tokens: req.max_tokens,
+            temperature: req.temperature,
+        };
 
-        // TODO v0.6: llamada real a llama.cpp
-        // Por ahora: mock que demuestra el flujo
-        let mock_output = self.mock_inference(&req);
-        let ms = start.elapsed().as_millis() as u64;
-        let tokens = mock_output.split_whitespace().count() as u32;
+        let real_result = self.engine.run_inference(real_req, None).await;
+        let mut result = map_real_result(real_result);
+        result.execution_ms = start.elapsed().as_millis() as u64;
 
-        println!("✅ [Inference] {} tokens en {}ms", tokens, ms);
+        if result.success {
+            println!(
+                "✅ [Inference] {} tokens en {}ms",
+                result.tokens_generated, result.execution_ms
+            );
+            return result;
+        }
 
-        InferenceResult::success(req.task_id, req.model_id, mock_output, tokens, ms)
-    }
-
-    fn mock_inference(&self, req: &InferenceRequest) -> String {
-        // Mock determinista — respuesta basada en el prompt
-        format!(
-            "[{} mock] Respuesta al prompt: '{}' — \
-            IaMine distributed inference placeholder. \
-            Real llama.cpp execution coming in v0.6.",
-            req.model_id,
-            &req.prompt[..req.prompt.len().min(30)]
-        )
+        let error = result
+            .error
+            .take()
+            .unwrap_or_else(|| "Fallo de inferencia".to_string());
+        InferenceResult::failure(task_id, model_id, error)
     }
 
     /// Descarga modelo de memoria
     pub fn unload_model(&mut self, model_id: &str) {
-        if self.loaded_models.remove(model_id).is_some() {
+        if self.loaded_models.remove(model_id) {
+            self.engine.unload_model(model_id);
             println!("♻️  Modelo {} descargado de memoria", model_id);
         }
     }
 
     pub fn loaded_models(&self) -> Vec<&str> {
-        self.loaded_models.keys().map(|s| s.as_str()).collect()
+        self.loaded_models.iter().map(|s| s.as_str()).collect()
+    }
+}
+
+fn map_real_result(real: RealInferenceResult) -> InferenceResult {
+    InferenceResult {
+        task_id: real.task_id,
+        model_id: real.model_id,
+        output: real.output,
+        tokens_generated: real.tokens_generated,
+        truncated: real.truncated,
+        continuation_steps: real.continuation_steps,
+        execution_ms: real.execution_ms,
+        success: real.success,
+        error: real.error,
     }
 }

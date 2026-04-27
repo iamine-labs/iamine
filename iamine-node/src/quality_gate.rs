@@ -5,7 +5,7 @@ use iamine_network::{evaluate_default_dataset, SemanticEvalReport};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-const CURRENT_RELEASE_VERSION: &str = "v0.6.24";
+const CURRENT_RELEASE_VERSION: &str = "v0.6.36";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReleaseTrack {
@@ -230,8 +230,8 @@ mod tests {
 
     fn passing_regression_report() -> RegressionRunReport {
         RegressionRunReport {
-            total_versions: 23,
-            total_prompts: 23,
+            total_versions: 36,
+            total_prompts: 36,
             total_failures: 0,
             version_results: Vec::new(),
         }

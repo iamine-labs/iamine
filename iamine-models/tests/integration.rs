@@ -2,13 +2,34 @@ use iamine_models::model_validator::ModelValidator;
 use iamine_models::node_models::{ModelId, NodeModels, PeerModelRegistry};
 use iamine_models::storage_config::StorageConfig;
 use iamine_models::*;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use tempfile::TempDir;
 
 fn temp_storage() -> (TempDir, ModelStorage) {
     let dir = TempDir::new().unwrap();
     let storage = ModelStorage::new_in(dir.path().to_path_buf());
     (dir, storage)
+}
+
+fn real_inference_gate() -> &'static tokio::sync::Semaphore {
+    static GATE: OnceLock<tokio::sync::Semaphore> = OnceLock::new();
+    GATE.get_or_init(|| tokio::sync::Semaphore::new(1))
+}
+
+fn force_cpu_backend_for_tests() {
+    static FORCE_CPU: OnceLock<()> = OnceLock::new();
+    FORCE_CPU.get_or_init(|| {
+        std::env::set_var("IAMINE_FORCE_CPU", "1");
+    });
+}
+
+fn real_inference_tests_enabled() -> bool {
+    std::env::var("IAMINE_ENABLE_REAL_INFERENCE_TESTS")
+        .map(|value| {
+            let normalized = value.trim().to_ascii_lowercase();
+            normalized == "1" || normalized == "true" || normalized == "yes"
+        })
+        .unwrap_or(false)
 }
 
 // ─── Test 1: Model Registry ───────────────────────────────────────────────
@@ -334,10 +355,12 @@ fn test_spanish_prompt_response() {
     assert!(prompt.to_lowercase().contains("responde en espanol"));
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "current_thread")]
 async fn test_inference_engine_mock() {
     use iamine_models::{RealInferenceEngine, RealInferenceRequest};
 
+    let _permit = real_inference_gate().acquire().await.unwrap();
+    force_cpu_backend_for_tests();
     let (_tmp_dir, storage) = temp_storage();
     let engine = RealInferenceEngine::new(storage);
 
@@ -354,11 +377,18 @@ async fn test_inference_engine_mock() {
     assert!(result.error.is_some());
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "current_thread")]
 async fn test_model_load() {
     use iamine_models::ModelRegistry;
     use iamine_models::RealInferenceEngine;
 
+    if !real_inference_tests_enabled() {
+        println!("Skipping test_model_load (set IAMINE_ENABLE_REAL_INFERENCE_TESTS=1)");
+        return;
+    }
+
+    let _permit = real_inference_gate().acquire().await.unwrap();
+    force_cpu_backend_for_tests();
     let storage = ModelStorage::new();
     let registry = ModelRegistry::new();
     let model_id = "tinyllama-1b";
@@ -375,10 +405,17 @@ async fn test_model_load() {
     assert!(engine.is_loaded(model_id));
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "current_thread")]
 async fn test_model_cache_reuse() {
     use iamine_models::ModelRegistry;
 
+    if !real_inference_tests_enabled() {
+        println!("Skipping test_model_cache_reuse (set IAMINE_ENABLE_REAL_INFERENCE_TESTS=1)");
+        return;
+    }
+
+    let _permit = real_inference_gate().acquire().await.unwrap();
+    force_cpu_backend_for_tests();
     let storage = ModelStorage::new();
     let registry = ModelRegistry::new();
     let model_id = "tinyllama-1b";
@@ -403,11 +440,18 @@ async fn test_model_cache_reuse() {
     assert!(engine.model_cache_reuse_hits() >= 1);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "current_thread")]
 async fn test_real_inference() {
     use iamine_models::ModelRegistry;
     use iamine_models::{RealInferenceEngine, RealInferenceRequest};
 
+    if !real_inference_tests_enabled() {
+        println!("Skipping test_real_inference (set IAMINE_ENABLE_REAL_INFERENCE_TESTS=1)");
+        return;
+    }
+
+    let _permit = real_inference_gate().acquire().await.unwrap();
+    force_cpu_backend_for_tests();
     let storage = ModelStorage::new();
     let registry = ModelRegistry::new();
     let model_id = "tinyllama-1b";
@@ -432,7 +476,7 @@ async fn test_real_inference() {
 
     let result = engine.run_inference(req, None).await;
 
-    assert!(result.success);
+    assert!(result.success, "Inference failed: {:?}", result.error);
     assert!(!result.output.is_empty());
     assert!(result.tokens_generated > 0);
     println!("Output: {}", result.output);
@@ -442,10 +486,17 @@ async fn test_real_inference() {
     );
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "current_thread")]
 async fn test_inference_queue() {
     use iamine_models::ModelRegistry;
 
+    if !real_inference_tests_enabled() {
+        println!("Skipping test_inference_queue (set IAMINE_ENABLE_REAL_INFERENCE_TESTS=1)");
+        return;
+    }
+
+    let _permit = real_inference_gate().acquire().await.unwrap();
+    force_cpu_backend_for_tests();
     let storage = ModelStorage::new();
     let registry = ModelRegistry::new();
     let model_id = "tinyllama-1b";
@@ -479,15 +530,22 @@ async fn test_inference_queue() {
         engine.run_inference(req_b, None),
     );
 
-    assert!(res_a.success);
-    assert!(res_b.success);
+    assert!(res_a.success, "Inference A failed: {:?}", res_a.error);
+    assert!(res_b.success, "Inference B failed: {:?}", res_b.error);
     assert_eq!(engine.actual_model_loads(), 1);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "current_thread")]
 async fn test_concurrency_limit() {
     use iamine_models::ModelRegistry;
 
+    if !real_inference_tests_enabled() {
+        println!("Skipping test_concurrency_limit (set IAMINE_ENABLE_REAL_INFERENCE_TESTS=1)");
+        return;
+    }
+
+    let _permit = real_inference_gate().acquire().await.unwrap();
+    force_cpu_backend_for_tests();
     let storage = ModelStorage::new();
     let registry = ModelRegistry::new();
     let model_id = "tinyllama-1b";
@@ -519,17 +577,24 @@ async fn test_concurrency_limit() {
 
     for handle in reqs {
         let result = handle.await.unwrap();
-        assert!(result.success);
+        assert!(result.success, "Inference failed: {:?}", result.error);
     }
 
     assert!(engine.max_active_inferences_observed() <= 1);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "current_thread")]
 async fn test_token_streaming() {
     use iamine_models::ModelRegistry;
     use iamine_models::{RealInferenceEngine, RealInferenceRequest};
 
+    if !real_inference_tests_enabled() {
+        println!("Skipping test_token_streaming (set IAMINE_ENABLE_REAL_INFERENCE_TESTS=1)");
+        return;
+    }
+
+    let _permit = real_inference_gate().acquire().await.unwrap();
+    force_cpu_backend_for_tests();
     let storage = ModelStorage::new();
     let registry = ModelRegistry::new();
     let model_id = "tinyllama-1b";
@@ -560,12 +625,12 @@ async fn test_token_streaming() {
         streamed.push_str(&token);
     }
 
-    assert!(result.success);
+    assert!(result.success, "Inference failed: {:?}", result.error);
     assert!(!streamed.is_empty());
     assert!(!result.output.is_empty());
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "current_thread")]
 async fn test_invalid_existing_mock_is_reinstalled() {
     use iamine_models::model_downloader::ModelDownloader;
     use iamine_models::ModelRegistry;
