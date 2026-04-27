@@ -40,9 +40,9 @@ pub use fault_handler::{select_retry_target, FailureKind, RetryPolicy, RetryStat
 pub use latency::PeerLatency;
 pub use metrics::{
     default_task_metrics_path, distributed_task_metrics, record_distributed_task_failed,
-    record_distributed_task_fallback, record_distributed_task_latency,
-    record_distributed_task_retry, record_distributed_task_started, DistributedTaskMetrics,
-    DistributedTaskMetricsManager,
+    record_distributed_task_fallback, record_distributed_task_late_result,
+    record_distributed_task_latency, record_distributed_task_retry,
+    record_distributed_task_started, DistributedTaskMetrics, DistributedTaskMetricsManager,
 };
 pub use model_capability_matcher::{
     is_node_compatible_with_model, ModelHardwareRequirements, NodeHardwareProfile,

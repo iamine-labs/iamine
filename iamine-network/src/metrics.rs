@@ -11,6 +11,8 @@ pub struct DistributedTaskMetrics {
     pub failed_tasks: u64,
     pub retries_count: u64,
     pub fallback_count: u64,
+    #[serde(default)]
+    pub late_results_count: u64,
     pub avg_latency_ms: f64,
     #[serde(default)]
     latency_samples: u64,
@@ -31,6 +33,10 @@ impl DistributedTaskMetrics {
 
     pub fn fallback_recorded(&mut self) {
         self.fallback_count = self.fallback_count.saturating_add(1);
+    }
+
+    pub fn late_result_recorded(&mut self) {
+        self.late_results_count = self.late_results_count.saturating_add(1);
     }
 
     pub fn record_latency(&mut self, latency_ms: u64) {
@@ -90,6 +96,10 @@ impl DistributedTaskMetricsManager {
         self.update(|metrics| metrics.record_latency(latency_ms))
     }
 
+    pub fn record_late_result(&self) -> io::Result<DistributedTaskMetrics> {
+        self.update(|metrics| metrics.late_result_recorded())
+    }
+
     fn update(
         &self,
         apply: impl FnOnce(&mut DistributedTaskMetrics),
@@ -143,6 +153,12 @@ pub fn record_distributed_task_fallback() -> Option<DistributedTaskMetrics> {
 pub fn record_distributed_task_latency(latency_ms: u64) -> Option<DistributedTaskMetrics> {
     global_distributed_task_metrics_manager()
         .record_latency(latency_ms)
+        .ok()
+}
+
+pub fn record_distributed_task_late_result() -> Option<DistributedTaskMetrics> {
+    global_distributed_task_metrics_manager()
+        .record_late_result()
         .ok()
 }
 
@@ -221,6 +237,7 @@ mod tests {
         manager.record_started().unwrap();
         manager.record_retry().unwrap();
         manager.record_fallback().unwrap();
+        manager.record_late_result().unwrap();
         manager.record_latency(120).unwrap();
         manager.record_failed().unwrap();
 
@@ -229,6 +246,7 @@ mod tests {
         assert_eq!(metrics.failed_tasks, 1);
         assert_eq!(metrics.retries_count, 1);
         assert_eq!(metrics.fallback_count, 1);
+        assert_eq!(metrics.late_results_count, 1);
         assert_eq!(metrics.avg_latency_ms, 120.0);
         let _ = fs::remove_file(path);
     }
