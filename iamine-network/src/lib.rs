@@ -64,8 +64,8 @@ pub use node_registry::{
 pub use node_scoring::{score_node, NodeScore};
 pub use observability::{
     default_node_log_path, flush_structured_logs, global_structured_logger, log_structured,
-    normalize_prompt_for_log, prompt_log_entry, read_log_entries, set_global_node_id, LogLevel,
-    StructuredLogEntry, StructuredLogger,
+    normalize_prompt_for_log, prompt_log_entry, read_log_entries, set_global_node_id,
+    set_global_runtime_context, LogLevel, StructuredLogEntry, StructuredLogger,
 };
 pub use output_policy::{
     compute_max_tokens, continue_inference, describe_output_policy, OutputPolicyDecision,

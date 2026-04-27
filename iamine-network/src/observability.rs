@@ -7,6 +7,25 @@ use std::sync::{mpsc, Arc, OnceLock, RwLock};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+const DEFAULT_LOG_SCHEMA_VERSION: &str = "1.0.0";
+
+#[derive(Debug, Clone)]
+struct RuntimeLogContext {
+    mode: String,
+    version: String,
+    log_schema_version: String,
+}
+
+impl Default for RuntimeLogContext {
+    fn default() -> Self {
+        Self {
+            mode: "unknown".to_string(),
+            version: "unknown".to_string(),
+            log_schema_version: DEFAULT_LOG_SCHEMA_VERSION.to_string(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum LogLevel {
@@ -34,6 +53,12 @@ pub struct StructuredLogEntry {
     pub event: String,
     pub trace_id: String,
     pub node_id: String,
+    #[serde(default)]
+    pub mode: String,
+    #[serde(default)]
+    pub version: String,
+    #[serde(default)]
+    pub log_schema_version: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub task_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -57,11 +82,29 @@ impl StructuredLogEntry {
             event: event.into(),
             trace_id: trace_id.into(),
             node_id: node_id.into(),
+            mode: String::new(),
+            version: String::new(),
+            log_schema_version: String::new(),
             task_id: None,
             model_id: None,
             error_code: None,
             fields: Map::new(),
         }
+    }
+
+    pub fn with_mode(mut self, mode: impl Into<String>) -> Self {
+        self.mode = mode.into();
+        self
+    }
+
+    pub fn with_version(mut self, version: impl Into<String>) -> Self {
+        self.version = version.into();
+        self
+    }
+
+    pub fn with_log_schema_version(mut self, version: impl Into<String>) -> Self {
+        self.log_schema_version = version.into();
+        self
     }
 
     pub fn with_task_id(mut self, task_id: impl Into<String>) -> Self {
@@ -126,6 +169,8 @@ enum LogCommand {
 pub struct StructuredLogger {
     path: PathBuf,
     node_id: Arc<RwLock<String>>,
+    runtime_context: Arc<RwLock<RuntimeLogContext>>,
+    enabled: bool,
     tx: mpsc::Sender<LogCommand>,
 }
 
@@ -154,6 +199,7 @@ impl StructuredLogger {
                 match command {
                     LogCommand::Entry(line) => {
                         let _ = writeln!(writer, "{}", line);
+                        let _ = writer.flush();
                     }
                     LogCommand::Flush(ack) => {
                         let _ = writer.flush();
@@ -166,12 +212,37 @@ impl StructuredLogger {
         Ok(Self {
             path,
             node_id: Arc::new(RwLock::new(node_id.into())),
+            runtime_context: Arc::new(RwLock::new(RuntimeLogContext::default())),
+            enabled: true,
             tx,
         })
     }
 
+    pub fn noop(path: impl Into<PathBuf>, node_id: impl Into<String>) -> Self {
+        let (tx, _rx) = mpsc::channel::<LogCommand>();
+        Self {
+            path: path.into(),
+            node_id: Arc::new(RwLock::new(node_id.into())),
+            runtime_context: Arc::new(RwLock::new(RuntimeLogContext::default())),
+            enabled: false,
+            tx,
+        }
+    }
+
     pub fn set_node_id(&self, node_id: impl Into<String>) {
         *self.node_id.write().expect("structured logger poisoned") = node_id.into();
+    }
+
+    pub fn set_runtime_context(&self, mode: impl Into<String>, version: impl Into<String>) {
+        let mut context = self
+            .runtime_context
+            .write()
+            .expect("structured logger poisoned");
+        context.mode = mode.into();
+        context.version = version.into();
+        if context.log_schema_version.is_empty() {
+            context.log_schema_version = DEFAULT_LOG_SCHEMA_VERSION.to_string();
+        }
     }
 
     pub fn log(&self, mut entry: StructuredLogEntry) -> io::Result<()> {
@@ -182,20 +253,42 @@ impl StructuredLogger {
                 .expect("structured logger poisoned")
                 .clone();
         }
+        {
+            let context = self
+                .runtime_context
+                .read()
+                .expect("structured logger poisoned");
+            if entry.mode.trim().is_empty() {
+                entry.mode = context.mode.clone();
+            }
+            if entry.version.trim().is_empty() {
+                entry.version = context.version.clone();
+            }
+            if entry.log_schema_version.trim().is_empty() {
+                entry.log_schema_version = context.log_schema_version.clone();
+            }
+        }
+        if entry.log_schema_version.trim().is_empty() {
+            entry.log_schema_version = DEFAULT_LOG_SCHEMA_VERSION.to_string();
+        }
+        if !self.enabled {
+            return Ok(());
+        }
         let serialized = serde_json::to_string(&entry).map_err(io::Error::other)?;
-        self.tx
-            .send(LogCommand::Entry(serialized))
-            .map_err(io::Error::other)
+        let _ = self.tx.send(LogCommand::Entry(serialized));
+        Ok(())
     }
 
     pub fn flush(&self) -> io::Result<()> {
+        if !self.enabled {
+            return Ok(());
+        }
         let (ack_tx, ack_rx) = mpsc::channel();
-        self.tx
-            .send(LogCommand::Flush(ack_tx))
-            .map_err(io::Error::other)?;
-        ack_rx
-            .recv_timeout(Duration::from_secs(1))
-            .map_err(io::Error::other)
+        if self.tx.send(LogCommand::Flush(ack_tx)).is_err() {
+            return Ok(());
+        }
+        let _ = ack_rx.recv_timeout(Duration::from_secs(1));
+        Ok(())
     }
 
     pub fn path(&self) -> &Path {
@@ -205,7 +298,17 @@ impl StructuredLogger {
 
 static GLOBAL_LOGGER: OnceLock<StructuredLogger> = OnceLock::new();
 
+fn ndjson_logging_requested() -> bool {
+    std::env::var("IAMINE_LOG_FORMAT")
+        .map(|value| value.trim().eq_ignore_ascii_case("ndjson"))
+        .unwrap_or(true)
+}
+
 pub fn default_node_log_path() -> PathBuf {
+    if let Some(path) = std::env::var_os("IAMINE_LOG_PATH") {
+        return PathBuf::from(path);
+    }
+
     if let Some(path) = std::env::var_os("IAMINE_NODE_LOG_PATH") {
         return PathBuf::from(path);
     }
@@ -217,24 +320,32 @@ pub fn default_node_log_path() -> PathBuf {
 
     #[cfg(not(test))]
     {
-        return std::env::var_os("HOME")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join(".iamine")
-            .join("logs")
-            .join("node.log");
+        return PathBuf::from("logs").join("iamine-node.ndjson");
     }
 }
 
 pub fn global_structured_logger() -> &'static StructuredLogger {
     GLOBAL_LOGGER.get_or_init(|| {
-        StructuredLogger::new(default_node_log_path(), "-")
-            .expect("failed to initialize structured logger")
+        let path = default_node_log_path();
+        if !ndjson_logging_requested() {
+            return StructuredLogger::noop(path, "-");
+        }
+        match StructuredLogger::new(path.clone(), "-") {
+            Ok(logger) => logger,
+            Err(error) => {
+                eprintln!("[StructuredLogger] disabled: {}", error);
+                StructuredLogger::noop(path, "-")
+            }
+        }
     })
 }
 
 pub fn set_global_node_id(node_id: &str) {
     global_structured_logger().set_node_id(node_id.to_string());
+}
+
+pub fn set_global_runtime_context(mode: &str, version: &str) {
+    global_structured_logger().set_runtime_context(mode, version);
 }
 
 pub fn log_structured(entry: StructuredLogEntry) -> io::Result<()> {
@@ -294,6 +405,7 @@ mod tests {
         StructuredLogger,
     };
     use std::fs;
+    use std::io::{BufRead, BufReader};
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -309,6 +421,7 @@ mod tests {
     fn test_log_written() {
         let path = temp_path();
         let logger = StructuredLogger::new(&path, "node-a").unwrap();
+        logger.set_runtime_context("worker", "v0.6.35");
         logger
             .log(
                 StructuredLogEntry::new(LogLevel::Info, "task_created", "trace-1", "-")
@@ -319,6 +432,12 @@ mod tests {
         let entries = read_log_entries(&path).unwrap();
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].event, "task_created");
+        assert!(!entries[0].timestamp.is_empty());
+        assert_eq!(entries[0].level, "INFO");
+        assert_eq!(entries[0].node_id, "node-a");
+        assert_eq!(entries[0].mode, "worker");
+        assert_eq!(entries[0].version, "v0.6.35");
+        assert_eq!(entries[0].log_schema_version, "1.0.0");
         let _ = fs::remove_file(path);
     }
 
@@ -370,6 +489,7 @@ mod tests {
     fn test_health_log_entries() {
         let path = temp_path();
         let logger = StructuredLogger::new(&path, "node-a").unwrap();
+        logger.set_runtime_context("worker", "v0.6.35");
         logger
             .log(
                 StructuredLogEntry::new(LogLevel::Warn, "health_update", "trace-3", "-")
@@ -389,5 +509,78 @@ mod tests {
             Some(true)
         );
         let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn test_bad_json_lines_are_zero() {
+        let path = temp_path();
+        let logger = StructuredLogger::new(&path, "node-a").unwrap();
+        logger.set_runtime_context("infer", "v0.6.35");
+        logger
+            .log(
+                StructuredLogEntry::new(
+                    LogLevel::Info,
+                    "task_dispatch_context",
+                    "trace-json-1",
+                    "-",
+                )
+                .with_task_id("task-1")
+                .with_model_id("tinyllama-1b")
+                .with_field("attempt_id", "attempt-1")
+                .with_field("selected_peer_id", "peer-1"),
+            )
+            .unwrap();
+        logger
+            .log(
+                StructuredLogEntry::new(LogLevel::Error, "task_failed", "trace-json-1", "-")
+                    .with_task_id("task-1")
+                    .with_model_id("tinyllama-1b")
+                    .with_error_code("TASK_FAILED_002")
+                    .with_field("attempt_id", "attempt-1")
+                    .with_field("error_kind", "validation")
+                    .with_field("recoverable", true),
+            )
+            .unwrap();
+        logger.flush().unwrap();
+
+        let file = fs::File::open(&path).unwrap();
+        let reader = BufReader::new(file);
+        let mut bad_json_lines = 0u64;
+        let mut total_lines = 0u64;
+        for line in reader.lines() {
+            let line = line.unwrap();
+            if line.trim().is_empty() {
+                continue;
+            }
+            total_lines += 1;
+            if serde_json::from_str::<serde_json::Value>(&line).is_err() {
+                bad_json_lines += 1;
+            }
+        }
+
+        assert!(total_lines >= 2);
+        assert_eq!(bad_json_lines, 0);
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn test_logger_does_not_panic_on_sink_issues() {
+        let path = temp_path();
+        fs::create_dir_all(&path).unwrap();
+        let logger = StructuredLogger::new(&path, "node-a").unwrap();
+        logger.set_runtime_context("worker", "v0.6.35");
+
+        let result = std::panic::catch_unwind(|| {
+            logger
+                .log(
+                    StructuredLogEntry::new(LogLevel::Info, "worker_started", "trace-io-1", "-")
+                        .with_field("peer_id", "peer-a"),
+                )
+                .unwrap();
+            logger.flush().unwrap();
+        });
+
+        assert!(result.is_ok());
+        let _ = fs::remove_dir_all(path);
     }
 }
