@@ -50,7 +50,7 @@ use iamine_network::{
     TaskTrace, TaskType as PromptTaskType, ValidationResult as SemanticValidationResult,
     MODEL_LOAD_FAILED_001, MODEL_UNSUPPORTED_HW_002, NET_PEER_DISCONNECTED_002,
     NODE_BLACKLISTED_001, NODE_UNHEALTHY_002, SCH_NO_NODE_001, TASK_EMPTY_RESULT_003,
-    TASK_FAILED_002, TASK_TIMEOUT_001,
+    TASK_FAILED_002, TASK_TIMEOUT_001, WORKER_STARTUP_OVERFLOW_001,
 };
 
 #[cfg(test)]
@@ -1313,6 +1313,138 @@ fn log_health_update(
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct StartupMathError {
+    operation: &'static str,
+    operand_a: u64,
+    operand_b: u64,
+    reason: &'static str,
+}
+
+impl StartupMathError {
+    fn new(operation: &'static str, operand_a: u64, operand_b: u64, reason: &'static str) -> Self {
+        Self {
+            operation,
+            operand_a,
+            operand_b,
+            reason,
+        }
+    }
+
+    fn describe(&self) -> String {
+        format!(
+            "{} failed (a={}, b={}, reason={})",
+            self.operation, self.operand_a, self.operand_b, self.reason
+        )
+    }
+}
+
+fn checked_sub_u16(
+    operation: &'static str,
+    a: u16,
+    b: u16,
+    reason: &'static str,
+) -> Result<u16, StartupMathError> {
+    a.checked_sub(b)
+        .ok_or_else(|| StartupMathError::new(operation, a as u64, b as u64, reason))
+}
+
+fn checked_sub_usize(
+    operation: &'static str,
+    a: usize,
+    b: usize,
+    reason: &'static str,
+) -> Result<usize, StartupMathError> {
+    a.checked_sub(b)
+        .ok_or_else(|| StartupMathError::new(operation, a as u64, b as u64, reason))
+}
+
+fn compute_metrics_port(worker_port: u16) -> Result<u16, StartupMathError> {
+    let offset = checked_sub_u16(
+        "worker_port_minus_base",
+        worker_port,
+        9000,
+        "worker_port_below_metrics_base",
+    )?;
+
+    9090u16.checked_add(offset).ok_or_else(|| {
+        StartupMathError::new(
+            "metrics_port_plus_offset",
+            9090,
+            offset as u64,
+            "metrics_port_out_of_range",
+        )
+    })
+}
+
+fn compute_active_tasks(
+    max_concurrent: usize,
+    available_slots: usize,
+) -> Result<usize, StartupMathError> {
+    checked_sub_usize(
+        "max_concurrent_minus_available_slots",
+        max_concurrent,
+        available_slots,
+        "available_slots_exceeds_max_concurrent",
+    )
+}
+
+fn resource_policy_value(resource_policy: &ResourcePolicy) -> Value {
+    serde_json::json!({
+        "cpu_cores": resource_policy.cpu_cores,
+        "max_cpu_load": resource_policy.max_cpu_load,
+        "ram_limit_gb": resource_policy.ram_limit_gb,
+        "gpu_enabled": resource_policy.gpu_enabled,
+        "disk_limit_gb": resource_policy.disk_limit_gb,
+        "disk_path": resource_policy.disk_path,
+    })
+}
+
+fn emit_worker_startup_overflow_event(
+    trace_id: &str,
+    node_id: &str,
+    peer_id: &str,
+    port: u16,
+    resource_policy: &ResourcePolicy,
+    worker_slots: usize,
+    max_concurrent: usize,
+    available_slots: usize,
+    error: &StartupMathError,
+    fallback_behavior: &str,
+) {
+    let mut fields = Map::new();
+    fields.insert("node_id".to_string(), node_id.into());
+    fields.insert("peer_id".to_string(), peer_id.into());
+    fields.insert("port".to_string(), (port as u64).into());
+    fields.insert(
+        "resource_policy".to_string(),
+        resource_policy_value(resource_policy),
+    );
+    fields.insert(
+        "slots".to_string(),
+        serde_json::json!({
+            "worker_slots": worker_slots,
+            "max_concurrent": max_concurrent,
+            "available_slots": available_slots,
+        }),
+    );
+    fields.insert("operation".to_string(), error.operation.into());
+    fields.insert("operand_a".to_string(), error.operand_a.into());
+    fields.insert("operand_b".to_string(), error.operand_b.into());
+    fields.insert("reason".to_string(), error.reason.into());
+    fields.insert("fallback_behavior".to_string(), fallback_behavior.into());
+
+    log_observability_event(
+        LogLevel::Error,
+        "worker_startup_invalid_math",
+        trace_id,
+        None,
+        None,
+        Some(WORKER_STARTUP_OVERFLOW_001),
+        fields,
+    );
+}
+
 fn cluster_label_for_latency(latency_ms: f64) -> &'static str {
     if latency_ms < 10.0 {
         "LOCAL"
@@ -2240,8 +2372,34 @@ async fn main() -> Result<(), Box<dyn Error>> {
     };
     swarm.listen_on(listen_addr)?;
 
-    let metrics_port = 9090 + (worker_port - 9000);
-    if matches!(mode, NodeMode::Worker) {
+    let metrics_port = if matches!(mode, NodeMode::Worker) {
+        match compute_metrics_port(worker_port) {
+            Ok(port) => Some(port),
+            Err(error) => {
+                emit_worker_startup_overflow_event(
+                    "startup",
+                    &node_identity.node_id,
+                    &peer_id.to_string(),
+                    worker_port,
+                    &resource_policy,
+                    worker_slots,
+                    pool.max_concurrent,
+                    pool.available_slots(),
+                    &error,
+                    "continue_without_metrics_server",
+                );
+                println!(
+                    "⚠️  [Startup] Cálculo de metrics port inválido: {}. Continuando en modo degradado (metrics deshabilitado).",
+                    error.describe()
+                );
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    if let Some(metrics_port) = metrics_port {
         let m = Arc::clone(&metrics);
         let port = metrics_port;
         println!("📊 Metrics en http://localhost:{}/metrics", metrics_port);
@@ -2405,12 +2563,35 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 if matches!(mode, NodeMode::Worker) {
                     let rep = queue.reputation().await;
                     let uptime = heartbeat.uptime_secs();
-                    let slots = pool.available_slots();
+                    let available_slots = pool.available_slots();
+                    let active_tasks = match compute_active_tasks(pool.max_concurrent, available_slots) {
+                        Ok(value) => value,
+                        Err(error) => {
+                            emit_worker_startup_overflow_event(
+                                "startup",
+                                &node_identity.node_id,
+                                &peer_id.to_string(),
+                                worker_port,
+                                &resource_policy,
+                                worker_slots,
+                                pool.max_concurrent,
+                                available_slots,
+                                &error,
+                                "exit_cleanly_invalid_startup_state",
+                            );
+                            return Err(format!(
+                                "Worker startup math invalid: {} [{}]",
+                                error.describe(),
+                                WORKER_STARTUP_OVERFLOW_001
+                            )
+                            .into());
+                        }
+                    };
                     {
                         let mut m = metrics.write().await;
                         m.uptime_secs = uptime;
                         m.reputation_score = rep.reputation_score;
-                        m.active_workers = pool.max_concurrent - slots;
+                        m.active_workers = active_tasks;
                         m.network_peers = peer_tracker.peer_count();
                         m.direct_peers = known_workers.len();
                         m.avg_latency_ms = peer_tracker.avg_latency();
@@ -2420,7 +2601,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         let hb = serde_json::json!({
                             "type": "Heartbeat",
                             "peer_id": peer_id.to_string(),
-                            "available_slots": slots,
+                            "available_slots": available_slots,
                             "reputation_score": rep.reputation_score,
                             "uptime_secs": uptime,
                             "avg_latency_ms": rep.avg_execution_ms,
@@ -2466,7 +2647,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         accelerator: node_caps.accelerator.clone(),
                         models: validated_advertised_models.clone(),
                         worker_slots: worker_slots as u32,
-                        active_tasks: (pool.max_concurrent - pool.available_slots()) as u32,
+                        active_tasks: active_tasks as u32,
                         latency_ms: peer_tracker.avg_latency().max(1.0) as u32,
                     };
                     let _ = swarm.behaviour_mut().gossipsub.publish(
@@ -4626,5 +4807,96 @@ mod tests {
         };
         assert!(prefer_local.should_use_local(true));
         assert!(!prefer_local.should_use_local(false));
+    }
+
+    #[test]
+    fn test_checked_sub_usize_b_greater_than_a() {
+        let error = checked_sub_usize(
+            "max_concurrent_minus_available_slots",
+            1,
+            2,
+            "b_greater_than_a",
+        )
+        .unwrap_err();
+
+        assert_eq!(error.operation, "max_concurrent_minus_available_slots");
+        assert_eq!(error.operand_a, 1);
+        assert_eq!(error.operand_b, 2);
+        assert_eq!(error.reason, "b_greater_than_a");
+    }
+
+    #[test]
+    fn test_invalid_startup_resource_calculation_path() {
+        let error = compute_metrics_port(7001).unwrap_err();
+
+        assert_eq!(error.operation, "worker_port_minus_base");
+        assert_eq!(error.operand_a, 7001);
+        assert_eq!(error.operand_b, 9000);
+        assert_eq!(error.reason, "worker_port_below_metrics_base");
+    }
+
+    #[test]
+    fn test_worker_startup_overflow_emits_structured_error_code() {
+        let trace_id = format!("startup-overflow-test-{}", uuid_simple());
+        let error = StartupMathError::new(
+            "worker_port_minus_base",
+            7001,
+            9000,
+            "worker_port_below_metrics_base",
+        );
+        let policy = ResourcePolicy {
+            cpu_cores: 4,
+            max_cpu_load: 80,
+            ram_limit_gb: 4,
+            gpu_enabled: false,
+            disk_limit_gb: 10,
+            disk_path: "/tmp/iamine".to_string(),
+        };
+
+        emit_worker_startup_overflow_event(
+            &trace_id,
+            "node-test",
+            "peer-test",
+            7001,
+            &policy,
+            4,
+            4,
+            4,
+            &error,
+            "continue_without_metrics_server",
+        );
+
+        iamine_network::flush_structured_logs().unwrap();
+        let path = iamine_network::default_node_log_path();
+        let entries = iamine_network::read_log_entries(&path).unwrap();
+        let entry = entries
+            .iter()
+            .rev()
+            .find(|entry| {
+                entry.trace_id == trace_id && entry.event == "worker_startup_invalid_math"
+            })
+            .expect("startup overflow entry not found");
+
+        assert_eq!(
+            entry.error_code.as_deref(),
+            Some(WORKER_STARTUP_OVERFLOW_001)
+        );
+        assert_eq!(
+            entry
+                .fields
+                .get("fallback_behavior")
+                .and_then(|value| value.as_str()),
+            Some("continue_without_metrics_server")
+        );
+    }
+
+    #[test]
+    fn test_no_panic_for_invalid_startup_math_inputs() {
+        let result = std::panic::catch_unwind(|| {
+            let _ = compute_metrics_port(7001);
+            let _ = compute_active_tasks(1, 2);
+        });
+
+        assert!(result.is_ok());
     }
 }

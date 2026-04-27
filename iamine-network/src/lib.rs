@@ -32,7 +32,7 @@ pub use error_codes::{
     is_standard_error_code, MODEL_LOAD_FAILED_001, MODEL_UNSUPPORTED_HW_002,
     NET_PEER_DISCONNECTED_002, NET_TIMEOUT_001, NODE_BLACKLISTED_001, NODE_UNHEALTHY_002,
     SCH_NODE_UNHEALTHY_002, SCH_NO_NODE_001, TASK_EMPTY_RESULT_003, TASK_FAILED_002,
-    TASK_TIMEOUT_001,
+    TASK_TIMEOUT_001, WORKER_STARTUP_OVERFLOW_001,
 };
 pub use expression_parser::normalize_expression;
 pub use fault_handler::{select_retry_target, FailureKind, RetryPolicy, RetryState, RetryTarget};
