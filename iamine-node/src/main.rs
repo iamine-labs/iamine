@@ -40,17 +40,17 @@ use iamine_network::{
     record_distributed_task_retry, record_distributed_task_started, record_model_metrics,
     record_task_attempt, record_task_latency, select_retry_target, set_global_node_id, task_trace,
     validate_result, validate_semantic_decision, Complexity as PromptComplexityLevel,
-    DeterministicLevel as PromptDeterministicLevel, DistributedTask, DistributedTaskMetrics,
-    DistributedTaskResult, Domain as PromptDomain, ExactSubtype as PromptExactSubtype, FailureKind,
-    IntelligentScheduler, Language as PromptLanguage, LogLevel, ModelKarma, ModelMetrics,
-    ModelPolicyEngine, NetworkTopology, NodeCapabilityHeartbeat, NodeHealth, NodeRegistry,
-    OutputPolicyDecision, OutputStyle as PromptOutputStyle, PromptProfile, ResultStatus,
-    RetryPolicy, RetryState, SemanticFeedbackEngine, SemanticRoutingDecision,
-    SharedNetworkTopology, SharedNodeRegistry, StructuredLogEntry, TaskClaim, TaskManager,
-    TaskTrace, TaskType as PromptTaskType, ValidationResult as SemanticValidationResult,
-    MODEL_LOAD_FAILED_001, MODEL_UNSUPPORTED_HW_002, NET_PEER_DISCONNECTED_002,
-    NODE_BLACKLISTED_001, NODE_UNHEALTHY_002, SCH_NO_NODE_001, TASK_EMPTY_RESULT_003,
-    TASK_FAILED_002, TASK_TIMEOUT_001, WORKER_STARTUP_OVERFLOW_001,
+    DeterministicLevel as PromptDeterministicLevel, DistributedTaskMetrics, DistributedTaskResult,
+    Domain as PromptDomain, ExactSubtype as PromptExactSubtype, FailureKind, IntelligentScheduler,
+    Language as PromptLanguage, LogLevel, ModelKarma, ModelMetrics, ModelPolicyEngine,
+    NetworkTopology, NodeCapabilityHeartbeat, NodeHealth, NodeRegistry, OutputPolicyDecision,
+    OutputStyle as PromptOutputStyle, PromptProfile, ResultStatus, RetryPolicy, RetryState,
+    SemanticFeedbackEngine, SemanticRoutingDecision, SharedNetworkTopology, SharedNodeRegistry,
+    StructuredLogEntry, TaskClaim, TaskManager, TaskTrace, TaskType as PromptTaskType,
+    ValidationResult as SemanticValidationResult, MODEL_LOAD_FAILED_001, MODEL_UNSUPPORTED_HW_002,
+    NETWORK_NO_PUBSUB_PEERS_001, NET_PEER_DISCONNECTED_002, NODE_BLACKLISTED_001,
+    NODE_UNHEALTHY_002, PUBSUB_TOPIC_NOT_READY_001, SCH_NO_NODE_001, TASK_DISPATCH_UNCONFIRMED_001,
+    TASK_EMPTY_RESULT_003, TASK_FAILED_002, TASK_TIMEOUT_001, WORKER_STARTUP_OVERFLOW_001,
 };
 
 #[cfg(test)]
@@ -110,6 +110,7 @@ use task_protocol::{TaskRequest, TaskResponse};
 const TASK_TOPIC: &str = "iamine-tasks";
 const CAP_TOPIC: &str = "iamine-capabilities";
 const DIRECT_INF_TOPIC: &str = "iamine-direct-inference";
+const RESULTS_TOPIC: &str = "iamine-results";
 const INFER_TIMEOUT_MS: u64 = 5_000;
 const INFER_FALLBACK_AFTER_MS: u64 = 2_000;
 const MAX_DISTRIBUTED_RETRIES: u8 = 2;
@@ -675,10 +676,8 @@ async fn run_local_inference_with_validation(
             temperature
         };
         let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(100);
-        if attempt == 0 {
-            print!("📤 Respuesta: ");
-        } else {
-            print!("\n[Validator] Retrying once with stronger formatting guard...\n📤 Retry: ");
+        if attempt > 0 {
+            print!("\n[Validator] Retrying once with stronger formatting guard...\n");
         }
 
         let req = RealInferenceRequest {
@@ -909,6 +908,445 @@ impl DistributedInferState {
         self.current_model = None;
         true
     }
+}
+
+#[derive(Debug, Clone, Default)]
+struct PubsubTopicTracker {
+    joined_topic_hashes: HashSet<String>,
+    topic_peers: HashMap<String, HashSet<String>>,
+}
+
+impl PubsubTopicTracker {
+    fn register_local_subscription(&mut self, topic_name: &str) {
+        self.joined_topic_hashes
+            .insert(topic_hash_string(topic_name));
+    }
+
+    fn register_peer_subscription(&mut self, peer_id: &PeerId, topic: &gossipsub::TopicHash) {
+        self.topic_peers
+            .entry(topic.to_string())
+            .or_default()
+            .insert(peer_id.to_string());
+    }
+
+    fn unregister_peer_subscription(&mut self, peer_id: &PeerId, topic: &gossipsub::TopicHash) {
+        if let Some(peers) = self.topic_peers.get_mut(&topic.to_string()) {
+            peers.remove(&peer_id.to_string());
+            if peers.is_empty() {
+                self.topic_peers.remove(&topic.to_string());
+            }
+        }
+    }
+
+    fn unregister_peer(&mut self, peer_id: &PeerId) {
+        let peer = peer_id.to_string();
+        self.topic_peers.retain(|_, peers| {
+            peers.remove(&peer);
+            !peers.is_empty()
+        });
+    }
+
+    fn topic_peer_count(&self, topic_name: &str) -> usize {
+        self.topic_peers
+            .get(&topic_hash_string(topic_name))
+            .map(|peers| peers.len())
+            .unwrap_or(0)
+    }
+
+    fn mesh_peer_count(&self) -> usize {
+        self.topic_peers
+            .values()
+            .flat_map(|peers| peers.iter().cloned())
+            .collect::<HashSet<_>>()
+            .len()
+    }
+
+    fn joined(&self, topic_name: &str) -> bool {
+        self.joined_topic_hashes
+            .contains(&topic_hash_string(topic_name))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DispatchReadinessError {
+    code: &'static str,
+    reason: &'static str,
+}
+
+impl DispatchReadinessError {
+    fn new(code: &'static str, reason: &'static str) -> Self {
+        Self { code, reason }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct DispatchReadinessSnapshot {
+    connected_peer_count: usize,
+    mesh_peer_count: usize,
+    topic_peer_count: usize,
+    joined_task_topic: bool,
+    joined_direct_topic: bool,
+    joined_results_topic: bool,
+    selected_topic: &'static str,
+}
+
+fn topic_hash_string(topic_name: &str) -> String {
+    gossipsub::IdentTopic::new(topic_name).hash().to_string()
+}
+
+fn evaluate_dispatch_readiness(
+    snapshot: &DispatchReadinessSnapshot,
+) -> Result<(), DispatchReadinessError> {
+    if snapshot.connected_peer_count == 0 {
+        return Err(DispatchReadinessError::new(
+            NETWORK_NO_PUBSUB_PEERS_001,
+            "no_connected_peers",
+        ));
+    }
+
+    if !snapshot.joined_task_topic
+        || !snapshot.joined_direct_topic
+        || !snapshot.joined_results_topic
+    {
+        return Err(DispatchReadinessError::new(
+            PUBSUB_TOPIC_NOT_READY_001,
+            "required_topics_not_joined",
+        ));
+    }
+
+    if snapshot.mesh_peer_count == 0 {
+        return Err(DispatchReadinessError::new(
+            NETWORK_NO_PUBSUB_PEERS_001,
+            "no_pubsub_mesh_peers",
+        ));
+    }
+
+    if snapshot.topic_peer_count == 0 {
+        return Err(DispatchReadinessError::new(
+            PUBSUB_TOPIC_NOT_READY_001,
+            "destination_topic_has_zero_peers",
+        ));
+    }
+
+    Ok(())
+}
+
+fn should_print_result_output(output: &str) -> bool {
+    !output.trim().is_empty()
+}
+
+#[cfg(test)]
+fn apply_retry_fallback_metrics(
+    metrics: &mut DistributedTaskMetrics,
+    retry_taken: bool,
+    fallback_broadcast: bool,
+) {
+    if retry_taken {
+        metrics.retry_recorded();
+    }
+    if fallback_broadcast {
+        metrics.fallback_recorded();
+    }
+}
+
+fn emit_dispatch_context_event(
+    trace_task_id: &str,
+    attempt_id: &str,
+    selected_model: &str,
+    candidates: &[String],
+    connected_peer_count: usize,
+    topic_peer_count: usize,
+    selected_topic: &str,
+    target_peer_id: Option<&str>,
+) {
+    log_observability_event(
+        LogLevel::Info,
+        "task_dispatch_context",
+        trace_task_id,
+        Some(trace_task_id),
+        Some(selected_model),
+        None,
+        {
+            let mut fields = Map::new();
+            fields.insert("attempt_id".to_string(), attempt_id.into());
+            fields.insert(
+                "selected_model".to_string(),
+                selected_model.to_string().into(),
+            );
+            fields.insert("candidates".to_string(), serde_json::json!(candidates));
+            fields.insert(
+                "connected_peer_count".to_string(),
+                (connected_peer_count as u64).into(),
+            );
+            fields.insert(
+                "topic_peer_count".to_string(),
+                (topic_peer_count as u64).into(),
+            );
+            fields.insert(
+                "selected_topic".to_string(),
+                selected_topic.to_string().into(),
+            );
+            if let Some(target_peer_id) = target_peer_id {
+                fields.insert("target_peer_id".to_string(), target_peer_id.into());
+            }
+            fields
+        },
+    );
+}
+
+fn emit_dispatch_readiness_failure_event(
+    trace_task_id: &str,
+    attempt_id: &str,
+    selected_model: &str,
+    candidates: &[String],
+    target_peer_id: Option<&str>,
+    snapshot: &DispatchReadinessSnapshot,
+    error: &DispatchReadinessError,
+) {
+    log_observability_event(
+        LogLevel::Error,
+        "task_dispatch_readiness_failed",
+        trace_task_id,
+        Some(trace_task_id),
+        Some(selected_model),
+        Some(error.code),
+        {
+            let mut fields = Map::new();
+            fields.insert("attempt_id".to_string(), attempt_id.into());
+            fields.insert("reason".to_string(), error.reason.into());
+            fields.insert("candidates".to_string(), serde_json::json!(candidates));
+            fields.insert(
+                "connected_peer_count".to_string(),
+                (snapshot.connected_peer_count as u64).into(),
+            );
+            fields.insert(
+                "mesh_peer_count".to_string(),
+                (snapshot.mesh_peer_count as u64).into(),
+            );
+            fields.insert(
+                "topic_peer_count".to_string(),
+                (snapshot.topic_peer_count as u64).into(),
+            );
+            fields.insert(
+                "joined_task_topic".to_string(),
+                snapshot.joined_task_topic.into(),
+            );
+            fields.insert(
+                "joined_direct_topic".to_string(),
+                snapshot.joined_direct_topic.into(),
+            );
+            fields.insert(
+                "joined_results_topic".to_string(),
+                snapshot.joined_results_topic.into(),
+            );
+            fields.insert("selected_topic".to_string(), snapshot.selected_topic.into());
+            if let Some(target_peer_id) = target_peer_id {
+                fields.insert("target_peer_id".to_string(), target_peer_id.into());
+            }
+            fields
+        },
+    );
+}
+
+fn emit_task_publish_attempt_event(
+    trace_task_id: &str,
+    attempt_id: &str,
+    model_id: &str,
+    topic: &str,
+    publish_peer_count: usize,
+    payload_size: usize,
+) {
+    log_observability_event(
+        LogLevel::Info,
+        "task_publish_attempt",
+        trace_task_id,
+        Some(trace_task_id),
+        Some(model_id),
+        None,
+        {
+            let mut fields = Map::new();
+            fields.insert("attempt_id".to_string(), attempt_id.into());
+            fields.insert("topic".to_string(), topic.into());
+            fields.insert(
+                "publish_peer_count".to_string(),
+                (publish_peer_count as u64).into(),
+            );
+            fields.insert("payload_size".to_string(), (payload_size as u64).into());
+            fields
+        },
+    );
+}
+
+fn emit_task_published_event(
+    trace_task_id: &str,
+    attempt_id: &str,
+    model_id: &str,
+    topic: &str,
+    publish_peer_count: usize,
+    payload_size: usize,
+    message_id: &str,
+) {
+    log_observability_event(
+        LogLevel::Info,
+        "task_published",
+        trace_task_id,
+        Some(trace_task_id),
+        Some(model_id),
+        None,
+        {
+            let mut fields = Map::new();
+            fields.insert("attempt_id".to_string(), attempt_id.into());
+            fields.insert("topic".to_string(), topic.into());
+            fields.insert(
+                "publish_peer_count".to_string(),
+                (publish_peer_count as u64).into(),
+            );
+            fields.insert("payload_size".to_string(), (payload_size as u64).into());
+            fields.insert("message_id".to_string(), message_id.into());
+            fields
+        },
+    );
+}
+
+fn emit_task_publish_failed_event(
+    trace_task_id: &str,
+    attempt_id: &str,
+    model_id: &str,
+    topic: &str,
+    publish_peer_count: usize,
+    payload_size: usize,
+    error: &str,
+) {
+    log_observability_event(
+        LogLevel::Error,
+        "task_publish_failed",
+        trace_task_id,
+        Some(trace_task_id),
+        Some(model_id),
+        Some(TASK_DISPATCH_UNCONFIRMED_001),
+        {
+            let mut fields = Map::new();
+            fields.insert("attempt_id".to_string(), attempt_id.into());
+            fields.insert("topic".to_string(), topic.into());
+            fields.insert(
+                "publish_peer_count".to_string(),
+                (publish_peer_count as u64).into(),
+            );
+            fields.insert("payload_size".to_string(), (payload_size as u64).into());
+            fields.insert("error".to_string(), error.into());
+            fields
+        },
+    );
+}
+
+fn emit_worker_task_message_received_event(
+    trace_task_id: &str,
+    attempt_id: &str,
+    topic: &str,
+    from_peer: &str,
+    payload_parse_result: &str,
+    selected_model: &str,
+    local_model_available: bool,
+) {
+    log_observability_event(
+        LogLevel::Info,
+        "task_message_received",
+        trace_task_id,
+        Some(trace_task_id),
+        Some(selected_model),
+        None,
+        {
+            let mut fields = Map::new();
+            fields.insert("attempt_id".to_string(), attempt_id.into());
+            fields.insert("topic".to_string(), topic.into());
+            fields.insert("from_peer".to_string(), from_peer.into());
+            fields.insert(
+                "payload_parse_result".to_string(),
+                payload_parse_result.into(),
+            );
+            fields.insert(
+                "local_model_available".to_string(),
+                local_model_available.into(),
+            );
+            fields
+        },
+    );
+}
+
+fn emit_worker_task_completed_event(
+    trace_task_id: &str,
+    attempt_id: &str,
+    model_id: &str,
+    result_size: usize,
+    success: bool,
+) {
+    log_observability_event(
+        LogLevel::Info,
+        "task_completed",
+        trace_task_id,
+        Some(trace_task_id),
+        Some(model_id),
+        None,
+        {
+            let mut fields = Map::new();
+            fields.insert("attempt_id".to_string(), attempt_id.into());
+            fields.insert("result_size".to_string(), (result_size as u64).into());
+            fields.insert("success".to_string(), success.into());
+            fields
+        },
+    );
+}
+
+fn emit_worker_result_published_event(
+    trace_task_id: &str,
+    attempt_id: &str,
+    model_id: &str,
+    topic: &str,
+    result_size: usize,
+    message_id: Option<&str>,
+) {
+    log_observability_event(
+        LogLevel::Info,
+        "result_published",
+        trace_task_id,
+        Some(trace_task_id),
+        Some(model_id),
+        None,
+        {
+            let mut fields = Map::new();
+            fields.insert("attempt_id".to_string(), attempt_id.into());
+            fields.insert("topic".to_string(), topic.into());
+            fields.insert("result_size".to_string(), (result_size as u64).into());
+            if let Some(message_id) = message_id {
+                fields.insert("message_id".to_string(), message_id.into());
+            }
+            fields
+        },
+    );
+}
+
+fn emit_result_received_event(
+    trace_task_id: &str,
+    attempt_id: &str,
+    model_id: Option<&str>,
+    from_peer: &str,
+    latency_ms: u64,
+) {
+    log_observability_event(
+        LogLevel::Info,
+        "result_received",
+        trace_task_id,
+        Some(trace_task_id),
+        model_id,
+        None,
+        {
+            let mut fields = Map::new();
+            fields.insert("attempt_id".to_string(), attempt_id.into());
+            fields.insert("from_peer".to_string(), from_peer.into());
+            fields.insert("latency_ms".to_string(), latency_ms.into());
+            fields
+        },
+    );
 }
 
 fn clear_stream_state(
@@ -2061,11 +2499,38 @@ async fn main() -> Result<(), Box<dyn Error>> {
         println!("╚══════════════════════════════════╝\n");
     }
 
-    // 1️⃣ Identidad persistente
-    let node_identity = NodeIdentity::load_or_create();
+    // 1️⃣ Identidad de runtime (modo infer usa identidad efimera para evitar conflicto con worker local)
+    let use_ephemeral_identity = matches!(mode, NodeMode::Infer { .. });
+    let node_identity = if use_ephemeral_identity {
+        NodeIdentity::ephemeral("infer_mode_peer_id_isolation")
+    } else {
+        NodeIdentity::load_or_create()
+    };
     let peer_id = node_identity.peer_id;
     set_global_node_id(&peer_id.to_string());
     let id_keys = node_identity.keypair.clone();
+
+    if use_ephemeral_identity {
+        log_observability_event(
+            LogLevel::Info,
+            "identity_mode_selected",
+            "startup",
+            None,
+            None,
+            None,
+            {
+                let mut fields = Map::new();
+                fields.insert("mode".to_string(), "infer".into());
+                fields.insert("identity_kind".to_string(), "ephemeral".into());
+                fields.insert(
+                    "reason".to_string(),
+                    "avoid_peer_id_conflict_with_local_worker".into(),
+                );
+                fields.insert("peer_id".to_string(), peer_id.to_string().into());
+                fields
+            },
+        );
+    }
 
     // 2️⃣ Wallet
     let wallet = Wallet::load_or_create(&node_identity.wallet_address); // ← sin mut
@@ -2272,9 +2737,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
     gossipsub_behaviour.subscribe(&gossipsub::IdentTopic::new("iamine-bids"))?;
     gossipsub_behaviour.subscribe(&gossipsub::IdentTopic::new("iamine-assign"))?;
     gossipsub_behaviour.subscribe(&gossipsub::IdentTopic::new("iamine-heartbeat"))?;
-    gossipsub_behaviour.subscribe(&gossipsub::IdentTopic::new("iamine-results"))?;
+    gossipsub_behaviour.subscribe(&gossipsub::IdentTopic::new(RESULTS_TOPIC))?;
     gossipsub_behaviour.subscribe(&gossipsub::IdentTopic::new(CAP_TOPIC))?;
     gossipsub_behaviour.subscribe(&gossipsub::IdentTopic::new(DIRECT_INF_TOPIC))?;
+    let mut pubsub_topics = PubsubTopicTracker::default();
+    pubsub_topics.register_local_subscription(TASK_TOPIC);
+    pubsub_topics.register_local_subscription(DIRECT_INF_TOPIC);
+    pubsub_topics.register_local_subscription(RESULTS_TOPIC);
 
     let mut kad_cfg = kad::Config::default();
     kad_cfg.set_query_timeout(Duration::from_secs(30));
@@ -2734,12 +3203,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         {
                             let rid = infer_state.current_request_id.clone();
                             let trace_task_id = infer_state.trace_task_id.clone();
-                            let target_peer = known_workers
-                                .iter()
-                                .find(|peer| peer.to_string() == best_peer)
-                                .copied();
                             let is_retry_attempt = infer_state.retry_state.retry_count > 0;
-                            let is_fallback_attempt = infer_state
+                            let is_model_switch_attempt = infer_state
                                 .current_model
                                 .as_ref()
                                 .map(|previous_model| previous_model != &routed_model)
@@ -2751,7 +3216,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     infer_state.retry_state.retry_count,
                                     infer_state.retry_policy.max_retries
                                 );
-                                if is_fallback_attempt {
+                                if is_model_switch_attempt {
                                     if let Some(previous_model) = infer_state.current_model.as_ref() {
                                         println!(
                                             "[Fallback] Switching model {} -> {}",
@@ -2761,27 +3226,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 }
                             }
 
-                            infer_state.record_attempt(
-                                best_peer.clone(),
-                                routed_model.clone(),
-                                profile.task_type,
-                                semantic_prompt.clone(),
-                                local_cluster.clone(),
-                                candidates.clone(),
-                            );
-                            let _ = record_task_attempt(
-                                &trace_task_id,
-                                &best_peer,
-                                &routed_model,
-                                is_retry_attempt,
-                                is_fallback_attempt,
-                            );
-                            if is_retry_attempt {
-                                let _ = record_distributed_task_retry();
-                            }
-                            if is_fallback_attempt {
-                                let _ = record_distributed_task_fallback();
-                            }
                             println!(
                                 "[Trace] task_id={} attempt_id={} peer_id={} cluster_id={} model_id={}",
                                 trace_task_id,
@@ -2842,139 +3286,160 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 &rid,
                                 "dispatching distributed task",
                             );
-
-                            if let Some(target_peer) = target_peer {
-                                let task = DistributedTask::with_attempt(
-                                    trace_task_id.clone(),
-                                    rid.clone(),
-                                    semantic_prompt.clone(),
-                                    routed_model.clone(),
-                                );
-                                task_manager.register_task(task.clone()).await;
-                                println!(
-                                    "[Task] Created task_id={} attempt_id={} peer_id={} cluster_id={} model_id={}",
-                                    task.id,
-                                    task.attempt_id,
-                                    best_peer,
-                                    selected_cluster_id.as_deref().unwrap_or("-"),
-                                    routed_model
-                                );
-                                log_observability_event(
-                                    LogLevel::Info,
-                                    "task_created",
+                            let topic_peer_count = pubsub_topics.topic_peer_count(DIRECT_INF_TOPIC);
+                            let readiness_snapshot = DispatchReadinessSnapshot {
+                                connected_peer_count: known_workers.len(),
+                                mesh_peer_count: pubsub_topics.mesh_peer_count(),
+                                topic_peer_count,
+                                joined_task_topic: pubsub_topics.joined(TASK_TOPIC),
+                                joined_direct_topic: pubsub_topics.joined(DIRECT_INF_TOPIC),
+                                joined_results_topic: pubsub_topics.joined(RESULTS_TOPIC),
+                                selected_topic: DIRECT_INF_TOPIC,
+                            };
+                            emit_dispatch_context_event(
+                                &trace_task_id,
+                                &rid,
+                                &routed_model,
+                                &candidates,
+                                readiness_snapshot.connected_peer_count,
+                                readiness_snapshot.topic_peer_count,
+                                DIRECT_INF_TOPIC,
+                                Some(&best_peer),
+                            );
+                            if let Err(readiness_error) = evaluate_dispatch_readiness(&readiness_snapshot)
+                            {
+                                emit_dispatch_readiness_failure_event(
                                     &trace_task_id,
-                                    Some(&task.id),
-                                    Some(&routed_model),
-                                    None,
-                                    {
-                                        let mut fields = Map::new();
-                                        fields.insert("peer_id".to_string(), best_peer.clone().into());
-                                        fields.insert("attempt_id".to_string(), rid.clone().into());
-                                        fields.insert("success".to_string(), true.into());
-                                        fields
-                                    },
+                                    &rid,
+                                    &routed_model,
+                                    &candidates,
+                                    Some(&best_peer),
+                                    &readiness_snapshot,
+                                    &readiness_error,
                                 );
-                                swarm
-                                    .behaviour_mut()
-                                    .request_response
-                                    .send_request(&target_peer, TaskRequest::distributed(task));
+                                let elapsed_ms = infer_started_at
+                                    .map(|started| started.elapsed().as_millis() as u64)
+                                    .unwrap_or_default();
+                                if elapsed_ms < INFER_TIMEOUT_MS {
+                                    debug_network_log(
+                                        debug_flags,
+                                        format!(
+                                            "dispatch waiting for readiness task_id={} attempt_id={} reason={} elapsed_ms={}",
+                                            trace_task_id, rid, readiness_error.reason, elapsed_ms
+                                        ),
+                                    );
+                                    continue;
+                                }
+                                return Err(format!(
+                                    "Dispatch readiness timeout: task_id={} attempt_id={} reason={} [{}]",
+                                    trace_task_id, rid, readiness_error.reason, readiness_error.code
+                                )
+                                .into());
+                            }
 
-                                metrics
-                                    .write()
-                                    .await
-                                    .routing_decision(start.elapsed().as_millis() as u64);
-                                infer_broadcast_sent = true;
-                                waiting_for_response = true;
-                                pending_inference.insert(rid.clone(), tokio::time::Instant::now());
-                                infer_request_id = Some(rid.clone());
-                                println!(
-                                    "[Routing] task_id={} attempt_id={} peer_id={} cluster_id={} model_id={}",
-                                    trace_task_id,
-                                    rid,
-                                    best_peer,
-                                    selected_cluster_id.as_deref().unwrap_or("-"),
-                                    routed_model
-                                );
-                                println!(
-                                    "[Scheduler] Selected node {} with score {:.3}",
-                                    best_peer, node_score
-                                );
-                                println!(
-                                    "[Task] Sent task_id={} attempt_id={} to peer_id={}",
-                                    trace_task_id, rid, best_peer
-                                );
-                                log_observability_event(
-                                    LogLevel::Info,
-                                    "task_sent",
-                                    &trace_task_id,
-                                    Some(&trace_task_id),
-                                    Some(&routed_model),
-                                    None,
-                                    {
-                                        let mut fields = Map::new();
-                                        fields.insert("peer_id".to_string(), best_peer.clone().into());
-                                        fields.insert("attempt_id".to_string(), rid.clone().into());
-                                        fields
-                                    },
-                                );
-                                print!("📤 Respuesta: ");
-                                let _ = std::io::Write::flush(&mut std::io::stdout());
-                            } else {
-                                let direct = DirectInferenceRequest {
-                                    request_id: rid.clone(),
-                                    target_peer: best_peer.to_string(),
-                                    model: routed_model.clone(),
-                                    prompt: semantic_prompt.clone(),
-                                    max_tokens: output_policy.max_tokens as u32,
-                                };
-
-                                let _ = swarm.behaviour_mut().gossipsub.publish(
-                                    gossipsub::IdentTopic::new(DIRECT_INF_TOPIC),
-                                    serde_json::to_vec(&direct.to_gossip_json()).unwrap(),
-                                );
-
-                                metrics
-                                    .write()
-                                    .await
-                                    .routing_decision(start.elapsed().as_millis() as u64);
-                                infer_broadcast_sent = true;
-                                waiting_for_response = true;
-                                pending_inference.insert(rid.clone(), tokio::time::Instant::now());
-                                infer_request_id = Some(rid.clone());
-                                println!(
-                                    "[Routing] task_id={} attempt_id={} peer_id={} cluster_id={} model_id={}",
-                                    trace_task_id,
-                                    rid,
-                                    best_peer,
-                                    selected_cluster_id.as_deref().unwrap_or("-"),
-                                    routed_model
-                                );
-                                println!(
-                                    "[Scheduler] Selected node {} with score {:.3}",
-                                    best_peer, node_score
-                                );
-                                println!(
-                                    "🧠 DirectInferenceRequest enviado [{}] → {}",
-                                    &rid[..8.min(rid.len())],
-                                    best_peer
-                                );
-                                log_observability_event(
-                                    LogLevel::Info,
-                                    "task_sent",
-                                    &trace_task_id,
-                                    Some(&trace_task_id),
-                                    Some(&routed_model),
-                                    None,
-                                    {
-                                        let mut fields = Map::new();
-                                        fields.insert("peer_id".to_string(), best_peer.clone().into());
-                                        fields.insert("attempt_id".to_string(), rid.clone().into());
-                                        fields.insert("transport".to_string(), "gossipsub".into());
-                                        fields
-                                    },
-                                );
-                                print!("📤 Respuesta: ");
-                                let _ = std::io::Write::flush(&mut std::io::stdout());
+                            let direct = DirectInferenceRequest {
+                                request_id: rid.clone(),
+                                target_peer: best_peer.to_string(),
+                                model: routed_model.clone(),
+                                prompt: semantic_prompt.clone(),
+                                max_tokens: output_policy.max_tokens as u32,
+                            };
+                            let mut direct_payload = direct.to_gossip_json();
+                            if let Some(map) = direct_payload.as_object_mut() {
+                                map.insert("task_id".to_string(), trace_task_id.clone().into());
+                                map.insert("attempt_id".to_string(), rid.clone().into());
+                            }
+                            let payload = serde_json::to_vec(&direct_payload)
+                                .map_err(|error| format!("Direct dispatch payload error: {}", error))?;
+                            let payload_size = payload.len();
+                            emit_task_publish_attempt_event(
+                                &trace_task_id,
+                                &rid,
+                                &routed_model,
+                                DIRECT_INF_TOPIC,
+                                topic_peer_count,
+                                payload_size,
+                            );
+                            let publish_result = swarm.behaviour_mut().gossipsub.publish(
+                                gossipsub::IdentTopic::new(DIRECT_INF_TOPIC),
+                                payload,
+                            );
+                            match publish_result {
+                                Ok(message_id) => {
+                                    let message_id = message_id.to_string();
+                                    infer_state.record_attempt(
+                                        best_peer.clone(),
+                                        routed_model.clone(),
+                                        profile.task_type,
+                                        semantic_prompt.clone(),
+                                        local_cluster.clone(),
+                                        candidates.clone(),
+                                    );
+                                    let _ = record_task_attempt(
+                                        &trace_task_id,
+                                        &best_peer,
+                                        &routed_model,
+                                        is_retry_attempt,
+                                        is_model_switch_attempt,
+                                    );
+                                    if is_retry_attempt {
+                                        let _ = record_distributed_task_retry();
+                                    }
+                                    emit_task_published_event(
+                                        &trace_task_id,
+                                        &rid,
+                                        &routed_model,
+                                        DIRECT_INF_TOPIC,
+                                        topic_peer_count,
+                                        payload_size,
+                                        &message_id,
+                                    );
+                                    metrics
+                                        .write()
+                                        .await
+                                        .routing_decision(start.elapsed().as_millis() as u64);
+                                    infer_broadcast_sent = true;
+                                    waiting_for_response = true;
+                                    pending_inference.insert(
+                                        rid.clone(),
+                                        tokio::time::Instant::now(),
+                                    );
+                                    infer_request_id = Some(rid.clone());
+                                    println!(
+                                        "[Routing] task_id={} attempt_id={} peer_id={} cluster_id={} model_id={}",
+                                        trace_task_id,
+                                        rid,
+                                        best_peer,
+                                        selected_cluster_id.as_deref().unwrap_or("-"),
+                                        routed_model
+                                    );
+                                    println!(
+                                        "[Scheduler] Selected node {} with score {:.3}",
+                                        best_peer, node_score
+                                    );
+                                    println!(
+                                        "🧠 DirectInferenceRequest enviado [{}] → {}",
+                                        &rid[..8.min(rid.len())],
+                                        best_peer
+                                    );
+                                }
+                                Err(error) => {
+                                    let error_text = error.to_string();
+                                    emit_task_publish_failed_event(
+                                        &trace_task_id,
+                                        &rid,
+                                        &routed_model,
+                                        DIRECT_INF_TOPIC,
+                                        topic_peer_count,
+                                        payload_size,
+                                        &error_text,
+                                    );
+                                    return Err(format!(
+                                        "Dispatch publish failed: task_id={} attempt_id={} error={} [{}]",
+                                        trace_task_id, rid, error_text, TASK_DISPATCH_UNCONFIRMED_001
+                                    )
+                                    .into());
+                                }
                             }
                         } else if total_nodes > 0
                             && candidates.iter().all(|m| !available_models.contains(m))
@@ -3000,7 +3465,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             eprintln!("❌ Ningún nodo en la red tiene un modelo compatible instalado.");
                             eprintln!("   Nodos conocidos: {}", total_nodes);
                             eprintln!("   Candidates: {}", candidates.join(", "));
-                            break;
+                            return Err("No compatible node available for distributed inference".into());
                         } else if infer_started_at
                             .map(|t| t.elapsed().as_millis() as u64)
                             .unwrap_or(0)
@@ -3009,6 +3474,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             // Fallback automático a broadcast legacy
                             let rid = infer_state.current_request_id.clone();
                             let mid = selected_model.clone();
+                            let trace_task_id = infer_state.trace_task_id.clone();
                             let task = InferenceTask::new(
                                 rid.clone(),
                                 mid,
@@ -3016,26 +3482,117 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 output_policy.max_tokens as u32,
                                 peer_id.to_string(),
                             );
+                            let topic_peer_count = pubsub_topics.topic_peer_count(TASK_TOPIC);
+                            let readiness_snapshot = DispatchReadinessSnapshot {
+                                connected_peer_count: known_workers.len(),
+                                mesh_peer_count: pubsub_topics.mesh_peer_count(),
+                                topic_peer_count,
+                                joined_task_topic: pubsub_topics.joined(TASK_TOPIC),
+                                joined_direct_topic: pubsub_topics.joined(DIRECT_INF_TOPIC),
+                                joined_results_topic: pubsub_topics.joined(RESULTS_TOPIC),
+                                selected_topic: TASK_TOPIC,
+                            };
+                            emit_dispatch_context_event(
+                                &trace_task_id,
+                                &rid,
+                                &selected_model,
+                                &candidates,
+                                readiness_snapshot.connected_peer_count,
+                                readiness_snapshot.topic_peer_count,
+                                TASK_TOPIC,
+                                None,
+                            );
+                            if let Err(readiness_error) = evaluate_dispatch_readiness(&readiness_snapshot)
+                            {
+                                emit_dispatch_readiness_failure_event(
+                                    &trace_task_id,
+                                    &rid,
+                                    &selected_model,
+                                    &candidates,
+                                    None,
+                                    &readiness_snapshot,
+                                    &readiness_error,
+                                );
+                                let elapsed_ms = infer_started_at
+                                    .map(|started| started.elapsed().as_millis() as u64)
+                                    .unwrap_or_default();
+                                if elapsed_ms < INFER_TIMEOUT_MS {
+                                    debug_network_log(
+                                        debug_flags,
+                                        format!(
+                                            "fallback waiting for readiness task_id={} attempt_id={} reason={} elapsed_ms={}",
+                                            trace_task_id, rid, readiness_error.reason, elapsed_ms
+                                        ),
+                                    );
+                                    continue;
+                                }
+                                return Err(format!(
+                                    "Fallback dispatch readiness timeout: task_id={} attempt_id={} reason={} [{}]",
+                                    trace_task_id, rid, readiness_error.reason, readiness_error.code
+                                )
+                                .into());
+                            }
 
-                            let _ = swarm.behaviour_mut().gossipsub.publish(
+                            let mut fallback_payload = task.to_gossip_json();
+                            if let Some(map) = fallback_payload.as_object_mut() {
+                                map.insert("task_id".to_string(), trace_task_id.clone().into());
+                                map.insert("attempt_id".to_string(), rid.clone().into());
+                            }
+                            let payload = serde_json::to_vec(&fallback_payload)
+                                .map_err(|error| format!("Fallback dispatch payload error: {}", error))?;
+                            let payload_size = payload.len();
+                            emit_task_publish_attempt_event(
+                                &trace_task_id,
+                                &rid,
+                                &selected_model,
+                                TASK_TOPIC,
+                                topic_peer_count,
+                                payload_size,
+                            );
+                            let publish_result = swarm.behaviour_mut().gossipsub.publish(
                                 gossipsub::IdentTopic::new(TASK_TOPIC),
-                                serde_json::to_vec(&task.to_gossip_json()).unwrap(),
+                                payload,
                             );
-
-                            infer_broadcast_sent = true;
-                            waiting_for_response = true;
-                            pending_inference.insert(rid.clone(), tokio::time::Instant::now());
-                            infer_request_id = Some(rid.clone());
-                            println!(
-                                "↪️  Fallback broadcast enviado: task_id={} attempt_id={}",
-                                distributed_infer_state
-                                    .as_ref()
-                                    .map(|state| state.trace_task_id.as_str())
-                                    .unwrap_or("-"),
-                                rid
-                            );
-                            print!("📤 Respuesta: ");
-                            let _ = std::io::Write::flush(&mut std::io::stdout());
+                            match publish_result {
+                                Ok(message_id) => {
+                                    let message_id = message_id.to_string();
+                                    emit_task_published_event(
+                                        &trace_task_id,
+                                        &rid,
+                                        &selected_model,
+                                        TASK_TOPIC,
+                                        topic_peer_count,
+                                        payload_size,
+                                        &message_id,
+                                    );
+                                    let _ = record_distributed_task_fallback();
+                                    infer_broadcast_sent = true;
+                                    waiting_for_response = true;
+                                    pending_inference.insert(rid.clone(), tokio::time::Instant::now());
+                                    infer_request_id = Some(rid.clone());
+                                    println!(
+                                        "↪️  Fallback broadcast enviado: task_id={} attempt_id={} message_id={}",
+                                        trace_task_id, rid, message_id
+                                    );
+                                }
+                                Err(error) => {
+                                    let error_text = error.to_string();
+                                    emit_task_publish_failed_event(
+                                        &trace_task_id,
+                                        &rid,
+                                        &selected_model,
+                                        TASK_TOPIC,
+                                        topic_peer_count,
+                                        payload_size,
+                                        &error_text,
+                                    );
+                                    return Err(format!(
+                                        "Fallback dispatch publish failed: task_id={} attempt_id={} error={} [{}]",
+                                        trace_task_id, rid, error_text, TASK_DISPATCH_UNCONFIRMED_001
+                                    )
+                                    .into());
+                                }
+                            }
                         }
                     }
                 }
@@ -3222,15 +3779,29 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             },
                         );
                         known_workers.remove(&pid);
+                        pubsub_topics.unregister_peer(&pid);
                         swarm.behaviour_mut().gossipsub.remove_explicit_peer(&pid);
                     }
                 }
 
                 SwarmEvent::Behaviour(IaMineEvent::Gossipsub(gossipsub::Event::Message {
-                    propagation_source: _,
+                    propagation_source,
                     message,
                     ..
                 })) => {
+                    let from_peer = propagation_source.to_string();
+                    let message_topic = if message.topic == gossipsub::IdentTopic::new(TASK_TOPIC).hash() {
+                        TASK_TOPIC
+                    } else if message.topic == gossipsub::IdentTopic::new(DIRECT_INF_TOPIC).hash() {
+                        DIRECT_INF_TOPIC
+                    } else if message.topic == gossipsub::IdentTopic::new(RESULTS_TOPIC).hash() {
+                        RESULTS_TOPIC
+                    } else if message.topic == gossipsub::IdentTopic::new(CAP_TOPIC).hash() {
+                        CAP_TOPIC
+                    } else {
+                        "unknown"
+                    };
+
                     // 1) Procesar capabilities por TOPIC (no por msg_type)
                     if message.topic == gossipsub::IdentTopic::new(CAP_TOPIC).hash() {
                         if let Ok(hb) = serde_json::from_slice::<NodeCapabilityHeartbeat>(&message.data) {
@@ -3435,17 +4006,37 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                             "InferenceRequest" if matches!(mode, NodeMode::Worker) => {
                                 let request_id = msg["request_id"].as_str().unwrap_or("").to_string();
+                                let task_id = msg["task_id"]
+                                    .as_str()
+                                    .filter(|value| !value.trim().is_empty())
+                                    .unwrap_or(request_id.as_str())
+                                    .to_string();
+                                let attempt_id = msg["attempt_id"]
+                                    .as_str()
+                                    .filter(|value| !value.trim().is_empty())
+                                    .unwrap_or(request_id.as_str())
+                                    .to_string();
                                 let model_id = msg["model_id"].as_str().unwrap_or("").to_string();
                                 let prompt = msg["prompt"].as_str().unwrap_or("").to_string();
                                 let max_tokens = msg["max_tokens"].as_u64().unwrap_or(200) as u32;
                                 let temperature = msg["temperature"].as_f64().unwrap_or(0.7) as f32;
                                 let _requester = msg["requester_peer"].as_str().unwrap_or("").to_string();
+                                let local_model_available = model_storage.has_model(&model_id);
+                                emit_worker_task_message_received_event(
+                                    &task_id,
+                                    &attempt_id,
+                                    message_topic,
+                                    &from_peer,
+                                    "ok",
+                                    &model_id,
+                                    local_model_available,
+                                );
 
                                 println!("🧠 [Worker] InferenceRequest: model={} prompt='{}'",
                                     model_id, &prompt[..prompt.len().min(40)]);
 
                                 // Check model installed
-                                if !model_storage.has_model(&model_id) {
+                                if !local_model_available {
                                     println!("   ⚠️ Modelo {} no instalado — ignorando", model_id);
                                     continue;
                                 }
@@ -3463,6 +4054,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 let registry_clone = ModelRegistry::new();
                                 let peer_id_str = peer_id.to_string();
                                 let request_id_clone = request_id.clone();
+                                let model_id_for_inference = model_id.clone();
 
                                 // Crear canal para tokens streaming
                                 let (token_tx, mut token_rx) = tokio::sync::mpsc::channel::<String>(100);
@@ -3471,7 +4063,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 let inference_handle = tokio::spawn(async move {
                                     let req = RealInferenceRequest {
                                         task_id: request_id_clone.clone(),
-                                        model_id: model_id.clone(),
+                                        model_id: model_id_for_inference.clone(),
                                         prompt,
                                         max_tokens,
                                         temperature,
@@ -3484,18 +4076,24 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                             Ok(response) => response.result,
                                             Err(e) => {
                                                 return InferenceTaskResult::failure(
-                                                    request_id_clone, model_id, peer_id_str, e,
+                                                    request_id_clone.clone(),
+                                                    model_id_for_inference.clone(),
+                                                    peer_id_str.clone(),
+                                                    e,
                                                 );
                                             }
                                         }
                                     } else {
                                         let eng = Arc::clone(&engine_ref);
-                                        let hash = registry_clone.get(&model_id)
+                                        let hash = registry_clone.get(&model_id_for_inference)
                                             .map(|m| m.hash.clone())
                                             .unwrap_or_default();
-                                        if let Err(e) = eng.load_model(&model_id, &hash) {
+                                        if let Err(e) = eng.load_model(&model_id_for_inference, &hash) {
                                             return InferenceTaskResult::failure(
-                                                request_id_clone, model_id, peer_id_str, e,
+                                                request_id_clone.clone(),
+                                                model_id_for_inference.clone(),
+                                                peer_id_str.clone(),
+                                                e,
                                             );
                                         }
 
@@ -3504,7 +4102,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                                     InferenceTaskResult::success(
                                         request_id_clone,
-                                        model_id,
+                                        model_id_for_inference,
                                         result.output,
                                         result.tokens_generated,
                                         result.truncated,
@@ -3525,7 +4123,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         is_final: false,
                                     };
                                     let _ = swarm.behaviour_mut().gossipsub.publish(
-                                        gossipsub::IdentTopic::new("iamine-results"),
+                                        gossipsub::IdentTopic::new(RESULTS_TOPIC),
                                         serde_json::to_vec(&st.to_gossip_json()).unwrap(),
                                     );
                                     token_idx += 1;
@@ -3540,11 +4138,49 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                             m.inference_failed();
                                         }
                                     }
-
-                                    let _ = swarm.behaviour_mut().gossipsub.publish(
-                                        gossipsub::IdentTopic::new("iamine-results"),
-                                        serde_json::to_vec(&result.to_gossip_json()).unwrap(),
+                                    let result_size = result.output.len();
+                                    emit_worker_task_completed_event(
+                                        &task_id,
+                                        &attempt_id,
+                                        &model_id,
+                                        result_size,
+                                        result.success,
                                     );
+                                    let mut result_payload = result.to_gossip_json();
+                                    if let Some(map) = result_payload.as_object_mut() {
+                                        map.insert("task_id".to_string(), task_id.clone().into());
+                                        map.insert("attempt_id".to_string(), attempt_id.clone().into());
+                                    }
+                                    let payload_size = result_payload.to_string().len();
+                                    let publish_result = swarm.behaviour_mut().gossipsub.publish(
+                                        gossipsub::IdentTopic::new(RESULTS_TOPIC),
+                                        serde_json::to_vec(&result_payload).unwrap(),
+                                    );
+                                    match publish_result {
+                                        Ok(message_id) => emit_worker_result_published_event(
+                                            &task_id,
+                                            &attempt_id,
+                                            &model_id,
+                                            RESULTS_TOPIC,
+                                            payload_size,
+                                            Some(&message_id.to_string()),
+                                        ),
+                                        Err(error) => log_observability_event(
+                                            LogLevel::Error,
+                                            "result_publish_failed",
+                                            &task_id,
+                                            Some(&task_id),
+                                            Some(&model_id),
+                                            Some(TASK_DISPATCH_UNCONFIRMED_001),
+                                            {
+                                                let mut fields = Map::new();
+                                                fields.insert("attempt_id".to_string(), attempt_id.clone().into());
+                                                fields.insert("topic".to_string(), RESULTS_TOPIC.into());
+                                                fields.insert("error".to_string(), error.to_string().into());
+                                                fields
+                                            },
+                                        ),
+                                    }
                                     println!("✅ [Worker] Inference completada: {} tokens en {}ms",
                                         result.tokens_generated, result.execution_ms);
                                 }
@@ -3571,6 +4207,21 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             "InferenceResult" if matches!(mode, NodeMode::Infer { .. }) => {
                                 let rid = msg["request_id"].as_str().unwrap_or("");
                                 if infer_request_id.as_deref() == Some(rid) {
+                                    let task_id = msg["task_id"]
+                                        .as_str()
+                                        .filter(|value| !value.trim().is_empty())
+                                        .or_else(|| {
+                                            distributed_infer_state
+                                                .as_ref()
+                                                .map(|state| state.trace_task_id.as_str())
+                                        })
+                                        .unwrap_or(rid)
+                                        .to_string();
+                                    let attempt_id = msg["attempt_id"]
+                                        .as_str()
+                                        .filter(|value| !value.trim().is_empty())
+                                        .unwrap_or(rid)
+                                        .to_string();
                                     let success = msg["success"].as_bool().unwrap_or(false);
                                     let tokens = msg["tokens_generated"].as_u64().unwrap_or(0);
                                     let truncated = msg["truncated"].as_bool().unwrap_or(false);
@@ -3579,8 +4230,25 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     let worker = msg["worker_peer"].as_str().unwrap_or("unknown");
                                     let accel = msg["accelerator"].as_str().unwrap_or("unknown");
                                     let full_output = msg["output"].as_str().unwrap_or("").to_string();
+                                    let latency_ms = infer_started_at
+                                        .as_ref()
+                                        .map(|started| started.elapsed().as_millis() as u64)
+                                        .unwrap_or(ms);
+                                    emit_result_received_event(
+                                        &task_id,
+                                        &attempt_id,
+                                        distributed_infer_state
+                                            .as_ref()
+                                            .and_then(|state| state.current_model.as_deref()),
+                                        worker,
+                                        latency_ms,
+                                    );
                                     let validation_status = if success {
-                                        if let Some(infer_state) = distributed_infer_state.as_ref() {
+                                        if !should_print_result_output(&full_output) {
+                                            ResultStatus::Retryable(
+                                                "empty distributed inference output".to_string(),
+                                            )
+                                        } else if let Some(infer_state) = distributed_infer_state.as_ref() {
                                             validate_result(
                                                 infer_state
                                                     .current_semantic_prompt
@@ -3604,7 +4272,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     };
 
                                     // v0.6.2: solo imprimir parte faltante, sin duplicar
-                                    if success {
+                                    if success && should_print_result_output(&full_output) {
                                         if rendered_output.is_empty() {
                                             print!("{}", full_output);
                                         } else if full_output.starts_with(&rendered_output) {
@@ -3661,7 +4329,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                             {
                                                 let mut fields = Map::new();
                                                 fields.insert("peer_id".to_string(), worker.to_string().into());
-                                                fields.insert("attempt_id".to_string(), rid.into());
+                                                fields.insert("attempt_id".to_string(), attempt_id.clone().into());
                                                 fields.insert("reason".to_string(), reason.clone().into());
                                                 fields.insert("retry".to_string(), true.into());
                                                 fields
@@ -3669,11 +4337,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         );
                                         println!(
                                             "\n[Fault] task_id={} attempt_id={} peer_id={} model_id={} reason={}",
-                                            distributed_infer_state
-                                                .as_ref()
-                                                .map(|state| state.trace_task_id.as_str())
-                                                .unwrap_or("-"),
-                                            rid,
+                                            task_id,
+                                            attempt_id,
                                             worker,
                                             distributed_infer_state
                                                 .as_ref()
@@ -3782,13 +4447,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     log_observability_event(
                                         LogLevel::Info,
                                         "task_completed",
-                                        distributed_infer_state
-                                            .as_ref()
-                                            .map(|state| state.trace_task_id.as_str())
-                                            .unwrap_or("-"),
-                                        distributed_infer_state
-                                            .as_ref()
-                                            .map(|state| state.trace_task_id.as_str()),
+                                        &task_id,
+                                        Some(&task_id),
                                         distributed_infer_state
                                             .as_ref()
                                             .and_then(|state| state.current_model.as_deref()),
@@ -3796,21 +4456,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         {
                                             let mut fields = Map::new();
                                             fields.insert("peer_id".to_string(), worker.to_string().into());
-                                            fields.insert("attempt_id".to_string(), rid.into());
-                                            fields.insert("latency_ms".to_string(), ms.into());
+                                            fields.insert("attempt_id".to_string(), attempt_id.clone().into());
+                                            fields.insert("latency_ms".to_string(), latency_ms.into());
                                             fields.insert("success".to_string(), true.into());
                                             fields
                                         },
                                     );
                                     println!("\n\n═══════════════════════════════════");
-                                    if success {
+                                    if success && should_print_result_output(&full_output) {
                                         println!(
                                             "✅ Distributed inference completada: task_id={} attempt_id={} peer_id={} model_id={}",
-                                            distributed_infer_state
-                                                .as_ref()
-                                                .map(|state| state.trace_task_id.as_str())
-                                                .unwrap_or("-"),
-                                            rid,
+                                            task_id,
+                                            attempt_id,
                                             worker,
                                             distributed_infer_state
                                                 .as_ref()
@@ -3830,11 +4487,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         let err = msg["error"].as_str().unwrap_or("unknown");
                                         println!(
                                             "❌ Inference falló: task_id={} attempt_id={} peer_id={} error={}",
-                                            distributed_infer_state
-                                                .as_ref()
-                                                .map(|state| state.trace_task_id.as_str())
-                                                .unwrap_or("-"),
-                                            rid,
+                                            task_id,
+                                            attempt_id,
                                             worker,
                                             err
                                         );
@@ -3887,14 +4541,34 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 }
 
                                 let request_id = msg["request_id"].as_str().unwrap_or("").to_string();
+                                let task_id = msg["task_id"]
+                                    .as_str()
+                                    .filter(|value| !value.trim().is_empty())
+                                    .unwrap_or(request_id.as_str())
+                                    .to_string();
+                                let attempt_id = msg["attempt_id"]
+                                    .as_str()
+                                    .filter(|value| !value.trim().is_empty())
+                                    .unwrap_or(request_id.as_str())
+                                    .to_string();
                                 let model_id = msg["model"].as_str().unwrap_or("tinyllama-1b").to_string();
                                 let prompt = msg["prompt"].as_str().unwrap_or("").to_string();
                                 let max_tokens = msg["max_tokens"].as_u64().unwrap_or(200) as u32;
+                                let local_model_available = model_storage.has_model(&model_id);
+                                emit_worker_task_message_received_event(
+                                    &task_id,
+                                    &attempt_id,
+                                    message_topic,
+                                    &from_peer,
+                                    "ok",
+                                    &model_id,
+                                    local_model_available,
+                                );
 
                                 println!("🧠 [Worker] DirectInferenceRequest: model={} prompt='{}'",
                                     model_id, &prompt[..prompt.len().min(40)]);
 
-                                if !model_storage.has_model(&model_id) {
+                                if !local_model_available {
                                     println!("   ⚠️ Modelo {} no instalado — ignorando", model_id);
                                     continue;
                                 }
@@ -3911,13 +4585,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 let registry_clone = ModelRegistry::new();
                                 let peer_id_str = peer_id.to_string();
                                 let request_id_clone = request_id.clone();
+                                let model_id_for_inference = model_id.clone();
 
                                 let (token_tx, mut token_rx) = tokio::sync::mpsc::channel::<String>(100);
 
                                 let inference_handle = tokio::spawn(async move {
                                     let req = RealInferenceRequest {
                                         task_id: request_id_clone.clone(),
-                                        model_id: model_id.clone(),
+                                        model_id: model_id_for_inference.clone(),
                                         prompt,
                                         max_tokens,
                                         temperature: 0.7,
@@ -3930,19 +4605,25 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                             Ok(response) => response.result,
                                             Err(e) => {
                                                 return InferenceTaskResult::failure(
-                                                    request_id_clone, model_id, peer_id_str, e,
+                                                    request_id_clone.clone(),
+                                                    model_id_for_inference.clone(),
+                                                    peer_id_str.clone(),
+                                                    e,
                                                 );
                                             }
                                         }
                                     } else {
                                         let eng = Arc::clone(&engine_ref);
-                                        let hash = registry_clone.get(&model_id)
+                                        let hash = registry_clone.get(&model_id_for_inference)
                                             .map(|m| m.hash.clone())
                                             .unwrap_or_default();
 
-                                        if let Err(e) = eng.load_model(&model_id, &hash) {
+                                        if let Err(e) = eng.load_model(&model_id_for_inference, &hash) {
                                             return InferenceTaskResult::failure(
-                                                request_id_clone, model_id, peer_id_str, e,
+                                                request_id_clone.clone(),
+                                                model_id_for_inference.clone(),
+                                                peer_id_str.clone(),
+                                                e,
                                             );
                                         }
 
@@ -3951,7 +4632,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                                     InferenceTaskResult::success(
                                         request_id_clone,
-                                        model_id,
+                                        model_id_for_inference,
                                         result.output,
                                         result.tokens_generated,
                                         result.truncated,
@@ -3971,7 +4652,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         is_final: false,
                                     };
                                     let _ = swarm.behaviour_mut().gossipsub.publish(
-                                        gossipsub::IdentTopic::new("iamine-results"),
+                                        gossipsub::IdentTopic::new(RESULTS_TOPIC),
                                         serde_json::to_vec(&st.to_gossip_json()).unwrap(),
                                     );
                                     token_idx += 1;
@@ -3986,11 +4667,49 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                             m.inference_failed();
                                         }
                                     }
-
-                                    let _ = swarm.behaviour_mut().gossipsub.publish(
-                                        gossipsub::IdentTopic::new("iamine-results"),
-                                        serde_json::to_vec(&result.to_gossip_json()).unwrap(),
+                                    let result_size = result.output.len();
+                                    emit_worker_task_completed_event(
+                                        &task_id,
+                                        &attempt_id,
+                                        &model_id,
+                                        result_size,
+                                        result.success,
                                     );
+                                    let mut result_payload = result.to_gossip_json();
+                                    if let Some(map) = result_payload.as_object_mut() {
+                                        map.insert("task_id".to_string(), task_id.clone().into());
+                                        map.insert("attempt_id".to_string(), attempt_id.clone().into());
+                                    }
+                                    let payload_size = result_payload.to_string().len();
+                                    let publish_result = swarm.behaviour_mut().gossipsub.publish(
+                                        gossipsub::IdentTopic::new(RESULTS_TOPIC),
+                                        serde_json::to_vec(&result_payload).unwrap(),
+                                    );
+                                    match publish_result {
+                                        Ok(message_id) => emit_worker_result_published_event(
+                                            &task_id,
+                                            &attempt_id,
+                                            &model_id,
+                                            RESULTS_TOPIC,
+                                            payload_size,
+                                            Some(&message_id.to_string()),
+                                        ),
+                                        Err(error) => log_observability_event(
+                                            LogLevel::Error,
+                                            "result_publish_failed",
+                                            &task_id,
+                                            Some(&task_id),
+                                            Some(&model_id),
+                                            Some(TASK_DISPATCH_UNCONFIRMED_001),
+                                            {
+                                                let mut fields = Map::new();
+                                                fields.insert("attempt_id".to_string(), attempt_id.clone().into());
+                                                fields.insert("topic".to_string(), RESULTS_TOPIC.into());
+                                                fields.insert("error".to_string(), error.to_string().into());
+                                                fields
+                                            },
+                                        ),
+                                    }
 
                                     println!("✅ [Worker] Direct inference completada: {} tokens en {}ms",
                                         result.tokens_generated, result.execution_ms);
@@ -3999,6 +4718,28 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                             _ => {}
                         }
+                    } else if matches!(mode, NodeMode::Worker)
+                        && (message_topic == TASK_TOPIC || message_topic == DIRECT_INF_TOPIC)
+                    {
+                        log_observability_event(
+                            LogLevel::Warn,
+                            "task_message_received",
+                            "dispatch",
+                            None,
+                            None,
+                            Some(TASK_DISPATCH_UNCONFIRMED_001),
+                            {
+                                let mut fields = Map::new();
+                                fields.insert("topic".to_string(), message_topic.into());
+                                fields.insert("from_peer".to_string(), from_peer.into());
+                                fields.insert("payload_parse_result".to_string(), "invalid_json".into());
+                                fields.insert(
+                                    "payload_size".to_string(),
+                                    (message.data.len() as u64).into(),
+                                );
+                                fields
+                            },
+                        );
                     }
                 }
 
@@ -4029,11 +4770,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                 SwarmEvent::Behaviour(IaMineEvent::Gossipsub(gossipsub::Event::Subscribed { peer_id: pid, topic })) => {
                     println!("📢 Peer {} suscrito a: {}", pid, topic);
+                    pubsub_topics.register_peer_subscription(&pid, &topic);
 
                     // Desactivar ruta vieja: no enviar InferenceRequest broadcast aquí.
                     // (Se envía por smart routing en heartbeat tick cuando registry tenga candidatos)
 
                     // ...existing code...
+                }
+
+                SwarmEvent::Behaviour(IaMineEvent::Gossipsub(gossipsub::Event::Unsubscribed { peer_id: pid, topic })) => {
+                    println!("🔕 Peer {} desuscrito de: {}", pid, topic);
+                    pubsub_topics.unregister_peer_subscription(&pid, &topic);
                 }
 
                 SwarmEvent::ConnectionEstablished { peer_id: pid, endpoint, .. } => {
@@ -4083,6 +4830,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         },
                     );
                     known_workers.remove(&pid);
+                    pubsub_topics.unregister_peer(&pid);
                     if is_client && !waiting_for_response && !matches!(mode, NodeMode::Broadcast { .. }) {
                         println!("\n📊 Completado: {}/{} tareas", completed, total_tasks);
                         break;
@@ -4143,6 +4891,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     peer,
                                     local_cluster_id.as_deref().unwrap_or("-"),
                                     task.model
+                                );
+                                emit_worker_task_message_received_event(
+                                    &task.id,
+                                    &task.attempt_id,
+                                    "request_response",
+                                    &peer.to_string(),
+                                    "ok",
+                                    &task.model,
+                                    model_storage.has_model(&task.model),
                                 );
                                 log_observability_event(
                                     LogLevel::Info,
@@ -4415,8 +5172,26 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 }
 
                                 pending_inference.remove(&distributed_result.attempt_id);
+                                let peer_id = peer.to_string();
+                                let latency_ms = infer_started_at
+                                    .as_ref()
+                                    .map(|started| started.elapsed().as_millis() as u64)
+                                    .unwrap_or_default();
+                                emit_result_received_event(
+                                    &distributed_result.task_id,
+                                    &distributed_result.attempt_id,
+                                    distributed_infer_state
+                                        .as_ref()
+                                        .and_then(|state| state.current_model.as_deref()),
+                                    &peer_id,
+                                    latency_ms,
+                                );
                                 let validation_status = if distributed_result.success {
-                                    if let Some(infer_state) = distributed_infer_state.as_ref() {
+                                    if !should_print_result_output(&distributed_result.output) {
+                                        ResultStatus::Retryable(
+                                            "empty distributed response output".to_string(),
+                                        )
+                                    } else if let Some(infer_state) = distributed_infer_state.as_ref() {
                                         validate_result(
                                             infer_state
                                                 .current_semantic_prompt
@@ -4441,7 +5216,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 };
 
                                 if let Some(reason) = retry_reason {
-                                    let peer_id = peer.to_string();
                                     if let Some(health) = registry.write().await.record_failure(&peer_id) {
                                         log_health_update(
                                             &distributed_result.task_id,
@@ -4568,11 +5342,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     break;
                                 }
 
-                                let peer_id = peer.to_string();
-                                let latency_ms = infer_started_at
-                                    .as_ref()
-                                    .map(|started| started.elapsed().as_millis() as u64)
-                                    .unwrap_or_default();
                                 if let Some(health) =
                                     registry.write().await.record_success(&peer_id, latency_ms)
                                 {
@@ -4608,7 +5377,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     },
                                 );
                                 task_manager.complete(distributed_result.clone()).await;
-                                println!("{}", distributed_result.output);
+                                if should_print_result_output(&distributed_result.output) {
+                                    println!("{}", distributed_result.output);
+                                }
                                 println!(
                                     "\n\n✅ Inference completada: task_id={} attempt_id={} peer_id={} model_id={}",
                                     distributed_result.task_id,
@@ -4888,6 +5659,190 @@ mod tests {
                 .and_then(|value| value.as_str()),
             Some("continue_without_metrics_server")
         );
+    }
+
+    #[test]
+    fn test_no_publish_before_readiness() {
+        let snapshot = DispatchReadinessSnapshot {
+            connected_peer_count: 0,
+            mesh_peer_count: 0,
+            topic_peer_count: 0,
+            joined_task_topic: true,
+            joined_direct_topic: true,
+            joined_results_topic: true,
+            selected_topic: DIRECT_INF_TOPIC,
+        };
+
+        let error = evaluate_dispatch_readiness(&snapshot).unwrap_err();
+        assert_eq!(error.code, NETWORK_NO_PUBSUB_PEERS_001);
+        assert_eq!(error.reason, "no_connected_peers");
+    }
+
+    #[test]
+    fn test_structured_error_when_topic_has_zero_peers() {
+        let snapshot = DispatchReadinessSnapshot {
+            connected_peer_count: 2,
+            mesh_peer_count: 2,
+            topic_peer_count: 0,
+            joined_task_topic: true,
+            joined_direct_topic: true,
+            joined_results_topic: true,
+            selected_topic: TASK_TOPIC,
+        };
+
+        let error = evaluate_dispatch_readiness(&snapshot).unwrap_err();
+        assert_eq!(error.code, PUBSUB_TOPIC_NOT_READY_001);
+        assert_eq!(error.reason, "destination_topic_has_zero_peers");
+    }
+
+    #[test]
+    fn test_dispatch_observability_events_emitted() {
+        let trace_id = format!("dispatch-observability-{}", uuid_simple());
+        let attempt_id = "attempt-observability-1";
+        let model_id = "tinyllama-1b";
+        let candidates = vec![model_id.to_string(), "llama3-3b".to_string()];
+
+        emit_dispatch_context_event(
+            &trace_id,
+            attempt_id,
+            model_id,
+            &candidates,
+            3,
+            2,
+            DIRECT_INF_TOPIC,
+            Some("peer-target-1"),
+        );
+        emit_task_publish_attempt_event(&trace_id, attempt_id, model_id, DIRECT_INF_TOPIC, 2, 128);
+        emit_task_published_event(
+            &trace_id,
+            attempt_id,
+            model_id,
+            DIRECT_INF_TOPIC,
+            2,
+            128,
+            "message-1",
+        );
+
+        iamine_network::flush_structured_logs().unwrap();
+        let path = iamine_network::default_node_log_path();
+        let entries = iamine_network::read_log_entries(&path).unwrap();
+
+        assert!(entries
+            .iter()
+            .any(|entry| { entry.trace_id == trace_id && entry.event == "task_dispatch_context" }));
+        assert!(entries
+            .iter()
+            .any(|entry| { entry.trace_id == trace_id && entry.event == "task_publish_attempt" }));
+        assert!(entries.iter().any(|entry| {
+            entry.trace_id == trace_id
+                && entry.event == "task_published"
+                && entry
+                    .fields
+                    .get("message_id")
+                    .and_then(|value| value.as_str())
+                    == Some("message-1")
+        }));
+    }
+
+    #[test]
+    fn test_worker_receipt_logs_emitted() {
+        let trace_id = format!("worker-receipt-{}", uuid_simple());
+        emit_worker_task_message_received_event(
+            &trace_id,
+            "attempt-worker-1",
+            DIRECT_INF_TOPIC,
+            "peer-source-1",
+            "ok",
+            "tinyllama-1b",
+            true,
+        );
+
+        iamine_network::flush_structured_logs().unwrap();
+        let path = iamine_network::default_node_log_path();
+        let entries = iamine_network::read_log_entries(&path).unwrap();
+        let entry = entries
+            .iter()
+            .rev()
+            .find(|entry| entry.trace_id == trace_id && entry.event == "task_message_received")
+            .expect("task_message_received entry not found");
+
+        assert_eq!(
+            entry
+                .fields
+                .get("payload_parse_result")
+                .and_then(|value| value.as_str()),
+            Some("ok")
+        );
+        assert_eq!(
+            entry
+                .fields
+                .get("local_model_available")
+                .and_then(|value| value.as_bool()),
+            Some(true)
+        );
+    }
+
+    #[test]
+    fn test_result_received_logs_emitted() {
+        let trace_id = format!("result-received-{}", uuid_simple());
+        emit_result_received_event(
+            &trace_id,
+            "attempt-result-1",
+            Some("tinyllama-1b"),
+            "peer-worker-1",
+            42,
+        );
+
+        iamine_network::flush_structured_logs().unwrap();
+        let path = iamine_network::default_node_log_path();
+        let entries = iamine_network::read_log_entries(&path).unwrap();
+        let entry = entries
+            .iter()
+            .rev()
+            .find(|entry| entry.trace_id == trace_id && entry.event == "result_received")
+            .expect("result_received entry not found");
+
+        assert_eq!(
+            entry
+                .fields
+                .get("attempt_id")
+                .and_then(|value| value.as_str()),
+            Some("attempt-result-1")
+        );
+        assert_eq!(
+            entry
+                .fields
+                .get("latency_ms")
+                .and_then(|value| value.as_u64()),
+            Some(42)
+        );
+    }
+
+    #[test]
+    fn test_metrics_increments_for_retry_and_fallback() {
+        let mut metrics = DistributedTaskMetrics::default();
+        apply_retry_fallback_metrics(&mut metrics, true, false);
+        apply_retry_fallback_metrics(&mut metrics, false, true);
+
+        assert_eq!(metrics.retries_count, 1);
+        assert_eq!(metrics.fallback_count, 1);
+        assert_eq!(metrics.failed_tasks, 0);
+    }
+
+    #[test]
+    fn test_empty_result_does_not_print_as_success_response() {
+        assert!(!should_print_result_output(""));
+        assert!(!should_print_result_output("   "));
+        assert!(should_print_result_output("ok"));
+    }
+
+    #[test]
+    fn test_identity_conflict_path_uses_ephemeral_identity_strategy() {
+        let identity_a = NodeIdentity::ephemeral("test-identity-safety");
+        let identity_b = NodeIdentity::ephemeral("test-identity-safety");
+
+        assert_ne!(identity_a.peer_id, identity_b.peer_id);
+        assert_ne!(identity_a.node_id, identity_b.node_id);
     }
 
     #[test]

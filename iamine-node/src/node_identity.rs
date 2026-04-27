@@ -47,6 +47,26 @@ impl NodeIdentity {
             wallet_address,
         }
     }
+
+    pub fn ephemeral(reason: &str) -> Self {
+        let keypair = identity::Keypair::generate_ed25519();
+        let peer_id = PeerId::from(keypair.public());
+        let public_key = keypair.public().encode_protobuf();
+        let wallet_address = format!("iamine1{}", &peer_id.to_string()[..16]);
+
+        println!("🔑 Identidad efimera generada:");
+        println!("   Peer ID: {}", peer_id);
+        println!("   Wallet:  {}", wallet_address);
+        println!("   Reason:  {}", reason);
+
+        Self {
+            node_id: peer_id.to_string(),
+            peer_id,
+            keypair,
+            public_key,
+            wallet_address,
+        }
+    }
 }
 
 pub fn iamine_dir() -> PathBuf {
