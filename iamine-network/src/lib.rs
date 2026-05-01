@@ -57,7 +57,7 @@ pub use model_karma_store::{
 };
 pub use model_metrics::ModelMetrics;
 pub use model_policy::{ModelPolicyEngine, PolicyRule};
-pub use node_health::NodeHealth;
+pub use node_health::{health_policy_thresholds, NodeHealth};
 pub use node_registry::{
     NodeCapability, NodeCapabilityHeartbeat, NodeRegistry, SharedNodeRegistry,
 };

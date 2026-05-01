@@ -5,7 +5,7 @@ use iamine_network::{evaluate_default_dataset, SemanticEvalReport};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-const CURRENT_RELEASE_VERSION: &str = "v0.6.24";
+const CURRENT_RELEASE_VERSION: &str = "v0.6.35";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReleaseTrack {
@@ -57,6 +57,23 @@ impl QualityReport {
 
 pub fn current_release_version() -> &'static str {
     CURRENT_RELEASE_VERSION
+}
+
+pub fn runtime_version_metadata() -> String {
+    let mut version = std::env::var("IAMINE_RELEASE_VERSION")
+        .unwrap_or_else(|_| current_release_version().to_string());
+
+    if let Ok(branch) = std::env::var("IAMINE_BUILD_BRANCH") {
+        if !branch.trim().is_empty() {
+            version.push_str(&format!(" ({})", branch.trim()));
+        }
+    } else if let Ok(commit) = std::env::var("IAMINE_BUILD_COMMIT") {
+        if !commit.trim().is_empty() {
+            version.push_str(&format!(" ({})", commit.trim()));
+        }
+    }
+
+    version
 }
 
 pub fn run_release_validation() -> Result<ReleaseValidationSummary, String> {

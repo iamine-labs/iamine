@@ -34,15 +34,16 @@ use iamine_models::{
 
 use iamine_network::{
     analyze_prompt_semantics, default_semantic_log_path, describe_output_policy,
-    detect_exact_subtype, distributed_task_metrics, evaluate_default_dataset, log_structured,
-    normalize_expression, prompt_log_entry, ranked_models, record_distributed_task_failed,
-    record_distributed_task_fallback, record_distributed_task_late_result,
-    record_distributed_task_latency, record_distributed_task_retry,
-    record_distributed_task_started, record_model_metrics, record_task_attempt,
-    record_task_latency, select_retry_target, set_global_node_id, set_global_runtime_context,
-    task_trace, validate_result, validate_semantic_decision, Complexity as PromptComplexityLevel,
-    DeterministicLevel as PromptDeterministicLevel, DistributedTaskMetrics, DistributedTaskResult,
-    Domain as PromptDomain, ExactSubtype as PromptExactSubtype, FailureKind, IntelligentScheduler,
+    detect_exact_subtype, distributed_task_metrics, evaluate_default_dataset,
+    health_policy_thresholds, log_structured, normalize_expression, prompt_log_entry,
+    ranked_models, record_distributed_task_failed, record_distributed_task_fallback,
+    record_distributed_task_late_result, record_distributed_task_latency,
+    record_distributed_task_retry, record_distributed_task_started, record_model_metrics,
+    record_task_attempt, record_task_latency, select_retry_target, set_global_node_id,
+    set_global_runtime_context, task_trace, validate_result, validate_semantic_decision,
+    Complexity as PromptComplexityLevel, DeterministicLevel as PromptDeterministicLevel,
+    DistributedTaskMetrics, DistributedTaskResult, Domain as PromptDomain,
+    ExactSubtype as PromptExactSubtype, FailureKind, IntelligentScheduler,
     Language as PromptLanguage, LogLevel, ModelKarma, ModelMetrics, ModelPolicyEngine,
     NetworkTopology, NodeCapability, NodeCapabilityHeartbeat, NodeHealth, NodeRegistry,
     OutputPolicyDecision, OutputStyle as PromptOutputStyle, PromptProfile, ResultStatus,
@@ -66,7 +67,7 @@ use metrics::{start_metrics_server, NodeMetrics};
 use model_selector_cli::ModelSelectorCLI;
 use node_identity::NodeIdentity; // ← actualizado
 use peer_tracker::PeerTracker;
-use quality_gate::{current_release_version, run_release_validation};
+use quality_gate::{run_release_validation, runtime_version_metadata};
 use rate_limiter::RateLimiter;
 use regression_runner::run_default_regression_suite;
 use resource_policy::ResourcePolicy;
@@ -253,6 +254,39 @@ struct DebugFlags {
     network: bool,
     scheduler: bool,
     tasks: bool,
+}
+
+#[derive(Default)]
+struct HumanLogThrottle {
+    last_log_ms: HashMap<String, u64>,
+    last_values: HashMap<String, String>,
+}
+
+impl HumanLogThrottle {
+    fn now_ms() -> u64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64
+    }
+
+    fn should_log(&mut self, key: &str, interval_ms: u64, value: Option<&str>) -> bool {
+        let now_ms = Self::now_ms();
+        let previous_ms = self.last_log_ms.get(key).copied().unwrap_or(0);
+        let unchanged = value
+            .and_then(|val| self.last_values.get(key).map(|previous| previous == val))
+            .unwrap_or(false);
+
+        if unchanged && now_ms.saturating_sub(previous_ms) < interval_ms {
+            return false;
+        }
+
+        self.last_log_ms.insert(key.to_string(), now_ms);
+        if let Some(value) = value {
+            self.last_values.insert(key.to_string(), value.to_string());
+        }
+        true
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -1134,6 +1168,33 @@ struct DistributedInferState {
     local_cluster_id: Option<String>,
     retry_policy: RetryPolicy,
     retry_state: RetryState,
+    task_retry_count: u32,
+    task_fallback_count: u32,
+    attempt_order: Vec<String>,
+    attempt_records: HashMap<String, HumanAttemptRecord>,
+}
+
+#[derive(Debug, Clone)]
+struct HumanAttemptRecord {
+    attempt_id: String,
+    peer_id: String,
+    model_id: String,
+    state: String,
+    outcome: String,
+    reason: Option<String>,
+}
+
+impl HumanAttemptRecord {
+    fn new(attempt_id: String, peer_id: String, model_id: String) -> Self {
+        Self {
+            attempt_id,
+            peer_id,
+            model_id,
+            state: "starting".to_string(),
+            outcome: "in_progress".to_string(),
+            reason: None,
+        }
+    }
 }
 
 impl DistributedInferState {
@@ -1160,6 +1221,10 @@ impl DistributedInferState {
                 timeout_ms: INFER_TIMEOUT_MS,
             },
             retry_state: RetryState::default(),
+            task_retry_count: 0,
+            task_fallback_count: 0,
+            attempt_order: Vec::new(),
+            attempt_records: HashMap::new(),
         }
     }
 
@@ -1178,6 +1243,89 @@ impl DistributedInferState {
         self.current_semantic_prompt = Some(semantic_prompt);
         self.local_cluster_id = local_cluster_id;
         self.candidate_models = candidate_models;
+    }
+
+    fn register_attempt_record(
+        &mut self,
+        attempt_id: &str,
+        peer_id: &str,
+        model_id: &str,
+        is_fallback: bool,
+    ) {
+        if !self.attempt_order.iter().any(|id| id == attempt_id) {
+            self.attempt_order.push(attempt_id.to_string());
+        }
+        let entry = self
+            .attempt_records
+            .entry(attempt_id.to_string())
+            .or_insert_with(|| {
+                HumanAttemptRecord::new(
+                    attempt_id.to_string(),
+                    peer_id.to_string(),
+                    model_id.to_string(),
+                )
+            });
+        entry.peer_id = peer_id.to_string();
+        entry.model_id = model_id.to_string();
+        entry.state = if is_fallback {
+            "queued_fallback".to_string()
+        } else {
+            "starting".to_string()
+        };
+        entry.outcome = "in_progress".to_string();
+        entry.reason = None;
+    }
+
+    fn update_attempt_state(
+        &mut self,
+        attempt_id: &str,
+        state: impl Into<String>,
+        outcome: Option<&str>,
+        reason: Option<&str>,
+    ) {
+        if let Some(record) = self.attempt_records.get_mut(attempt_id) {
+            record.state = state.into();
+            if let Some(outcome) = outcome {
+                record.outcome = outcome.to_string();
+            }
+            if let Some(reason) = reason {
+                record.reason = Some(reason.to_string());
+            }
+        }
+    }
+
+    fn increment_task_retry_count(&mut self) {
+        self.task_retry_count = self.task_retry_count.saturating_add(1);
+    }
+
+    fn increment_task_fallback_count(&mut self) {
+        self.task_fallback_count = self.task_fallback_count.saturating_add(1);
+    }
+
+    fn attempt_summary_lines(&self) -> Vec<String> {
+        self.attempt_order
+            .iter()
+            .enumerate()
+            .filter_map(|(index, attempt_id)| {
+                self.attempt_records.get(attempt_id).map(|record| {
+                    let reason = record
+                        .reason
+                        .as_deref()
+                        .map(|text| format!(" reason={}", text))
+                        .unwrap_or_default();
+                    format!(
+                        "  {}. attempt={} peer={} model={} state={} outcome={}{}",
+                        index + 1,
+                        record.attempt_id,
+                        record.peer_id,
+                        record.model_id,
+                        record.state,
+                        record.outcome,
+                        reason
+                    )
+                })
+            })
+            .collect()
     }
 
     fn schedule_retry(&mut self, failed_peer: Option<&str>, failed_model: Option<&str>) -> bool {
@@ -1632,6 +1780,57 @@ fn emit_retry_scheduled_event(
             if let Some(selected_peer_id) = selected_peer_id {
                 fields.insert("selected_peer_id".to_string(), selected_peer_id.into());
             }
+            fields
+        },
+    );
+}
+
+fn emit_retry_counted_event(
+    trace_task_id: &str,
+    attempt_id: &str,
+    model_id: Option<&str>,
+    reason: &str,
+    task_retry_count: u32,
+) {
+    log_observability_event(
+        LogLevel::Info,
+        "retry_counted",
+        trace_task_id,
+        Some(trace_task_id),
+        model_id,
+        None,
+        {
+            let mut fields = Map::new();
+            fields.insert("attempt_id".to_string(), attempt_id.into());
+            fields.insert("reason".to_string(), reason.into());
+            fields.insert("task_retry_count".to_string(), task_retry_count.into());
+            fields
+        },
+    );
+}
+
+fn emit_fallback_counted_event(
+    trace_task_id: &str,
+    attempt_id: &str,
+    model_id: Option<&str>,
+    reason: &str,
+    task_fallback_count: u32,
+) {
+    log_observability_event(
+        LogLevel::Info,
+        "fallback_counted",
+        trace_task_id,
+        Some(trace_task_id),
+        model_id,
+        None,
+        {
+            let mut fields = Map::new();
+            fields.insert("attempt_id".to_string(), attempt_id.into());
+            fields.insert("reason".to_string(), reason.into());
+            fields.insert(
+                "task_fallback_count".to_string(),
+                task_fallback_count.into(),
+            );
             fields
         },
     );
@@ -2163,6 +2362,73 @@ fn finalize_distributed_task_observability(
     (task_trace(trace_task_id), metrics)
 }
 
+fn print_human_final_task_summary(
+    infer_state: &DistributedInferState,
+    aggregate_metrics: &DistributedTaskMetrics,
+    failed: bool,
+) {
+    println!("\n🧾 Task Summary");
+    println!("task_id={}", infer_state.trace_task_id);
+    println!(
+        "counts: task_retry_count={} task_fallback_count={} global_retry_count={} global_fallback_count={} global_failed_tasks={}",
+        infer_state.task_retry_count,
+        infer_state.task_fallback_count,
+        aggregate_metrics.retries_count,
+        aggregate_metrics.fallback_count,
+        aggregate_metrics.failed_tasks
+    );
+    println!(
+        "final_outcome={}",
+        if failed { "failed" } else { "success" }
+    );
+    println!("attempts:");
+    for line in infer_state.attempt_summary_lines() {
+        println!("{}", line);
+    }
+}
+
+fn emit_final_trace_summary_event(
+    infer_state: &DistributedInferState,
+    aggregate_metrics: &DistributedTaskMetrics,
+    failed: bool,
+) {
+    let attempts = infer_state.attempt_summary_lines();
+    log_observability_event(
+        LogLevel::Info,
+        "final_trace_summary_constructed",
+        &infer_state.trace_task_id,
+        Some(&infer_state.trace_task_id),
+        infer_state.current_model.as_deref(),
+        None,
+        {
+            let mut fields = Map::new();
+            fields.insert("failed".to_string(), failed.into());
+            fields.insert(
+                "task_retry_count".to_string(),
+                infer_state.task_retry_count.into(),
+            );
+            fields.insert(
+                "task_fallback_count".to_string(),
+                infer_state.task_fallback_count.into(),
+            );
+            fields.insert(
+                "global_retry_count".to_string(),
+                aggregate_metrics.retries_count.into(),
+            );
+            fields.insert(
+                "global_fallback_count".to_string(),
+                aggregate_metrics.fallback_count.into(),
+            );
+            fields.insert(
+                "global_failed_tasks".to_string(),
+                aggregate_metrics.failed_tasks.into(),
+            );
+            fields.insert("attempts".to_string(), serde_json::json!(attempts));
+            fields
+        },
+    );
+}
+
 fn is_control_plane_mode(mode: &NodeMode) -> bool {
     matches!(
         mode,
@@ -2334,6 +2600,67 @@ fn log_health_update(
             health_fields(peer_id, health),
         );
     }
+}
+
+fn emit_health_policy_decision_event(
+    trace_id: &str,
+    peer_id: &str,
+    model_id: Option<&str>,
+    trigger: &str,
+    previous_state: &str,
+    health: &NodeHealth,
+) {
+    let state = health.policy_state();
+    let event = match state {
+        "blacklisted" => "node_blacklisted",
+        "degraded" => "node_degraded",
+        "healthy" => "node_recovered",
+        _ => "node_health_policy_decision",
+    };
+    log_observability_event(LogLevel::Info, event, trace_id, None, model_id, None, {
+        let mut fields = Map::new();
+        fields.insert("peer_id".to_string(), peer_id.into());
+        fields.insert("trigger".to_string(), trigger.into());
+        fields.insert("previous_state".to_string(), previous_state.into());
+        fields.insert("state".to_string(), state.into());
+        fields.insert(
+            "success_rate".to_string(),
+            (health.success_rate as f64).into(),
+        );
+        fields.insert("timeout_count".to_string(), health.timeout_count.into());
+        fields.insert("failure_count".to_string(), health.failure_count.into());
+        fields.insert("total_runs".to_string(), health.total_runs.into());
+        if let Some(until) = health.blacklisted_until {
+            fields.insert("blacklisted_until".to_string(), until.into());
+        }
+        fields
+    });
+}
+
+fn record_health_policy_state_transition(
+    health_state_tracker: &mut HashMap<String, String>,
+    trace_id: &str,
+    peer_id: &str,
+    model_id: Option<&str>,
+    trigger: &str,
+    health: &NodeHealth,
+) {
+    let new_state = health.policy_state().to_string();
+    let previous_state = health_state_tracker
+        .get(peer_id)
+        .cloned()
+        .unwrap_or_else(|| "unknown".to_string());
+    if previous_state != new_state {
+        emit_health_policy_decision_event(
+            trace_id,
+            peer_id,
+            model_id,
+            trigger,
+            &previous_state,
+            health,
+        );
+    }
+    health_state_tracker.insert(peer_id.to_string(), new_state);
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2520,7 +2847,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
             debug_flags.network, debug_flags.scheduler, debug_flags.tasks
         );
     }
-    set_global_runtime_context(mode_label(&mode), current_release_version());
+    let runtime_version = runtime_version_metadata();
+    set_global_runtime_context(mode_label(&mode), &runtime_version);
     let control_plane_only = is_control_plane_mode(&mode);
 
     // v0.6.1: Registry global para smart routing (capabilities + selección de nodo)
@@ -2789,7 +3117,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             println!("╚══════════════════════════════════╝\n");
 
             let report = run_release_validation()?;
-            println!("🏷️  Version: {}", current_release_version());
+            println!("🏷️  Version: {}", runtime_version);
             println!("✅ tests_passed: {}", report.quality.tests_passed);
             println!("✅ regression_passed: {}", report.quality.regression_passed);
             println!("✅ security_passed: {}", report.quality.security_passed);
@@ -3104,8 +3432,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // ════════════════════════════════════════
     if matches!(mode, NodeMode::Worker) {
         println!("╔══════════════════════════════════╗");
-        println!("║       IaMine Worker v0.6         ║");
+        println!("║    IaMine Worker Runtime         ║");
         println!("╚══════════════════════════════════╝\n");
+        println!("🏷️  Version: {}", runtime_version);
     }
 
     // 1️⃣ Identidad de runtime (modo infer usa identidad efimera para evitar conflicto con worker local)
@@ -3421,6 +3750,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut task_cache = TaskCache::new(1000);
     let mut peer_tracker = PeerTracker::new();
     let mut rate_limiter = RateLimiter::new(100); // ← 100 msgs/sec max
+    let mut health_state_tracker: HashMap<String, String> = HashMap::new();
+    let mut human_log_throttle = HumanLogThrottle::default();
 
     // ← Actualizar métricas con wallet
     {
@@ -3457,6 +3788,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     };
     if matches!(mode, NodeMode::Worker) {
+        let (timeout_blacklist_threshold, failure_blacklist_threshold) = health_policy_thresholds();
         log_observability_event(
             LogLevel::Info,
             "worker_started",
@@ -3472,6 +3804,30 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 fields.insert(
                     "resource_policy".to_string(),
                     resource_policy_value(&resource_policy),
+                );
+                fields
+            },
+        );
+        log_observability_event(
+            LogLevel::Info,
+            "health_policy_configured",
+            "startup",
+            None,
+            None,
+            None,
+            {
+                let mut fields = Map::new();
+                fields.insert(
+                    "timeout_blacklist_threshold".to_string(),
+                    timeout_blacklist_threshold.into(),
+                );
+                fields.insert(
+                    "failure_blacklist_threshold".to_string(),
+                    failure_blacklist_threshold.into(),
+                );
+                fields.insert(
+                    "policy".to_string(),
+                    "degraded_first_blacklist_after_threshold".into(),
                 );
                 fields
             },
@@ -4069,10 +4425,28 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         &best_peer,
                                         &routed_model,
                                         is_retry_attempt,
-                                        is_model_switch_attempt,
+                                        false,
+                                    );
+                                    infer_state.register_attempt_record(
+                                        &rid,
+                                        &best_peer,
+                                        &routed_model,
+                                        false,
                                     );
                                     if is_retry_attempt {
                                         let _ = record_distributed_task_retry();
+                                        infer_state.increment_task_retry_count();
+                                        emit_retry_counted_event(
+                                            &trace_task_id,
+                                            &rid,
+                                            Some(&routed_model),
+                                            if is_model_switch_attempt {
+                                                "model_switch_retry"
+                                            } else {
+                                                "retry_after_failure"
+                                            },
+                                            infer_state.task_retry_count,
+                                        );
                                     }
                                     emit_task_published_event(
                                         &trace_task_id,
@@ -4366,7 +4740,40 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         watchdog.state.as_str(),
                                     );
                                     attempt_watchdogs.insert(rid.clone(), watchdog);
+                                    let is_retry_attempt = infer_state.retry_state.retry_count > 0;
+                                    let _ = record_task_attempt(
+                                        &trace_task_id,
+                                        "-",
+                                        &selected_model,
+                                        is_retry_attempt,
+                                        true,
+                                    );
+                                    infer_state.register_attempt_record(
+                                        &rid,
+                                        "-",
+                                        &selected_model,
+                                        true,
+                                    );
+                                    if is_retry_attempt {
+                                        let _ = record_distributed_task_retry();
+                                        infer_state.increment_task_retry_count();
+                                        emit_retry_counted_event(
+                                            &trace_task_id,
+                                            &rid,
+                                            Some(&selected_model),
+                                            "retry_after_failure",
+                                            infer_state.task_retry_count,
+                                        );
+                                    }
                                     let _ = record_distributed_task_fallback();
+                                    infer_state.increment_task_fallback_count();
+                                    emit_fallback_counted_event(
+                                        &trace_task_id,
+                                        &rid,
+                                        Some(&selected_model),
+                                        "fallback_broadcast",
+                                        infer_state.task_fallback_count,
+                                    );
                                     infer_broadcast_sent = true;
                                     waiting_for_response = true;
                                     pending_inference.insert(rid.clone(), tokio::time::Instant::now());
@@ -4527,6 +4934,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                     &health,
                                                     Some(NODE_UNHEALTHY_002),
                                                 );
+                                                record_health_policy_state_transition(
+                                                    &mut health_state_tracker,
+                                                    &trace_task_id,
+                                                    &worker_peer_id,
+                                                    infer_state.current_model.as_deref(),
+                                                    "timeout",
+                                                    &health,
+                                                );
                                             }
                                         }
                                         log_observability_event(
@@ -4558,6 +4973,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                 }
                                                 fields
                                             },
+                                        );
+                                        infer_state.update_attempt_state(
+                                            &attempt_id,
+                                            "timed_out",
+                                            Some("timeout"),
+                                            Some("watchdog_no_progress"),
                                         );
                                         let failed_peer_opt = if worker_peer_id == "-" {
                                             infer_state.current_peer.as_deref()
@@ -4648,6 +5069,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                             aggregate_metrics.total_tasks,
                                             aggregate_metrics.failed_tasks,
                                             aggregate_metrics.avg_latency_ms
+                                        );
+                                        emit_final_trace_summary_event(
+                                            infer_state,
+                                            &aggregate_metrics,
+                                            true,
+                                        );
+                                        print_human_final_task_summary(
+                                            infer_state,
+                                            &aggregate_metrics,
+                                            true,
                                         );
                                     }
                                     break;
@@ -4926,12 +5357,26 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 let rep = msg["reputation_score"].as_u64().unwrap_or(0) as u32;
                                 let uptime = msg["uptime_secs"].as_u64().unwrap_or(0);
                                 peer_tracker.update_heartbeat(worker_id, slots, rep);
-                                println!("💓 Heartbeat {}... slots={} rep={} uptime={}s peers={}",
-                                    &worker_id[..8.min(worker_id.len())], slots, rep, uptime,
-                                    peer_tracker.peer_count());
+                                let peer_count = peer_tracker.peer_count();
+                                let heartbeat_value =
+                                    format!("slots={} rep={} peers={}", slots, rep, peer_count);
+                                if human_log_throttle.should_log(
+                                    &format!("heartbeat:{}", worker_id),
+                                    15_000,
+                                    Some(&heartbeat_value),
+                                ) {
+                                    println!(
+                                        "💓 Heartbeat {}... slots={} rep={} uptime={}s peers={}",
+                                        &worker_id[..8.min(worker_id.len())],
+                                        slots,
+                                        rep,
+                                        uptime,
+                                        peer_count
+                                    );
+                                }
                                 let mut m = metrics.write().await;
-                                m.network_peers = peer_tracker.peer_count();
-                                m.mesh_peers = peer_tracker.peer_count();
+                                m.network_peers = peer_count;
+                                m.mesh_peers = peer_count;
                             }
 
                             // ═══════════════════════════════════════════
@@ -5301,6 +5746,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         tokens_generated_count,
                                     );
                                     if meaningful {
+                                        if let Some(infer_state) = distributed_infer_state.as_mut() {
+                                            let mapped_state =
+                                                lifecycle_state_from_progress_stage(stage)
+                                                    .map(|state| state.as_str())
+                                                    .unwrap_or(stage);
+                                            infer_state.update_attempt_state(
+                                                &attempt_id,
+                                                mapped_state,
+                                                Some("in_progress"),
+                                                None,
+                                            );
+                                        }
                                         if watchdog.state != previous_state {
                                             emit_attempt_state_changed_event(
                                                 &task_id,
@@ -5455,6 +5912,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     };
 
                                     if let Some(reason) = retry_reason {
+                                        if let Some(infer_state) = distributed_infer_state.as_mut() {
+                                            infer_state.update_attempt_state(
+                                                &attempt_id,
+                                                "failed",
+                                                Some("retryable_failure"),
+                                                Some(&reason),
+                                            );
+                                        }
                                         if let Some(watchdog) = attempt_watchdogs.get_mut(&attempt_id) {
                                             let previous_state = watchdog.state;
                                             if watchdog.transition_state(AttemptLifecycleState::Failed) {
@@ -5471,17 +5936,27 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         if let Some(health) =
                                             registry.write().await.record_failure(worker)
                                         {
+                                            let trace_id = distributed_infer_state
+                                                .as_ref()
+                                                .map(|state| state.trace_task_id.clone())
+                                                .unwrap_or_else(|| "-".to_string());
+                                            let model_id = distributed_infer_state
+                                                .as_ref()
+                                                .and_then(|state| state.current_model.clone());
                                             log_health_update(
-                                                distributed_infer_state
-                                                    .as_ref()
-                                                    .map(|state| state.trace_task_id.as_str())
-                                                    .unwrap_or("-"),
+                                                &trace_id,
                                                 worker,
-                                                distributed_infer_state
-                                                    .as_ref()
-                                                    .and_then(|state| state.current_model.as_deref()),
+                                                model_id.as_deref(),
                                                 &health,
                                                 Some(NODE_UNHEALTHY_002),
+                                            );
+                                            record_health_policy_state_transition(
+                                                &mut health_state_tracker,
+                                                &trace_id,
+                                                worker,
+                                                model_id.as_deref(),
+                                                "validation_failure",
+                                                &health,
                                             );
                                         }
                                         let error_code = if full_output.trim().is_empty() {
@@ -5620,23 +6095,43 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                 aggregate_metrics.failed_tasks,
                                                 aggregate_metrics.avg_latency_ms
                                             );
+                                            emit_final_trace_summary_event(
+                                                infer_state,
+                                                &aggregate_metrics,
+                                                true,
+                                            );
+                                            print_human_final_task_summary(
+                                                infer_state,
+                                                &aggregate_metrics,
+                                                true,
+                                            );
                                         }
 
                                         break;
                                     }
 
                                     if let Some(health) = registry.write().await.record_success(worker, ms) {
+                                        let trace_id = distributed_infer_state
+                                            .as_ref()
+                                            .map(|state| state.trace_task_id.clone())
+                                            .unwrap_or_else(|| "-".to_string());
+                                        let model_id = distributed_infer_state
+                                            .as_ref()
+                                            .and_then(|state| state.current_model.clone());
                                         log_health_update(
-                                            distributed_infer_state
-                                                .as_ref()
-                                                .map(|state| state.trace_task_id.as_str())
-                                                .unwrap_or("-"),
+                                            &trace_id,
                                             worker,
-                                            distributed_infer_state
-                                                .as_ref()
-                                                .and_then(|state| state.current_model.as_deref()),
+                                            model_id.as_deref(),
                                             &health,
                                             None,
+                                        );
+                                        record_health_policy_state_transition(
+                                            &mut health_state_tracker,
+                                            &trace_id,
+                                            worker,
+                                            model_id.as_deref(),
+                                            "success",
+                                            &health,
                                         );
                                     }
                                     if let Some(watchdog) = attempt_watchdogs.get_mut(&attempt_id) {
@@ -5651,6 +6146,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                 watchdog.state.as_str(),
                                             );
                                         }
+                                    }
+                                    if let Some(infer_state) = distributed_infer_state.as_mut() {
+                                        infer_state.update_attempt_state(
+                                            &attempt_id,
+                                            "completed",
+                                            Some("success"),
+                                            None,
+                                        );
                                     }
                                     log_observability_event(
                                         LogLevel::Info,
@@ -5734,6 +6237,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                             aggregate_metrics.failed_tasks,
                                             aggregate_metrics.avg_latency_ms
                                         );
+                                        emit_final_trace_summary_event(
+                                            infer_state,
+                                            &aggregate_metrics,
+                                            false,
+                                        );
+                                        print_human_final_task_summary(
+                                            infer_state,
+                                            &aggregate_metrics,
+                                            false,
+                                        );
                                     }
                                     break;
                                 } else {
@@ -5776,6 +6289,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         "arrived_after_timeout_policy_ignore",
                                         &prior_state,
                                     );
+                                    if let Some(infer_state) = distributed_infer_state.as_mut() {
+                                        infer_state.update_attempt_state(
+                                            &attempt_id,
+                                            "late_completed",
+                                            Some("late_ignored"),
+                                            Some("arrived_after_timeout_policy_ignore"),
+                                        );
+                                    }
                                     let _ = record_distributed_task_late_result();
                                     if let Some(watchdog) = attempt_watchdogs.get_mut(&attempt_id) {
                                         let previous_state = watchdog.state;
@@ -5796,14 +6317,23 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         if let Some(health) =
                                             registry.write().await.record_success(worker, execution_ms)
                                         {
+                                            let model_id = distributed_infer_state
+                                                .as_ref()
+                                                .and_then(|state| state.current_model.clone());
                                             log_health_update(
                                                 &task_id,
                                                 worker,
-                                                distributed_infer_state
-                                                    .as_ref()
-                                                    .and_then(|state| state.current_model.as_deref()),
+                                                model_id.as_deref(),
                                                 &health,
                                                 None,
+                                            );
+                                            record_health_policy_state_transition(
+                                                &mut health_state_tracker,
+                                                &task_id,
+                                                worker,
+                                                model_id.as_deref(),
+                                                "late_success",
+                                                &health,
                                             );
                                         }
                                     }
@@ -6191,6 +6721,47 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             fields
                         },
                     );
+                    if matches!(mode, NodeMode::Infer { .. }) {
+                        let disconnected_peer = pid.to_string();
+                        let active_peer = distributed_infer_state
+                            .as_ref()
+                            .and_then(|state| state.current_peer.as_deref())
+                            == Some(disconnected_peer.as_str());
+                        let inflight = infer_request_id
+                            .as_ref()
+                            .map(|attempt_id| pending_inference.contains_key(attempt_id))
+                            .unwrap_or(false);
+                        if active_peer && inflight {
+                            log_observability_event(
+                                LogLevel::Warn,
+                                "node_disconnect_during_active_task",
+                                distributed_infer_state
+                                    .as_ref()
+                                    .map(|state| state.trace_task_id.as_str())
+                                    .unwrap_or("network"),
+                                distributed_infer_state
+                                    .as_ref()
+                                    .map(|state| state.trace_task_id.as_str()),
+                                distributed_infer_state
+                                    .as_ref()
+                                    .and_then(|state| state.current_model.as_deref()),
+                                Some(NET_PEER_DISCONNECTED_002),
+                                {
+                                    let mut fields = Map::new();
+                                    fields.insert("peer_id".to_string(), disconnected_peer.into());
+                                    fields.insert(
+                                        "policy".to_string(),
+                                        "degraded_first_blacklist_after_threshold".into(),
+                                    );
+                                    fields.insert(
+                                        "action".to_string(),
+                                        "wait_for_watchdog_timeout_before_retry".into(),
+                                    );
+                                    fields
+                                },
+                            );
+                        }
+                    }
                     known_workers.remove(&pid);
                     pubsub_topics.unregister_peer(&pid);
                     if is_client && !waiting_for_response && !matches!(mode, NodeMode::Broadcast { .. }) {
@@ -6202,11 +6773,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 SwarmEvent::Behaviour(IaMineEvent::Ping(ping::Event { peer, result, .. })) => {
                     if let Ok(rtt) = result {
                         let rtt_ms = rtt.as_micros() as f64 / 1000.0;
-                        println!(
-                            "[Latency] RTT to peer {} = {:.1} ms",
-                            &peer.to_string()[..12.min(peer.to_string().len())],
-                            rtt_ms
-                        );
+                        let peer_id = peer.to_string();
+                        let latency_bucket = format!("{:.0}", (rtt_ms / 5.0).round());
+                        if human_log_throttle.should_log(
+                            &format!("latency:{}", peer_id),
+                            20_000,
+                            Some(&latency_bucket),
+                        ) {
+                            println!(
+                                "[Latency] RTT to peer {} = {:.1} ms",
+                                &peer_id[..12.min(peer_id.len())],
+                                rtt_ms
+                            );
+                        }
                         peer_tracker.update_latency(&peer.to_string(), rtt_ms);
                         topology.write().await.update_latency(&peer.to_string(), rtt_ms);
                         log_observability_event(
@@ -6231,7 +6810,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 }
 
                 SwarmEvent::Behaviour(IaMineEvent::Kademlia(kad::Event::RoutingUpdated { peer, .. })) => {
-                    println!("📡 Kademlia: nodo añadido {}", peer);
+                    let peer_id = peer.to_string();
+                    if human_log_throttle.should_log(
+                        &format!("kademlia:{}", peer_id),
+                        30_000,
+                        Some("routing_updated"),
+                    ) {
+                        println!("📡 Kademlia: nodo añadido {}", peer);
+                    }
                     debug_network_log(
                         debug_flags,
                         format!("kademlia routing updated peer_id={}", peer),
@@ -6549,6 +7135,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         "arrived_after_timeout_policy_ignore",
                                         &prior_state,
                                     );
+                                    if let Some(infer_state) = distributed_infer_state.as_mut() {
+                                        infer_state.update_attempt_state(
+                                            &attempt_id,
+                                            "late_completed",
+                                            Some("late_ignored"),
+                                            Some("arrived_after_timeout_policy_ignore"),
+                                        );
+                                    }
                                     let _ = record_distributed_task_late_result();
                                     if distributed_result.success
                                         && should_print_result_output(&distributed_result.output)
@@ -6558,14 +7152,23 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                             .await
                                             .record_success(&peer_id, elapsed_ms)
                                         {
+                                            let model_id = distributed_infer_state
+                                                .as_ref()
+                                                .and_then(|state| state.current_model.clone());
                                             log_health_update(
                                                 &task_id,
                                                 &peer_id,
-                                                distributed_infer_state
-                                                    .as_ref()
-                                                    .and_then(|state| state.current_model.as_deref()),
+                                                model_id.as_deref(),
                                                 &health,
                                                 None,
+                                            );
+                                            record_health_policy_state_transition(
+                                                &mut health_state_tracker,
+                                                &task_id,
+                                                &peer_id,
+                                                model_id.as_deref(),
+                                                "late_success",
+                                                &health,
                                             );
                                         }
                                     }
@@ -6636,6 +7239,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 };
 
                                 if let Some(reason) = retry_reason {
+                                    if let Some(infer_state) = distributed_infer_state.as_mut() {
+                                        infer_state.update_attempt_state(
+                                            &distributed_result.attempt_id,
+                                            "failed",
+                                            Some("retryable_failure"),
+                                            Some(&reason),
+                                        );
+                                    }
                                     if let Some(watchdog) =
                                         attempt_watchdogs.get_mut(&distributed_result.attempt_id)
                                     {
@@ -6652,14 +7263,23 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         }
                                     }
                                     if let Some(health) = registry.write().await.record_failure(&peer_id) {
+                                        let model_id = distributed_infer_state
+                                            .as_ref()
+                                            .and_then(|state| state.current_model.clone());
                                         log_health_update(
                                             &distributed_result.task_id,
                                             &peer_id,
-                                            distributed_infer_state
-                                                .as_ref()
-                                                .and_then(|state| state.current_model.as_deref()),
+                                            model_id.as_deref(),
                                             &health,
                                             Some(NODE_UNHEALTHY_002),
+                                        );
+                                        record_health_policy_state_transition(
+                                            &mut health_state_tracker,
+                                            &distributed_result.task_id,
+                                            &peer_id,
+                                            model_id.as_deref(),
+                                            "task_failure",
+                                            &health,
                                         );
                                     }
                                     let error_code = if distributed_result.output.trim().is_empty() {
@@ -6788,6 +7408,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                             aggregate_metrics.failed_tasks,
                                             aggregate_metrics.avg_latency_ms
                                         );
+                                        emit_final_trace_summary_event(
+                                            infer_state,
+                                            &aggregate_metrics,
+                                            true,
+                                        );
+                                        print_human_final_task_summary(
+                                            infer_state,
+                                            &aggregate_metrics,
+                                            true,
+                                        );
                                     }
 
                                     break;
@@ -6796,14 +7426,23 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 if let Some(health) =
                                     registry.write().await.record_success(&peer_id, latency_ms)
                                 {
+                                    let model_id = distributed_infer_state
+                                        .as_ref()
+                                        .and_then(|state| state.current_model.clone());
                                     log_health_update(
                                         &distributed_result.task_id,
                                         &peer_id,
-                                        distributed_infer_state
-                                            .as_ref()
-                                            .and_then(|state| state.current_model.as_deref()),
+                                        model_id.as_deref(),
                                         &health,
                                         None,
+                                    );
+                                    record_health_policy_state_transition(
+                                        &mut health_state_tracker,
+                                        &distributed_result.task_id,
+                                        &peer_id,
+                                        model_id.as_deref(),
+                                        "success",
+                                        &health,
                                     );
                                 }
                                 if let Some(watchdog) =
@@ -6820,6 +7459,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                             watchdog.state.as_str(),
                                         );
                                     }
+                                }
+                                if let Some(infer_state) = distributed_infer_state.as_mut() {
+                                    infer_state.update_attempt_state(
+                                        &distributed_result.attempt_id,
+                                        "completed",
+                                        Some("success"),
+                                        None,
+                                    );
                                 }
                                 log_observability_event(
                                     LogLevel::Info,
@@ -6882,6 +7529,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         aggregate_metrics.total_tasks,
                                         aggregate_metrics.failed_tasks,
                                         aggregate_metrics.avg_latency_ms
+                                    );
+                                    emit_final_trace_summary_event(
+                                        infer_state,
+                                        &aggregate_metrics,
+                                        false,
+                                    );
+                                    print_human_final_task_summary(
+                                        infer_state,
+                                        &aggregate_metrics,
+                                        false,
                                     );
                                 }
                                 break;
@@ -7564,5 +8221,69 @@ mod tests {
         metrics.late_result_recorded();
         assert_eq!(metrics.late_results_count, 1);
         assert_eq!(metrics.failed_tasks, 0);
+    }
+
+    #[test]
+    fn test_per_task_retry_and_fallback_counters_increment() {
+        let mut state = DistributedInferState::new("2+2".to_string(), None, None);
+        state.increment_task_retry_count();
+        state.increment_task_retry_count();
+        state.increment_task_fallback_count();
+
+        assert_eq!(state.task_retry_count, 2);
+        assert_eq!(state.task_fallback_count, 1);
+    }
+
+    #[test]
+    fn test_final_failure_increments_failed_tasks_once() {
+        let mut metrics = DistributedTaskMetrics::default();
+        metrics.task_failed();
+
+        assert_eq!(metrics.failed_tasks, 1);
+    }
+
+    #[test]
+    fn test_human_final_trace_includes_multiple_attempts() {
+        let mut state = DistributedInferState::new("Explain gravity".to_string(), None, None);
+        state.register_attempt_record("attempt-1", "Mac", "mistral-7b", false);
+        state.update_attempt_state(
+            "attempt-1",
+            "stalled",
+            Some("timeout"),
+            Some("watchdog_no_progress"),
+        );
+        state.register_attempt_record("attempt-2", "TS140", "mistral-7b", false);
+        state.update_attempt_state("attempt-2", "completed", Some("success"), None);
+
+        let lines = state.attempt_summary_lines();
+        assert_eq!(lines.len(), 2);
+        assert!(lines[0].contains("peer=Mac"));
+        assert!(lines[0].contains("state=stalled"));
+        assert!(lines[1].contains("peer=TS140"));
+        assert!(lines[1].contains("outcome=success"));
+    }
+
+    #[test]
+    fn test_runtime_version_metadata_is_current_release_line() {
+        let version = runtime_version_metadata();
+        assert!(version.starts_with("v0.6.35"));
+        assert!(!version.contains("v0.6.24"));
+    }
+
+    #[test]
+    fn test_human_log_throttle_deduplicates_repetitive_values() {
+        let mut throttle = HumanLogThrottle::default();
+        assert!(throttle.should_log("heartbeat:peer-a", 60_000, Some("slots=4 rep=100 peers=2")));
+        assert!(!throttle.should_log("heartbeat:peer-a", 60_000, Some("slots=4 rep=100 peers=2")));
+        assert!(throttle.should_log("heartbeat:peer-a", 60_000, Some("slots=3 rep=100 peers=2")));
+    }
+
+    #[test]
+    fn test_health_policy_is_degraded_before_blacklist() {
+        let mut health = NodeHealth::default();
+        health.record_timeout();
+        assert_eq!(health.policy_state(), "degraded");
+        health.record_timeout();
+        assert_eq!(health.policy_state(), "blacklisted");
     }
 }
