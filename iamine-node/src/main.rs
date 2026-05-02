@@ -3104,7 +3104,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // ════════════════════════════════════════
     if matches!(mode, NodeMode::Worker) {
         println!("╔══════════════════════════════════╗");
-        println!("║       IaMine Worker v0.6         ║");
+        println!("║   IaMine Worker {:<14}║", current_release_version());
         println!("╚══════════════════════════════════╝\n");
     }
 
@@ -4983,24 +4983,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     "attempt_started",
                                     None,
                                 );
-                                emit_direct_inference_request_received_event(
-                                    &task_id,
-                                    &attempt_id,
-                                    &model_id,
-                                    &from_peer,
-                                    &peer_id.to_string(),
-                                    local_model_available,
-                                );
-                                publish_worker_progress_message(
-                                    &mut swarm,
-                                    &task_id,
-                                    &attempt_id,
-                                    &request_id,
-                                    &model_id,
-                                    &peer_id.to_string(),
-                                    "attempt_started",
-                                    None,
-                                );
 
                                 println!("🧠 [Worker] InferenceRequest: model={} prompt='{}'",
                                     model_id, &prompt[..prompt.len().min(40)]);
@@ -5018,36 +5000,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         continue;
                                     }
                                 }
-                                publish_worker_progress_message(
-                                    &mut swarm,
-                                    &task_id,
-                                    &attempt_id,
-                                    &request_id,
-                                    &model_id,
-                                    &peer_id.to_string(),
-                                    "model_load_started",
-                                    None,
-                                );
-                                publish_worker_progress_message(
-                                    &mut swarm,
-                                    &task_id,
-                                    &attempt_id,
-                                    &request_id,
-                                    &model_id,
-                                    &peer_id.to_string(),
-                                    "model_load_completed",
-                                    None,
-                                );
-                                publish_worker_progress_message(
-                                    &mut swarm,
-                                    &task_id,
-                                    &attempt_id,
-                                    &request_id,
-                                    &model_id,
-                                    &peer_id.to_string(),
-                                    "inference_started",
-                                    None,
-                                );
                                 publish_worker_progress_message(
                                     &mut swarm,
                                     &task_id,

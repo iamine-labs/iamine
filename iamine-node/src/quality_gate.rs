@@ -5,7 +5,7 @@ use iamine_network::{evaluate_default_dataset, SemanticEvalReport};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-const CURRENT_RELEASE_VERSION: &str = "v0.6.24";
+const CURRENT_RELEASE_VERSION: &str = "v0.6.35";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReleaseTrack {
