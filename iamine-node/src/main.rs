@@ -1,6 +1,7 @@
 mod attempt_watchdog;
 mod benchmark;
 mod capability_advertising;
+mod cli;
 mod code_quality;
 mod daemon_runtime;
 mod dispatch_runtime;
@@ -71,6 +72,9 @@ use attempt_watchdog::{
 use benchmark::NodeBenchmark;
 use capability_advertising::{
     CapabilityAdvertisementValidator, CapabilityRejectionReason, CapabilityValidationResult,
+};
+use cli::{
+    is_control_plane_mode, mode_label, parse_args, DebugFlags, InferenceControlFlags, NodeMode,
 };
 use code_quality::run_code_quality_checks;
 use daemon_runtime::{daemon_is_available, daemon_socket_path, infer_via_daemon, run_daemon};
@@ -145,7 +149,6 @@ use libp2p::{
 };
 use std::error::Error;
 use std::path::PathBuf;
-use std::str::FromStr;
 use std::time::Duration;
 
 use executor::TaskExecutor;
@@ -228,293 +231,6 @@ impl From<gossipsub::Event> for IaMineEvent {
     fn from(e: gossipsub::Event) -> Self {
         IaMineEvent::Gossipsub(e)
     }
-}
-
-#[allow(dead_code)]
-#[derive(Debug, Clone)]
-enum NodeMode {
-    Daemon,
-    Worker,
-    Relay,
-    Client {
-        peer: Option<Multiaddr>,
-        task_type: String,
-        data: String,
-    },
-    Stress {
-        peer: Option<Multiaddr>,
-        count: usize,
-    },
-    Broadcast {
-        task_type: String,
-        data: String,
-    },
-    SimulateWorkers {
-        count: usize,
-    },
-    ModelsList,
-    ModelsStats,
-    ModelsDownload {
-        model_id: String,
-    },
-    ModelsRemove {
-        model_id: String,
-    },
-    ModelsMenu, // ← nuevo
-    ModelsSearch {
-        query: String,
-    }, // ← nuevo
-    TestInference {
-        prompt: String,
-    },
-    Infer {
-        prompt: String,
-        model_id: Option<String>,
-        max_tokens_override: Option<u32>,
-        force_network: bool,
-        no_local: bool,
-        prefer_local: bool,
-    },
-    SemanticEval,
-    RegressionRun,
-    CheckCode,
-    CheckSecurity,
-    ValidateRelease,
-    TasksStats,
-    TasksTrace {
-        task_id: String,
-    },
-    Capabilities,
-    Nodes,
-    Topology, // ← NEW
-    ModelsRecommend,
-}
-
-#[derive(Debug, Clone, Copy, Default)]
-struct DebugFlags {
-    network: bool,
-    scheduler: bool,
-    tasks: bool,
-}
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-struct InferenceControlFlags {
-    force_network: bool,
-    no_local: bool,
-    prefer_local: bool,
-}
-
-impl InferenceControlFlags {
-    fn from_args(args: &[String]) -> Self {
-        Self {
-            force_network: args.iter().any(|arg| arg == "--force-network"),
-            no_local: args.iter().any(|arg| arg == "--no-local"),
-            prefer_local: args.iter().any(|arg| arg == "--prefer-local"),
-        }
-    }
-
-    fn should_use_local(self, has_local_model: bool) -> bool {
-        if self.force_network || self.no_local {
-            return false;
-        }
-        if self.prefer_local {
-            return has_local_model;
-        }
-        has_local_model
-    }
-}
-
-impl DebugFlags {
-    fn from_args(args: &[String]) -> Self {
-        Self {
-            network: args.iter().any(|arg| arg == "--debug-network"),
-            scheduler: args.iter().any(|arg| arg == "--debug-scheduler"),
-            tasks: args.iter().any(|arg| arg == "--debug-tasks"),
-        }
-    }
-}
-
-fn mode_label(mode: &NodeMode) -> &'static str {
-    match mode {
-        NodeMode::Daemon => "daemon",
-        NodeMode::Worker => "worker",
-        NodeMode::Relay => "relay",
-        NodeMode::Client { .. } => "client",
-        NodeMode::Stress { .. } => "stress",
-        NodeMode::Broadcast { .. } => "broadcast",
-        NodeMode::SimulateWorkers { .. } => "simulate-workers",
-        NodeMode::ModelsList => "models-list",
-        NodeMode::ModelsStats => "models-stats",
-        NodeMode::ModelsDownload { .. } => "models-download",
-        NodeMode::ModelsRemove { .. } => "models-remove",
-        NodeMode::ModelsMenu => "models-menu",
-        NodeMode::ModelsSearch { .. } => "models-search",
-        NodeMode::TestInference { .. } => "test-inference",
-        NodeMode::Infer { .. } => "infer",
-        NodeMode::SemanticEval => "semantic-eval",
-        NodeMode::RegressionRun => "regression-run",
-        NodeMode::CheckCode => "check-code",
-        NodeMode::CheckSecurity => "check-security",
-        NodeMode::ValidateRelease => "validate-release",
-        NodeMode::TasksStats => "tasks-stats",
-        NodeMode::TasksTrace { .. } => "tasks-trace",
-        NodeMode::Capabilities => "capabilities",
-        NodeMode::Nodes => "nodes",
-        NodeMode::Topology => "topology",
-        NodeMode::ModelsRecommend => "models-recommend",
-    }
-}
-
-fn parse_args() -> Result<NodeMode, String> {
-    let raw_args: Vec<String> = std::env::args().collect();
-    let args: Vec<String> = raw_args
-        .into_iter()
-        .filter(|arg| {
-            !matches!(
-                arg.as_str(),
-                "--debug-network" | "--debug-scheduler" | "--debug-tasks"
-            )
-        })
-        .collect();
-
-    match args.get(1).map(|s| s.as_str()) {
-        Some("--daemon") => Ok(NodeMode::Daemon),
-        Some("--worker") | None => Ok(NodeMode::Worker),
-        Some("--relay") => Ok(NodeMode::Relay),
-        Some("models") => match args.get(2).map(|s| s.as_str()) {
-            Some("list") => Ok(NodeMode::ModelsList),
-            Some("stats") => Ok(NodeMode::ModelsStats),
-            Some("recommend") => Ok(NodeMode::ModelsRecommend),
-            Some("menu") => Ok(NodeMode::ModelsMenu),
-            Some("search") => {
-                let query = args.get(3).ok_or("Falta <query>")?.clone();
-                Ok(NodeMode::ModelsSearch { query })
-            }
-            Some("download") => {
-                let id = args.get(3).ok_or("Falta <model_id>")?.clone();
-                Ok(NodeMode::ModelsDownload { model_id: id })
-            }
-            Some("remove") => {
-                let id = args.get(3).ok_or("Falta <model_id>")?.clone();
-                Ok(NodeMode::ModelsRemove { model_id: id })
-            }
-            _ => Err(
-                "Uso: iamine models [list|stats|recommend|menu|search <q>|download <id>|remove <id>]"
-                    .to_string(),
-            ),
-        },
-        Some("--client") => {
-            let (peer, offset) = if args.get(2).map(|s| s.starts_with("/ip4")).unwrap_or(false) {
-                (
-                    Some(Multiaddr::from_str(args.get(2).unwrap()).map_err(|e| e.to_string())?),
-                    3,
-                )
-            } else {
-                (None, 2)
-            };
-            let task_type = args.get(offset).ok_or("Falta <task_type>")?.clone();
-            let data = args.get(offset + 1).ok_or("Falta <data>")?.clone();
-            Ok(NodeMode::Client {
-                peer,
-                task_type,
-                data,
-            })
-        }
-
-        Some("--stress") => {
-            let (peer, offset) = if args.get(2).map(|s| s.starts_with("/ip4")).unwrap_or(false) {
-                (
-                    Some(Multiaddr::from_str(args.get(2).unwrap()).map_err(|e| e.to_string())?),
-                    3,
-                )
-            } else {
-                (None, 2)
-            };
-            let count = args
-                .get(offset)
-                .unwrap_or(&"10".to_string())
-                .parse::<usize>()
-                .unwrap_or(10);
-            Ok(NodeMode::Stress { peer, count })
-        }
-
-        Some("--broadcast") => {
-            let task_type = args.get(2).ok_or("Falta <task_type>")?.clone();
-            let data = args.get(3).ok_or("Falta <data>")?.clone();
-            Ok(NodeMode::Broadcast { task_type, data })
-        }
-
-        Some("--simulate-workers") => {
-            let count = args
-                .get(2)
-                .unwrap_or(&"10".to_string())
-                .parse::<usize>()
-                .unwrap_or(10);
-            Ok(NodeMode::SimulateWorkers { count })
-        }
-
-        Some("test-inference") => {
-            let prompt = args
-                .get(2)
-                .cloned()
-                .unwrap_or_else(|| "What is 2+2?".to_string());
-            Ok(NodeMode::TestInference { prompt })
-        }
-
-        Some("capabilities") => Ok(NodeMode::Capabilities),
-
-        Some("infer") => {
-            let prompt = args.get(2).ok_or("Falta <prompt>")?.clone();
-            let model_id = args
-                .iter()
-                .position(|a| a == "--model")
-                .and_then(|i| args.get(i + 1).cloned());
-            let max_tokens_override = parse_optional_u32_flag(&args, "--max-tokens")?;
-            let control_flags = InferenceControlFlags::from_args(&args);
-            Ok(NodeMode::Infer {
-                prompt,
-                model_id,
-                max_tokens_override,
-                force_network: control_flags.force_network,
-                no_local: control_flags.no_local,
-                prefer_local: control_flags.prefer_local,
-            })
-        }
-
-        Some("semantic-eval") => Ok(NodeMode::SemanticEval),
-        Some("regression-run") => Ok(NodeMode::RegressionRun),
-        Some("check-code") => Ok(NodeMode::CheckCode),
-        Some("check-security") => Ok(NodeMode::CheckSecurity),
-        Some("validate-release") => Ok(NodeMode::ValidateRelease),
-        Some("tasks") => match args.get(2).map(|s| s.as_str()) {
-            Some("stats") => Ok(NodeMode::TasksStats),
-            Some("trace") => {
-                let task_id = args.get(3).ok_or("Falta <task_id>")?.clone();
-                Ok(NodeMode::TasksTrace { task_id })
-            }
-            _ => Err("Uso: iamine-node tasks [stats|trace <task_id>]".to_string()),
-        },
-
-        Some("nodes") => Ok(NodeMode::Nodes),
-
-        Some("topology") => Ok(NodeMode::Topology), // ← NEW
-
-        Some(unknown) => Err(format!("Modo desconocido: {}", unknown)),
-    }
-}
-
-fn parse_optional_u32_flag(args: &[String], flag: &str) -> Result<Option<u32>, String> {
-    let Some(index) = args.iter().position(|arg| arg == flag) else {
-        return Ok(None);
-    };
-
-    let Some(raw) = args.get(index + 1) else {
-        return Err(format!("Falta valor para {}", flag));
-    };
-
-    raw.parse::<u32>()
-        .map(Some)
-        .map_err(|_| format!("Valor invalido para {}: {}", flag, raw))
 }
 
 fn prompt_language_label(language: PromptLanguage) -> &'static str {
@@ -677,6 +393,17 @@ fn task_requires_validation(task_type: PromptTaskType) -> bool {
 enum InferenceRuntime {
     Engine(Arc<RealInferenceEngine>),
     Daemon(PathBuf),
+}
+
+struct TimeoutContext {
+    trace_task_id: String,
+    attempt_id: String,
+    worker_peer_id: String,
+    model_id: String,
+    elapsed_ms: u64,
+    elapsed_since_progress_ms: u64,
+    adaptive_timeout_ms: u64,
+    max_wait_ms: u64,
 }
 
 fn prompt_requests_decimal_sequence(prompt: &str) -> bool {
@@ -1216,18 +943,6 @@ fn finalize_distributed_task_observability(
     );
 
     (task_trace(trace_task_id), metrics)
-}
-
-fn is_control_plane_mode(mode: &NodeMode) -> bool {
-    matches!(
-        mode,
-        NodeMode::ModelsList
-            | NodeMode::ModelsStats
-            | NodeMode::ModelsDownload { .. }
-            | NodeMode::ModelsRemove { .. }
-            | NodeMode::TasksStats
-            | NodeMode::TasksTrace { .. }
-    )
 }
 
 fn validate_models_for_advertising(
@@ -3265,16 +2980,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 if matches!(mode, NodeMode::Infer { .. }) {
                     if let Some(rid) = infer_runtime.infer_request_id.clone() {
                         if infer_runtime.pending_inference.contains_key(&rid) {
-                            let mut timeout_context: Option<(
-                                String,
-                                String,
-                                String,
-                                String,
-                                u64,
-                                u64,
-                                u64,
-                                u64,
-                            )> = None;
+                            let mut timeout_context: Option<TimeoutContext> = None;
                             let mut should_retry = false;
                             if let Some(watchdog) = infer_runtime.attempt_watchdogs.get_mut(&rid) {
                                 match watchdog.check() {
@@ -3322,57 +3028,61 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                 watchdog.state.as_str(),
                                             );
                                         }
-                                        timeout_context = Some((
-                                            watchdog.task_id.clone(),
-                                            watchdog.attempt_id.clone(),
-                                            watchdog.worker_peer_id.clone(),
-                                            watchdog.model_id.clone(),
-                                            watchdog.elapsed_ms(),
-                                            watchdog.elapsed_since_last_progress_ms(),
-                                            watchdog.policy.timeout_ms,
-                                            watchdog.policy.max_wait_ms,
-                                        ));
+                                        timeout_context = Some(TimeoutContext {
+                                            trace_task_id: watchdog.task_id.clone(),
+                                            attempt_id: watchdog.attempt_id.clone(),
+                                            worker_peer_id: watchdog.worker_peer_id.clone(),
+                                            model_id: watchdog.model_id.clone(),
+                                            elapsed_ms: watchdog.elapsed_ms(),
+                                            elapsed_since_progress_ms: watchdog
+                                                .elapsed_since_last_progress_ms(),
+                                            adaptive_timeout_ms: watchdog.policy.timeout_ms,
+                                            max_wait_ms: watchdog.policy.max_wait_ms,
+                                        });
                                         should_retry = true;
                                     }
                                 }
                             } else if let Some(t0) = infer_runtime.pending_inference.get(&rid) {
                                 if t0.elapsed().as_millis() as u64 >= INFER_TIMEOUT_MS {
-                                    timeout_context = Some((
-                                        infer_runtime.distributed_infer_state
+                                    timeout_context = Some(TimeoutContext {
+                                        trace_task_id: infer_runtime
+                                            .distributed_infer_state
                                             .as_ref()
                                             .map(|state| state.trace_task_id.clone())
                                             .unwrap_or_else(|| "-".to_string()),
-                                        rid.clone(),
-                                        infer_runtime.distributed_infer_state
+                                        attempt_id: rid.clone(),
+                                        worker_peer_id: infer_runtime
+                                            .distributed_infer_state
                                             .as_ref()
                                             .and_then(|state| state.current_peer.clone())
                                             .unwrap_or_else(|| "-".to_string()),
-                                        infer_runtime.distributed_infer_state
+                                        model_id: infer_runtime
+                                            .distributed_infer_state
                                             .as_ref()
                                             .and_then(|state| state.current_model.clone())
                                             .unwrap_or_else(|| "-".to_string()),
-                                        INFER_TIMEOUT_MS,
-                                        INFER_TIMEOUT_MS,
-                                        INFER_TIMEOUT_MS,
-                                        INFER_TIMEOUT_MS,
-                                    ));
+                                        elapsed_ms: INFER_TIMEOUT_MS,
+                                        elapsed_since_progress_ms: INFER_TIMEOUT_MS,
+                                        adaptive_timeout_ms: INFER_TIMEOUT_MS,
+                                        max_wait_ms: INFER_TIMEOUT_MS,
+                                    });
                                     should_retry = true;
                                 }
                             }
 
                             if should_retry {
                                 let failure_kind = FailureKind::Timeout;
-                                if let Some((
-                                    trace_task_id,
-                                    attempt_id,
-                                    worker_peer_id,
-                                    model_id,
-                                    elapsed_ms,
-                                    elapsed_since_progress_ms,
-                                    adaptive_timeout_ms,
-                                    max_wait_ms,
-                                )) = timeout_context
-                                {
+                                if let Some(timeout_context) = timeout_context {
+                                    let TimeoutContext {
+                                        trace_task_id,
+                                        attempt_id,
+                                        worker_peer_id,
+                                        model_id,
+                                        elapsed_ms,
+                                        elapsed_since_progress_ms,
+                                        adaptive_timeout_ms,
+                                        max_wait_ms,
+                                    } = timeout_context;
                                     eprintln!(
                                         "\n[Fault] task_id={} attempt_id={} kind={:?} timeout_ms={}",
                                         trace_task_id, attempt_id, failure_kind, adaptive_timeout_ms

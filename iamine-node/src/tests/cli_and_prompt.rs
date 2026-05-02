@@ -29,7 +29,7 @@ fn test_parse_optional_u32_flag() {
     ];
 
     assert_eq!(
-        parse_optional_u32_flag(&args, "--max-tokens").unwrap(),
+        cli::parse_optional_u32_flag(&args, "--max-tokens").unwrap(),
         Some(1024)
     );
 }
