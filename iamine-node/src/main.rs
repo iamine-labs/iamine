@@ -9,6 +9,7 @@ mod heartbeat;
 mod metrics;
 mod model_selector_cli;
 mod network;
+mod network_events;
 mod node_identity;
 mod peer_tracker;
 mod protocol;
@@ -18,6 +19,7 @@ mod regression_runner;
 mod resource_policy;
 mod result_lifecycle;
 mod result_protocol;
+mod runtime_state;
 mod security_checks;
 mod setup_wizard;
 mod startup_math;
@@ -88,6 +90,11 @@ use dispatch_runtime::{
 use heartbeat::HeartbeatService;
 use metrics::{start_metrics_server, NodeMetrics};
 use model_selector_cli::ModelSelectorCLI;
+use network_events::{
+    handle_connection_closed, handle_connection_established, handle_kademlia_routing_updated,
+    handle_mdns_discovered, handle_mdns_expired, handle_ping_event, handle_pubsub_subscribed,
+    handle_pubsub_unsubscribed, handle_result_response_ack, handle_result_response_request,
+};
 use node_identity::NodeIdentity; // ← actualizado
 use peer_tracker::PeerTracker;
 use quality_gate::{current_release_version, run_release_validation};
@@ -99,6 +106,7 @@ use result_lifecycle::{
     clear_stream_state,
 };
 use result_protocol::{TaskResultRequest, TaskResultResponse};
+use runtime_state::{ClientRuntimeState, DistributedInferState, InferRuntimeState};
 use security_checks::run_security_checks;
 use serde_json::{Map, Value};
 use setup_wizard::{DetectedHardware, NodeSetupConfig};
@@ -905,82 +913,6 @@ struct PromptResolution {
     selected_model: String,
     semantic_prompt: String,
     validation: SemanticValidationResult,
-}
-
-struct DistributedInferState {
-    trace_task_id: String,
-    prompt: String,
-    model_override: Option<String>,
-    max_tokens_override: Option<u32>,
-    current_request_id: String,
-    current_task_type: Option<PromptTaskType>,
-    current_semantic_prompt: Option<String>,
-    current_peer: Option<String>,
-    current_model: Option<String>,
-    candidate_models: Vec<String>,
-    local_cluster_id: Option<String>,
-    retry_policy: RetryPolicy,
-    retry_state: RetryState,
-}
-
-impl DistributedInferState {
-    fn new(
-        prompt: String,
-        model_override: Option<String>,
-        max_tokens_override: Option<u32>,
-    ) -> Self {
-        let trace_task_id = uuid_simple();
-        Self {
-            trace_task_id: trace_task_id.clone(),
-            prompt,
-            model_override,
-            max_tokens_override,
-            current_request_id: trace_task_id,
-            current_task_type: None,
-            current_semantic_prompt: None,
-            current_peer: None,
-            current_model: None,
-            candidate_models: Vec::new(),
-            local_cluster_id: None,
-            retry_policy: RetryPolicy {
-                max_retries: MAX_DISTRIBUTED_RETRIES,
-                timeout_ms: INFER_TIMEOUT_MS,
-            },
-            retry_state: RetryState::default(),
-        }
-    }
-
-    fn record_attempt(
-        &mut self,
-        peer_id: String,
-        model_id: String,
-        task_type: PromptTaskType,
-        semantic_prompt: String,
-        local_cluster_id: Option<String>,
-        candidate_models: Vec<String>,
-    ) {
-        self.current_peer = Some(peer_id);
-        self.current_model = Some(model_id);
-        self.current_task_type = Some(task_type);
-        self.current_semantic_prompt = Some(semantic_prompt);
-        self.local_cluster_id = local_cluster_id;
-        self.candidate_models = candidate_models;
-    }
-
-    fn schedule_retry(&mut self, failed_peer: Option<&str>, failed_model: Option<&str>) -> bool {
-        self.retry_state.record_failure(failed_peer, failed_model);
-        if !self.retry_state.can_retry(&self.retry_policy) {
-            return false;
-        }
-
-        self.retry_state.advance_retry();
-        self.current_request_id = uuid_simple();
-        self.current_task_type = None;
-        self.current_semantic_prompt = None;
-        self.current_peer = None;
-        self.current_model = None;
-        true
-    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -2518,96 +2450,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut heartbeat_rx = HeartbeatService::start(5);
     let mut nodes_tick = tokio::time::interval(Duration::from_secs(5)); // ← nuevo ticker dedicado
 
-    // Estado
-    let mut pending_tasks: Vec<TaskRequest> = Vec::new();
-    let mut waiting_for_response = false;
-    let mut completed = 0usize;
-    let mut total_tasks = 0usize;
-    let mut connected_peer: Option<PeerId> = None;
-    let mut known_workers: HashSet<PeerId> = HashSet::new();
-    // Map de origin_peer_id → PeerId para direct result routing
-    let mut origin_peer_map: std::collections::HashMap<String, PeerId> =
-        std::collections::HashMap::new();
-    let mut tasks_sent = false;
+    let mut client_state = ClientRuntimeState::new();
+    client_state.prime_tasks_from_mode(&mode);
 
-    match &mode {
-        NodeMode::Client {
-            task_type, data, ..
-        } => {
-            pending_tasks.push(TaskRequest::legacy(
-                uuid_simple(),
-                task_type.clone(),
-                data.clone(),
-            ));
-            total_tasks = 1;
-        }
-        NodeMode::Stress { count, .. } => {
-            total_tasks = *count;
-            for i in 0..*count {
-                pending_tasks.push(TaskRequest::legacy(
-                    format!("stress_{:03}", i + 1),
-                    "reverse_string".to_string(),
-                    format!("iamine_{}", i + 1),
-                ));
-            }
-            println!("🔥 Stress test: {} tareas preparadas\n", count);
-        }
-        _ => {}
-    }
-
-    // ← v0.6: Si es modo Infer, preparar solicitud de inferencia
-    let mut infer_request_id: Option<String> = None;
-    let mut infer_broadcast_sent = false;
-    let mut pending_inference: std::collections::HashMap<String, tokio::time::Instant> =
-        std::collections::HashMap::new();
-    let mut attempt_watchdogs: HashMap<String, AttemptWatchdog> = HashMap::new();
-    let mut infer_started_at: Option<tokio::time::Instant> = None;
-    let mut distributed_infer_state: Option<DistributedInferState> = None;
-
-    // v0.6.2: estado de streaming ordenado
-    let mut token_buffer: HashMap<u32, String> = HashMap::new();
-    let mut next_token_idx: u32 = 0;
-    let mut rendered_output = String::new();
-
-    if let NodeMode::Infer {
-        prompt,
-        model_id,
-        max_tokens_override,
-        ..
-    } = &mode
-    {
-        let local_available = model_storage.list_local_models();
-        let resolution = resolve_policy_for_prompt(prompt, model_id.as_deref(), &local_available);
-        let profile = resolution.profile;
-        let candidates = resolution.candidate_models;
-        let selected = resolution.selected_model;
-        let semantic_prompt = resolution.semantic_prompt;
-        let output_policy = resolve_output_policy(&profile, &semantic_prompt, *max_tokens_override);
-        println!(
-            "🧠 Distributing inference: model={} prompt='{}'",
-            selected, semantic_prompt
-        );
-        println!("   Candidates: {}", candidates.join(", "));
-        println!(
-            "   [OutputPolicy] max_tokens: {} (reason: {})",
-            output_policy.max_tokens, output_policy.reason
-        );
-        let infer_state =
-            DistributedInferState::new(prompt.clone(), model_id.clone(), *max_tokens_override);
-        let _ = log_structured(prompt_log_entry(
-            &infer_state.trace_task_id,
-            &semantic_prompt,
-            &format!("{:?}", profile.language),
-            &format!("{:?}", profile.task_type),
-            profile.confidence,
-        ));
-        println!("   Task ID: {}", infer_state.trace_task_id);
-        println!("   Request ID: {}", infer_state.current_request_id);
-        infer_request_id = Some(infer_state.current_request_id.clone());
-        infer_started_at = Some(tokio::time::Instant::now());
-        let _ = record_distributed_task_started();
-        distributed_infer_state = Some(infer_state);
-    }
+    let mut infer_runtime = InferRuntimeState::new();
+    infer_runtime.initialize_infer_mode_if_needed(&mode, &model_storage);
 
     let is_client = !matches!(mode, NodeMode::Worker | NodeMode::Relay);
 
@@ -2701,7 +2548,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         m.reputation_score = rep.reputation_score;
                         m.active_workers = active_tasks;
                         m.network_peers = peer_tracker.peer_count();
-                        m.direct_peers = known_workers.len();
+                        m.direct_peers = client_state.known_workers.len();
                         m.avg_latency_ms = peer_tracker.avg_latency();
                     }
 
@@ -2777,8 +2624,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 }
 
                 // Smart routing: intento envío directo cuando ya hay registry
-                if matches!(mode, NodeMode::Infer { .. }) && !infer_broadcast_sent {
-                    if let Some(infer_state) = distributed_infer_state.as_mut() {
+                if matches!(mode, NodeMode::Infer { .. }) && !infer_runtime.infer_broadcast_sent {
+                    if let Some(infer_state) = infer_runtime.distributed_infer_state.as_mut() {
                         let local_models = model_storage.list_local_models();
                         let start = std::time::Instant::now();
                         let local_cluster = {
@@ -2851,7 +2698,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         {
                             let rid = infer_state.current_request_id.clone();
                             let trace_task_id = infer_state.trace_task_id.clone();
-                            let duplicate_inflight = attempt_watchdogs.values().any(|watchdog| {
+                            let duplicate_inflight = infer_runtime.attempt_watchdogs.values().any(|watchdog| {
                                 watchdog.task_id == trace_task_id
                                     && watchdog.worker_peer_id == best_peer
                                     && watchdog.model_id == routed_model
@@ -2968,7 +2815,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             );
                             let topic_peer_count = pubsub_topics.topic_peer_count(DIRECT_INF_TOPIC);
                             let readiness_snapshot = DispatchReadinessSnapshot {
-                                connected_peer_count: known_workers.len(),
+                                connected_peer_count: client_state.known_workers.len(),
                                 mesh_peer_count: pubsub_topics.mesh_peer_count(),
                                 topic_peer_count,
                                 joined_task_topic: pubsub_topics.joined(TASK_TOPIC),
@@ -2997,7 +2844,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     &readiness_snapshot,
                                     &readiness_error,
                                 );
-                                let elapsed_ms = infer_started_at
+                                let elapsed_ms = infer_runtime.infer_started_at
                                     .map(|started| started.elapsed().as_millis() as u64)
                                     .unwrap_or_default();
                                 if elapsed_ms < INFER_TIMEOUT_MS {
@@ -3130,18 +2977,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         previous_state.as_str(),
                                         watchdog.state.as_str(),
                                     );
-                                    attempt_watchdogs.insert(rid.clone(), watchdog);
+                                    infer_runtime.attempt_watchdogs.insert(rid.clone(), watchdog);
                                     metrics
                                         .write()
                                         .await
                                         .routing_decision(start.elapsed().as_millis() as u64);
-                                    infer_broadcast_sent = true;
-                                    waiting_for_response = true;
-                                    pending_inference.insert(
+                                    infer_runtime.infer_broadcast_sent = true;
+                                    client_state.waiting_for_response = true;
+                                    infer_runtime.pending_inference.insert(
                                         rid.clone(),
                                         tokio::time::Instant::now(),
                                     );
-                                    infer_request_id = Some(rid.clone());
+                                    infer_runtime.infer_request_id = Some(rid.clone());
                                     println!(
                                         "[Routing] task_id={} attempt_id={} peer_id={} cluster_id={} model_id={}",
                                         trace_task_id,
@@ -3204,7 +3051,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             eprintln!("   Nodos conocidos: {}", total_nodes);
                             eprintln!("   Candidates: {}", candidates.join(", "));
                             return Err("No compatible node available for distributed inference".into());
-                        } else if infer_started_at
+                        } else if infer_runtime.infer_started_at
                             .map(|t| t.elapsed().as_millis() as u64)
                             .unwrap_or(0)
                             >= INFER_FALLBACK_AFTER_MS
@@ -3222,7 +3069,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             );
                             let topic_peer_count = pubsub_topics.topic_peer_count(TASK_TOPIC);
                             let readiness_snapshot = DispatchReadinessSnapshot {
-                                connected_peer_count: known_workers.len(),
+                                connected_peer_count: client_state.known_workers.len(),
                                 mesh_peer_count: pubsub_topics.mesh_peer_count(),
                                 topic_peer_count,
                                 joined_task_topic: pubsub_topics.joined(TASK_TOPIC),
@@ -3251,7 +3098,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     &readiness_snapshot,
                                     &readiness_error,
                                 );
-                                let elapsed_ms = infer_started_at
+                                let elapsed_ms = infer_runtime.infer_started_at
                                     .map(|started| started.elapsed().as_millis() as u64)
                                     .unwrap_or_default();
                                 if elapsed_ms < INFER_TIMEOUT_MS {
@@ -3357,7 +3204,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         previous_state.as_str(),
                                         watchdog.state.as_str(),
                                     );
-                                    attempt_watchdogs.insert(rid.clone(), watchdog);
+                                    infer_runtime.attempt_watchdogs.insert(rid.clone(), watchdog);
                                     let is_retry_attempt = infer_state.retry_state.retry_count > 0;
                                     infer_state.record_attempt(
                                         "-".to_string(),
@@ -3382,10 +3229,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         &candidates,
                                     );
                                     let _ = record_distributed_task_fallback();
-                                    infer_broadcast_sent = true;
-                                    waiting_for_response = true;
-                                    pending_inference.insert(rid.clone(), tokio::time::Instant::now());
-                                    infer_request_id = Some(rid.clone());
+                                    infer_runtime.infer_broadcast_sent = true;
+                                    client_state.waiting_for_response = true;
+                                    infer_runtime.pending_inference.insert(rid.clone(), tokio::time::Instant::now());
+                                    infer_runtime.infer_request_id = Some(rid.clone());
                                     println!(
                                         "↪️  Fallback broadcast enviado: task_id={} attempt_id={} message_id={}",
                                         trace_task_id, rid, message_id
@@ -3416,8 +3263,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                 // Timeout total de inferencia distribuida
                 if matches!(mode, NodeMode::Infer { .. }) {
-                    if let Some(rid) = infer_request_id.clone() {
-                        if pending_inference.contains_key(&rid) {
+                    if let Some(rid) = infer_runtime.infer_request_id.clone() {
+                        if infer_runtime.pending_inference.contains_key(&rid) {
                             let mut timeout_context: Option<(
                                 String,
                                 String,
@@ -3429,7 +3276,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 u64,
                             )> = None;
                             let mut should_retry = false;
-                            if let Some(watchdog) = attempt_watchdogs.get_mut(&rid) {
+                            if let Some(watchdog) = infer_runtime.attempt_watchdogs.get_mut(&rid) {
                                 match watchdog.check() {
                                     WatchdogCheck::Healthy => {}
                                     WatchdogCheck::Extended => {
@@ -3488,19 +3335,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         should_retry = true;
                                     }
                                 }
-                            } else if let Some(t0) = pending_inference.get(&rid) {
+                            } else if let Some(t0) = infer_runtime.pending_inference.get(&rid) {
                                 if t0.elapsed().as_millis() as u64 >= INFER_TIMEOUT_MS {
                                     timeout_context = Some((
-                                        distributed_infer_state
+                                        infer_runtime.distributed_infer_state
                                             .as_ref()
                                             .map(|state| state.trace_task_id.clone())
                                             .unwrap_or_else(|| "-".to_string()),
                                         rid.clone(),
-                                        distributed_infer_state
+                                        infer_runtime.distributed_infer_state
                                             .as_ref()
                                             .and_then(|state| state.current_peer.clone())
                                             .unwrap_or_else(|| "-".to_string()),
-                                        distributed_infer_state
+                                        infer_runtime.distributed_infer_state
                                             .as_ref()
                                             .and_then(|state| state.current_model.clone())
                                             .unwrap_or_else(|| "-".to_string()),
@@ -3530,7 +3377,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         "\n[Fault] task_id={} attempt_id={} kind={:?} timeout_ms={}",
                                         trace_task_id, attempt_id, failure_kind, adaptive_timeout_ms
                                     );
-                                    if let Some(infer_state) = distributed_infer_state.as_mut() {
+                                    if let Some(infer_state) = infer_runtime.distributed_infer_state.as_mut() {
                                         if worker_peer_id != "-" {
                                             if let Some(health) =
                                                 registry.write().await.record_timeout(&worker_peer_id)
@@ -3607,11 +3454,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                             failed_peer.as_deref(),
                                             failed_model.as_deref(),
                                         );
-                                        pending_inference.remove(&rid);
+                                        infer_runtime.pending_inference.remove(&rid);
                                         clear_stream_state(
-                                            &mut token_buffer,
-                                            &mut next_token_idx,
-                                            &mut rendered_output,
+                                            &mut infer_runtime.token_buffer,
+                                            &mut infer_runtime.next_token_idx,
+                                            &mut infer_runtime.rendered_output,
                                         );
                                         if retried {
                                             emit_retry_scheduled_event(
@@ -3639,17 +3486,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                     trace_task_id, infer_state.current_request_id
                                                 );
                                             }
-                                            infer_request_id =
+                                            infer_runtime.infer_request_id =
                                                 Some(infer_state.current_request_id.clone());
-                                            infer_broadcast_sent = false;
-                                            waiting_for_response = false;
+                                            infer_runtime.infer_broadcast_sent = false;
+                                            client_state.waiting_for_response = false;
                                             continue;
                                         }
 
                                         let (trace, aggregate_metrics) =
                                             finalize_distributed_task_observability(
                                                 &trace_task_id,
-                                                infer_started_at,
+                                                infer_runtime.infer_started_at,
                                                 true,
                                             );
                                         if let Some(trace) = trace {
@@ -3681,56 +3528,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 }
 
                 SwarmEvent::Behaviour(IaMineEvent::Mdns(mdns::Event::Discovered(peers))) => {
-                    for (pid, addr) in peers {
-                        if pid != peer_id {
-                            println!("🔍 mDNS descubrió: {} @ {}", pid, addr);
-                            log_observability_event(
-                                LogLevel::Info,
-                                "peer_discovered",
-                                "network",
-                                None,
-                                None,
-                                None,
-                                {
-                                    let mut fields = Map::new();
-                                    fields.insert("peer_id".to_string(), pid.to_string().into());
-                                    fields.insert("address".to_string(), addr.to_string().into());
-                                    fields
-                                },
-                            );
-                            debug_network_log(
-                                debug_flags,
-                                format!("mdns discovered peer_id={} addr={}", pid, addr),
-                            );
-                            swarm.behaviour_mut().kademlia.add_address(&pid, addr.clone());
-                            swarm.behaviour_mut().gossipsub.add_explicit_peer(&pid);
-                            known_workers.insert(pid);
-                            if is_client && connected_peer.is_none() && !tasks_sent {
-                                let _ = swarm.dial(addr);
-                            }
-                        }
-                    }
+                    handle_mdns_discovered(
+                        &mut swarm,
+                        &mut client_state,
+                        is_client,
+                        debug_flags,
+                        peer_id,
+                        peers,
+                    );
                 }
 
                 SwarmEvent::Behaviour(IaMineEvent::Mdns(mdns::Event::Expired(peers))) => {
-                    for (pid, _) in peers {
-                        log_observability_event(
-                            LogLevel::Warn,
-                            "peer_disconnected",
-                            "network",
-                            None,
-                            None,
-                            Some(NET_PEER_DISCONNECTED_002),
-                            {
-                                let mut fields = Map::new();
-                                fields.insert("peer_id".to_string(), pid.to_string().into());
-                                fields
-                            },
-                        );
-                        known_workers.remove(&pid);
-                        pubsub_topics.unregister_peer(&pid);
-                        swarm.behaviour_mut().gossipsub.remove_explicit_peer(&pid);
-                    }
+                    handle_mdns_expired(&mut swarm, &mut client_state, &mut pubsub_topics, peers);
                 }
 
                 SwarmEvent::Behaviour(IaMineEvent::Gossipsub(gossipsub::Event::Message {
@@ -3812,11 +3621,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     let deadline_ms = 30_000u64;
 
                                     // ← Guardar peer_id del winner para direct result routing
-                                    if let Some(winner_peer) = known_workers.iter()
+                                    if let Some(winner_peer) = client_state.known_workers.iter()
                                         .find(|p| p.to_string().starts_with(&winner[..8.min(winner.len())]))
                                         .copied()
                                     {
-                                        origin_peer_map.insert(task_id.clone(), winner_peer);
+                                        client_state.origin_peer_map.insert(task_id.clone(), winner_peer);
                                     }
 
                                     let assign = serde_json::json!({
@@ -3888,7 +3697,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 if assigned == peer_id.to_string() {
                                     println!("🎯 [Worker] ¡Asignado! {} (deadline: {}ms)", task_id, deadline_ms);
 
-                                    let _origin_pid = known_workers.iter()  // ← _ prefix
+                                    let _origin_pid = client_state.known_workers.iter()  // ← _ prefix
                                         .find(|p| p.to_string() == origin_peer_str)
                                         .copied();
 
@@ -3977,14 +3786,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 let model_id = msg["model_id"].as_str().unwrap_or("").to_string();
                                 let tokens_generated_count =
                                     msg["tokens_generated_count"].as_u64();
-                                let expected_task_id = distributed_infer_state
+                                let expected_task_id = infer_runtime.distributed_infer_state
                                     .as_ref()
                                     .map(|state| state.trace_task_id.as_str());
                                 if expected_task_id != Some(task_id.as_str()) {
                                     continue;
                                 }
 
-                                if let Some(watchdog) = attempt_watchdogs.get_mut(&attempt_id) {
+                                if let Some(watchdog) = infer_runtime.attempt_watchdogs.get_mut(&attempt_id) {
                                     let previous_state = watchdog.state;
                                     let deadline_before =
                                         watchdog.deadline_at.duration_since(watchdog.started_at).as_millis() as u64;
@@ -4044,30 +3853,30 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                             "InferenceToken" if matches!(mode, NodeMode::Infer { .. }) => {
                                 let rid = msg["request_id"].as_str().unwrap_or("");
-                                if infer_request_id.as_deref() == Some(rid) {
+                                if infer_runtime.infer_request_id.as_deref() == Some(rid) {
                                     let idx = msg["index"].as_u64().unwrap_or(0) as u32;
                                     let token = msg["token"].as_str().unwrap_or("").to_string();
 
-                                    token_buffer.insert(idx, token);
+                                    infer_runtime.token_buffer.insert(idx, token);
 
                                     // flush en orden
-                                    while let Some(next) = token_buffer.remove(&next_token_idx) {
+                                    while let Some(next) = infer_runtime.token_buffer.remove(&infer_runtime.next_token_idx) {
                                         print!("{}", next);
-                                        rendered_output.push_str(&next); // <- nuevo
+                                        infer_runtime.rendered_output.push_str(&next); // <- nuevo
                                         let _ = std::io::Write::flush(&mut std::io::stdout());
-                                        next_token_idx += 1;
+                                        infer_runtime.next_token_idx += 1;
                                     }
                                 }
                             }
 
                             "InferenceResult" if matches!(mode, NodeMode::Infer { .. }) => {
                                 let rid = msg["request_id"].as_str().unwrap_or("");
-                                if infer_request_id.as_deref() == Some(rid) {
+                                if infer_runtime.infer_request_id.as_deref() == Some(rid) {
                                     let task_id = msg["task_id"]
                                         .as_str()
                                         .filter(|value| !value.trim().is_empty())
                                         .or_else(|| {
-                                            distributed_infer_state
+                                            infer_runtime.distributed_infer_state
                                                 .as_ref()
                                                 .map(|state| state.trace_task_id.as_str())
                                         })
@@ -4086,14 +3895,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     let worker = msg["worker_peer"].as_str().unwrap_or("unknown");
                                     let accel = msg["accelerator"].as_str().unwrap_or("unknown");
                                     let full_output = msg["output"].as_str().unwrap_or("").to_string();
-                                    let latency_ms = infer_started_at
+                                    let latency_ms = infer_runtime.infer_started_at
                                         .as_ref()
                                         .map(|started| started.elapsed().as_millis() as u64)
                                         .unwrap_or(ms);
                                     emit_result_received_event(
                                         &task_id,
                                         &attempt_id,
-                                        distributed_infer_state
+                                        infer_runtime.distributed_infer_state
                                             .as_ref()
                                             .and_then(|state| state.current_model.as_deref()),
                                         worker,
@@ -4104,7 +3913,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                             ResultStatus::Retryable(
                                                 "empty distributed inference output".to_string(),
                                             )
-                                        } else if let Some(infer_state) = distributed_infer_state.as_ref() {
+                                        } else if let Some(infer_state) = infer_runtime.distributed_infer_state.as_ref() {
                                             validate_result(
                                                 infer_state
                                                     .current_semantic_prompt
@@ -4129,10 +3938,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                                     // v0.6.2: solo imprimir parte faltante, sin duplicar
                                     if success && should_print_result_output(&full_output) {
-                                        if rendered_output.is_empty() {
+                                        if infer_runtime.rendered_output.is_empty() {
                                             print!("{}", full_output);
-                                        } else if full_output.starts_with(&rendered_output) {
-                                            let suffix = &full_output[rendered_output.len()..];
+                                        } else if full_output.starts_with(&infer_runtime.rendered_output) {
+                                            let suffix = &full_output[infer_runtime.rendered_output.len()..];
                                             if !suffix.is_empty() {
                                                 print!("{}", suffix);
                                             }
@@ -4152,7 +3961,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         } else {
                                             FailureKind::TaskFailure
                                         };
-                                        let current_model = distributed_infer_state
+                                        let current_model = infer_runtime.distributed_infer_state
                                             .as_ref()
                                             .and_then(|state| state.current_model.clone());
                                         println!(
@@ -4173,17 +3982,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                             "validation_failure",
                                             current_model,
                                             &registry,
-                                            &mut distributed_infer_state,
-                                            &mut attempt_watchdogs,
+                                            &mut infer_runtime.distributed_infer_state,
+                                            &mut infer_runtime.attempt_watchdogs,
                                             &task_manager,
-                                            &mut pending_inference,
-                                            &mut token_buffer,
-                                            &mut next_token_idx,
-                                            &mut rendered_output,
-                                            &mut infer_request_id,
-                                            &mut infer_broadcast_sent,
-                                            &mut waiting_for_response,
-                                            infer_started_at,
+                                            &mut infer_runtime.pending_inference,
+                                            &mut infer_runtime.token_buffer,
+                                            &mut infer_runtime.next_token_idx,
+                                            &mut infer_runtime.rendered_output,
+                                            &mut infer_runtime.infer_request_id,
+                                            &mut infer_runtime.infer_broadcast_sent,
+                                            &mut client_state.waiting_for_response,
+                                            infer_runtime.infer_started_at,
                                         )
                                         .await
                                         {
@@ -4196,12 +4005,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         &task_id,
                                         &attempt_id,
                                         worker,
-                                        distributed_infer_state
+                                        infer_runtime.distributed_infer_state
                                             .as_ref()
                                             .and_then(|state| state.current_model.as_deref()),
                                         latency_ms,
                                         &registry,
-                                        &mut attempt_watchdogs,
+                                        &mut infer_runtime.attempt_watchdogs,
                                     )
                                     .await;
                                     task_manager
@@ -4218,7 +4027,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                             task_id,
                                             attempt_id,
                                             worker,
-                                            distributed_infer_state
+                                            infer_runtime.distributed_infer_state
                                                 .as_ref()
                                                 .and_then(|state| state.current_model.as_deref())
                                                 .unwrap_or("-")
@@ -4244,15 +4053,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     }
                                     println!("═══════════════════════════════════");
                                     clear_stream_state(
-                                        &mut token_buffer,
-                                        &mut next_token_idx,
-                                        &mut rendered_output,
+                                        &mut infer_runtime.token_buffer,
+                                        &mut infer_runtime.next_token_idx,
+                                        &mut infer_runtime.rendered_output,
                                     );
-                                    if let Some(infer_state) = distributed_infer_state.as_ref() {
+                                    if let Some(infer_state) = infer_runtime.distributed_infer_state.as_ref() {
                                         let (trace, aggregate_metrics) =
                                             finalize_distributed_task_observability(
                                                 &infer_state.trace_task_id,
-                                                infer_started_at,
+                                                infer_runtime.infer_started_at,
                                                 false,
                                             );
                                         if let Some(trace) = trace {
@@ -4279,7 +4088,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         .as_str()
                                         .filter(|value| !value.trim().is_empty())
                                         .or_else(|| {
-                                            distributed_infer_state
+                                            infer_runtime.distributed_infer_state
                                                 .as_ref()
                                                 .map(|state| state.trace_task_id.as_str())
                                         })
@@ -4298,13 +4107,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         &task_id,
                                         &attempt_id,
                                         worker,
-                                        distributed_infer_state
+                                        infer_runtime.distributed_infer_state
                                             .as_ref()
                                             .and_then(|state| state.current_model.as_deref()),
                                         success,
                                         &output,
                                         execution_ms,
-                                        &mut attempt_watchdogs,
+                                        &mut infer_runtime.attempt_watchdogs,
                                         &registry,
                                     )
                                     .await;
@@ -4376,147 +4185,53 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     peer,
                     message: Message::Request { request, channel, .. },
                 })) => {
-                    println!("🎉 [Origin] Resultado directo de {}:",
-                        &peer.to_string()[..8]);
-                    println!("   task_id={} success={} ms={}",
-                        request.task_id, request.success, request.execution_ms);
-
-                    let _ = swarm.behaviour_mut().result_response.send_response(
-                        channel,
-                        TaskResultResponse { acknowledged: true },
-                    );
+                    handle_result_response_request(&mut swarm, &peer, request, channel);
                 }
 
                 SwarmEvent::Behaviour(IaMineEvent::ResultResponse(RREvent::Message {
                     peer,
                     message: Message::Response { response, .. },
                 })) => {
-                    if response.acknowledged {
-                        println!("✅ [Worker] Origin {} confirmó resultado", &peer.to_string()[..8]);
-                    }
+                    handle_result_response_ack(&peer, response);
                 }
 
                 SwarmEvent::Behaviour(IaMineEvent::Gossipsub(gossipsub::Event::Subscribed { peer_id: pid, topic })) => {
-                    println!("📢 Peer {} suscrito a: {}", pid, topic);
-                    pubsub_topics.register_peer_subscription(&pid, &topic);
-                    log_observability_event(
-                        LogLevel::Info,
-                        "pubsub_topic_joined",
-                        "network",
-                        None,
-                        None,
-                        None,
-                        {
-                            let mut fields = Map::new();
-                            fields.insert("peer_id".to_string(), pid.to_string().into());
-                            fields.insert("topic".to_string(), topic.to_string().into());
-                            fields.insert("scope".to_string(), "remote".into());
-                            fields
-                        },
-                    );
-
-                    // Desactivar ruta vieja: no enviar InferenceRequest broadcast aquí.
-                    // (Se envía por smart routing en heartbeat tick cuando registry tenga candidatos)
-
-                    // ...existing code...
+                    handle_pubsub_subscribed(&mut pubsub_topics, pid, topic);
                 }
 
                 SwarmEvent::Behaviour(IaMineEvent::Gossipsub(gossipsub::Event::Unsubscribed { peer_id: pid, topic })) => {
-                    println!("🔕 Peer {} desuscrito de: {}", pid, topic);
-                    pubsub_topics.unregister_peer_subscription(&pid, &topic);
+                    handle_pubsub_unsubscribed(&mut pubsub_topics, pid, topic);
                 }
 
                 SwarmEvent::ConnectionEstablished { peer_id: pid, endpoint, .. } => {
-                    println!("✅ Conectado a: {} ({})", pid, endpoint.get_remote_address());
-                    log_observability_event(
-                        LogLevel::Info,
-                        "peer_connected",
-                        "network",
-                        None,
-                        None,
-                        None,
-                        {
-                            let mut fields = Map::new();
-                            fields.insert("peer_id".to_string(), pid.to_string().into());
-                            fields.insert(
-                                "address".to_string(),
-                                endpoint.get_remote_address().to_string().into(),
-                            );
-                            fields
-                        },
+                    handle_connection_established(
+                        &mut swarm,
+                        &mut client_state,
+                        is_client,
+                        &mode,
+                        pid,
+                        endpoint.get_remote_address().clone(),
                     );
-                    connected_peer = Some(pid);
-                    known_workers.insert(pid);
-                    if is_client && !tasks_sent && !matches!(mode, NodeMode::Broadcast { .. }) {
-                        if let Some(task) = pending_tasks.first().cloned() {
-                            println!("📤 [{}/{}] Enviando: {} → '{}'",
-                                1, total_tasks, task.task_type, task.data);
-                            swarm.behaviour_mut().request_response.send_request(&pid, task);
-                            waiting_for_response = true;
-                            tasks_sent = true;
-                        }
-                    }
                 }
 
                 SwarmEvent::ConnectionClosed { peer_id: pid, .. } => {
-                    log_observability_event(
-                        LogLevel::Warn,
-                        "peer_disconnected",
-                        "network",
-                        None,
-                        None,
-                        Some(NET_PEER_DISCONNECTED_002),
-                        {
-                            let mut fields = Map::new();
-                            fields.insert("peer_id".to_string(), pid.to_string().into());
-                            fields
-                        },
-                    );
-                    known_workers.remove(&pid);
-                    pubsub_topics.unregister_peer(&pid);
-                    if is_client && !waiting_for_response && !matches!(mode, NodeMode::Broadcast { .. }) {
-                        println!("\n📊 Completado: {}/{} tareas", completed, total_tasks);
+                    if handle_connection_closed(
+                        &mut client_state,
+                        &mut pubsub_topics,
+                        is_client,
+                        &mode,
+                        pid,
+                    ) {
                         break;
                     }
                 }
 
                 SwarmEvent::Behaviour(IaMineEvent::Ping(ping::Event { peer, result, .. })) => {
-                    if let Ok(rtt) = result {
-                        let rtt_ms = rtt.as_micros() as f64 / 1000.0;
-                        println!(
-                            "[Latency] RTT to peer {} = {:.1} ms",
-                            &peer.to_string()[..12.min(peer.to_string().len())],
-                            rtt_ms
-                        );
-                        peer_tracker.update_latency(&peer.to_string(), rtt_ms);
-                        topology.write().await.update_latency(&peer.to_string(), rtt_ms);
-                        log_observability_event(
-                            LogLevel::Info,
-                            "peer_latency",
-                            "network",
-                            None,
-                            None,
-                            None,
-                            {
-                                let mut fields = Map::new();
-                                fields.insert("peer_id".to_string(), peer.to_string().into());
-                                fields.insert("latency_ms".to_string(), rtt_ms.into());
-                                fields.insert(
-                                    "cluster".to_string(),
-                                    cluster_label_for_latency(rtt_ms).into(),
-                                );
-                                fields
-                            },
-                        );
-                    }
+                    handle_ping_event(&mut peer_tracker, &topology, peer, result).await;
                 }
 
                 SwarmEvent::Behaviour(IaMineEvent::Kademlia(kad::Event::RoutingUpdated { peer, .. })) => {
-                    println!("📡 Kademlia: nodo añadido {}", peer);
-                    debug_network_log(
-                        debug_flags,
-                        format!("kademlia routing updated peer_id={}", peer),
-                    );
+                    handle_kademlia_routing_updated(debug_flags, peer);
                 }
 
                 SwarmEvent::Behaviour(IaMineEvent::RequestResponse(event)) => {
@@ -4800,17 +4515,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         }
                         RREvent::Message { peer, message: Message::Response { response, .. } } => {
                             if let Some(distributed_result) = response.distributed_result {
-                                let expected_task_id = distributed_infer_state
+                                let expected_task_id = infer_runtime.distributed_infer_state
                                     .as_ref()
                                     .map(|infer_state| infer_state.trace_task_id.as_str());
-                                if infer_request_id.as_deref()
+                                if infer_runtime.infer_request_id.as_deref()
                                     != Some(distributed_result.attempt_id.as_str())
                                     || expected_task_id != Some(distributed_result.task_id.as_str())
                                 {
                                     let attempt_id = distributed_result.attempt_id.clone();
                                     let task_id = distributed_result.task_id.clone();
                                     let peer_id = peer.to_string();
-                                    let elapsed_ms = attempt_watchdogs
+                                    let elapsed_ms = infer_runtime.attempt_watchdogs
                                         .get(&attempt_id)
                                         .map(|watchdog| watchdog.elapsed_ms())
                                         .unwrap_or_default();
@@ -4818,13 +4533,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         &task_id,
                                         &attempt_id,
                                         &peer_id,
-                                        distributed_infer_state
+                                        infer_runtime.distributed_infer_state
                                             .as_ref()
                                             .and_then(|state| state.current_model.as_deref()),
                                         distributed_result.success,
                                         &distributed_result.output,
                                         elapsed_ms,
-                                        &mut attempt_watchdogs,
+                                        &mut infer_runtime.attempt_watchdogs,
                                         &registry,
                                     )
                                     .await;
@@ -4835,16 +4550,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     continue;
                                 }
 
-                                pending_inference.remove(&distributed_result.attempt_id);
+                                infer_runtime.pending_inference.remove(&distributed_result.attempt_id);
                                 let peer_id = peer.to_string();
-                                let latency_ms = infer_started_at
+                                let latency_ms = infer_runtime.infer_started_at
                                     .as_ref()
                                     .map(|started| started.elapsed().as_millis() as u64)
                                     .unwrap_or_default();
                                 emit_result_received_event(
                                     &distributed_result.task_id,
                                     &distributed_result.attempt_id,
-                                    distributed_infer_state
+                                    infer_runtime.distributed_infer_state
                                         .as_ref()
                                         .and_then(|state| state.current_model.as_deref()),
                                     &peer_id,
@@ -4855,7 +4570,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         ResultStatus::Retryable(
                                             "empty distributed response output".to_string(),
                                         )
-                                    } else if let Some(infer_state) = distributed_infer_state.as_ref() {
+                                    } else if let Some(infer_state) = infer_runtime.distributed_infer_state.as_ref() {
                                         validate_result(
                                             infer_state
                                                 .current_semantic_prompt
@@ -4885,7 +4600,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     } else {
                                         FailureKind::TaskFailure
                                     };
-                                    let current_model = distributed_infer_state
+                                    let current_model = infer_runtime.distributed_infer_state
                                         .as_ref()
                                         .and_then(|state| state.current_model.clone());
                                     eprintln!(
@@ -4906,17 +4621,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         "task_failure",
                                         current_model,
                                         &registry,
-                                        &mut distributed_infer_state,
-                                        &mut attempt_watchdogs,
+                                        &mut infer_runtime.distributed_infer_state,
+                                        &mut infer_runtime.attempt_watchdogs,
                                         &task_manager,
-                                        &mut pending_inference,
-                                        &mut token_buffer,
-                                        &mut next_token_idx,
-                                        &mut rendered_output,
-                                        &mut infer_request_id,
-                                        &mut infer_broadcast_sent,
-                                        &mut waiting_for_response,
-                                        infer_started_at,
+                                        &mut infer_runtime.pending_inference,
+                                        &mut infer_runtime.token_buffer,
+                                        &mut infer_runtime.next_token_idx,
+                                        &mut infer_runtime.rendered_output,
+                                        &mut infer_runtime.infer_request_id,
+                                        &mut infer_runtime.infer_broadcast_sent,
+                                        &mut client_state.waiting_for_response,
+                                        infer_runtime.infer_started_at,
                                     )
                                     .await
                                     {
@@ -4929,12 +4644,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     &distributed_result.task_id,
                                     &distributed_result.attempt_id,
                                     &peer_id,
-                                    distributed_infer_state
+                                    infer_runtime.distributed_infer_state
                                         .as_ref()
                                         .and_then(|state| state.current_model.as_deref()),
                                     latency_ms,
                                     &registry,
-                                    &mut attempt_watchdogs,
+                                    &mut infer_runtime.attempt_watchdogs,
                                 )
                                 .await;
                                 task_manager.complete(distributed_result.clone()).await;
@@ -4946,16 +4661,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     distributed_result.task_id,
                                     distributed_result.attempt_id,
                                     peer,
-                                    distributed_infer_state
+                                    infer_runtime.distributed_infer_state
                                         .as_ref()
                                         .and_then(|state| state.current_model.as_deref())
                                         .unwrap_or("-")
                                 );
-                                if let Some(infer_state) = distributed_infer_state.as_ref() {
+                                if let Some(infer_state) = infer_runtime.distributed_infer_state.as_ref() {
                                     let (trace, aggregate_metrics) =
                                         finalize_distributed_task_observability(
                                             &infer_state.trace_task_id,
-                                            infer_started_at,
+                                            infer_runtime.infer_started_at,
                                             false,
                                         );
                                     if let Some(trace) = trace {
@@ -4978,27 +4693,27 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 }
                                 break;
                             } else {
-                                waiting_for_response = false;
-                                completed += 1;
-                                if !pending_tasks.is_empty() { pending_tasks.remove(0); }
+                                client_state.waiting_for_response = false;
+                                client_state.completed += 1;
+                                if !client_state.pending_tasks.is_empty() { client_state.pending_tasks.remove(0); }
                                 println!("📩 [{}/{}] {} de {}: '{}'",
-                                    completed, total_tasks,
+                                    client_state.completed, client_state.total_tasks,
                                     if response.success { "✅" } else { "❌" },
                                     peer, response.result);
-                                if let Some(next_task) = pending_tasks.first().cloned() {
-                                    if let Some(pid) = connected_peer {
+                                if let Some(next_task) = client_state.pending_tasks.first().cloned() {
+                                    if let Some(pid) = client_state.connected_peer {
                                         swarm.behaviour_mut().request_response.send_request(&pid, next_task);
-                                        waiting_for_response = true;
+                                        client_state.waiting_for_response = true;
                                     }
                                 } else {
-                                    println!("\n🎉 Completadas: {}/{}", completed, total_tasks);
+                                    println!("\n🎉 Completadas: {}/{}", client_state.completed, client_state.total_tasks);
                                     break;
                                 }
                             }
                         }
                         RREvent::OutboundFailure { peer, error, .. } => {
                             eprintln!("❌ Outbound {}: {:?}", peer, error);
-                            if is_client && !waiting_for_response { break; }
+                            if is_client && !client_state.waiting_for_response { break; }
                         }
                         _ => {}
                     }
