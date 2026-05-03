@@ -23,6 +23,7 @@ mod network_bootstrap;
 mod network_events;
 mod node_identity;
 mod node_observability;
+mod nodes_mode_runtime;
 mod peer_tracker;
 mod prompt_runtime;
 mod protocol;
@@ -134,6 +135,7 @@ use node_observability::{
     finalize_distributed_task_observability, log_health_update, log_observability_event,
     print_distributed_task_stats, print_model_karma_stats, print_task_trace_entry,
 };
+use nodes_mode_runtime::handle_nodes_or_topology_tick;
 use peer_tracker::PeerTracker;
 use prompt_runtime::{
     exact_subtype_label, prompt_task_label, record_semantic_feedback, resolve_output_policy,
@@ -474,41 +476,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         tokio::select! {
             // Ticker dedicado para mostrar nodos/capabilities/topology
             _ = nodes_tick.tick(), if matches!(mode, NodeMode::Nodes | NodeMode::Topology) => {
-                if matches!(mode, NodeMode::Nodes) {
-                    let snapshot = registry.read().await.all_nodes();
-                    println!("\nPeer ID        Models                CPU Score    Load");
-                    println!("-------------------------------------------------------");
-                    if snapshot.is_empty() {
-                        println!("(esperando capabilities de peers...)");
-                    } else {
-                        for (pid, c) in snapshot {
-                            let models = if c.models.is_empty() { "-".to_string() } else { c.models.join(",") };
-                            println!(
-                                "{}  {:20} {:10} {}/{}",
-                                &pid.to_string()[..10.min(pid.to_string().len())],
-                                models,
-                                c.cpu_score,
-                                c.active_tasks,
-                                c.worker_slots
-                            );
-                        }
-                    }
-                }
-                if matches!(mode, NodeMode::Topology) {
-                    // Assign clusters before display
-                    {
-                        let mut topo = topology.write().await;
-                        topo.assign_clusters(&peer_id.to_string());
-                    }
-                    let topo = topology.read().await;
-                    topo.display();
-                    if topo.peer_count() > 0 {
-                        println!("   ℹ️  Latencias: medidas reales (libp2p ping RTT)");
-                        println!("\n(Ctrl+C para salir)");
-                    } else {
-                        println!("(esperando peers...)");
-                    }
-                }
+                handle_nodes_or_topology_tick(&mode, &registry, &topology, peer_id).await;
             }
 
             Some(completed_response) = task_response_rx.recv() => {
