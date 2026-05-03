@@ -48,6 +48,7 @@ mod task_cache;
 mod task_codec;
 mod task_protocol;
 mod task_queue;
+mod task_response_runtime;
 mod task_scheduler;
 #[cfg(test)]
 mod tests;
@@ -171,6 +172,7 @@ use std::sync::Arc;
 use swarm_event_runtime::{handle_swarm_event, SwarmEventRuntimeContext};
 use task_cache::TaskCache;
 use task_queue::TaskQueue;
+use task_response_runtime::handle_completed_task_response;
 use task_scheduler::TaskScheduler;
 use tokio::sync::RwLock;
 use wallet::Wallet;
@@ -484,17 +486,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             }
 
             Some(completed_response) = task_response_rx.recv() => {
-                let task_id = completed_response.response.task_id.clone();
-                if swarm
-                    .behaviour_mut()
-                    .request_response
-                    .send_response(completed_response.channel, completed_response.response)
-                    .is_ok()
-                {
-                    println!("[Task] Completed {}", task_id);
-                } else {
-                    eprintln!("[Task] Failed to return result for {}", task_id);
-                }
+                handle_completed_task_response(&mut swarm, completed_response);
             }
 
             // Heartbeat tick
