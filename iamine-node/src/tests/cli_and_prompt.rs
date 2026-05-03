@@ -116,3 +116,27 @@ fn test_human_logs_remain_unaffected() {
     assert!(serde_json::from_str::<serde_json::Value>(human_line).is_err());
     assert!(human_line.contains("Conectado a"));
 }
+
+#[test]
+fn test_parse_mode_from_args_infer_and_debug_flags_are_filtered() {
+    let args = vec![
+        "iamine-node".to_string(),
+        "infer".to_string(),
+        "2+2".to_string(),
+        "--debug-network".to_string(),
+        "--max-tokens".to_string(),
+        "256".to_string(),
+    ];
+    let mode = cli::parse_mode_from_args(args).expect("infer mode should parse");
+    match mode {
+        NodeMode::Infer {
+            prompt,
+            max_tokens_override,
+            ..
+        } => {
+            assert_eq!(prompt, "2+2");
+            assert_eq!(max_tokens_override, Some(256));
+        }
+        _ => panic!("expected infer mode"),
+    }
+}

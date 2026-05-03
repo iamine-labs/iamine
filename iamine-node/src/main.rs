@@ -1,11 +1,14 @@
 mod attempt_watchdog;
+mod backend_runtime;
 mod benchmark;
 mod capability_advertising;
 mod cli;
 mod code_quality;
 mod daemon_runtime;
 mod dispatch_runtime;
+mod event_loop_control;
 mod executor;
+mod gossipsub_handlers;
 mod heartbeat;
 mod metrics;
 mod model_selector_cli;
@@ -17,6 +20,7 @@ mod protocol;
 mod quality_gate;
 mod rate_limiter;
 mod regression_runner;
+mod request_response_handlers;
 mod resource_policy;
 mod result_lifecycle;
 mod result_protocol;
@@ -69,6 +73,7 @@ use attempt_watchdog::{
     is_meaningfully_in_flight, AttemptLifecycleState, AttemptTimeoutPolicy, AttemptWatchdog,
     WatchdogCheck,
 };
+use backend_runtime::choose_inference_runtime;
 use benchmark::NodeBenchmark;
 use capability_advertising::{
     CapabilityAdvertisementValidator, CapabilityRejectionReason, CapabilityValidationResult,
@@ -91,6 +96,8 @@ use dispatch_runtime::{
     run_worker_inference_pipeline, should_print_result_output, topic_hash_string,
     DispatchReadinessSnapshot,
 };
+use event_loop_control::EventLoopDirective;
+use gossipsub_handlers::{handle_gossipsub_message, GossipsubHandlerContext};
 use heartbeat::HeartbeatService;
 use metrics::{start_metrics_server, NodeMetrics};
 use model_selector_cli::ModelSelectorCLI;
@@ -104,10 +111,12 @@ use peer_tracker::PeerTracker;
 use quality_gate::{current_release_version, run_release_validation};
 use rate_limiter::RateLimiter;
 use regression_runner::run_default_regression_suite;
+use request_response_handlers::{handle_request_response_event, RequestResponseHandlerContext};
 use resource_policy::ResourcePolicy;
 use result_lifecycle::{
     apply_late_result_lifecycle, apply_result_failure_lifecycle, apply_result_success_lifecycle,
-    clear_stream_state,
+    clear_stream_state, LateResultLifecycleInput, ResultFailureInput,
+    ResultFailureLifecycleContext,
 };
 use result_protocol::{TaskResultRequest, TaskResultResponse};
 use runtime_state::{ClientRuntimeState, DistributedInferState, InferRuntimeState};
@@ -617,19 +626,6 @@ async fn run_local_inference_with_validation(
             ),
         );
         Err("Inference returned no result".to_string())
-    }
-}
-
-async fn choose_inference_runtime() -> Option<InferenceRuntime> {
-    let socket = daemon_socket_path();
-    if daemon_is_available(&socket).await {
-        println!(
-            "[Daemon] Connected to persistent runtime: {}",
-            socket.display()
-        );
-        Some(InferenceRuntime::Daemon(socket))
-    } else {
-        None
     }
 }
 
@@ -2682,15 +2678,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         routed_model.clone(),
                                         timeout_policy,
                                     );
-                                    let previous_state = watchdog.state;
-                                    let _ = watchdog.transition_state(AttemptLifecycleState::Starting);
-                                    emit_attempt_state_changed_event(
-                                        &trace_task_id,
-                                        &rid,
-                                        Some(&routed_model),
+                                    let _ = watchdog.transition_state_with_event(
+                                        AttemptLifecycleState::Starting,
                                         Some(&best_peer),
-                                        previous_state.as_str(),
-                                        watchdog.state.as_str(),
                                     );
                                     infer_runtime.attempt_watchdogs.insert(rid.clone(), watchdog);
                                     metrics
@@ -2909,15 +2899,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         selected_model.clone(),
                                         timeout_policy,
                                     );
-                                    let previous_state = watchdog.state;
-                                    let _ = watchdog.transition_state(AttemptLifecycleState::Starting);
-                                    emit_attempt_state_changed_event(
-                                        &trace_task_id,
-                                        &rid,
-                                        Some(&selected_model),
+                                    let _ = watchdog.transition_state_with_event(
+                                        AttemptLifecycleState::Starting,
                                         Some("-"),
-                                        previous_state.as_str(),
-                                        watchdog.state.as_str(),
                                     );
                                     infer_runtime.attempt_watchdogs.insert(rid.clone(), watchdog);
                                     let is_retry_attempt = infer_state.retry_state.retry_count > 0;
@@ -2996,18 +2980,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         );
                                     }
                                     WatchdogCheck::Stalled | WatchdogCheck::TimedOut => {
-                                        let previous_state = watchdog.state;
-                                        if watchdog.transition_state(AttemptLifecycleState::Stalled)
-                                        {
-                                            emit_attempt_state_changed_event(
-                                                &watchdog.task_id,
-                                                &watchdog.attempt_id,
-                                                Some(&watchdog.model_id),
-                                                Some(&watchdog.worker_peer_id),
-                                                previous_state.as_str(),
-                                                watchdog.state.as_str(),
-                                            );
-                                        }
+                                        let worker_peer_for_event =
+                                            watchdog.worker_peer_id.clone();
+                                        let _ = watchdog.transition_state_with_event(
+                                            AttemptLifecycleState::Stalled,
+                                            Some(&worker_peer_for_event),
+                                        );
                                         emit_attempt_stalled_event(
                                             &watchdog.task_id,
                                             &watchdog.attempt_id,
@@ -3016,18 +2994,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                             &watchdog.last_progress_stage,
                                             watchdog.elapsed_since_last_progress_ms(),
                                         );
-                                        let before_timeout = watchdog.state;
-                                        if watchdog.transition_state(AttemptLifecycleState::TimedOut)
-                                        {
-                                            emit_attempt_state_changed_event(
-                                                &watchdog.task_id,
-                                                &watchdog.attempt_id,
-                                                Some(&watchdog.model_id),
-                                                Some(&watchdog.worker_peer_id),
-                                                before_timeout.as_str(),
-                                                watchdog.state.as_str(),
-                                            );
-                                        }
+                                        let _ = watchdog.transition_state_with_event(
+                                            AttemptLifecycleState::TimedOut,
+                                            Some(&worker_peer_for_event),
+                                        );
                                         timeout_context = Some(TimeoutContext {
                                             trace_task_id: watchdog.task_id.clone(),
                                             attempt_id: watchdog.attempt_id.clone(),
@@ -3257,636 +3227,33 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     message,
                     ..
                 })) => {
-                    let from_peer = propagation_source.to_string();
-                    let message_topic = if message.topic == gossipsub::IdentTopic::new(TASK_TOPIC).hash() {
-                        TASK_TOPIC
-                    } else if message.topic == gossipsub::IdentTopic::new(DIRECT_INF_TOPIC).hash() {
-                        DIRECT_INF_TOPIC
-                    } else if message.topic == gossipsub::IdentTopic::new(RESULTS_TOPIC).hash() {
-                        RESULTS_TOPIC
-                    } else if message.topic == gossipsub::IdentTopic::new(CAP_TOPIC).hash() {
-                        CAP_TOPIC
-                    } else {
-                        "unknown"
-                    };
-
-                    // 1) Procesar capabilities por TOPIC (no por msg_type)
-                    if message.topic == gossipsub::IdentTopic::new(CAP_TOPIC).hash() {
-                        if let Ok(hb) = serde_json::from_slice::<NodeCapabilityHeartbeat>(&message.data) {
-                            let _ = registry.write().await.update_from_heartbeat(hb);
-                        }
-                        continue;
-                    }
-
-                    if let Ok(msg) = serde_json::from_slice::<serde_json::Value>(&message.data) {
-                        let msg_type = msg["type"].as_str().unwrap_or("");
-
-                        // ...existing rate limiter...
-
-                        match msg_type {
-                            "TaskOffer" if matches!(mode, NodeMode::Worker) => {
-                                let task_id = msg["task_id"].as_str().unwrap_or("").to_string();
-                                let task_type = msg["task_type"].as_str().unwrap_or("").to_string();
-                                let origin_peer = msg["origin_peer"].as_str().unwrap_or("").to_string();
-
-                                if task_cache.is_duplicate(&task_id) {
-                                    println!("⚡ [Cache] Tarea {} ya vista", &task_id[..8.min(task_id.len())]);
-                                } else if !capabilities.supports(&task_type) {
-                                    println!("🚫 [Worker] No soporta '{}'", task_type);
-                                } else {
-                                    let available = pool.available_slots();
-                                    if available > 0 {
-                                        println!("📋 [Worker] Bid para tarea {} ({} slots)", task_id, available);
-                                        let bid = serde_json::json!({
-                                            "type": "TaskBid",
-                                            "task_id": task_id,
-                                            "worker_id": peer_id.to_string(),
-                                            "origin_peer": origin_peer,
-                                            "reputation_score": queue.reputation().await.reputation_score,
-                                            "available_slots": available,
-                                            "estimated_ms": 10,
-                                        });
-                                        let _ = swarm.behaviour_mut().gossipsub.publish(
-                                            gossipsub::IdentTopic::new("iamine-bids"),
-                                            serde_json::to_vec(&bid).unwrap(),
-                                        );
-                                    }
-                                }
-                            }
-
-                            "TaskBid" if matches!(mode, NodeMode::Broadcast { .. }) => {
-                                let task_id = msg["task_id"].as_str().unwrap_or("").to_string();
-                                let worker_id = msg["worker_id"].as_str().unwrap_or("").to_string();
-                                let rep = msg["reputation_score"].as_u64().unwrap_or(0) as u32;
-                                let slots = msg["available_slots"].as_u64().unwrap_or(0) as usize;
-                                let est_ms = msg["estimated_ms"].as_u64().unwrap_or(1000);
-                                let latency = peer_tracker.get_latency(&worker_id);
-
-                                println!("📨 [Scheduler] Bid: worker={}... rep={} slots={} latency={:.1}ms",
-                                    &worker_id[..8.min(worker_id.len())], rep, slots, latency);
-
-                                if let Some(winner) = scheduler.receive_bid(&task_id, worker_id.clone(), rep, slots, est_ms).await {
-                                    println!("🏆 Asignando {} a {}...", &task_id[..8], &winner[..8.min(winner.len())]);
-
-                                    let deadline_ms = 30_000u64;
-
-                                    // ← Guardar peer_id del winner para direct result routing
-                                    if let Some(winner_peer) = client_state.known_workers.iter()
-                                        .find(|p| p.to_string().starts_with(&winner[..8.min(winner.len())]))
-                                        .copied()
-                                    {
-                                        client_state.origin_peer_map.insert(task_id.clone(), winner_peer);
-                                    }
-
-                                    let assign = serde_json::json!({
-                                        "type": "TaskAssign",
-                                        "task_id": task_id,
-                                        "assigned_worker": winner,
-                                        "origin_peer": peer_id.to_string(),
-                                        "deadline_ms": deadline_ms,
-                                        "task_type": if let NodeMode::Broadcast { task_type, .. } = &mode { task_type } else { "" },
-                                        "data": if let NodeMode::Broadcast { data, .. } = &mode { data } else { "" },
-                                    });
-                                    let _ = swarm.behaviour_mut().gossipsub.publish(
-                                        gossipsub::IdentTopic::new("iamine-assign"),
-                                        serde_json::to_vec(&assign).unwrap(),
-                                    );
-
-                                    // ← Timeout recovery COMPLETO: rebroadcast si expira
-                                    let rebroadcast_task_id = task_id.clone();
-                                    let scheduler_ref = Arc::clone(&scheduler);
-                                    let task_type_clone = if let NodeMode::Broadcast { task_type, .. } = &mode {
-                                        task_type.clone()
-                                    } else { String::new() };
-                                    let data_clone = if let NodeMode::Broadcast { data, .. } = &mode {
-                                        data.clone()
-                                    } else { String::new() };
-                                    let origin_str = peer_id.to_string();
-
-                                    // Clonar el gossipsub handle para el spawn
-                                    // Usamos un canal para señalizar rebroadcast
-                                    let (rebroadcast_tx, mut rebroadcast_rx) = tokio::sync::mpsc::channel::<serde_json::Value>(1);
-
-                                    tokio::spawn(async move {
-                                        tokio::time::sleep(Duration::from_millis(deadline_ms)).await;
-                                        let stats = scheduler_ref.stats().await;
-                                        // Si aún hay tareas asignadas (no completadas)
-                                        if stats.1 > 0 {
-                                            println!("⏱️ [Recovery] Tarea {} expiró — rebroadcasting...", rebroadcast_task_id);
-                                            let offer = serde_json::json!({
-                                                "type": "TaskOffer",
-                                                "task_id": format!("{}r", rebroadcast_task_id), // nueva ID
-                                                "task_type": task_type_clone,
-                                                "data": data_clone,
-                                                "requester_id": origin_str,
-                                                "origin_peer": origin_str,
-                                                "is_retry": true,
-                                            });
-                                            let _ = rebroadcast_tx.send(offer).await;
-                                        }
-                                    });
-
-                                    // Procesar rebroadcast en el loop principal
-                                    if let Ok(offer) = rebroadcast_rx.try_recv() {
-                                        let _ = swarm.behaviour_mut().gossipsub.publish(
-                                            task_topic.clone(),
-                                            serde_json::to_vec(&offer).unwrap(),
-                                        );
-                                    }
-                                }
-                            }
-
-                            "TaskAssign" if matches!(mode, NodeMode::Worker) => {
-                                let assigned = msg["assigned_worker"].as_str().unwrap_or("");
-                                let task_id = msg["task_id"].as_str().unwrap_or("").to_string();
-                                let task_type = msg["task_type"].as_str().unwrap_or("").to_string();
-                                let data = msg["data"].as_str().unwrap_or("").to_string();
-                                let origin_peer_str = msg["origin_peer"].as_str().unwrap_or("").to_string();
-                                let deadline_ms = msg["deadline_ms"].as_u64().unwrap_or(30_000);
-
-                                if assigned == peer_id.to_string() {
-                                    println!("🎯 [Worker] ¡Asignado! {} (deadline: {}ms)", task_id, deadline_ms);
-
-                                    let _origin_pid = client_state.known_workers.iter()  // ← _ prefix
-                                        .find(|p| p.to_string() == origin_peer_str)
-                                        .copied();
-
-                                    let queue_ref = Arc::clone(&queue);
-                                    let metrics_ref = Arc::clone(&metrics);
-                                    let _worker_id_str = peer_id.to_string(); // ← _ prefix
-
-                                    tokio::spawn(async move {
-                                        let exec = async {
-                                            let _ = queue_ref.push(task_id.clone(), task_type, data).await;
-                                            queue_ref.outcome_rx.lock().await.recv().await
-                                        };
-
-                                        match tokio::time::timeout(Duration::from_millis(deadline_ms), exec).await {
-                                            Ok(Some(outcome)) => {
-                                                let success = matches!(outcome.status, task_queue::OutcomeStatus::Success);
-                                                {
-                                                    let mut m = metrics_ref.write().await;
-                                                    if success { m.task_success(0); } else { m.task_failed(); }
-                                                }
-                                                println!("✅ [Worker] Tarea {} completada (success={})", outcome.task_id, success);
-                                                let rep = queue_ref.reputation().await;
-                                                println!("⭐ Reputación: {}/100", rep.reputation_score);
-
-                                                // ← TaskResult directo al origin (no gossip)
-                                                // El PeerId lo resolvemos en el evento ResultResponse
-                                                println!("📤 [Worker] Resultado listo → origin {}", &origin_peer_str[..8.min(origin_peer_str.len())]);
-                                            }
-                                            Ok(None) => eprintln!("❌ [Worker] Canal cerrado"),
-                                            Err(_) => {
-                                                eprintln!("⏱️ [Worker] Deadline expirado {}ms", deadline_ms);
-                                                metrics_ref.write().await.task_timed_out();
-                                            }
-                                        }
-                                    });
-                                } else {
-                                    println!("⏭️  [Worker] Tarea {} → otro worker ganó", task_id);
-                                }
-                            }
-
-                            "TaskCancel" if matches!(mode, NodeMode::Worker) => {
-                                let task_id = msg["task_id"].as_str().unwrap_or("");
-                                let reason = msg["reason"].as_str().unwrap_or("sin razón");
-                                println!("🚫 [Worker] Tarea {} cancelada: {}", task_id, reason);
-                            }
-
-                            "Heartbeat" => {
-                                let worker_id = msg["peer_id"].as_str().unwrap_or("");
-                                let slots = msg["available_slots"].as_u64().unwrap_or(0) as usize;
-                                let rep = msg["reputation_score"].as_u64().unwrap_or(0) as u32;
-                                let uptime = msg["uptime_secs"].as_u64().unwrap_or(0);
-                                peer_tracker.update_heartbeat(worker_id, slots, rep);
-                                println!("💓 Heartbeat {}... slots={} rep={} uptime={}s peers={}",
-                                    &worker_id[..8.min(worker_id.len())], slots, rep, uptime,
-                                    peer_tracker.peer_count());
-                                let mut m = metrics.write().await;
-                                m.network_peers = peer_tracker.peer_count();
-                                m.mesh_peers = peer_tracker.peer_count();
-                            }
-
-                            // ═══════════════════════════════════════════
-                            // v0.6: DISTRIBUTED INFERENCE
-                            // ═══════════════════════════════════════════
-
-                            "InferenceRequest" if matches!(mode, NodeMode::Worker) => {
-                                let request_context =
-                                    build_inference_request_context(&msg, message_topic, &from_peer);
-                                let _requester = msg["requester_peer"].as_str().unwrap_or("").to_string();
-                                run_worker_inference_pipeline(
-                                    &mut swarm,
-                                    request_context,
-                                    &peer_id,
-                                    &model_storage,
-                                    &node_caps,
-                                    &inference_engine,
-                                    &metrics,
-                                )
-                                .await;
-                            }
-
-                            "InferenceProgress" if matches!(mode, NodeMode::Infer { .. }) => {
-                                let task_id = msg["task_id"].as_str().unwrap_or("").to_string();
-                                let attempt_id = msg["attempt_id"].as_str().unwrap_or("").to_string();
-                                let stage = msg["stage"].as_str().unwrap_or("unknown");
-                                let worker_peer = msg["worker_peer"].as_str().unwrap_or("unknown");
-                                let model_id = msg["model_id"].as_str().unwrap_or("").to_string();
-                                let tokens_generated_count =
-                                    msg["tokens_generated_count"].as_u64();
-                                let expected_task_id = infer_runtime.distributed_infer_state
-                                    .as_ref()
-                                    .map(|state| state.trace_task_id.as_str());
-                                if expected_task_id != Some(task_id.as_str()) {
-                                    continue;
-                                }
-
-                                if let Some(watchdog) = infer_runtime.attempt_watchdogs.get_mut(&attempt_id) {
-                                    let previous_state = watchdog.state;
-                                    let deadline_before =
-                                        watchdog.deadline_at.duration_since(watchdog.started_at).as_millis() as u64;
-                                    let meaningful = watchdog.record_progress(
-                                        stage,
-                                        tokens_generated_count,
-                                    );
-                                    if meaningful {
-                                        if watchdog.state != previous_state {
-                                            emit_attempt_state_changed_event(
-                                                &task_id,
-                                                &attempt_id,
-                                                if model_id.is_empty() { None } else { Some(model_id.as_str()) },
-                                                Some(worker_peer),
-                                                previous_state.as_str(),
-                                                watchdog.state.as_str(),
-                                            );
-                                        }
-                                        let deadline_after =
-                                            watchdog.deadline_at.duration_since(watchdog.started_at).as_millis() as u64;
-                                        if deadline_after > deadline_before {
-                                            emit_attempt_timeout_extended_event(
-                                                &task_id,
-                                                &attempt_id,
-                                                if model_id.is_empty() { None } else { Some(model_id.as_str()) },
-                                                Some(worker_peer),
-                                                deadline_after,
-                                                "real_progress",
-                                            );
-                                        }
-                                        log_observability_event(
-                                            LogLevel::Info,
-                                            "attempt_progress_received",
-                                            &task_id,
-                                            Some(&task_id),
-                                            if model_id.is_empty() { None } else { Some(model_id.as_str()) },
-                                            None,
-                                            {
-                                                let mut fields = Map::new();
-                                                fields.insert("attempt_id".to_string(), attempt_id.into());
-                                                fields.insert("worker_peer_id".to_string(), worker_peer.into());
-                                                fields.insert("stage".to_string(), stage.into());
-                                                if let Some(tokens_generated_count) =
-                                                    tokens_generated_count
-                                                {
-                                                    fields.insert(
-                                                        "tokens_generated_count".to_string(),
-                                                        tokens_generated_count.into(),
-                                                    );
-                                                }
-                                                fields
-                                            },
-                                        );
-                                    }
-                                }
-                            }
-
-                            "InferenceToken" if matches!(mode, NodeMode::Infer { .. }) => {
-                                let rid = msg["request_id"].as_str().unwrap_or("");
-                                if infer_runtime.infer_request_id.as_deref() == Some(rid) {
-                                    let idx = msg["index"].as_u64().unwrap_or(0) as u32;
-                                    let token = msg["token"].as_str().unwrap_or("").to_string();
-
-                                    infer_runtime.token_buffer.insert(idx, token);
-
-                                    // flush en orden
-                                    while let Some(next) = infer_runtime.token_buffer.remove(&infer_runtime.next_token_idx) {
-                                        print!("{}", next);
-                                        infer_runtime.rendered_output.push_str(&next); // <- nuevo
-                                        let _ = std::io::Write::flush(&mut std::io::stdout());
-                                        infer_runtime.next_token_idx += 1;
-                                    }
-                                }
-                            }
-
-                            "InferenceResult" if matches!(mode, NodeMode::Infer { .. }) => {
-                                let rid = msg["request_id"].as_str().unwrap_or("");
-                                if infer_runtime.infer_request_id.as_deref() == Some(rid) {
-                                    let task_id = msg["task_id"]
-                                        .as_str()
-                                        .filter(|value| !value.trim().is_empty())
-                                        .or_else(|| {
-                                            infer_runtime.distributed_infer_state
-                                                .as_ref()
-                                                .map(|state| state.trace_task_id.as_str())
-                                        })
-                                        .unwrap_or(rid)
-                                        .to_string();
-                                    let attempt_id = msg["attempt_id"]
-                                        .as_str()
-                                        .filter(|value| !value.trim().is_empty())
-                                        .unwrap_or(rid)
-                                        .to_string();
-                                    let success = msg["success"].as_bool().unwrap_or(false);
-                                    let tokens = msg["tokens_generated"].as_u64().unwrap_or(0);
-                                    let truncated = msg["truncated"].as_bool().unwrap_or(false);
-                                    let continuation_steps = msg["continuation_steps"].as_u64().unwrap_or(0);
-                                    let ms = msg["execution_ms"].as_u64().unwrap_or(0);
-                                    let worker = msg["worker_peer"].as_str().unwrap_or("unknown");
-                                    let accel = msg["accelerator"].as_str().unwrap_or("unknown");
-                                    let full_output = msg["output"].as_str().unwrap_or("").to_string();
-                                    let latency_ms = infer_runtime.infer_started_at
-                                        .as_ref()
-                                        .map(|started| started.elapsed().as_millis() as u64)
-                                        .unwrap_or(ms);
-                                    emit_result_received_event(
-                                        &task_id,
-                                        &attempt_id,
-                                        infer_runtime.distributed_infer_state
-                                            .as_ref()
-                                            .and_then(|state| state.current_model.as_deref()),
-                                        worker,
-                                        latency_ms,
-                                    );
-                                    let validation_status = if success {
-                                        if !should_print_result_output(&full_output) {
-                                            ResultStatus::Retryable(
-                                                "empty distributed inference output".to_string(),
-                                            )
-                                        } else if let Some(infer_state) = infer_runtime.distributed_infer_state.as_ref() {
-                                            validate_result(
-                                                infer_state
-                                                    .current_semantic_prompt
-                                                    .as_deref()
-                                                    .unwrap_or(""),
-                                                infer_state
-                                                    .current_task_type
-                                                    .unwrap_or(PromptTaskType::General),
-                                                &full_output,
-                                            )
-                                        } else {
-                                            ResultStatus::Valid
-                                        }
-                                    } else {
-                                        ResultStatus::Retryable(
-                                            msg["error"]
-                                                .as_str()
-                                                .unwrap_or("unknown inference failure")
-                                                .to_string(),
-                                        )
-                                    };
-
-                                    // v0.6.2: solo imprimir parte faltante, sin duplicar
-                                    if success && should_print_result_output(&full_output) {
-                                        if infer_runtime.rendered_output.is_empty() {
-                                            print!("{}", full_output);
-                                        } else if full_output.starts_with(&infer_runtime.rendered_output) {
-                                            let suffix = &full_output[infer_runtime.rendered_output.len()..];
-                                            if !suffix.is_empty() {
-                                                print!("{}", suffix);
-                                            }
-                                        }
-                                        let _ = std::io::Write::flush(&mut std::io::stdout());
-                                    }
-
-                                    let retry_reason = match validation_status {
-                                        ResultStatus::Valid => None,
-                                        ResultStatus::Invalid(reason)
-                                        | ResultStatus::Retryable(reason) => Some(reason),
-                                    };
-
-                                    if let Some(reason) = retry_reason {
-                                        let failure_kind = if success {
-                                            FailureKind::InvalidOutput
-                                        } else {
-                                            FailureKind::TaskFailure
-                                        };
-                                        let current_model = infer_runtime.distributed_infer_state
-                                            .as_ref()
-                                            .and_then(|state| state.current_model.clone());
-                                        println!(
-                                            "\n[Fault] task_id={} attempt_id={} peer_id={} model_id={} reason={}",
-                                            task_id,
-                                            attempt_id,
-                                            worker,
-                                            current_model.as_deref().unwrap_or("-"),
-                                            reason
-                                        );
-                                        if apply_result_failure_lifecycle(
-                                            &task_id,
-                                            &attempt_id,
-                                            worker,
-                                            &reason,
-                                            &full_output,
-                                            failure_kind,
-                                            "validation_failure",
-                                            current_model,
-                                            &registry,
-                                            &mut infer_runtime.distributed_infer_state,
-                                            &mut infer_runtime.attempt_watchdogs,
-                                            &task_manager,
-                                            &mut infer_runtime.pending_inference,
-                                            &mut infer_runtime.token_buffer,
-                                            &mut infer_runtime.next_token_idx,
-                                            &mut infer_runtime.rendered_output,
-                                            &mut infer_runtime.infer_request_id,
-                                            &mut infer_runtime.infer_broadcast_sent,
-                                            &mut client_state.waiting_for_response,
-                                            infer_runtime.infer_started_at,
-                                        )
-                                        .await
-                                        {
-                                            continue;
-                                        }
-                                        break;
-                                    }
-
-                                    apply_result_success_lifecycle(
-                                        &task_id,
-                                        &attempt_id,
-                                        worker,
-                                        infer_runtime.distributed_infer_state
-                                            .as_ref()
-                                            .and_then(|state| state.current_model.as_deref()),
-                                        latency_ms,
-                                        &registry,
-                                        &mut infer_runtime.attempt_watchdogs,
-                                    )
-                                    .await;
-                                    task_manager
-                                        .complete(DistributedTaskResult::success_for_attempt(
-                                            task_id.clone(),
-                                            attempt_id.clone(),
-                                            full_output.clone(),
-                                        ))
-                                        .await;
-                                    println!("\n\n═══════════════════════════════════");
-                                    if success && should_print_result_output(&full_output) {
-                                        println!(
-                                            "✅ Distributed inference completada: task_id={} attempt_id={} peer_id={} model_id={}",
-                                            task_id,
-                                            attempt_id,
-                                            worker,
-                                            infer_runtime.distributed_infer_state
-                                                .as_ref()
-                                                .and_then(|state| state.current_model.as_deref())
-                                                .unwrap_or("-")
-                                        );
-                                        println!("   Worker:  {}...", &worker[..12.min(worker.len())]);
-                                        println!("   Tokens:  {}", tokens);
-                                        println!("   Truncated: {}", truncated);
-                                        println!("   Continuations: {}", continuation_steps);
-                                        println!("   Tiempo:  {}ms", ms);
-                                        println!("   Accel:   {}", accel);
-                                        if truncated {
-                                            println!("[Warning] Output truncated at token budget");
-                                        }
-                                    } else {
-                                        let err = msg["error"].as_str().unwrap_or("unknown");
-                                        println!(
-                                            "❌ Inference falló: task_id={} attempt_id={} peer_id={} error={}",
-                                            task_id,
-                                            attempt_id,
-                                            worker,
-                                            err
-                                        );
-                                    }
-                                    println!("═══════════════════════════════════");
-                                    clear_stream_state(
-                                        &mut infer_runtime.token_buffer,
-                                        &mut infer_runtime.next_token_idx,
-                                        &mut infer_runtime.rendered_output,
-                                    );
-                                    if let Some(infer_state) = infer_runtime.distributed_infer_state.as_ref() {
-                                        let (trace, aggregate_metrics) =
-                                            finalize_distributed_task_observability(
-                                                &infer_state.trace_task_id,
-                                                infer_runtime.infer_started_at,
-                                                false,
-                                            );
-                                        if let Some(trace) = trace {
-                                            println!(
-                                                "[Trace] nodes={} models={}",
-                                                trace.node_history.join(" -> "),
-                                                trace.model_history.join(" -> ")
-                                            );
-                                            println!(
-                                                "[Metrics] latency={} retries={} fallbacks={}",
-                                                trace.total_latency_ms, trace.retries, trace.fallbacks
-                                            );
-                                        }
-                                        println!(
-                                            "[Metrics] totals: tasks={} failed={} avg_latency_ms={:.1}",
-                                            aggregate_metrics.total_tasks,
-                                            aggregate_metrics.failed_tasks,
-                                            aggregate_metrics.avg_latency_ms
-                                        );
-                                    }
-                                    break;
-                                } else {
-                                    let task_id = msg["task_id"]
-                                        .as_str()
-                                        .filter(|value| !value.trim().is_empty())
-                                        .or_else(|| {
-                                            infer_runtime.distributed_infer_state
-                                                .as_ref()
-                                                .map(|state| state.trace_task_id.as_str())
-                                        })
-                                        .unwrap_or(rid)
-                                        .to_string();
-                                    let attempt_id = msg["attempt_id"]
-                                        .as_str()
-                                        .filter(|value| !value.trim().is_empty())
-                                        .unwrap_or(rid)
-                                        .to_string();
-                                    let worker = msg["worker_peer"].as_str().unwrap_or("unknown");
-                                    let success = msg["success"].as_bool().unwrap_or(false);
-                                    let output = msg["output"].as_str().unwrap_or("").to_string();
-                                    let execution_ms = msg["execution_ms"].as_u64().unwrap_or(0);
-                                    apply_late_result_lifecycle(
-                                        &task_id,
-                                        &attempt_id,
-                                        worker,
-                                        infer_runtime.distributed_infer_state
-                                            .as_ref()
-                                            .and_then(|state| state.current_model.as_deref()),
-                                        success,
-                                        &output,
-                                        execution_ms,
-                                        &mut infer_runtime.attempt_watchdogs,
-                                        &registry,
-                                    )
-                                    .await;
-                                    println!(
-                                        "[LateResult] task_id={} attempt_id={} worker={} policy=ignored",
-                                        task_id, attempt_id, worker
-                                    );
-                                }
-                            }
-
-                            "NodeCapabilities" => {
-                                if let Ok(hb) = serde_json::from_value::<NodeCapabilityHeartbeat>(msg.clone()) {
-                                    let _ = registry.write().await.update_from_heartbeat(hb);
-                                }
-                            }
-
-                            "DirectInferenceRequest" if matches!(mode, NodeMode::Worker) => {
-                                let target = msg["target_peer"].as_str().unwrap_or("");
-                                if target != peer_id.to_string() {
-                                    continue;
-                                }
-
-                                let request_context = build_direct_inference_request_context(
-                                    &msg,
-                                    message_topic,
-                                    &from_peer,
-                                );
-                                run_worker_inference_pipeline(
-                                    &mut swarm,
-                                    request_context,
-                                    &peer_id,
-                                    &model_storage,
-                                    &node_caps,
-                                    &inference_engine,
-                                    &metrics,
-                                )
-                                .await;
-                            }
-
-                            _ => {}
-                        }
-                    } else if matches!(mode, NodeMode::Worker)
-                        && (message_topic == TASK_TOPIC || message_topic == DIRECT_INF_TOPIC)
+                    match handle_gossipsub_message(GossipsubHandlerContext {
+                        swarm: &mut swarm,
+                        mode: &mode,
+                        propagation_source,
+                        message,
+                        registry: &registry,
+                        task_cache: &mut task_cache,
+                        capabilities: &capabilities,
+                        pool: &pool,
+                        queue: &queue,
+                        peer_id,
+                        scheduler: &scheduler,
+                        client_state: &mut client_state,
+                        task_topic: &task_topic,
+                        peer_tracker: &mut peer_tracker,
+                        metrics: &metrics,
+                        infer_runtime: &mut infer_runtime,
+                        model_storage: &model_storage,
+                        node_caps: &node_caps,
+                        inference_engine: &inference_engine,
+                        task_manager: &task_manager,
+                    })
+                    .await
                     {
-                        log_observability_event(
-                            LogLevel::Warn,
-                            "task_message_received",
-                            "dispatch",
-                            None,
-                            None,
-                            Some(TASK_DISPATCH_UNCONFIRMED_001),
-                            {
-                                let mut fields = Map::new();
-                                fields.insert("topic".to_string(), message_topic.into());
-                                fields.insert("from_peer".to_string(), from_peer.into());
-                                fields.insert("payload_parse_result".to_string(), "invalid_json".into());
-                                fields.insert(
-                                    "payload_size".to_string(),
-                                    (message.data.len() as u64).into(),
-                                );
-                                fields
-                            },
-                        );
+                        EventLoopDirective::None => {}
+                        EventLoopDirective::Continue => continue,
+                        EventLoopDirective::Break => break,
                     }
                 }
 
@@ -3945,487 +3312,26 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 }
 
                 SwarmEvent::Behaviour(IaMineEvent::RequestResponse(event)) => {
-                    match event {
-                        RREvent::Message { peer, message: Message::Request { request, channel, .. } } => {
-                            if let Some(task) = request.distributed_task.clone() {
-                                let local_cluster_id = {
-                                    let topo = topology.read().await;
-                                    topo.cluster_for_peer(&peer_id.to_string()).map(|s| s.to_string())
-                                };
-                                println!(
-                                    "[Task] Received task_id={} attempt_id={} peer_id={} cluster_id={} model_id={}",
-                                    task.id,
-                                    task.attempt_id,
-                                    peer,
-                                    local_cluster_id.as_deref().unwrap_or("-"),
-                                    task.model
-                                );
-                                emit_worker_task_message_received_event(
-                                    &task.id,
-                                    &task.attempt_id,
-                                    "request_response",
-                                    &peer.to_string(),
-                                    "ok",
-                                    &task.model,
-                                    model_storage.has_model(&task.model),
-                                );
-                                log_observability_event(
-                                    LogLevel::Info,
-                                    "task_received",
-                                    &task.id,
-                                    Some(&task.id),
-                                    Some(&task.model),
-                                    None,
-                                    {
-                                        let mut fields = Map::new();
-                                        fields.insert("peer_id".to_string(), peer.to_string().into());
-                                        fields.insert("attempt_id".to_string(), task.attempt_id.clone().into());
-                                        fields.insert(
-                                            "cluster_id".to_string(),
-                                            local_cluster_id
-                                                .clone()
-                                                .unwrap_or_else(|| "-".to_string())
-                                                .into(),
-                                        );
-                                        fields
-                                    },
-                                );
-                                debug_network_log(
-                                    debug_flags,
-                                    format!(
-                                        "received distributed request task_id={} attempt_id={} from_peer={} cluster_id={} model_id={}",
-                                        task.id,
-                                        task.attempt_id,
-                                        peer,
-                                        local_cluster_id.as_deref().unwrap_or("-"),
-                                        task.model
-                                    ),
-                                );
-                                let task_manager_ref = Arc::clone(&task_manager);
-                                let task_response_tx_ref = task_response_tx.clone();
-                                let prompt = task.prompt.clone();
-                                let model = task.model.clone();
-                                let task_id = task.id.clone();
-                                let attempt_id = task.attempt_id.clone();
-                                let peer_string = peer.to_string();
-                                let local_cluster_for_task = local_cluster_id.clone();
-
-                                tokio::spawn(async move {
-                                    match task_manager_ref.claim_task(task.clone()).await {
-                                        TaskClaim::Started => {
-                                            println!(
-                                                "[Task] Started task_id={} attempt_id={} peer_id={} cluster_id={} model_id={}",
-                                                task_id,
-                                                attempt_id,
-                                                peer_string,
-                                                local_cluster_for_task.as_deref().unwrap_or("-"),
-                                                model
-                                            );
-                                        }
-                                        TaskClaim::InProgress => {
-                                            let duplicate_message = format!(
-                                                "duplicate task already running on node for task_id={}",
-                                                task_id
-                                            );
-                                            let _ = task_response_tx_ref
-                                                .send(PendingTaskResponse {
-                                                    channel,
-                                                    response: TaskResponse::distributed(
-                                                        DistributedTaskResult::failure_for_attempt(
-                                                            task_id.clone(),
-                                                            attempt_id.clone(),
-                                                            duplicate_message,
-                                                        ),
-                                                    ),
-                                                })
-                                                .await;
-                                            return;
-                                        }
-                                        TaskClaim::Finished(existing_result) => {
-                                            let cached = if existing_result.success {
-                                                DistributedTaskResult::success_for_attempt(
-                                                    existing_result.task_id,
-                                                    attempt_id.clone(),
-                                                    existing_result.output,
-                                                )
-                                            } else {
-                                                DistributedTaskResult::failure_for_attempt(
-                                                    existing_result.task_id,
-                                                    attempt_id.clone(),
-                                                    existing_result.output,
-                                                )
-                                            };
-                                            let _ = task_response_tx_ref
-                                                .send(PendingTaskResponse {
-                                                    channel,
-                                                    response: TaskResponse::distributed(cached),
-                                                })
-                                                .await;
-                                            return;
-                                        }
-                                    }
-
-                                    let resolution =
-                                        resolve_policy_for_prompt(&prompt, Some(&model), &[]);
-                                    let profile = resolution.profile.clone();
-                                    let semantic_prompt = resolution.semantic_prompt.clone();
-                                    let output_policy =
-                                        resolve_output_policy(&profile, &semantic_prompt, None);
-
-                                    let result = if let Some(runtime) = choose_inference_runtime().await {
-                                        run_local_inference_with_timeout(
-                                            runtime,
-                                            task_id.clone(),
-                                            model.clone(),
-                                            semantic_prompt,
-                                            profile.task_type,
-                                            output_policy.max_tokens as u32,
-                                            0.7,
-                                        )
-                                        .await
-                                    } else {
-                                        let registry = ModelRegistry::new();
-                                        let model_desc = match registry.get(&model) {
-                                            Some(desc) => desc,
-                                            None => {
-                                                let error = format!(
-                                                    "Modelo {} no encontrado en registry",
-                                                    model
-                                                );
-                                                task_manager_ref.fail(&task_id, &error).await;
-                                                let _ = task_response_tx_ref
-                                                    .send(PendingTaskResponse {
-                                                        channel,
-                                                        response: TaskResponse::distributed(
-                                                            DistributedTaskResult::failure_for_attempt(
-                                                                task_id.clone(),
-                                                                attempt_id.clone(),
-                                                                error,
-                                                            ),
-                                                        ),
-                                                    })
-                                                    .await;
-                                                return;
-                                            }
-                                        };
-                                        let engine = Arc::new(RealInferenceEngine::new(ModelStorage::new()));
-                                        if let Err(error) = engine.load_model(&model, &model_desc.hash) {
-                                            task_manager_ref.fail(&task_id, &error).await;
-                                            let _ = task_response_tx_ref
-                                                .send(PendingTaskResponse {
-                                                    channel,
-                                                    response: TaskResponse::distributed(
-                                                        DistributedTaskResult::failure_for_attempt(
-                                                            task_id.clone(),
-                                                            attempt_id.clone(),
-                                                            error,
-                                                        ),
-                                                    ),
-                                                })
-                                                .await;
-                                            return;
-                                        }
-
-                                        run_local_inference_with_timeout(
-                                            InferenceRuntime::Engine(engine),
-                                            task_id.clone(),
-                                            model.clone(),
-                                            semantic_prompt,
-                                            profile.task_type,
-                                            output_policy.max_tokens as u32,
-                                            0.7,
-                                        )
-                                        .await
-                                    };
-
-                                    match result {
-                                        Ok(result) => {
-                                            record_semantic_feedback(&prompt, &resolution.validation);
-                                            match validate_result(
-                                                &resolution.semantic_prompt,
-                                                profile.task_type,
-                                                &result.output,
-                                            ) {
-                                                ResultStatus::Valid => {}
-                                                ResultStatus::Invalid(reason)
-                                                | ResultStatus::Retryable(reason) => {
-                                                    println!("[Fault] {}", reason);
-                                                    task_manager_ref.fail(&task_id, &reason).await;
-                                                    let _ = task_response_tx_ref
-                                                        .send(PendingTaskResponse {
-                                                            channel,
-                                                            response: TaskResponse::distributed(
-                                                                DistributedTaskResult::failure_for_attempt(
-                                                                    task_id.clone(),
-                                                                    attempt_id.clone(),
-                                                                    reason,
-                                                                ),
-                                                            ),
-                                                        })
-                                                        .await;
-                                                    return;
-                                                }
-                                            }
-                                            let distributed_result = DistributedTaskResult::success(
-                                                task_id.clone(),
-                                                result.output,
-                                            );
-                                            let distributed_result =
-                                                DistributedTaskResult::success_for_attempt(
-                                                    distributed_result.task_id,
-                                                    attempt_id.clone(),
-                                                    distributed_result.output,
-                                                );
-                                            task_manager_ref.complete(distributed_result.clone()).await;
-                                            let _ = task_response_tx_ref
-                                                .send(PendingTaskResponse {
-                                                    channel,
-                                                    response: TaskResponse::distributed(
-                                                        distributed_result,
-                                                    ),
-                                                })
-                                                .await;
-                                        }
-                                        Err(error) => {
-                                            task_manager_ref.fail(&task_id, &error).await;
-                                            let _ = task_response_tx_ref
-                                                .send(PendingTaskResponse {
-                                                    channel,
-                                                    response: TaskResponse::distributed(
-                                                        DistributedTaskResult::failure_for_attempt(
-                                                            task_id.clone(),
-                                                            attempt_id.clone(),
-                                                            error,
-                                                        ),
-                                                    ),
-                                                })
-                                                .await;
-                                        }
-                                    }
-                                });
-                            } else {
-                                println!("📨 Tarea P2P de {}: {} → '{}'", peer, request.task_type, request.data);
-                                let queue_ref = Arc::clone(&queue);
-                                let t_id = request.task_id.clone();
-                                let t_type = request.task_type.clone();
-                                let t_data = request.data.clone();
-                                tokio::spawn(async move {
-                                    if let Err(e) = queue_ref.push(t_id, t_type, t_data).await {
-                                        eprintln!("❌ Error encolando: {}", e);
-                                    }
-                                    if let Some(outcome) = queue_ref.outcome_rx.lock().await.recv().await {
-                                        println!("🏁 {} → {:?}", outcome.task_id, outcome.status);
-                                    }
-                                });
-                                let response = TaskExecutor::execute_task(
-                                    request.task_id, request.task_type, request.data,
-                                );
-                                let _ = swarm.behaviour_mut().request_response.send_response(channel, response);
-                            }
-                        }
-                        RREvent::Message { peer, message: Message::Response { response, .. } } => {
-                            if let Some(distributed_result) = response.distributed_result {
-                                let expected_task_id = infer_runtime.distributed_infer_state
-                                    .as_ref()
-                                    .map(|infer_state| infer_state.trace_task_id.as_str());
-                                if infer_runtime.infer_request_id.as_deref()
-                                    != Some(distributed_result.attempt_id.as_str())
-                                    || expected_task_id != Some(distributed_result.task_id.as_str())
-                                {
-                                    let attempt_id = distributed_result.attempt_id.clone();
-                                    let task_id = distributed_result.task_id.clone();
-                                    let peer_id = peer.to_string();
-                                    let elapsed_ms = infer_runtime.attempt_watchdogs
-                                        .get(&attempt_id)
-                                        .map(|watchdog| watchdog.elapsed_ms())
-                                        .unwrap_or_default();
-                                    apply_late_result_lifecycle(
-                                        &task_id,
-                                        &attempt_id,
-                                        &peer_id,
-                                        infer_runtime.distributed_infer_state
-                                            .as_ref()
-                                            .and_then(|state| state.current_model.as_deref()),
-                                        distributed_result.success,
-                                        &distributed_result.output,
-                                        elapsed_ms,
-                                        &mut infer_runtime.attempt_watchdogs,
-                                        &registry,
-                                    )
-                                    .await;
-                                    println!(
-                                        "[Task] Ignoring stale response task_id={} attempt_id={} from peer_id={}",
-                                        distributed_result.task_id, distributed_result.attempt_id, peer
-                                    );
-                                    continue;
-                                }
-
-                                infer_runtime.pending_inference.remove(&distributed_result.attempt_id);
-                                let peer_id = peer.to_string();
-                                let latency_ms = infer_runtime.infer_started_at
-                                    .as_ref()
-                                    .map(|started| started.elapsed().as_millis() as u64)
-                                    .unwrap_or_default();
-                                emit_result_received_event(
-                                    &distributed_result.task_id,
-                                    &distributed_result.attempt_id,
-                                    infer_runtime.distributed_infer_state
-                                        .as_ref()
-                                        .and_then(|state| state.current_model.as_deref()),
-                                    &peer_id,
-                                    latency_ms,
-                                );
-                                let validation_status = if distributed_result.success {
-                                    if !should_print_result_output(&distributed_result.output) {
-                                        ResultStatus::Retryable(
-                                            "empty distributed response output".to_string(),
-                                        )
-                                    } else if let Some(infer_state) = infer_runtime.distributed_infer_state.as_ref() {
-                                        validate_result(
-                                            infer_state
-                                                .current_semantic_prompt
-                                                .as_deref()
-                                                .unwrap_or(""),
-                                            infer_state
-                                                .current_task_type
-                                                .unwrap_or(PromptTaskType::General),
-                                            &distributed_result.output,
-                                        )
-                                    } else {
-                                        ResultStatus::Valid
-                                    }
-                                } else {
-                                    ResultStatus::Retryable(distributed_result.output.clone())
-                                };
-
-                                let retry_reason = match validation_status {
-                                    ResultStatus::Valid => None,
-                                    ResultStatus::Invalid(reason)
-                                    | ResultStatus::Retryable(reason) => Some(reason),
-                                };
-
-                                if let Some(reason) = retry_reason {
-                                    let failure_kind = if distributed_result.success {
-                                        FailureKind::InvalidOutput
-                                    } else {
-                                        FailureKind::TaskFailure
-                                    };
-                                    let current_model = infer_runtime.distributed_infer_state
-                                        .as_ref()
-                                        .and_then(|state| state.current_model.clone());
-                                    eprintln!(
-                                        "[Fault] task_id={} attempt_id={} peer_id={} model_id={} reason={}",
-                                        distributed_result.task_id,
-                                        distributed_result.attempt_id,
-                                        peer,
-                                        current_model.as_deref().unwrap_or("-"),
-                                        reason
-                                    );
-                                    if apply_result_failure_lifecycle(
-                                        &distributed_result.task_id,
-                                        &distributed_result.attempt_id,
-                                        &peer_id,
-                                        &reason,
-                                        &distributed_result.output,
-                                        failure_kind,
-                                        "task_failure",
-                                        current_model,
-                                        &registry,
-                                        &mut infer_runtime.distributed_infer_state,
-                                        &mut infer_runtime.attempt_watchdogs,
-                                        &task_manager,
-                                        &mut infer_runtime.pending_inference,
-                                        &mut infer_runtime.token_buffer,
-                                        &mut infer_runtime.next_token_idx,
-                                        &mut infer_runtime.rendered_output,
-                                        &mut infer_runtime.infer_request_id,
-                                        &mut infer_runtime.infer_broadcast_sent,
-                                        &mut client_state.waiting_for_response,
-                                        infer_runtime.infer_started_at,
-                                    )
-                                    .await
-                                    {
-                                        continue;
-                                    }
-                                    break;
-                                }
-
-                                apply_result_success_lifecycle(
-                                    &distributed_result.task_id,
-                                    &distributed_result.attempt_id,
-                                    &peer_id,
-                                    infer_runtime.distributed_infer_state
-                                        .as_ref()
-                                        .and_then(|state| state.current_model.as_deref()),
-                                    latency_ms,
-                                    &registry,
-                                    &mut infer_runtime.attempt_watchdogs,
-                                )
-                                .await;
-                                task_manager.complete(distributed_result.clone()).await;
-                                if should_print_result_output(&distributed_result.output) {
-                                    println!("{}", distributed_result.output);
-                                }
-                                println!(
-                                    "\n\n✅ Inference completada: task_id={} attempt_id={} peer_id={} model_id={}",
-                                    distributed_result.task_id,
-                                    distributed_result.attempt_id,
-                                    peer,
-                                    infer_runtime.distributed_infer_state
-                                        .as_ref()
-                                        .and_then(|state| state.current_model.as_deref())
-                                        .unwrap_or("-")
-                                );
-                                if let Some(infer_state) = infer_runtime.distributed_infer_state.as_ref() {
-                                    let (trace, aggregate_metrics) =
-                                        finalize_distributed_task_observability(
-                                            &infer_state.trace_task_id,
-                                            infer_runtime.infer_started_at,
-                                            false,
-                                        );
-                                    if let Some(trace) = trace {
-                                        println!(
-                                            "[Trace] nodes={} models={}",
-                                            trace.node_history.join(" -> "),
-                                            trace.model_history.join(" -> ")
-                                        );
-                                        println!(
-                                            "[Metrics] latency={} retries={} fallbacks={}",
-                                            trace.total_latency_ms, trace.retries, trace.fallbacks
-                                        );
-                                    }
-                                    println!(
-                                        "[Metrics] totals: tasks={} failed={} avg_latency_ms={:.1}",
-                                        aggregate_metrics.total_tasks,
-                                        aggregate_metrics.failed_tasks,
-                                        aggregate_metrics.avg_latency_ms
-                                    );
-                                }
-                                break;
-                            } else {
-                                client_state.waiting_for_response = false;
-                                client_state.completed += 1;
-                                if !client_state.pending_tasks.is_empty() { client_state.pending_tasks.remove(0); }
-                                println!("📩 [{}/{}] {} de {}: '{}'",
-                                    client_state.completed, client_state.total_tasks,
-                                    if response.success { "✅" } else { "❌" },
-                                    peer, response.result);
-                                if let Some(next_task) = client_state.pending_tasks.first().cloned() {
-                                    if let Some(pid) = client_state.connected_peer {
-                                        swarm.behaviour_mut().request_response.send_request(&pid, next_task);
-                                        client_state.waiting_for_response = true;
-                                    }
-                                } else {
-                                    println!("\n🎉 Completadas: {}/{}", client_state.completed, client_state.total_tasks);
-                                    break;
-                                }
-                            }
-                        }
-                        RREvent::OutboundFailure { peer, error, .. } => {
-                            eprintln!("❌ Outbound {}: {:?}", peer, error);
-                            if is_client && !client_state.waiting_for_response { break; }
-                        }
-                        _ => {}
+                    match handle_request_response_event(RequestResponseHandlerContext {
+                        swarm: &mut swarm,
+                        event,
+                        peer_id,
+                        debug_flags,
+                        is_client,
+                        topology: &topology,
+                        queue: &queue,
+                        task_manager: &task_manager,
+                        task_response_tx: &task_response_tx,
+                        registry: &registry,
+                        model_storage: &model_storage,
+                        infer_runtime: &mut infer_runtime,
+                        client_state: &mut client_state,
+                    })
+                    .await
+                    {
+                        EventLoopDirective::None => {}
+                        EventLoopDirective::Continue => continue,
+                        EventLoopDirective::Break => break,
                     }
                 }
 
@@ -4454,7 +3360,7 @@ async fn simulate_workers(count: usize, _base_peer_id: String) {
             loop {
                 interval.tick().await;
                 tasks_done += 1;
-                if tasks_done % 10 == 0 {
+                if tasks_done.is_multiple_of(10) {
                     println!("👷 Worker-{}: {} tareas simuladas", i, tasks_done);
                 }
             }

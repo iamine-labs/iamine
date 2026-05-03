@@ -67,6 +67,10 @@ pub(super) fn should_print_result_output(output: &str) -> bool {
     !output.trim().is_empty()
 }
 
+fn insert_attempt_id(fields: &mut Map<String, Value>, attempt_id: &str) {
+    fields.insert("attempt_id".to_string(), attempt_id.into());
+}
+
 #[cfg(test)]
 pub(super) fn apply_retry_fallback_metrics(
     metrics: &mut DistributedTaskMetrics,
@@ -202,7 +206,7 @@ pub(super) fn emit_task_publish_attempt_event(
         None,
         {
             let mut fields = Map::new();
-            fields.insert("attempt_id".to_string(), attempt_id.into());
+            insert_attempt_id(&mut fields, attempt_id);
             fields.insert("topic".to_string(), topic.into());
             fields.insert(
                 "publish_peer_count".to_string(),
@@ -236,7 +240,7 @@ pub(super) fn emit_task_published_event(
         None,
         {
             let mut fields = Map::new();
-            fields.insert("attempt_id".to_string(), attempt_id.into());
+            insert_attempt_id(&mut fields, attempt_id);
             fields.insert("topic".to_string(), topic.into());
             fields.insert(
                 "publish_peer_count".to_string(),
@@ -298,7 +302,7 @@ pub(super) fn emit_task_publish_failed_event(
         Some(TASK_DISPATCH_UNCONFIRMED_001),
         {
             let mut fields = Map::new();
-            fields.insert("attempt_id".to_string(), attempt_id.into());
+            insert_attempt_id(&mut fields, attempt_id);
             fields.insert("topic".to_string(), topic.into());
             fields.insert(
                 "publish_peer_count".to_string(),

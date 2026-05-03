@@ -186,6 +186,26 @@ impl AttemptWatchdog {
         true
     }
 
+    pub(super) fn transition_state_with_event(
+        &mut self,
+        next: AttemptLifecycleState,
+        worker_peer_id: Option<&str>,
+    ) -> bool {
+        let previous_state = self.state;
+        if !self.transition_state(next) {
+            return false;
+        }
+        emit_attempt_state_changed_event(
+            &self.task_id,
+            &self.attempt_id,
+            Some(&self.model_id),
+            worker_peer_id,
+            previous_state.as_str(),
+            self.state.as_str(),
+        );
+        true
+    }
+
     pub(super) fn record_progress(
         &mut self,
         stage: &str,

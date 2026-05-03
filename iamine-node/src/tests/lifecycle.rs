@@ -114,27 +114,32 @@ async fn test_failure_lifecycle_updates_health_and_trace_consistently() {
     let mut infer_broadcast_sent = true;
     let mut waiting_for_response = true;
 
+    let mut failure_context = ResultFailureLifecycleContext {
+        distributed_infer_state: &mut distributed_state,
+        attempt_watchdogs: &mut watchdogs,
+        task_manager: &task_manager,
+        pending_inference: &mut pending_inference,
+        token_buffer: &mut token_buffer,
+        next_token_idx: &mut next_token_idx,
+        rendered_output: &mut rendered_output,
+        infer_request_id: &mut infer_request_id,
+        infer_broadcast_sent: &mut infer_broadcast_sent,
+        waiting_for_response: &mut waiting_for_response,
+        infer_started_at: None,
+    };
     let retry_scheduled = apply_result_failure_lifecycle(
-        "task-failure",
-        &current_attempt,
-        "peer-failure",
-        "backend error",
-        "backend error",
-        FailureKind::TaskFailure,
-        "task_failure",
-        Some("tinyllama-1b".to_string()),
+        ResultFailureInput {
+            task_id: "task-failure",
+            attempt_id: &current_attempt,
+            worker_peer_id: "peer-failure",
+            reason: "backend error",
+            output: "backend error",
+            failure_kind: FailureKind::TaskFailure,
+            failure_error_kind: "task_failure",
+            model_id: Some("tinyllama-1b".to_string()),
+        },
         &shared_registry,
-        &mut distributed_state,
-        &mut watchdogs,
-        &task_manager,
-        &mut pending_inference,
-        &mut token_buffer,
-        &mut next_token_idx,
-        &mut rendered_output,
-        &mut infer_request_id,
-        &mut infer_broadcast_sent,
-        &mut waiting_for_response,
-        None,
+        &mut failure_context,
     )
     .await;
 

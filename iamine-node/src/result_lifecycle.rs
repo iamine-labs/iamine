@@ -1,5 +1,33 @@
 use super::*;
 
+async fn record_worker_success(
+    registry: &SharedNodeRegistry,
+    task_id: &str,
+    worker_peer_id: &str,
+    model_id: Option<&str>,
+    latency_ms: u64,
+) {
+    if let Some(health) = registry
+        .write()
+        .await
+        .record_success(worker_peer_id, latency_ms)
+    {
+        log_health_update(task_id, worker_peer_id, model_id, &health, None);
+    }
+}
+
+async fn record_worker_failure(
+    registry: &SharedNodeRegistry,
+    task_id: &str,
+    worker_peer_id: &str,
+    model_id: Option<&str>,
+    error_code: &'static str,
+) {
+    if let Some(health) = registry.write().await.record_failure(worker_peer_id) {
+        log_health_update(task_id, worker_peer_id, model_id, &health, Some(error_code));
+    }
+}
+
 pub(super) fn clear_stream_state(
     token_buffer: &mut HashMap<u32, String>,
     next_token_idx: &mut u32,
@@ -10,17 +38,31 @@ pub(super) fn clear_stream_state(
     rendered_output.clear();
 }
 
+pub(super) struct LateResultLifecycleInput<'a> {
+    pub(super) task_id: &'a str,
+    pub(super) attempt_id: &'a str,
+    pub(super) worker_peer_id: &'a str,
+    pub(super) model_id: Option<&'a str>,
+    pub(super) success: bool,
+    pub(super) output: &'a str,
+    pub(super) execution_ms: u64,
+}
+
 pub(super) async fn apply_late_result_lifecycle(
-    task_id: &str,
-    attempt_id: &str,
-    worker_peer_id: &str,
-    model_id: Option<&str>,
-    success: bool,
-    output: &str,
-    execution_ms: u64,
+    input: LateResultLifecycleInput<'_>,
     attempt_watchdogs: &mut HashMap<String, AttemptWatchdog>,
     registry: &SharedNodeRegistry,
 ) {
+    let LateResultLifecycleInput {
+        task_id,
+        attempt_id,
+        worker_peer_id,
+        model_id,
+        success,
+        output,
+        execution_ms,
+    } = input;
+
     let prior_state = attempt_watchdogs
         .get(attempt_id)
         .map(|watchdog| watchdog.state.as_str().to_string())
@@ -40,27 +82,16 @@ pub(super) async fn apply_late_result_lifecycle(
         &prior_state,
     );
     let _ = record_distributed_task_late_result();
+
     if let Some(watchdog) = attempt_watchdogs.get_mut(attempt_id) {
-        let previous_state = watchdog.state;
-        if watchdog.transition_state(AttemptLifecycleState::LateCompleted) {
-            emit_attempt_state_changed_event(
-                task_id,
-                attempt_id,
-                Some(&watchdog.model_id),
-                Some(worker_peer_id),
-                previous_state.as_str(),
-                watchdog.state.as_str(),
-            );
-        }
+        let _ = watchdog.transition_state_with_event(
+            AttemptLifecycleState::LateCompleted,
+            Some(worker_peer_id),
+        );
     }
+
     if success && should_print_result_output(output) {
-        if let Some(health) = registry
-            .write()
-            .await
-            .record_success(worker_peer_id, execution_ms)
-        {
-            log_health_update(task_id, worker_peer_id, model_id, &health, None);
-        }
+        record_worker_success(registry, task_id, worker_peer_id, model_id, execution_ms).await;
     }
 }
 
@@ -73,25 +104,10 @@ pub(super) async fn apply_result_success_lifecycle(
     registry: &SharedNodeRegistry,
     attempt_watchdogs: &mut HashMap<String, AttemptWatchdog>,
 ) {
-    if let Some(health) = registry
-        .write()
-        .await
-        .record_success(worker_peer_id, latency_ms)
-    {
-        log_health_update(task_id, worker_peer_id, model_id, &health, None);
-    }
+    record_worker_success(registry, task_id, worker_peer_id, model_id, latency_ms).await;
     if let Some(watchdog) = attempt_watchdogs.get_mut(attempt_id) {
-        let previous_state = watchdog.state;
-        if watchdog.transition_state(AttemptLifecycleState::Completed) {
-            emit_attempt_state_changed_event(
-                task_id,
-                attempt_id,
-                Some(&watchdog.model_id),
-                Some(worker_peer_id),
-                previous_state.as_str(),
-                watchdog.state.as_str(),
-            );
-        }
+        let _ = watchdog
+            .transition_state_with_event(AttemptLifecycleState::Completed, Some(worker_peer_id));
     }
     log_observability_event(
         LogLevel::Info,
@@ -114,51 +130,60 @@ pub(super) async fn apply_result_success_lifecycle(
     );
 }
 
+pub(super) struct ResultFailureInput<'a> {
+    pub(super) task_id: &'a str,
+    pub(super) attempt_id: &'a str,
+    pub(super) worker_peer_id: &'a str,
+    pub(super) reason: &'a str,
+    pub(super) output: &'a str,
+    pub(super) failure_kind: FailureKind,
+    pub(super) failure_error_kind: &'a str,
+    pub(super) model_id: Option<String>,
+}
+
+pub(super) struct ResultFailureLifecycleContext<'a> {
+    pub(super) distributed_infer_state: &'a mut Option<DistributedInferState>,
+    pub(super) attempt_watchdogs: &'a mut HashMap<String, AttemptWatchdog>,
+    pub(super) task_manager: &'a Arc<TaskManager>,
+    pub(super) pending_inference: &'a mut HashMap<String, tokio::time::Instant>,
+    pub(super) token_buffer: &'a mut HashMap<u32, String>,
+    pub(super) next_token_idx: &'a mut u32,
+    pub(super) rendered_output: &'a mut String,
+    pub(super) infer_request_id: &'a mut Option<String>,
+    pub(super) infer_broadcast_sent: &'a mut bool,
+    pub(super) waiting_for_response: &'a mut bool,
+    pub(super) infer_started_at: Option<tokio::time::Instant>,
+}
+
 pub(super) async fn apply_result_failure_lifecycle(
-    task_id: &str,
-    attempt_id: &str,
-    worker_peer_id: &str,
-    reason: &str,
-    output: &str,
-    failure_kind: FailureKind,
-    failure_error_kind: &str,
-    model_id: Option<String>,
+    input: ResultFailureInput<'_>,
     registry: &SharedNodeRegistry,
-    distributed_infer_state: &mut Option<DistributedInferState>,
-    attempt_watchdogs: &mut HashMap<String, AttemptWatchdog>,
-    task_manager: &Arc<TaskManager>,
-    pending_inference: &mut HashMap<String, tokio::time::Instant>,
-    token_buffer: &mut HashMap<u32, String>,
-    next_token_idx: &mut u32,
-    rendered_output: &mut String,
-    infer_request_id: &mut Option<String>,
-    infer_broadcast_sent: &mut bool,
-    waiting_for_response: &mut bool,
-    infer_started_at: Option<tokio::time::Instant>,
+    ctx: &mut ResultFailureLifecycleContext<'_>,
 ) -> bool {
-    if let Some(watchdog) = attempt_watchdogs.get_mut(attempt_id) {
-        let previous_state = watchdog.state;
-        if watchdog.transition_state(AttemptLifecycleState::Failed) {
-            emit_attempt_state_changed_event(
-                task_id,
-                attempt_id,
-                Some(&watchdog.model_id),
-                Some(worker_peer_id),
-                previous_state.as_str(),
-                watchdog.state.as_str(),
-            );
-        }
+    let ResultFailureInput {
+        task_id,
+        attempt_id,
+        worker_peer_id,
+        reason,
+        output,
+        failure_kind,
+        failure_error_kind,
+        model_id,
+    } = input;
+
+    if let Some(watchdog) = ctx.attempt_watchdogs.get_mut(attempt_id) {
+        let _ = watchdog
+            .transition_state_with_event(AttemptLifecycleState::Failed, Some(worker_peer_id));
     }
 
-    if let Some(health) = registry.write().await.record_failure(worker_peer_id) {
-        log_health_update(
-            task_id,
-            worker_peer_id,
-            model_id.as_deref(),
-            &health,
-            Some(NODE_UNHEALTHY_002),
-        );
-    }
+    record_worker_failure(
+        registry,
+        task_id,
+        worker_peer_id,
+        model_id.as_deref(),
+        NODE_UNHEALTHY_002,
+    )
+    .await;
 
     let error_code = if output.trim().is_empty() {
         TASK_EMPTY_RESULT_003
@@ -187,7 +212,7 @@ pub(super) async fn apply_result_failure_lifecycle(
         },
     );
 
-    let retry_target = if let Some(infer_state) = distributed_infer_state.as_ref() {
+    let retry_target = if let Some(infer_state) = ctx.distributed_infer_state.as_ref() {
         let mut preview_retry = infer_state.retry_state.clone();
         preview_retry.record_failure(Some(worker_peer_id), infer_state.current_model.as_deref());
         let reg = registry.read().await;
@@ -202,11 +227,11 @@ pub(super) async fn apply_result_failure_lifecycle(
         None
     };
 
-    task_manager.fail(task_id, reason).await;
-    pending_inference.remove(attempt_id);
-    clear_stream_state(token_buffer, next_token_idx, rendered_output);
+    ctx.task_manager.fail(task_id, reason).await;
+    ctx.pending_inference.remove(attempt_id);
+    clear_stream_state(ctx.token_buffer, ctx.next_token_idx, ctx.rendered_output);
 
-    if let Some(infer_state) = distributed_infer_state.as_mut() {
+    if let Some(infer_state) = ctx.distributed_infer_state.as_mut() {
         let trace_task_id = infer_state.trace_task_id.clone();
         let failed_model = infer_state.current_model.clone();
         if infer_state.schedule_retry(Some(worker_peer_id), failed_model.as_deref())
@@ -235,14 +260,14 @@ pub(super) async fn apply_result_failure_lifecycle(
                     trace_task_id, infer_state.current_request_id, failure_kind
                 );
             }
-            *infer_request_id = Some(infer_state.current_request_id.clone());
-            *infer_broadcast_sent = false;
-            *waiting_for_response = false;
+            *ctx.infer_request_id = Some(infer_state.current_request_id.clone());
+            *ctx.infer_broadcast_sent = false;
+            *ctx.waiting_for_response = false;
             return true;
         }
 
         let (trace, aggregate_metrics) =
-            finalize_distributed_task_observability(&trace_task_id, infer_started_at, true);
+            finalize_distributed_task_observability(&trace_task_id, ctx.infer_started_at, true);
         if let Some(trace) = trace {
             println!(
                 "[Metrics] latency={} retries={} fallbacks={}",
