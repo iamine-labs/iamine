@@ -1,5 +1,6 @@
 use super::*;
 use crate::startup_math::compute_active_tasks;
+use crate::startup_model_validation::refresh_models_for_advertising;
 
 pub(super) struct WorkerHeartbeatContext<'a> {
     pub(super) mode: &'a NodeMode,
@@ -13,7 +14,7 @@ pub(super) struct WorkerHeartbeatContext<'a> {
     pub(super) swarm: &'a mut Swarm<IamineBehaviour>,
     pub(super) peer_id: PeerId,
     pub(super) capabilities: &'a WorkerCapabilities,
-    pub(super) validated_advertised_models: &'a [String],
+    pub(super) validated_advertised_models: &'a mut Vec<String>,
     pub(super) benchmark: Option<&'a NodeBenchmark>,
     pub(super) node_caps: &'a ModelNodeCapabilities,
     pub(super) worker_slots: usize,
@@ -22,6 +23,8 @@ pub(super) struct WorkerHeartbeatContext<'a> {
     pub(super) resource_policy: &'a ResourcePolicy,
     pub(super) node_identity: &'a NodeIdentity,
     pub(super) worker_port: u16,
+    pub(super) model_storage: &'a ModelStorage,
+    pub(super) inference_backend_state: &'a InferenceBackendState,
 }
 
 pub(super) async fn handle_worker_heartbeat_tick(
@@ -58,6 +61,36 @@ pub(super) async fn handle_worker_heartbeat_tick(
         }
     };
 
+    let registry_models = ModelRegistry::new();
+    let refreshed_models = refresh_models_for_advertising(
+        &registry_models,
+        ctx.model_storage,
+        ctx.node_caps,
+        ctx.inference_backend_state,
+    );
+    if refreshed_models != *ctx.validated_advertised_models {
+        let previous_models = ctx.validated_advertised_models.clone();
+        *ctx.validated_advertised_models = refreshed_models.clone();
+        log_observability_event(
+            LogLevel::Info,
+            "capabilities_republished",
+            "heartbeat",
+            None,
+            None,
+            Some(CAPABILITIES_STALE_REFRESH_REQUIRED_001),
+            {
+                let mut fields = Map::new();
+                fields.insert(
+                    "previous_models".to_string(),
+                    serde_json::json!(previous_models),
+                );
+                fields.insert("models".to_string(), serde_json::json!(refreshed_models));
+                fields.insert("reason".to_string(), "detected_models_change".into());
+                fields
+            },
+        );
+    }
+
     {
         let mut m = ctx.metrics.write().await;
         m.uptime_secs = uptime;
@@ -81,6 +114,9 @@ pub(super) async fn handle_worker_heartbeat_tick(
                 "ram_gb": ctx.capabilities.ram_gb,
                 "gpu_available": ctx.capabilities.gpu_available,
                 "supported_tasks": ctx.capabilities.supported_tasks,
+                "inference_backend": ctx.capabilities.inference_backend,
+                "real_inference_available": ctx.capabilities.real_inference_available,
+                "mock_inference_enabled": ctx.capabilities.mock_inference_enabled,
             }
         });
         let hb_topic = gossipsub::IdentTopic::new("iamine-heartbeat");
@@ -122,6 +158,9 @@ pub(super) async fn handle_worker_heartbeat_tick(
         worker_slots: ctx.worker_slots as u32,
         active_tasks: active_tasks as u32,
         latency_ms: ctx.peer_tracker.avg_latency().max(1.0) as u32,
+        inference_backend: ctx.capabilities.inference_backend.clone(),
+        real_inference_available: ctx.capabilities.real_inference_available,
+        mock_inference_enabled: ctx.capabilities.mock_inference_enabled,
     };
     let _ = ctx.swarm.behaviour_mut().gossipsub.publish(
         gossipsub::IdentTopic::new(CAP_TOPIC),

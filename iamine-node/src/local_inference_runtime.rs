@@ -1,9 +1,11 @@
 use super::*;
+use crate::backend_runtime::build_mock_inference_result;
 
 #[derive(Clone)]
 pub(super) enum InferenceRuntime {
     Engine(Arc<RealInferenceEngine>),
     Daemon(PathBuf),
+    Mock,
 }
 
 fn local_inference_timeout_ms(model_id: &str) -> u64 {
@@ -76,6 +78,10 @@ pub(super) async fn run_local_inference_with_validation(
                     daemon_response.reuse_hits
                 );
                 Ok(daemon_response.result)
+            }
+            InferenceRuntime::Mock => {
+                drop(rx);
+                Ok(build_mock_inference_result(&req, &task_id))
             }
         };
 

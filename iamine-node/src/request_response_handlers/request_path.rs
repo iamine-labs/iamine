@@ -13,6 +13,7 @@ pub(crate) struct RequestMessageContext<'a> {
     pub(crate) task_manager: &'a Arc<TaskManager>,
     pub(crate) task_response_tx: &'a tokio::sync::mpsc::Sender<PendingTaskResponse>,
     pub(crate) model_storage: &'a ModelStorage,
+    pub(crate) inference_backend_state: &'a InferenceBackendState,
 }
 
 pub(crate) async fn handle_request_message(ctx: RequestMessageContext<'_>) -> EventLoopDirective {
@@ -28,6 +29,7 @@ pub(crate) async fn handle_request_message(ctx: RequestMessageContext<'_>) -> Ev
         task_manager,
         task_response_tx,
         model_storage,
+        inference_backend_state,
     } = ctx;
 
     if let Some(task) = request.distributed_task.clone() {
@@ -94,6 +96,7 @@ pub(crate) async fn handle_request_message(ctx: RequestMessageContext<'_>) -> Ev
         let attempt_id = task.attempt_id.clone();
         let peer_string = peer.to_string();
         let local_cluster_for_task = local_cluster_id.clone();
+        let backend_state = inference_backend_state.clone();
 
         tokio::spawn(async move {
             match task_manager_ref.claim_task(task.clone()).await {
@@ -154,19 +157,29 @@ pub(crate) async fn handle_request_message(ctx: RequestMessageContext<'_>) -> Ev
             let profile = resolution.profile.clone();
             let semantic_prompt = resolution.semantic_prompt.clone();
             let output_policy = resolve_output_policy(&profile, &semantic_prompt, None);
+            let base_engine = Arc::new(RealInferenceEngine::new(ModelStorage::new()));
+            let runtime =
+                match choose_inference_runtime(&backend_state, Arc::clone(&base_engine)).await {
+                    Ok(runtime) => runtime,
+                    Err(error) => {
+                        task_manager_ref.fail(&task_id, &error).await;
+                        let _ = task_response_tx_ref
+                            .send(PendingTaskResponse {
+                                channel,
+                                response: TaskResponse::distributed(
+                                    DistributedTaskResult::failure_for_attempt(
+                                        task_id.clone(),
+                                        attempt_id.clone(),
+                                        error,
+                                    ),
+                                ),
+                            })
+                            .await;
+                        return;
+                    }
+                };
 
-            let result = if let Some(runtime) = choose_inference_runtime().await {
-                run_local_inference_with_timeout(
-                    runtime,
-                    task_id.clone(),
-                    model.clone(),
-                    semantic_prompt,
-                    profile.task_type,
-                    output_policy.max_tokens as u32,
-                    0.7,
-                )
-                .await
-            } else {
+            let runtime = if let InferenceRuntime::Engine(engine) = runtime {
                 let registry = ModelRegistry::new();
                 let model_desc = match registry.get(&model) {
                     Some(desc) => desc,
@@ -188,7 +201,6 @@ pub(crate) async fn handle_request_message(ctx: RequestMessageContext<'_>) -> Ev
                         return;
                     }
                 };
-                let engine = Arc::new(RealInferenceEngine::new(ModelStorage::new()));
                 if let Err(error) = engine.load_model(&model, &model_desc.hash) {
                     task_manager_ref.fail(&task_id, &error).await;
                     let _ = task_response_tx_ref
@@ -205,18 +217,21 @@ pub(crate) async fn handle_request_message(ctx: RequestMessageContext<'_>) -> Ev
                         .await;
                     return;
                 }
-
-                run_local_inference_with_timeout(
-                    InferenceRuntime::Engine(engine),
-                    task_id.clone(),
-                    model.clone(),
-                    semantic_prompt,
-                    profile.task_type,
-                    output_policy.max_tokens as u32,
-                    0.7,
-                )
-                .await
+                InferenceRuntime::Engine(engine)
+            } else {
+                runtime
             };
+
+            let result = run_local_inference_with_timeout(
+                runtime,
+                task_id.clone(),
+                model.clone(),
+                semantic_prompt,
+                profile.task_type,
+                output_policy.max_tokens as u32,
+                0.7,
+            )
+            .await;
 
             match result {
                 Ok(result) => {

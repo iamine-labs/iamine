@@ -140,3 +140,16 @@ fn test_parse_mode_from_args_infer_and_debug_flags_are_filtered() {
         _ => panic!("expected infer mode"),
     }
 }
+
+#[test]
+fn test_parse_mode_filters_backend_flags() {
+    let args = vec![
+        "iamine-node".to_string(),
+        "--inference-backend".to_string(),
+        "mock".to_string(),
+        "--skip-model-validation".to_string(),
+        "--worker".to_string(),
+    ];
+    let mode = cli::parse_mode_from_args(args).expect("worker mode should parse");
+    assert!(matches!(mode, NodeMode::Worker));
+}

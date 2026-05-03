@@ -22,6 +22,7 @@ pub(super) struct SwarmEventRuntimeContext<'a> {
     pub(super) model_storage: &'a ModelStorage,
     pub(super) node_caps: &'a ModelNodeCapabilities,
     pub(super) inference_engine: &'a Arc<RealInferenceEngine>,
+    pub(super) inference_backend_state: &'a InferenceBackendState,
     pub(super) task_manager: &'a Arc<TaskManager>,
     pub(super) topology: &'a SharedNetworkTopology,
     pub(super) task_response_tx: &'a tokio::sync::mpsc::Sender<PendingTaskResponse>,
@@ -50,6 +51,7 @@ pub(super) async fn handle_swarm_event(ctx: SwarmEventRuntimeContext<'_>) -> Eve
         model_storage,
         node_caps,
         inference_engine,
+        inference_backend_state,
         task_manager,
         topology,
         task_response_tx,
@@ -101,6 +103,7 @@ pub(super) async fn handle_swarm_event(ctx: SwarmEventRuntimeContext<'_>) -> Eve
                 model_storage,
                 node_caps,
                 inference_engine,
+                inference_backend_state,
                 task_manager,
             })
             .await
@@ -189,6 +192,7 @@ pub(super) async fn handle_swarm_event(ctx: SwarmEventRuntimeContext<'_>) -> Eve
                 task_response_tx,
                 registry,
                 model_storage,
+                inference_backend_state,
                 infer_runtime,
                 client_state,
             })

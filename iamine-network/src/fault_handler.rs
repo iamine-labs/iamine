@@ -100,6 +100,9 @@ mod tests {
             last_seen: Instant::now(),
             cluster_id: Some("local".to_string()),
             health: crate::node_health::NodeHealth::default(),
+            inference_backend: "real".to_string(),
+            real_inference_available: true,
+            mock_inference_enabled: false,
         }
     }
 

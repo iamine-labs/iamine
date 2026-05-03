@@ -1,3 +1,4 @@
+use crate::backend_runtime::InferenceBackendState;
 use iamine_models::{HardwareAcceleration, ModelStorage, StorageConfig};
 use serde::{Deserialize, Serialize};
 
@@ -9,10 +10,13 @@ pub struct WorkerCapabilities {
     pub disk_available_gb: u64,
     pub supported_tasks: Vec<String>,
     pub avg_latency_ms: f64,
+    pub inference_backend: String,
+    pub real_inference_available: bool,
+    pub mock_inference_enabled: bool,
 }
 
 impl WorkerCapabilities {
-    pub fn detect() -> Self {
+    pub fn detect(backend_state: &InferenceBackendState) -> Self {
         let cores = std::thread::available_parallelism()
             .map(|n| n.get())
             .unwrap_or(1);
@@ -23,18 +27,25 @@ impl WorkerCapabilities {
         let used_gb = storage.total_size_bytes() / 1_073_741_824;
         let disk_available_gb = cfg.max_storage_gb.saturating_sub(used_gb);
 
+        let mut supported_tasks = vec![
+            "reverse_string".to_string(),
+            "compute_hash".to_string(),
+            "validate_challenge".to_string(),
+        ];
+        if backend_state.should_advertise_inference_capabilities() {
+            supported_tasks.push("inference".to_string());
+        }
+
         Self {
             cpu_cores: cores,
             ram_gb: sysinfo_ram_gb().max(2),
             gpu_available: !matches!(hw.accelerator, iamine_models::AcceleratorType::CPU),
             disk_available_gb,
-            supported_tasks: vec![
-                "reverse_string".to_string(),
-                "compute_hash".to_string(),
-                "validate_challenge".to_string(),
-                "inference".to_string(),
-            ],
+            supported_tasks,
             avg_latency_ms: 0.0,
+            inference_backend: backend_state.configured_backend.as_str().to_string(),
+            real_inference_available: backend_state.real_backend_available,
+            mock_inference_enabled: backend_state.mock_enabled(),
         }
     }
 

@@ -21,6 +21,7 @@ pub(super) struct GossipsubHandlerContext<'a> {
     pub(super) model_storage: &'a ModelStorage,
     pub(super) node_caps: &'a ModelNodeCapabilities,
     pub(super) inference_engine: &'a Arc<RealInferenceEngine>,
+    pub(super) inference_backend_state: &'a InferenceBackendState,
     pub(super) task_manager: &'a Arc<TaskManager>,
 }
 
@@ -47,6 +48,7 @@ pub(super) async fn handle_gossipsub_message(
         model_storage,
         node_caps,
         inference_engine,
+        inference_backend_state,
         task_manager,
     } = ctx;
 
@@ -308,6 +310,7 @@ pub(super) async fn handle_gossipsub_message(
                     model_storage,
                     node_caps,
                     inference_engine,
+                    inference_backend_state,
                     metrics,
                 )
                 .await;
@@ -447,6 +450,7 @@ pub(super) async fn handle_gossipsub_message(
                     model_storage,
                     node_caps,
                     inference_engine,
+                    inference_backend_state,
                     metrics,
                 )
                 .await;

@@ -16,6 +16,9 @@ fn test_adaptive_timeout_for_mistral_cpu_is_higher_than_fixed_timeout() {
         last_seen: std::time::Instant::now(),
         cluster_id: None,
         health: NodeHealth::default(),
+        inference_backend: "real".to_string(),
+        real_inference_available: true,
+        mock_inference_enabled: false,
     };
 
     let policy = AttemptTimeoutPolicy::from_model_and_node("mistral-7b", Some(&node_capability));

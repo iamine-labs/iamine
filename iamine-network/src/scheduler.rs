@@ -146,6 +146,7 @@ impl IntelligentScheduler {
             .map(|(_, node)| node)
             .filter(|node| !excluded_peers.contains(&node.peer_id))
             .filter(|node| node.models.iter().any(|model| model == model_id))
+            .filter(|node| node.real_inference_available || node.mock_inference_enabled)
             .filter(|node| {
                 let profile = NodeHardwareProfile {
                     ram_gb: node.ram_gb,
@@ -209,6 +210,9 @@ mod tests {
             last_seen: Instant::now(),
             cluster_id: cluster_id.map(|value| value.to_string()),
             health: crate::node_health::NodeHealth::default(),
+            inference_backend: "real".to_string(),
+            real_inference_available: true,
+            mock_inference_enabled: false,
         }
     }
 

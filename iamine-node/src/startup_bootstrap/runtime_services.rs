@@ -19,6 +19,7 @@ pub(crate) async fn bootstrap_runtime_services(
     peer_id: PeerId,
     worker_slots: usize,
     wallet_reputation: f32,
+    inference_backend_state: &InferenceBackendState,
 ) -> RuntimeServicesState {
     let pool = Arc::new(WorkerPool::with_slots(worker_slots));
     let queue = Arc::new(TaskQueue::new(peer_id.to_string()));
@@ -28,7 +29,7 @@ pub(crate) async fn bootstrap_runtime_services(
         tokio::sync::mpsc::channel::<PendingTaskResponse>(64);
     let heartbeat = Arc::new(HeartbeatService::new());
     let metrics = Arc::new(RwLock::new(NodeMetrics::new()));
-    let capabilities = WorkerCapabilities::detect();
+    let capabilities = WorkerCapabilities::detect(inference_backend_state);
     let task_cache = TaskCache::new(1000);
     let peer_tracker = PeerTracker::new();
     let rate_limiter = RateLimiter::new(100);

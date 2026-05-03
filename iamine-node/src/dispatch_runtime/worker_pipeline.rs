@@ -1,4 +1,5 @@
 use super::*;
+use crate::backend_runtime::build_mock_inference_result;
 
 #[derive(Clone, Copy)]
 struct WorkerProgressMessage<'a> {
@@ -146,6 +147,7 @@ pub(crate) async fn run_worker_inference_pipeline(
     model_storage: &ModelStorage,
     node_caps: &ModelNodeCapabilities,
     inference_engine: &Arc<RealInferenceEngine>,
+    inference_backend_state: &InferenceBackendState,
     metrics: &Arc<RwLock<NodeMetrics>>,
 ) {
     let local_model_available = model_storage.has_model(&request.model_id);
@@ -187,19 +189,64 @@ pub(crate) async fn run_worker_inference_pipeline(
         &request.prompt[..request.prompt.len().min(40)]
     );
 
-    if !local_model_available {
+    if !inference_backend_state.mock_enabled() && !inference_backend_state.real_backend_available {
+        log_observability_event(
+            LogLevel::Error,
+            "inference_backend_unavailable",
+            &request.task_id,
+            Some(&request.task_id),
+            Some(&request.model_id),
+            Some(WORKER_INFERENCE_BACKEND_DISABLED_001),
+            {
+                let mut fields = Map::new();
+                fields.insert("attempt_id".to_string(), request.attempt_id.clone().into());
+                fields.insert(
+                    "reason".to_string(),
+                    "real_backend_unsupported_cpu_and_mock_not_enabled".into(),
+                );
+                fields.insert("recoverable".to_string(), true.into());
+                fields
+            },
+        );
+        return;
+    }
+
+    if !inference_backend_state.mock_enabled() && !local_model_available {
         println!("   ⚠️ Modelo {} no instalado — ignorando", request.model_id);
         return;
     }
 
-    if let Some(req) = ModelRequirements::for_model(&request.model_id) {
-        if !can_node_run_model(node_caps, &req) {
-            println!(
-                "   ⚠️ Hardware insuficiente para {} — ignorando",
-                request.model_id
-            );
-            return;
+    if !inference_backend_state.mock_enabled() {
+        if let Some(req) = ModelRequirements::for_model(&request.model_id) {
+            if !can_node_run_model(node_caps, &req) {
+                println!(
+                    "   ⚠️ Hardware insuficiente para {} — ignorando",
+                    request.model_id
+                );
+                return;
+            }
         }
+    }
+
+    if inference_backend_state.mock_enabled() {
+        log_observability_event(
+            LogLevel::Info,
+            "mock_inference_started",
+            &request.task_id,
+            Some(&request.task_id),
+            Some(&request.model_id),
+            None,
+            {
+                let mut fields = Map::new();
+                fields.insert("attempt_id".to_string(), request.attempt_id.clone().into());
+                fields.insert(
+                    "request_kind".to_string(),
+                    request.request_kind.label().into(),
+                );
+                fields.insert("from_peer".to_string(), request.from_peer.clone().into());
+                fields
+            },
+        );
     }
 
     publish_worker_progress_message(
@@ -248,6 +295,7 @@ pub(crate) async fn run_worker_inference_pipeline(
     let prompt_for_inference = request.prompt.clone();
     let max_tokens = request.max_tokens;
     let temperature = request.temperature;
+    let backend_state = inference_backend_state.clone();
     let (token_tx, mut token_rx) = tokio::sync::mpsc::channel::<String>(100);
 
     let inference_handle = tokio::spawn(async move {
@@ -258,6 +306,31 @@ pub(crate) async fn run_worker_inference_pipeline(
             max_tokens,
             temperature,
         };
+        if backend_state.mock_enabled() {
+            let result = build_mock_inference_result(&req, &request_id_for_inference);
+            return InferenceTaskResult::success(
+                request_id_for_inference,
+                model_id_for_inference,
+                result.output,
+                result.tokens_generated,
+                result.truncated,
+                result.continuation_steps,
+                result.execution_ms,
+                peer_id_for_inference,
+                result.accelerator_used,
+            );
+        }
+        if !backend_state.real_backend_available {
+            return InferenceTaskResult::failure(
+                request_id_for_inference,
+                model_id_for_inference,
+                peer_id_for_inference,
+                format!(
+                    "CPU backend unsupported for GGML [{}]",
+                    MODEL_BACKEND_UNSUPPORTED_CPU_001
+                ),
+            );
+        }
         let daemon_socket = daemon_socket_path();
         let result = if daemon_is_available(&daemon_socket).await {
             match infer_via_daemon(&daemon_socket, req, |token| {
@@ -390,6 +463,9 @@ pub(crate) async fn run_worker_inference_pipeline(
             if let Some(map) = result_payload.as_object_mut() {
                 map.insert("task_id".to_string(), request.task_id.clone().into());
                 map.insert("attempt_id".to_string(), request.attempt_id.clone().into());
+                if inference_backend_state.mock_enabled() || result.accelerator == "mock" {
+                    map.insert("mock_inference".to_string(), true.into());
+                }
             }
             publish_worker_progress_message(
                 swarm,
@@ -477,6 +553,23 @@ pub(crate) async fn run_worker_inference_pipeline(
                 result.tokens_generated,
                 result.execution_ms
             );
+            if inference_backend_state.mock_enabled() || result.accelerator == "mock" {
+                log_observability_event(
+                    LogLevel::Info,
+                    "mock_inference_completed",
+                    &request.task_id,
+                    Some(&request.task_id),
+                    Some(&request.model_id),
+                    None,
+                    {
+                        let mut fields = Map::new();
+                        fields.insert("attempt_id".to_string(), request.attempt_id.clone().into());
+                        fields.insert("execution_ms".to_string(), result.execution_ms.into());
+                        fields.insert("result_size".to_string(), result_size.into());
+                        fields
+                    },
+                );
+            }
         }
         Err(error) => log_observability_event(
             LogLevel::Error,

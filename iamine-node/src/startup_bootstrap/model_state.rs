@@ -6,6 +6,7 @@ pub(crate) struct ModelStartupState {
     pub(crate) inference_engine: Arc<RealInferenceEngine>,
     pub(crate) node_caps: ModelNodeCapabilities,
     pub(crate) validated_advertised_models: Vec<String>,
+    pub(crate) inference_backend_state: InferenceBackendState,
 }
 
 pub(crate) async fn bootstrap_model_state(
@@ -13,18 +14,19 @@ pub(crate) async fn bootstrap_model_state(
     auto_model: bool,
     peer_id: &PeerId,
     benchmark: Option<&NodeBenchmark>,
+    inference_backend_state: InferenceBackendState,
 ) -> Result<ModelStartupState, Box<dyn Error>> {
     let storage_config = StorageConfig::load();
     let model_registry = ModelRegistry::new();
     let model_storage = ModelStorage::new();
     let inference_engine = Arc::new(RealInferenceEngine::new(ModelStorage::new()));
 
-    let node_caps = ModelNodeCapabilities::detect(&peer_id.to_string());
-    let validated_advertised_models = if matches!(mode, NodeMode::Worker) {
-        validate_models_for_advertising(&model_registry, &model_storage, &node_caps)
-    } else {
-        model_storage.list_local_models()
-    };
+    let mut node_caps = ModelNodeCapabilities::detect(&peer_id.to_string());
+    if matches!(mode, NodeMode::Worker) {
+        inference_backend_state.emit_startup_events();
+    }
+    let mut local_models_before_setup = model_storage.list_local_models();
+    local_models_before_setup.sort();
 
     let worker_setup = if matches!(mode, NodeMode::Worker) {
         let detected = DetectedHardware {
@@ -139,10 +141,55 @@ pub(crate) async fn bootstrap_model_state(
         }
     }
 
+    if matches!(mode, NodeMode::Worker) {
+        node_caps = ModelNodeCapabilities::detect(&peer_id.to_string());
+    }
+
+    let validated_advertised_models = if matches!(mode, NodeMode::Worker) {
+        validate_models_for_advertising(
+            &model_registry,
+            &model_storage,
+            &node_caps,
+            &inference_backend_state,
+        )
+    } else {
+        model_storage.list_local_models()
+    };
+
+    let mut local_models_after_setup = model_storage.list_local_models();
+    local_models_after_setup.sort();
+    if matches!(mode, NodeMode::Worker) && local_models_after_setup != local_models_before_setup {
+        log_observability_event(
+            LogLevel::Info,
+            "capabilities_republished",
+            "startup",
+            None,
+            None,
+            Some(CAPABILITIES_STALE_REFRESH_REQUIRED_001),
+            {
+                let mut fields = Map::new();
+                fields.insert(
+                    "previous_models".to_string(),
+                    serde_json::json!(local_models_before_setup),
+                );
+                fields.insert(
+                    "models".to_string(),
+                    serde_json::json!(validated_advertised_models),
+                );
+                fields.insert(
+                    "reason".to_string(),
+                    "models_changed_after_startup_setup".into(),
+                );
+                fields
+            },
+        );
+    }
+
     Ok(ModelStartupState {
         model_storage,
         inference_engine,
         node_caps,
         validated_advertised_models,
+        inference_backend_state,
     })
 }

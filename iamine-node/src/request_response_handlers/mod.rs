@@ -16,6 +16,7 @@ pub(super) struct RequestResponseHandlerContext<'a> {
     pub(super) task_response_tx: &'a tokio::sync::mpsc::Sender<PendingTaskResponse>,
     pub(super) registry: &'a SharedNodeRegistry,
     pub(super) model_storage: &'a ModelStorage,
+    pub(super) inference_backend_state: &'a InferenceBackendState,
     pub(super) infer_runtime: &'a mut InferRuntimeState,
     pub(super) client_state: &'a mut ClientRuntimeState,
 }
@@ -35,6 +36,7 @@ pub(super) async fn handle_request_response_event(
         task_response_tx,
         registry,
         model_storage,
+        inference_backend_state,
         infer_runtime,
         client_state,
     } = ctx;
@@ -58,6 +60,7 @@ pub(super) async fn handle_request_response_event(
                 task_manager,
                 task_response_tx,
                 model_storage,
+                inference_backend_state,
             })
             .await;
         }

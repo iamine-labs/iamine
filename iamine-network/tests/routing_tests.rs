@@ -62,6 +62,9 @@ fn test_select_best_node_with_capabilities() {
         worker_slots: 8,
         active_tasks: 0,
         latency_ms: 10,
+        inference_backend: "real".to_string(),
+        real_inference_available: true,
+        mock_inference_enabled: false,
     });
 
     // Nodo con RAM suficiente
@@ -76,6 +79,9 @@ fn test_select_best_node_with_capabilities() {
         worker_slots: 8,
         active_tasks: 0,
         latency_ms: 10,
+        inference_backend: "real".to_string(),
+        real_inference_available: true,
+        mock_inference_enabled: false,
     });
 
     let selected = registry.select_best_node_for_model("mistral-7b");

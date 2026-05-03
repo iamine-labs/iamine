@@ -85,17 +85,19 @@ use iamine_network::{
     RetryPolicy, RetryState, SemanticFeedbackEngine, SemanticRoutingDecision,
     SharedNetworkTopology, SharedNodeRegistry, StructuredLogEntry, TaskClaim, TaskManager,
     TaskTrace, TaskType as PromptTaskType, ValidationResult as SemanticValidationResult,
-    MODEL_LOAD_FAILED_001, MODEL_UNSUPPORTED_HW_002, NETWORK_NO_PUBSUB_PEERS_001,
-    NET_PEER_DISCONNECTED_002, NODE_BLACKLISTED_001, NODE_UNHEALTHY_002,
-    PUBSUB_TOPIC_NOT_READY_001, SCH_NO_NODE_001, TASK_DISPATCH_UNCONFIRMED_001,
-    TASK_EMPTY_RESULT_003, TASK_FAILED_002, TASK_TIMEOUT_001, WORKER_STARTUP_OVERFLOW_001,
+    CAPABILITIES_STALE_REFRESH_REQUIRED_001, MODEL_BACKEND_UNSUPPORTED_CPU_001,
+    MODEL_LOAD_FAILED_001, MODEL_LOAD_SKIPPED_STARTUP_001, MODEL_UNSUPPORTED_HW_002,
+    NETWORK_NO_PUBSUB_PEERS_001, NET_PEER_DISCONNECTED_002, NODE_BLACKLISTED_001,
+    NODE_UNHEALTHY_002, PUBSUB_TOPIC_NOT_READY_001, SCH_NO_NODE_001, TASK_DISPATCH_UNCONFIRMED_001,
+    TASK_EMPTY_RESULT_003, TASK_FAILED_002, TASK_TIMEOUT_001,
+    WORKER_INFERENCE_BACKEND_DISABLED_001, WORKER_STARTUP_OVERFLOW_001,
 };
 
 use attempt_watchdog::{
     is_meaningfully_in_flight, AttemptLifecycleState, AttemptTimeoutPolicy, AttemptWatchdog,
     WatchdogCheck,
 };
-use backend_runtime::choose_inference_runtime;
+use backend_runtime::{choose_inference_runtime, InferenceBackendState};
 use benchmark::NodeBenchmark;
 use cli::{
     is_control_plane_mode, mode_label, parse_args, print_usage, DebugFlags, InferenceControlFlags,
@@ -331,12 +333,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let resource_policy = core_startup.resource_policy;
     let worker_slots = core_startup.worker_slots;
 
-    let model_startup =
-        bootstrap_model_state(&mode, auto_model, &peer_id, benchmark.as_ref()).await?;
+    let inference_backend_state = InferenceBackendState::from_args(&args);
+    let model_startup = bootstrap_model_state(
+        &mode,
+        auto_model,
+        &peer_id,
+        benchmark.as_ref(),
+        inference_backend_state,
+    )
+    .await?;
     let model_storage = model_startup.model_storage;
     let inference_engine = model_startup.inference_engine;
     let node_caps = model_startup.node_caps;
-    let validated_advertised_models = model_startup.validated_advertised_models;
+    let mut validated_advertised_models = model_startup.validated_advertised_models;
+    let inference_backend_state = model_startup.inference_backend_state;
 
     // 7️⃣ Simulate workers — salida temprana
     if let NodeMode::SimulateWorkers { count } = &mode {
@@ -361,7 +371,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
         mut task_cache,
         mut peer_tracker,
         mut rate_limiter,
-    } = bootstrap_runtime_services(peer_id, worker_slots, wallet.reputation).await;
+    } = bootstrap_runtime_services(
+        peer_id,
+        worker_slots,
+        wallet.reputation,
+        &inference_backend_state,
+    )
+    .await;
     let mut task_response_rx = task_response_rx;
 
     print_runtime_mode_banner(&mode, peer_id, &pool);
@@ -429,7 +445,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     swarm: &mut swarm,
                     peer_id,
                     capabilities: &capabilities,
-                    validated_advertised_models: &validated_advertised_models,
+                    validated_advertised_models: &mut validated_advertised_models,
                     benchmark: benchmark.as_ref(),
                     node_caps: &node_caps,
                     worker_slots,
@@ -438,6 +454,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     resource_policy: &resource_policy,
                     node_identity: &node_identity,
                     worker_port,
+                    inference_backend_state: &inference_backend_state,
                     infer_runtime: &mut infer_runtime,
                     model_storage: &model_storage,
                     pubsub_topics: &pubsub_topics,
@@ -474,6 +491,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     model_storage: &model_storage,
                     node_caps: &node_caps,
                     inference_engine: &inference_engine,
+                    inference_backend_state: &inference_backend_state,
                     task_manager: &task_manager,
                     topology: &topology,
                     task_response_tx: &task_response_tx,

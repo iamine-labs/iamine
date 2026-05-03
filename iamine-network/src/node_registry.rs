@@ -16,6 +16,12 @@ pub struct NodeCapabilityHeartbeat {
     pub worker_slots: u32,
     pub active_tasks: u32,
     pub latency_ms: u32,
+    #[serde(default)]
+    pub inference_backend: String,
+    #[serde(default)]
+    pub real_inference_available: bool,
+    #[serde(default)]
+    pub mock_inference_enabled: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -33,6 +39,9 @@ pub struct NodeCapability {
     pub last_seen: Instant,
     pub cluster_id: Option<String>, // ← NEW
     pub health: NodeHealth,
+    pub inference_backend: String,
+    pub real_inference_available: bool,
+    pub mock_inference_enabled: bool,
 }
 
 pub struct NodeRegistry {
@@ -59,6 +68,23 @@ impl NodeRegistry {
             .map(|n| n.health.clone())
             .unwrap_or_default();
 
+        let backend_field_missing = hb.inference_backend.trim().is_empty();
+        let inference_backend = if backend_field_missing {
+            "real".to_string()
+        } else {
+            hb.inference_backend
+        };
+        let real_inference_available = if backend_field_missing
+            && inference_backend == "real"
+            && !hb.mock_inference_enabled
+            && !hb.real_inference_available
+        {
+            // Backward compatibility for older heartbeats that omitted backend fields.
+            true
+        } else {
+            hb.real_inference_available
+        };
+
         let cap = NodeCapability {
             peer_id: hb.peer_id.clone(),
             cpu_score: hb.cpu_score,
@@ -73,6 +99,9 @@ impl NodeRegistry {
             last_seen: Instant::now(),
             cluster_id: existing_cluster, // ← preserve
             health: existing_health,
+            inference_backend,
+            real_inference_available,
+            mock_inference_enabled: hb.mock_inference_enabled,
         };
         self.nodes.insert(hb.peer_id.clone(), cap);
         self.nodes.get(&hb.peer_id).unwrap()
@@ -201,6 +230,9 @@ mod tests {
             last_seen: Instant::now(),
             cluster_id: None, // ← NEW
             health: NodeHealth::default(),
+            inference_backend: "real".to_string(),
+            real_inference_available: true,
+            mock_inference_enabled: false,
         }
     }
 

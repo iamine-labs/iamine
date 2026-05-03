@@ -1,5 +1,5 @@
 use super::*;
-use crate::backend_runtime::choose_inference_runtime;
+use crate::backend_runtime::{choose_inference_runtime, InferenceBackendState};
 use crate::local_inference_runtime::{run_local_inference_with_validation, InferenceRuntime};
 
 fn print_inference_summary(result: &RealInferenceResult) {
@@ -58,12 +58,14 @@ pub(super) async fn handle_test_inference(prompt: &str) -> Result<(), Box<dyn Er
         temperature: 0.7,
     };
 
-    let runtime = if let Some(runtime) = choose_inference_runtime().await {
-        runtime
-    } else {
-        let engine = Arc::new(RealInferenceEngine::new(ModelStorage::new()));
+    let backend_state = InferenceBackendState::from_args(&std::env::args().collect::<Vec<_>>());
+    let base_engine = Arc::new(RealInferenceEngine::new(ModelStorage::new()));
+    let runtime = choose_inference_runtime(&backend_state, Arc::clone(&base_engine)).await?;
+    let runtime = if let InferenceRuntime::Engine(engine) = runtime {
         engine.load_model(model_id, &model_desc.hash)?;
         InferenceRuntime::Engine(engine)
+    } else {
+        runtime
     };
     let result = run_local_inference_with_validation(
         runtime,

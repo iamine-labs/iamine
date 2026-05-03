@@ -14,6 +14,9 @@ async fn test_success_lifecycle_updates_health_and_watchdog() {
         worker_slots: 2,
         active_tasks: 0,
         latency_ms: 10,
+        inference_backend: "real".to_string(),
+        real_inference_available: true,
+        mock_inference_enabled: false,
     });
     let shared_registry = Arc::new(RwLock::new(registry));
 
@@ -73,6 +76,9 @@ async fn test_failure_lifecycle_updates_health_and_trace_consistently() {
         worker_slots: 2,
         active_tasks: 0,
         latency_ms: 10,
+        inference_backend: "real".to_string(),
+        real_inference_available: true,
+        mock_inference_enabled: false,
     });
     let shared_registry = Arc::new(RwLock::new(registry));
     let task_manager = Arc::new(TaskManager::new());

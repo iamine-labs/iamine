@@ -13,7 +13,7 @@ pub(super) struct HeartbeatTickContext<'a> {
     pub(super) swarm: &'a mut Swarm<IamineBehaviour>,
     pub(super) peer_id: PeerId,
     pub(super) capabilities: &'a WorkerCapabilities,
-    pub(super) validated_advertised_models: &'a [String],
+    pub(super) validated_advertised_models: &'a mut Vec<String>,
     pub(super) benchmark: Option<&'a NodeBenchmark>,
     pub(super) node_caps: &'a ModelNodeCapabilities,
     pub(super) worker_slots: usize,
@@ -22,6 +22,7 @@ pub(super) struct HeartbeatTickContext<'a> {
     pub(super) resource_policy: &'a ResourcePolicy,
     pub(super) node_identity: &'a NodeIdentity,
     pub(super) worker_port: u16,
+    pub(super) inference_backend_state: &'a InferenceBackendState,
     pub(super) infer_runtime: &'a mut InferRuntimeState,
     pub(super) model_storage: &'a ModelStorage,
     pub(super) pubsub_topics: &'a PubsubTopicTracker,
@@ -54,6 +55,7 @@ pub(super) async fn handle_heartbeat_tick(
         resource_policy,
         node_identity,
         worker_port,
+        inference_backend_state,
         infer_runtime,
         model_storage,
         pubsub_topics,
@@ -83,6 +85,8 @@ pub(super) async fn handle_heartbeat_tick(
         resource_policy,
         node_identity,
         worker_port,
+        model_storage,
+        inference_backend_state,
     })
     .await?;
 

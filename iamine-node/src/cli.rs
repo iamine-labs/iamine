@@ -164,18 +164,42 @@ pub(super) fn print_usage() {
     eprintln!("  --force-network");
     eprintln!("  --no-local");
     eprintln!("  --prefer-local");
+    eprintln!("  --inference-backend <real|mock>");
+    eprintln!("  --inference-backend=mock");
+    eprintln!("  --disable-real-inference");
+    eprintln!("  --skip-model-validation");
 }
 
 pub(super) fn parse_mode_from_args(raw_args: Vec<String>) -> Result<NodeMode, String> {
-    let args: Vec<String> = raw_args
-        .into_iter()
-        .filter(|arg| {
-            !matches!(
-                arg.as_str(),
-                "--debug-network" | "--debug-scheduler" | "--debug-tasks"
-            )
-        })
-        .collect();
+    let mut args = Vec::new();
+    let mut index = 0usize;
+    while index < raw_args.len() {
+        let arg = &raw_args[index];
+        if matches!(
+            arg.as_str(),
+            "--debug-network" | "--debug-scheduler" | "--debug-tasks"
+        ) {
+            index += 1;
+            continue;
+        }
+        if matches!(
+            arg.as_str(),
+            "--disable-real-inference" | "--skip-model-validation"
+        ) {
+            index += 1;
+            continue;
+        }
+        if arg.starts_with("--inference-backend=") {
+            index += 1;
+            continue;
+        }
+        if arg == "--inference-backend" {
+            index += 2;
+            continue;
+        }
+        args.push(arg.clone());
+        index += 1;
+    }
 
     match args.get(1).map(|s| s.as_str()) {
         Some("--daemon") => Ok(NodeMode::Daemon),
