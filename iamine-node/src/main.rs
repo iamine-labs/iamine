@@ -12,8 +12,10 @@ mod executor;
 mod gossipsub_handlers;
 mod heartbeat;
 mod infer_cli_handlers;
+mod infer_mode_handlers;
 mod local_inference_runtime;
 mod metrics;
+mod mode_gate;
 mod model_selector_cli;
 mod network;
 mod network_events;
@@ -111,9 +113,10 @@ use gossipsub_handlers::{handle_gossipsub_message, GossipsubHandlerContext};
 use heartbeat::HeartbeatService;
 use infer_cli_handlers::handle_test_inference;
 use local_inference_runtime::{
-    run_local_inference_with_timeout, run_local_inference_with_validation, InferenceRuntime,
+    run_local_inference_with_timeout, InferenceRuntime,
 };
 use metrics::{start_metrics_server, NodeMetrics};
+use mode_gate::{handle_pre_runtime_mode, ModeGateOutcome};
 use model_selector_cli::ModelSelectorCLI;
 use network_events::{
     handle_connection_closed, handle_connection_established, handle_kademlia_routing_updated,
@@ -329,236 +332,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let topology: SharedNetworkTopology = Arc::new(RwLock::new(NetworkTopology::new()));
 
     // ═══════════════════════════════════════════════
-    // CLI MODELS + CAPABILITIES — salida temprana
+    // CLI/Control-plane gating — salida temprana
     // ═══════════════════════════════════════════════
-    match &mode {
-        NodeMode::ModelsList => {
-            handle_models_list();
-            return Ok(());
-        }
-
-        NodeMode::ModelsStats => {
-            handle_models_stats();
-            return Ok(());
-        }
-
-        NodeMode::TasksStats => {
-            handle_tasks_stats();
-            return Ok(());
-        }
-
-        NodeMode::TasksTrace { task_id } => {
-            handle_tasks_trace(task_id)?;
-            return Ok(());
-        }
-
-        NodeMode::ModelsMenu => {
-            handle_models_menu()?;
-            return Ok(());
-        }
-
-        NodeMode::ModelsSearch { query } => {
-            handle_models_search(query).await;
-            return Ok(());
-        }
-
-        NodeMode::ModelsDownload { model_id } => {
-            handle_models_download(model_id).await;
-            return Ok(());
-        }
-
-        NodeMode::ModelsRemove { model_id } => {
-            handle_models_remove(model_id)?;
-            return Ok(());
-        }
-
-        NodeMode::SemanticEval => {
-            handle_semantic_eval()?;
-            return Ok(());
-        }
-
-        NodeMode::RegressionRun => {
-            handle_regression_run()?;
-            return Ok(());
-        }
-
-        NodeMode::CheckCode => {
-            handle_check_code()?;
-            return Ok(());
-        }
-
-        NodeMode::CheckSecurity => {
-            handle_check_security()?;
-            return Ok(());
-        }
-
-        NodeMode::ValidateRelease => {
-            handle_validate_release()?;
-            return Ok(());
-        }
-
-        NodeMode::Daemon => {
-            println!("╔══════════════════════════════════╗");
-            println!("║   IaMine — Inference Daemon      ║");
-            println!("╚══════════════════════════════════╝\n");
-            let node_identity = NodeIdentity::load_or_create();
-            set_global_node_id(&node_identity.peer_id.to_string());
-            let socket = daemon_socket_path();
-            log_observability_event(
-                LogLevel::Info,
-                "daemon_started",
-                "startup",
-                None,
-                None,
-                None,
-                {
-                    let mut fields = Map::new();
-                    fields.insert(
-                        "peer_id".to_string(),
-                        node_identity.peer_id.to_string().into(),
-                    );
-                    fields.insert(
-                        "socket_path".to_string(),
-                        socket.display().to_string().into(),
-                    );
-                    fields.insert("mode".to_string(), "daemon".into());
-                    fields
-                },
-            );
-            run_daemon(socket).await?;
-            return Ok(());
-        }
-
-        NodeMode::TestInference { prompt } => {
-            handle_test_inference(prompt).await?;
-            return Ok(());
-        }
-
-        NodeMode::Infer {
-            prompt,
-            model_id,
-            max_tokens_override,
-            force_network,
-            no_local,
-            prefer_local,
-        } => {
-            println!("╔══════════════════════════════════╗");
-            println!("║      IaMine — Inference          ║");
-            println!("╚══════════════════════════════════╝\n");
-
-            let registry = ModelRegistry::new();
-            let storage = ModelStorage::new();
-            let local_models = storage.list_local_models();
-            let resolution = resolve_policy_for_prompt(prompt, model_id.as_deref(), &local_models);
-            let profile = resolution.profile.clone();
-            let candidate_models = resolution.candidate_models.clone();
-            let selected_model = resolution.selected_model.clone();
-            let semantic_prompt = resolution.semantic_prompt.clone();
-            let output_policy =
-                resolve_output_policy(&profile, &semantic_prompt, *max_tokens_override);
-            let control_flags = InferenceControlFlags {
-                force_network: *force_network,
-                no_local: *no_local,
-                prefer_local: *prefer_local,
-            };
-            println!(
-                "[OutputPolicy] max_tokens: {} (reason: {})",
-                output_policy.max_tokens, output_policy.reason
-            );
-            if control_flags.force_network || control_flags.no_local || control_flags.prefer_local {
-                println!(
-                    "[InferenceControl] force_network={} no_local={} prefer_local={}",
-                    control_flags.force_network, control_flags.no_local, control_flags.prefer_local
-                );
-            }
-
-            if control_flags.should_use_local(storage.has_model(&selected_model)) {
-                println!("🤖 Modelo: {}", selected_model);
-                println!("💬 Prompt: {}\n", prompt);
-
-                let model_desc = registry.get(&selected_model).ok_or_else(|| {
-                    format!("Modelo {} no encontrado en registry", selected_model)
-                })?;
-                let runtime = if let Some(runtime) = choose_inference_runtime().await {
-                    runtime
-                } else {
-                    let engine = Arc::new(RealInferenceEngine::new(ModelStorage::new()));
-                    engine.load_model(&selected_model, &model_desc.hash)?;
-                    InferenceRuntime::Engine(engine)
-                };
-                let result = run_local_inference_with_validation(
-                    runtime,
-                    "infer-local-001".to_string(),
-                    selected_model.clone(),
-                    semantic_prompt,
-                    profile.task_type,
-                    output_policy.max_tokens as u32,
-                    0.7,
-                )
-                .await?;
-                record_semantic_feedback(prompt, &resolution.validation);
-                println!("\n\n✅ Inference completada");
-                println!("[Inference] tokens_generated: {}", result.tokens_generated);
-                println!("[Inference] truncated: {}", result.truncated);
-                println!(
-                    "[Inference] continuation_steps: {}",
-                    result.continuation_steps
-                );
-                if result.truncated {
-                    println!("[Warning] Output truncated at token budget");
-                }
-                return Ok(());
-            } else if control_flags.force_network {
-                println!(
-                    "🌐 Flag --force-network activo; omitiendo inferencia local para {}.",
-                    selected_model
-                );
-                println!("   Candidates: {}", candidate_models.join(", "));
-                println!("   Intentando ruta distribuida...\n");
-            } else if control_flags.no_local {
-                println!(
-                    "🚫 Flag --no-local activo; omitiendo inferencia local para {}.",
-                    selected_model
-                );
-                println!("   Candidates: {}", candidate_models.join(", "));
-                println!("   Intentando ruta distribuida...\n");
-            } else if model_id.is_some() {
-                println!(
-                    "⚠️  Override {} no esta instalado localmente, intentando ruta distribuida.",
-                    selected_model
-                );
-            } else {
-                println!("🤖 Modelo local preferido no disponible.");
-                println!("   Candidates: {}", candidate_models.join(", "));
-                println!("   Intentando ruta distribuida...\n");
-            }
-        }
-
-        NodeMode::Capabilities => {
-            handle_capabilities();
-            return Ok(());
-        }
-
-        NodeMode::Nodes => {
-            // NO return aquí: este modo debe levantar red para descubrir peers/capabilities.
-            println!("╔══════════════════════════════════╗");
-            println!("║      IaMine — Nodes View         ║");
-            println!("╚══════════════════════════════════╝\n");
-        }
-
-        NodeMode::Topology => {
-            println!("╔══════════════════════════════════╗");
-            println!("║    IaMine — Network Topology     ║");
-            println!("╚══════════════════════════════════╝\n");
-            // This mode needs to discover peers, so don't return early
-        }
-
-        NodeMode::ModelsRecommend => {
-            handle_models_recommend();
-            return Ok(());
-        }
-
-        _ => {} // continuar con startup normal
+    match handle_pre_runtime_mode(&mode).await? {
+        ModeGateOutcome::Exit => return Ok(()),
+        ModeGateOutcome::ContinueRuntime => {}
     }
 
     if control_plane_only {
