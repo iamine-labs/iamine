@@ -36,6 +36,7 @@ mod runtime_config;
 mod runtime_state;
 mod security_checks;
 mod setup_wizard;
+mod startup_bootstrap;
 mod startup_math;
 mod startup_model_validation;
 mod task_cache;
@@ -112,9 +113,7 @@ use event_loop_control::EventLoopDirective;
 use gossipsub_handlers::{handle_gossipsub_message, GossipsubHandlerContext};
 use heartbeat::HeartbeatService;
 use infer_cli_handlers::handle_test_inference;
-use local_inference_runtime::{
-    run_local_inference_with_timeout, InferenceRuntime,
-};
+use local_inference_runtime::{run_local_inference_with_timeout, InferenceRuntime};
 use metrics::{start_metrics_server, NodeMetrics};
 use mode_gate::{handle_pre_runtime_mode, ModeGateOutcome};
 use model_selector_cli::ModelSelectorCLI;
@@ -145,19 +144,17 @@ use result_lifecycle::{
     ResultFailureLifecycleContext,
 };
 use result_protocol::{TaskResultRequest, TaskResultResponse};
-use runtime_config::{
-    listen_address_for_mode, should_use_ephemeral_identity, worker_port_from_args,
-};
+use runtime_config::{listen_address_for_mode, worker_port_from_args};
 use runtime_state::{ClientRuntimeState, DistributedInferState, InferRuntimeState};
 use serde_json::{Map, Value};
 use setup_wizard::{DetectedHardware, NodeSetupConfig};
+use startup_bootstrap::{bootstrap_core_state, bootstrap_model_state};
 #[cfg(test)]
 use startup_math::{checked_sub_usize, StartupMathError};
 use startup_math::{
     compute_active_tasks, compute_metrics_port, emit_worker_startup_overflow_event,
     resource_policy_value, WorkerStartupOverflowContext,
 };
-use startup_model_validation::validate_models_for_advertising;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use task_cache::TaskCache;
@@ -346,219 +343,21 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // ════════════════════════════════════════
     // WORKER STARTUP FLOW
     // ════════════════════════════════════════
-    if matches!(mode, NodeMode::Worker) {
-        println!("╔══════════════════════════════════╗");
-        println!("║   IaMine Worker {:<14}║", current_release_version());
-        println!("╚══════════════════════════════════╝\n");
-    }
-
-    // 1️⃣ Identidad de runtime (modo infer usa identidad efimera para evitar conflicto con worker local)
-    let use_ephemeral_identity = should_use_ephemeral_identity(&mode);
-    let node_identity = if use_ephemeral_identity {
-        NodeIdentity::ephemeral("infer_mode_peer_id_isolation")
-    } else {
-        NodeIdentity::load_or_create()
-    };
-    let peer_id = node_identity.peer_id;
-    set_global_node_id(&peer_id.to_string());
+    let core_startup = bootstrap_core_state(&args, &mode);
+    let node_identity = core_startup.node_identity;
+    let peer_id = core_startup.peer_id;
     let id_keys = node_identity.keypair.clone();
+    let wallet = core_startup.wallet;
+    let benchmark = core_startup.benchmark;
+    let resource_policy = core_startup.resource_policy;
+    let worker_slots = core_startup.worker_slots;
 
-    if use_ephemeral_identity {
-        log_observability_event(
-            LogLevel::Info,
-            "identity_mode_selected",
-            "startup",
-            None,
-            None,
-            None,
-            {
-                let mut fields = Map::new();
-                fields.insert("mode".to_string(), "infer".into());
-                fields.insert("identity_kind".to_string(), "ephemeral".into());
-                fields.insert(
-                    "reason".to_string(),
-                    "avoid_peer_id_conflict_with_local_worker".into(),
-                );
-                fields.insert("peer_id".to_string(), peer_id.to_string().into());
-                fields
-            },
-        );
-    }
-
-    // 2️⃣ Wallet
-    let wallet = Wallet::load_or_create(&node_identity.wallet_address); // ← sin mut
-
-    // 3️⃣ Benchmark (solo en modo worker)
-    let benchmark = if matches!(mode, NodeMode::Worker) {
-        Some(NodeBenchmark::run())
-    } else {
-        None
-    };
-
-    // 4️⃣ Resource policy desde CLI
-    let resource_policy = ResourcePolicy::from_args(&args);
-    if matches!(mode, NodeMode::Worker) {
-        resource_policy.display();
-    }
-
-    // 5️⃣ Worker slots dinámicos
-    let worker_slots = if let Some(ref b) = benchmark {
-        b.calculate_slots(&resource_policy)
-    } else {
-        std::thread::available_parallelism()
-            .map(|n| n.get())
-            .unwrap_or(2)
-    };
-
-    println!("\n═══════════════════════════════════");
-    println!("  Peer ID:      {}", peer_id);
-    println!("  Wallet:       {}", node_identity.wallet_address);
-    if let Some(ref b) = benchmark {
-        println!("  CPU Score:    {:.0}", b.cpu_score);
-        println!("  RAM:          {} GB", b.ram_available_gb);
-        println!(
-            "  GPU:          {}",
-            if b.gpu_available { "✅" } else { "❌" }
-        );
-    }
-    println!("  Worker Slots: {}", worker_slots);
-    if !matches!(mode, NodeMode::Topology) {
-        println!("  Modo:         {:?}", mode);
-    }
-    println!("  Balance:      {} $MIND", wallet.balance);
-    println!("  Tareas:       {}", wallet.tasks_completed);
-    println!("  Reputación:   {:.1}/100", wallet.reputation);
-    println!("═══════════════════════════════════\n");
-
-    // 6️⃣ MODEL INFRASTRUCTURE v0.6
-    let storage_config = StorageConfig::load();
-    let model_registry = ModelRegistry::new();
-    let model_storage = ModelStorage::new();
-    let inference_engine = Arc::new(RealInferenceEngine::new(ModelStorage::new()));
-
-    // v0.5.4: Detectar capabilities del nodo
-    let node_caps = ModelNodeCapabilities::detect(&peer_id.to_string());
-    let validated_advertised_models = if matches!(mode, NodeMode::Worker) {
-        validate_models_for_advertising(&model_registry, &model_storage, &node_caps)
-    } else {
-        model_storage.list_local_models()
-    };
-
-    let worker_setup = if matches!(mode, NodeMode::Worker) {
-        let detected = DetectedHardware {
-            cpu_cores: std::thread::available_parallelism()
-                .map(|n| n.get() as u32)
-                .unwrap_or(1),
-            ram_gb: benchmark
-                .as_ref()
-                .map(|b| b.ram_available_gb as u32)
-                .unwrap_or(node_caps.ram_gb),
-            gpu_available: benchmark
-                .as_ref()
-                .map(|b| b.gpu_available)
-                .unwrap_or(node_caps.gpu_type.is_some()),
-            disk_available_gb: node_caps.storage_available_gb,
-        };
-        Some(NodeSetupConfig::load_or_run(&detected)?)
-    } else {
-        None
-    };
-
-    if let Some(cfg) = &worker_setup {
-        cfg.display();
-    }
-
-    if matches!(mode, NodeMode::Worker) {
-        node_caps.display();
-    }
-
-    if matches!(mode, NodeMode::Worker) {
-        println!("💾 Storage limit: {} GB", storage_config.max_storage_gb);
-        println!("🤖 Modelos disponibles localmente:");
-        let local = model_storage.list_local_models();
-        if local.is_empty() {
-            println!("   (ninguno — usa --download-model <id>)");
-
-            let provision = ModelAutoProvision::new(ModelRegistry::new(), ModelStorage::new());
-            let profile = AutoProvisionProfile {
-                cpu_score: benchmark.as_ref().map(|b| b.cpu_score as u64).unwrap_or(0),
-                ram_gb: node_caps.ram_gb,
-                gpu_available: benchmark.as_ref().map(|b| b.gpu_available).unwrap_or(false),
-                storage_available_gb: worker_setup
-                    .as_ref()
-                    .map(|cfg| cfg.storage_limit_gb)
-                    .unwrap_or(node_caps.storage_available_gb),
-            };
-            let recommended = provision.startup_recommendations(&profile);
-
-            if !recommended.is_empty() {
-                println!("\n⚠ No models installed\n");
-                println!("Recommended:");
-                for model in &recommended {
-                    println!(
-                        "{} ({:.0}MB)",
-                        model.id,
-                        model.size_bytes as f64 / 1_048_576.0
-                    );
-                }
-
-                let auto_download_enabled = auto_model
-                    || worker_setup
-                        .as_ref()
-                        .map(|cfg| cfg.auto_download_enabled())
-                        .unwrap_or(false);
-
-                if auto_download_enabled {
-                    if let Some(model_id) = provision
-                        .auto_download_recommended(&profile, None, false)
-                        .await?
-                    {
-                        println!("\n⬇ Auto-downloaded: {}", model_id);
-                    }
-                } else {
-                    print!("\nDownload now? [Y/n] ");
-                    let _ = std::io::Write::flush(&mut std::io::stdout());
-                    let mut input = String::new();
-                    let _ = std::io::stdin().read_line(&mut input);
-
-                    if input.trim().is_empty() || matches!(input.trim(), "y" | "Y" | "yes" | "YES")
-                    {
-                        if let Some(model_id) = provision
-                            .auto_download_recommended(&profile, None, false)
-                            .await?
-                        {
-                            println!("✅ Modelo descargado: {}", model_id);
-                        }
-                    }
-                }
-            }
-        } else {
-            for m in &local {
-                // Verificar espacio antes de mostrar
-                let used = model_storage.total_size_bytes();
-                println!(
-                    "   ✅ {} (storage: {:.1}/{} GB)",
-                    m,
-                    used as f64 / 1_073_741_824.0,
-                    storage_config.max_storage_gb
-                );
-            }
-        }
-        println!("📋 Modelos en registry:");
-        for m in model_registry.list() {
-            let available = if model_storage.has_model(&m.id) {
-                "✅"
-            } else {
-                "⬜"
-            };
-            let fits = storage_config.has_space_for(m.size_bytes, model_storage.total_size_bytes());
-            let fits_str = if fits { "" } else { " ⚠️ sin espacio" };
-            println!(
-                "   {} {} v{} ({}GB RAM){}",
-                available, m.id, m.version, m.required_ram_gb, fits_str
-            );
-        }
-    }
+    let model_startup =
+        bootstrap_model_state(&mode, auto_model, &peer_id, benchmark.as_ref()).await?;
+    let model_storage = model_startup.model_storage;
+    let inference_engine = model_startup.inference_engine;
+    let node_caps = model_startup.node_caps;
+    let validated_advertised_models = model_startup.validated_advertised_models;
 
     // 7️⃣ Simulate workers — salida temprana
     if let NodeMode::SimulateWorkers { count } = &mode {
