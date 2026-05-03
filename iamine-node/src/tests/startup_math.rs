@@ -44,18 +44,18 @@ fn test_worker_startup_overflow_emits_structured_error_code() {
         disk_path: "/tmp/iamine".to_string(),
     };
 
-    emit_worker_startup_overflow_event(
-        &trace_id,
-        "node-test",
-        "peer-test",
-        7001,
-        &policy,
-        4,
-        4,
-        4,
-        &error,
-        "continue_without_metrics_server",
-    );
+    emit_worker_startup_overflow_event(WorkerStartupOverflowContext {
+        trace_id: &trace_id,
+        node_id: "node-test",
+        peer_id: "peer-test",
+        port: 7001,
+        resource_policy: &policy,
+        worker_slots: 4,
+        max_concurrent: 4,
+        available_slots: 4,
+        error: &error,
+        fallback_behavior: "continue_without_metrics_server",
+    });
 
     iamine_network::flush_structured_logs().unwrap();
     let path = iamine_network::default_node_log_path();

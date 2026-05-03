@@ -15,7 +15,9 @@ mod model_selector_cli;
 mod network;
 mod network_events;
 mod node_identity;
+mod node_observability;
 mod peer_tracker;
+mod prompt_runtime;
 mod protocol;
 mod quality_gate;
 mod rate_limiter;
@@ -94,7 +96,7 @@ use dispatch_runtime::{
     emit_task_publish_attempt_event, emit_task_publish_failed_event, emit_task_published_event,
     emit_worker_task_message_received_event, evaluate_dispatch_readiness,
     run_worker_inference_pipeline, should_print_result_output, topic_hash_string,
-    DispatchReadinessSnapshot,
+    DispatchContextEvent, DispatchReadinessSnapshot, LateResultReceivedEvent, PublishEventContext,
 };
 use event_loop_control::EventLoopDirective;
 use gossipsub_handlers::{handle_gossipsub_message, GossipsubHandlerContext};
@@ -107,7 +109,16 @@ use network_events::{
     handle_pubsub_unsubscribed, handle_result_response_ack, handle_result_response_request,
 };
 use node_identity::NodeIdentity; // ← actualizado
+use node_observability::{
+    cluster_label_for_latency, debug_network_log, debug_scheduler_log, debug_task_log,
+    finalize_distributed_task_observability, log_health_update, log_observability_event,
+    print_distributed_task_stats, print_model_karma_stats, print_task_trace_entry,
+};
 use peer_tracker::PeerTracker;
+use prompt_runtime::{
+    exact_subtype_label, prompt_task_label, record_semantic_feedback, resolve_output_policy,
+    resolve_policy_for_prompt, task_requires_validation, with_task_guard,
+};
 use quality_gate::{current_release_version, run_release_validation};
 use rate_limiter::RateLimiter;
 use regression_runner::run_default_regression_suite;
@@ -127,7 +138,7 @@ use setup_wizard::{DetectedHardware, NodeSetupConfig};
 use startup_math::{checked_sub_usize, StartupMathError};
 use startup_math::{
     compute_active_tasks, compute_metrics_port, emit_worker_startup_overflow_event,
-    resource_policy_value,
+    resource_policy_value, WorkerStartupOverflowContext,
 };
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -242,162 +253,6 @@ impl From<gossipsub::Event> for IaMineEvent {
     }
 }
 
-fn prompt_language_label(language: PromptLanguage) -> &'static str {
-    match language {
-        PromptLanguage::English => "English",
-        PromptLanguage::Spanish => "Spanish",
-        PromptLanguage::Unknown => "Unknown",
-    }
-}
-
-fn prompt_complexity_label(complexity: PromptComplexityLevel) -> &'static str {
-    match complexity {
-        PromptComplexityLevel::Low => "Low",
-        PromptComplexityLevel::Medium => "Medium",
-        PromptComplexityLevel::High => "High",
-    }
-}
-
-fn prompt_task_label(task_type: PromptTaskType) -> &'static str {
-    match task_type {
-        PromptTaskType::Math => "Math",
-        PromptTaskType::ExactMath => "ExactMath",
-        PromptTaskType::SymbolicMath => "SymbolicMath",
-        PromptTaskType::Generative => "Generative",
-        PromptTaskType::StructuredList => "StructuredList",
-        PromptTaskType::Deterministic => "Deterministic",
-        PromptTaskType::Code => "Code",
-        PromptTaskType::Conceptual => "Conceptual",
-        PromptTaskType::Reasoning => "Reasoning",
-        PromptTaskType::Summarization => "Summarization",
-        PromptTaskType::General => "General",
-    }
-}
-
-fn prompt_output_style_label(output_style: PromptOutputStyle) -> &'static str {
-    match output_style {
-        PromptOutputStyle::Exact => "Exact",
-        PromptOutputStyle::Explanatory => "Explanatory",
-        PromptOutputStyle::Structured => "Structured",
-        PromptOutputStyle::Generative => "Generative",
-        PromptOutputStyle::Hybrid => "Hybrid",
-    }
-}
-
-fn prompt_deterministic_level_label(level: PromptDeterministicLevel) -> &'static str {
-    match level {
-        PromptDeterministicLevel::High => "High",
-        PromptDeterministicLevel::Medium => "Medium",
-        PromptDeterministicLevel::Low => "Low",
-    }
-}
-
-fn prompt_domain_label(domain: Option<PromptDomain>) -> &'static str {
-    match domain {
-        Some(PromptDomain::Math) => "Math",
-        Some(PromptDomain::Physics) => "Physics",
-        Some(PromptDomain::Business) => "Business",
-        Some(PromptDomain::Philosophy) => "Philosophy",
-        Some(PromptDomain::Code) => "Code",
-        Some(PromptDomain::General) | None => "General",
-    }
-}
-
-fn exact_subtype_label(exact_subtype: PromptExactSubtype) -> &'static str {
-    match exact_subtype {
-        PromptExactSubtype::Integer => "Integer",
-        PromptExactSubtype::DecimalSequence => "DecimalSequence",
-        PromptExactSubtype::Sequence => "Sequence",
-    }
-}
-
-fn log_semantic_decision(decision: &SemanticRoutingDecision) {
-    let secondary = if decision.profile.semantic.secondary_tasks.is_empty() {
-        "[]".to_string()
-    } else {
-        format!(
-            "[{}]",
-            decision
-                .profile
-                .semantic
-                .secondary_tasks
-                .iter()
-                .map(|task| prompt_task_label(*task))
-                .collect::<Vec<_>>()
-                .join(", ")
-        )
-    };
-    println!(
-        "[Semantic] Primary: {}",
-        prompt_task_label(decision.profile.semantic.primary_task)
-    );
-    println!("[Semantic] Secondary: {}", secondary);
-    println!(
-        "[Semantic] Style: {}",
-        prompt_output_style_label(decision.profile.semantic.output_style)
-    );
-    println!(
-        "[Semantic] Context: {}",
-        decision.profile.semantic.requires_context
-    );
-    println!(
-        "[Semantic] Domain: {}",
-        prompt_domain_label(decision.profile.semantic.domain)
-    );
-    println!(
-        "[Semantic] Deterministic: {}",
-        prompt_deterministic_level_label(decision.profile.semantic.deterministic_level)
-    );
-    println!("[Semantic] Confidence: {:.2}", decision.profile.confidence);
-    println!("[Semantic] Fallback: {}", decision.fallback_applied);
-    if decision.fallback_applied {
-        println!(
-            "[Semantic] Original task: {}",
-            prompt_task_label(decision.original_task_type)
-        );
-    }
-}
-
-fn log_semantic_validation(validation: &SemanticValidationResult) {
-    println!(
-        "[SemanticValidator] Confidence: {:.2} -> {:.2}",
-        validation.confidence_before, validation.confidence_after
-    );
-    println!(
-        "[SemanticValidator] Model validation: {}",
-        validation.model_validation_used
-    );
-    println!(
-        "[SemanticValidator] Correction applied: {}",
-        validation.correction_applied
-    );
-    if !validation.conflicts.is_empty() {
-        println!(
-            "[SemanticValidator] Conflicts: {}",
-            validation.conflicts.join(", ")
-        );
-    }
-}
-
-fn record_semantic_feedback(prompt: &str, validation: &SemanticValidationResult) {
-    let engine = SemanticFeedbackEngine::default();
-    if let Err(error) = engine.append_from_validation(prompt, validation) {
-        eprintln!("[Feedback] Logging failed: {}", error);
-    } else {
-        println!(
-            "[Feedback] Logged: {}",
-            default_semantic_log_path().display()
-        );
-    }
-}
-
-fn task_requires_validation(task_type: PromptTaskType) -> bool {
-    matches!(
-        task_type,
-        PromptTaskType::ExactMath | PromptTaskType::StructuredList | PromptTaskType::Deterministic
-    )
-}
-
 #[derive(Clone)]
 enum InferenceRuntime {
     Engine(Arc<RealInferenceEngine>),
@@ -413,60 +268,6 @@ struct TimeoutContext {
     elapsed_since_progress_ms: u64,
     adaptive_timeout_ms: u64,
     max_wait_ms: u64,
-}
-
-fn prompt_requests_decimal_sequence(prompt: &str) -> bool {
-    let lower = prompt.to_lowercase();
-    ["pi", "π", "digit", "digits", "digito", "digitos", "dígitos"]
-        .iter()
-        .any(|needle| lower.contains(needle))
-}
-
-fn with_task_guard(prompt: &str, task_type: PromptTaskType, retry: bool) -> String {
-    match task_type {
-        PromptTaskType::ExactMath => {
-            if !retry {
-                return prompt.to_string();
-            }
-
-            if prompt_requests_decimal_sequence(prompt) {
-                format!(
-                    "Return only the requested numeric sequence in plain text. Do not add words. Keep the decimal point attached to the digits.\n\n{}",
-                    prompt
-                )
-            } else {
-                format!(
-                    "Return only the final numeric answer in plain text. Do not add words or extra symbols.\n\n{}",
-                    prompt
-                )
-            }
-        }
-        PromptTaskType::StructuredList => {
-            if !retry {
-                return prompt.to_string();
-            }
-
-            let retry_guard = if retry {
-                "Be stricter: if the task is the alphabet, return exactly: A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z"
-            } else {
-                "Return only the full ordered list in plain text, with no missing items and no duplicates."
-            };
-            format!("{}\n\n{}", retry_guard, prompt)
-        }
-        PromptTaskType::Deterministic => {
-            if !retry {
-                return prompt.to_string();
-            }
-
-            let retry_guard = if retry {
-                "Be stricter: return only the requested data, exactly and in order, in plain text."
-            } else {
-                "Return only the requested data, exactly and in order, in plain text."
-            };
-            format!("{}\n\n{}", retry_guard, prompt)
-        }
-        _ => prompt.to_string(),
-    }
 }
 
 async fn run_local_inference_with_validation(
@@ -629,15 +430,6 @@ async fn run_local_inference_with_validation(
     }
 }
 
-#[derive(Clone)]
-struct PromptResolution {
-    profile: PromptProfile,
-    candidate_models: Vec<String>,
-    selected_model: String,
-    semantic_prompt: String,
-    validation: SemanticValidationResult,
-}
-
 #[derive(Debug, Clone, Default)]
 struct PubsubTopicTracker {
     joined_topic_hashes: HashSet<String>,
@@ -728,219 +520,6 @@ async fn run_local_inference_with_timeout(
     }
 }
 
-fn resolve_policy_for_prompt(
-    prompt: &str,
-    model_override: Option<&str>,
-    available_models: &[String],
-) -> PromptResolution {
-    let semantic_prompt = normalize_expression(prompt).unwrap_or_else(|| prompt.to_string());
-    if semantic_prompt != prompt {
-        println!(
-            "[Parser] Normalized expression: {} → {}",
-            prompt, semantic_prompt
-        );
-    }
-
-    let semantic_decision = analyze_prompt_semantics(&semantic_prompt);
-    let validated = validate_semantic_decision(&semantic_prompt, semantic_decision);
-    let profile = validated.decision.profile.clone();
-    println!(
-        "[Analyzer] Language: {}, Complexity: {}, Task: {}",
-        prompt_language_label(profile.language),
-        prompt_complexity_label(profile.complexity),
-        prompt_task_label(profile.task_type),
-    );
-    log_semantic_decision(&validated.decision);
-    log_semantic_validation(&validated.validation);
-
-    if let Some(model_id) = model_override {
-        println!("[Policy] Manual override: {}", model_id);
-        return PromptResolution {
-            profile,
-            candidate_models: vec![model_id.to_string()],
-            selected_model: model_id.to_string(),
-            semantic_prompt,
-            validation: validated.validation,
-        };
-    }
-
-    let policy = ModelPolicyEngine::default();
-    let candidates = policy.candidate_models(&profile);
-    let decision = if available_models.is_empty() {
-        policy.select_model_decision(&profile)
-    } else {
-        policy.select_model_decision_from_available(&profile, available_models)
-    };
-    println!(
-        "[Policy] Selected model: {} (reason: {})",
-        decision.model, decision.reason
-    );
-    PromptResolution {
-        profile,
-        candidate_models: candidates,
-        selected_model: decision.model,
-        semantic_prompt,
-        validation: validated.validation,
-    }
-}
-
-fn resolve_output_policy(
-    profile: &PromptProfile,
-    prompt: &str,
-    max_tokens_override: Option<u32>,
-) -> OutputPolicyDecision {
-    if let Some(override_value) = max_tokens_override {
-        let clamped = override_value.clamp(64, 2048) as usize;
-        return OutputPolicyDecision {
-            max_tokens: clamped,
-            reason: "cli override".to_string(),
-        };
-    }
-
-    describe_output_policy(profile, prompt)
-}
-
-fn print_model_karma_stats() {
-    let registry = ModelRegistry::new();
-    let mut stats = ranked_models();
-
-    for descriptor in registry.list() {
-        if !stats.iter().any(|entry| entry.model_id == descriptor.id) {
-            stats.push(ModelKarma::new(descriptor.id.clone()));
-        }
-    }
-
-    stats.sort_by(|left, right| {
-        right
-            .karma_score()
-            .partial_cmp(&left.karma_score())
-            .unwrap_or(std::cmp::Ordering::Equal)
-            .then_with(|| left.model_id.cmp(&right.model_id))
-    });
-
-    println!("model | score | latency | success rate | semantic | runs");
-    for entry in stats {
-        println!(
-            "{} | {:.3} | {:.3} | {:.1}% | {:.1}% | {}",
-            entry.model_id,
-            entry.karma_score(),
-            entry.latency_score,
-            entry.accuracy_score * 100.0,
-            entry.semantic_success_rate * 100.0,
-            entry.total_runs
-        );
-    }
-}
-
-fn print_distributed_task_stats(metrics: &DistributedTaskMetrics) {
-    println!("metric | value");
-    println!("total_tasks | {}", metrics.total_tasks);
-    println!("failed_tasks | {}", metrics.failed_tasks);
-    println!("retries_count | {}", metrics.retries_count);
-    println!("fallback_count | {}", metrics.fallback_count);
-    println!("late_results_count | {}", metrics.late_results_count);
-    println!("avg_latency_ms | {:.1}", metrics.avg_latency_ms);
-}
-
-fn print_task_trace_entry(trace: &TaskTrace) {
-    println!("task_id: {}", trace.task_id);
-    println!(
-        "node_history: {}",
-        if trace.node_history.is_empty() {
-            "-".to_string()
-        } else {
-            trace.node_history.join(" -> ")
-        }
-    );
-    println!(
-        "model_history: {}",
-        if trace.model_history.is_empty() {
-            "-".to_string()
-        } else {
-            trace.model_history.join(" -> ")
-        }
-    );
-    println!("retries: {}", trace.retries);
-    println!("fallbacks: {}", trace.fallbacks);
-    println!("total_latency_ms: {}", trace.total_latency_ms);
-}
-
-fn debug_task_log(
-    flags: DebugFlags,
-    peer_id: &str,
-    cluster_id: Option<&str>,
-    model_id: &str,
-    task_id: &str,
-    attempt_id: &str,
-    message: &str,
-) {
-    if flags.tasks {
-        println!(
-            "[DebugTasks] peer_id={} cluster_id={} model_id={} task_id={} attempt_id={} {}",
-            peer_id,
-            cluster_id.unwrap_or("-"),
-            model_id,
-            task_id,
-            attempt_id,
-            message
-        );
-    }
-}
-
-fn debug_scheduler_log(flags: DebugFlags, message: impl AsRef<str>) {
-    if flags.scheduler {
-        println!("[DebugScheduler] {}", message.as_ref());
-    }
-}
-
-fn debug_network_log(flags: DebugFlags, message: impl AsRef<str>) {
-    if flags.network {
-        println!("[DebugNetwork] {}", message.as_ref());
-    }
-}
-
-fn finalize_distributed_task_observability(
-    trace_task_id: &str,
-    started_at: Option<tokio::time::Instant>,
-    failed: bool,
-) -> (Option<TaskTrace>, DistributedTaskMetrics) {
-    if let Some(started_at) = started_at {
-        let latency_ms = started_at.elapsed().as_millis() as u64;
-        let _ = record_task_latency(trace_task_id, latency_ms);
-        let _ = record_distributed_task_latency(latency_ms);
-    }
-
-    if failed {
-        let _ = record_distributed_task_failed();
-    }
-
-    let metrics = distributed_task_metrics();
-    log_observability_event(
-        LogLevel::Info,
-        "metrics_snapshot",
-        trace_task_id,
-        Some(trace_task_id),
-        None,
-        None,
-        {
-            let mut fields = Map::new();
-            fields.insert("total_tasks".to_string(), metrics.total_tasks.into());
-            fields.insert("failed_tasks".to_string(), metrics.failed_tasks.into());
-            fields.insert("retries_count".to_string(), metrics.retries_count.into());
-            fields.insert("fallback_count".to_string(), metrics.fallback_count.into());
-            fields.insert(
-                "late_results_count".to_string(),
-                metrics.late_results_count.into(),
-            );
-            fields.insert("avg_latency_ms".to_string(), metrics.avg_latency_ms.into());
-            fields.insert("failed".to_string(), failed.into());
-            fields
-        },
-    );
-
-    (task_trace(trace_task_id), metrics)
-}
-
 fn validate_models_for_advertising(
     registry: &ModelRegistry,
     storage: &ModelStorage,
@@ -1018,99 +597,6 @@ fn validate_models_for_advertising(
             None
         })
         .collect()
-}
-
-fn log_observability_event(
-    level: LogLevel,
-    event: &str,
-    trace_id: &str,
-    task_id: Option<&str>,
-    model_id: Option<&str>,
-    error_code: Option<&str>,
-    fields: Map<String, Value>,
-) {
-    let mut entry = StructuredLogEntry::new(level, event, trace_id, "-");
-    if let Some(task_id) = task_id {
-        entry = entry.with_task_id(task_id.to_string());
-    }
-    if let Some(model_id) = model_id {
-        entry = entry.with_model_id(model_id.to_string());
-    }
-    if let Some(error_code) = error_code {
-        entry = entry.with_error_code(error_code.to_string());
-    }
-    entry.fields = fields;
-    let _ = log_structured(entry);
-}
-
-fn health_fields(peer_id: &str, health: &NodeHealth) -> Map<String, Value> {
-    let mut fields = Map::new();
-    fields.insert("peer_id".to_string(), peer_id.into());
-    fields.insert(
-        "success_rate".to_string(),
-        (health.success_rate as f64).into(),
-    );
-    fields.insert(
-        "avg_latency_ms".to_string(),
-        (health.avg_latency_ms as f64).into(),
-    );
-    fields.insert("failure_count".to_string(), health.failure_count.into());
-    fields.insert("timeout_count".to_string(), health.timeout_count.into());
-    fields.insert("blacklisted".to_string(), health.is_blacklisted().into());
-    if let Some(last_success) = health.last_success_timestamp {
-        fields.insert("last_success_timestamp".to_string(), last_success.into());
-    }
-    fields
-}
-
-fn log_health_update(
-    trace_id: &str,
-    peer_id: &str,
-    model_id: Option<&str>,
-    health: &NodeHealth,
-    error_code: Option<&str>,
-) {
-    log_observability_event(
-        LogLevel::Info,
-        "health_update",
-        trace_id,
-        None,
-        model_id,
-        error_code,
-        health_fields(peer_id, health),
-    );
-
-    if health.is_blacklisted() {
-        log_observability_event(
-            LogLevel::Warn,
-            "node_blacklisted",
-            trace_id,
-            None,
-            model_id,
-            Some(NODE_BLACKLISTED_001),
-            health_fields(peer_id, health),
-        );
-    } else if health.last_success_timestamp.is_some() {
-        log_observability_event(
-            LogLevel::Info,
-            "node_recovered",
-            trace_id,
-            None,
-            model_id,
-            None,
-            health_fields(peer_id, health),
-        );
-    }
-}
-
-fn cluster_label_for_latency(latency_ms: f64) -> &'static str {
-    if latency_ms < 10.0 {
-        "LOCAL"
-    } else if latency_ms < 50.0 {
-        "NEARBY"
-    } else {
-        "REMOTE"
-    }
 }
 
 #[tokio::main]
@@ -2126,18 +1612,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
         match compute_metrics_port(worker_port) {
             Ok(port) => Some(port),
             Err(error) => {
-                emit_worker_startup_overflow_event(
-                    "startup",
-                    &node_identity.node_id,
-                    &peer_id.to_string(),
-                    worker_port,
-                    &resource_policy,
+                emit_worker_startup_overflow_event(WorkerStartupOverflowContext {
+                    trace_id: "startup",
+                    node_id: &node_identity.node_id,
+                    peer_id: &peer_id.to_string(),
+                    port: worker_port,
+                    resource_policy: &resource_policy,
                     worker_slots,
-                    pool.max_concurrent,
-                    pool.available_slots(),
-                    &error,
-                    "continue_without_metrics_server",
-                );
+                    max_concurrent: pool.max_concurrent,
+                    available_slots: pool.available_slots(),
+                    error: &error,
+                    fallback_behavior: "continue_without_metrics_server",
+                });
                 println!(
                     "⚠️  [Startup] Cálculo de metrics port inválido: {}. Continuando en modo degradado (metrics deshabilitado).",
                     error.describe()
@@ -2233,18 +1719,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     let active_tasks = match compute_active_tasks(pool.max_concurrent, available_slots) {
                         Ok(value) => value,
                         Err(error) => {
-                            emit_worker_startup_overflow_event(
-                                "startup",
-                                &node_identity.node_id,
-                                &peer_id.to_string(),
-                                worker_port,
-                                &resource_policy,
+                            emit_worker_startup_overflow_event(WorkerStartupOverflowContext {
+                                trace_id: "startup",
+                                node_id: &node_identity.node_id,
+                                peer_id: &peer_id.to_string(),
+                                port: worker_port,
+                                resource_policy: &resource_policy,
                                 worker_slots,
-                                pool.max_concurrent,
+                                max_concurrent: pool.max_concurrent,
                                 available_slots,
-                                &error,
-                                "exit_cleanly_invalid_startup_state",
-                            );
+                                error: &error,
+                                fallback_behavior: "exit_cleanly_invalid_startup_state",
+                            });
                             return Err(format!(
                                 "Worker startup math invalid: {} [{}]",
                                 error.describe(),
@@ -2534,16 +2020,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 joined_results_topic: pubsub_topics.joined(RESULTS_TOPIC),
                                 selected_topic: DIRECT_INF_TOPIC,
                             };
-                            emit_dispatch_context_event(
-                                &trace_task_id,
-                                &rid,
-                                &routed_model,
-                                &candidates,
-                                readiness_snapshot.connected_peer_count,
-                                readiness_snapshot.topic_peer_count,
-                                DIRECT_INF_TOPIC,
-                                Some(&best_peer),
-                            );
+                            emit_dispatch_context_event(DispatchContextEvent {
+                                trace_task_id: &trace_task_id,
+                                attempt_id: &rid,
+                                selected_model: &routed_model,
+                                candidates: &candidates,
+                                connected_peer_count: readiness_snapshot.connected_peer_count,
+                                topic_peer_count: readiness_snapshot.topic_peer_count,
+                                selected_topic: DIRECT_INF_TOPIC,
+                                target_peer_id: Some(&best_peer),
+                            });
                             if let Err(readiness_error) = evaluate_dispatch_readiness(&readiness_snapshot)
                             {
                                 emit_dispatch_readiness_failure_event(
@@ -2625,14 +2111,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         let _ = record_distributed_task_retry();
                                     }
                                     emit_task_published_event(
-                                        &trace_task_id,
-                                        &rid,
-                                        &routed_model,
-                                        DIRECT_INF_TOPIC,
-                                        topic_peer_count,
-                                        payload_size,
+                                        PublishEventContext {
+                                            trace_task_id: &trace_task_id,
+                                            attempt_id: &rid,
+                                            model_id: &routed_model,
+                                            topic: DIRECT_INF_TOPIC,
+                                            publish_peer_count: topic_peer_count,
+                                            payload_size,
+                                            selected_peer_id: Some(&best_peer),
+                                        },
                                         &message_id,
-                                        Some(&best_peer),
                                     );
                                     let timeout_policy = AttemptTimeoutPolicy::from_model_and_node(
                                         &routed_model,
@@ -2715,14 +2203,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 Err(error) => {
                                     let error_text = error.to_string();
                                     emit_task_publish_failed_event(
-                                        &trace_task_id,
-                                        &rid,
-                                        &routed_model,
-                                        DIRECT_INF_TOPIC,
-                                        topic_peer_count,
-                                        payload_size,
+                                        PublishEventContext {
+                                            trace_task_id: &trace_task_id,
+                                            attempt_id: &rid,
+                                            model_id: &routed_model,
+                                            topic: DIRECT_INF_TOPIC,
+                                            publish_peer_count: topic_peer_count,
+                                            payload_size,
+                                            selected_peer_id: Some(&best_peer),
+                                        },
                                         &error_text,
-                                        Some(&best_peer),
                                     );
                                     return Err(format!(
                                         "Dispatch publish failed: task_id={} attempt_id={} error={} [{}]",
@@ -2782,16 +2272,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 joined_results_topic: pubsub_topics.joined(RESULTS_TOPIC),
                                 selected_topic: TASK_TOPIC,
                             };
-                            emit_dispatch_context_event(
-                                &trace_task_id,
-                                &rid,
-                                &selected_model,
-                                &candidates,
-                                readiness_snapshot.connected_peer_count,
-                                readiness_snapshot.topic_peer_count,
-                                TASK_TOPIC,
-                                None,
-                            );
+                            emit_dispatch_context_event(DispatchContextEvent {
+                                trace_task_id: &trace_task_id,
+                                attempt_id: &rid,
+                                selected_model: &selected_model,
+                                candidates: &candidates,
+                                connected_peer_count: readiness_snapshot.connected_peer_count,
+                                topic_peer_count: readiness_snapshot.topic_peer_count,
+                                selected_topic: TASK_TOPIC,
+                                target_peer_id: None,
+                            });
                             if let Err(readiness_error) = evaluate_dispatch_readiness(&readiness_snapshot)
                             {
                                 emit_dispatch_readiness_failure_event(
@@ -2848,14 +2338,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 Ok(message_id) => {
                                     let message_id = message_id.to_string();
                                     emit_task_published_event(
-                                        &trace_task_id,
-                                        &rid,
-                                        &selected_model,
-                                        TASK_TOPIC,
-                                        topic_peer_count,
-                                        payload_size,
+                                        PublishEventContext {
+                                            trace_task_id: &trace_task_id,
+                                            attempt_id: &rid,
+                                            model_id: &selected_model,
+                                            topic: TASK_TOPIC,
+                                            publish_peer_count: topic_peer_count,
+                                            payload_size,
+                                            selected_peer_id: None,
+                                        },
                                         &message_id,
-                                        None,
                                     );
                                     let timeout_policy =
                                         AttemptTimeoutPolicy::from_model_and_node(
@@ -2940,14 +2432,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 Err(error) => {
                                     let error_text = error.to_string();
                                     emit_task_publish_failed_event(
-                                        &trace_task_id,
-                                        &rid,
-                                        &selected_model,
-                                        TASK_TOPIC,
-                                        topic_peer_count,
-                                        payload_size,
+                                        PublishEventContext {
+                                            trace_task_id: &trace_task_id,
+                                            attempt_id: &rid,
+                                            model_id: &selected_model,
+                                            topic: TASK_TOPIC,
+                                            publish_peer_count: topic_peer_count,
+                                            payload_size,
+                                            selected_peer_id: None,
+                                        },
                                         &error_text,
-                                        None,
                                     );
                                     return Err(format!(
                                         "Fallback dispatch publish failed: task_id={} attempt_id={} error={} [{}]",

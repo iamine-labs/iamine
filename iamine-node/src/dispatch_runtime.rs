@@ -71,6 +71,50 @@ fn insert_attempt_id(fields: &mut Map<String, Value>, attempt_id: &str) {
     fields.insert("attempt_id".to_string(), attempt_id.into());
 }
 
+pub(super) struct DispatchContextEvent<'a> {
+    pub(super) trace_task_id: &'a str,
+    pub(super) attempt_id: &'a str,
+    pub(super) selected_model: &'a str,
+    pub(super) candidates: &'a [String],
+    pub(super) connected_peer_count: usize,
+    pub(super) topic_peer_count: usize,
+    pub(super) selected_topic: &'a str,
+    pub(super) target_peer_id: Option<&'a str>,
+}
+
+#[derive(Clone, Copy)]
+pub(super) struct PublishEventContext<'a> {
+    pub(super) trace_task_id: &'a str,
+    pub(super) attempt_id: &'a str,
+    pub(super) model_id: &'a str,
+    pub(super) topic: &'a str,
+    pub(super) publish_peer_count: usize,
+    pub(super) payload_size: usize,
+    pub(super) selected_peer_id: Option<&'a str>,
+}
+
+pub(super) struct LateResultReceivedEvent<'a> {
+    pub(super) trace_task_id: &'a str,
+    pub(super) attempt_id: &'a str,
+    pub(super) worker_peer_id: &'a str,
+    pub(super) model_id: Option<&'a str>,
+    pub(super) elapsed_ms: u64,
+    pub(super) accepted: bool,
+    pub(super) reason: &'a str,
+    pub(super) prior_attempt_state: &'a str,
+}
+
+#[derive(Clone, Copy)]
+pub(super) struct WorkerProgressMessage<'a> {
+    pub(super) task_id: &'a str,
+    pub(super) attempt_id: &'a str,
+    pub(super) request_id: &'a str,
+    pub(super) model_id: &'a str,
+    pub(super) worker_peer_id: &'a str,
+    pub(super) stage: &'a str,
+    pub(super) tokens_generated_count: Option<u64>,
+}
+
 #[cfg(test)]
 pub(super) fn apply_retry_fallback_metrics(
     metrics: &mut DistributedTaskMetrics,
@@ -85,16 +129,17 @@ pub(super) fn apply_retry_fallback_metrics(
     }
 }
 
-pub(super) fn emit_dispatch_context_event(
-    trace_task_id: &str,
-    attempt_id: &str,
-    selected_model: &str,
-    candidates: &[String],
-    connected_peer_count: usize,
-    topic_peer_count: usize,
-    selected_topic: &str,
-    target_peer_id: Option<&str>,
-) {
+pub(super) fn emit_dispatch_context_event(event: DispatchContextEvent<'_>) {
+    let DispatchContextEvent {
+        trace_task_id,
+        attempt_id,
+        selected_model,
+        candidates,
+        connected_peer_count,
+        topic_peer_count,
+        selected_topic,
+        target_peer_id,
+    } = event;
     log_observability_event(
         LogLevel::Info,
         "task_dispatch_context",
@@ -221,16 +266,16 @@ pub(super) fn emit_task_publish_attempt_event(
     );
 }
 
-pub(super) fn emit_task_published_event(
-    trace_task_id: &str,
-    attempt_id: &str,
-    model_id: &str,
-    topic: &str,
-    publish_peer_count: usize,
-    payload_size: usize,
-    message_id: &str,
-    selected_peer_id: Option<&str>,
-) {
+pub(super) fn emit_task_published_event(context: PublishEventContext<'_>, message_id: &str) {
+    let PublishEventContext {
+        trace_task_id,
+        attempt_id,
+        model_id,
+        topic,
+        publish_peer_count,
+        payload_size,
+        selected_peer_id,
+    } = context;
     log_observability_event(
         LogLevel::Info,
         "task_published",
@@ -283,16 +328,16 @@ pub(super) fn emit_fallback_attempt_registered_event(
     );
 }
 
-pub(super) fn emit_task_publish_failed_event(
-    trace_task_id: &str,
-    attempt_id: &str,
-    model_id: &str,
-    topic: &str,
-    publish_peer_count: usize,
-    payload_size: usize,
-    error: &str,
-    selected_peer_id: Option<&str>,
-) {
+pub(super) fn emit_task_publish_failed_event(context: PublishEventContext<'_>, error: &str) {
+    let PublishEventContext {
+        trace_task_id,
+        attempt_id,
+        model_id,
+        topic,
+        publish_peer_count,
+        payload_size,
+        selected_peer_id,
+    } = context;
     log_observability_event(
         LogLevel::Error,
         "task_publish_failed",
@@ -586,16 +631,17 @@ pub(super) fn emit_attempt_stalled_event(
     );
 }
 
-pub(super) fn emit_late_result_received_event(
-    trace_task_id: &str,
-    attempt_id: &str,
-    worker_peer_id: &str,
-    model_id: Option<&str>,
-    elapsed_ms: u64,
-    accepted: bool,
-    reason: &str,
-    prior_attempt_state: &str,
-) {
+pub(super) fn emit_late_result_received_event(event: LateResultReceivedEvent<'_>) {
+    let LateResultReceivedEvent {
+        trace_task_id,
+        attempt_id,
+        worker_peer_id,
+        model_id,
+        elapsed_ms,
+        accepted,
+        reason,
+        prior_attempt_state,
+    } = event;
     log_observability_event(
         LogLevel::Info,
         "late_result_received",
@@ -652,14 +698,17 @@ pub(super) fn emit_attempt_progress_event(
 
 pub(super) fn publish_worker_progress_message(
     swarm: &mut Swarm<IamineBehaviour>,
-    task_id: &str,
-    attempt_id: &str,
-    request_id: &str,
-    model_id: &str,
-    worker_peer_id: &str,
-    stage: &str,
-    tokens_generated_count: Option<u64>,
+    message: WorkerProgressMessage<'_>,
 ) {
+    let WorkerProgressMessage {
+        task_id,
+        attempt_id,
+        request_id,
+        model_id,
+        worker_peer_id,
+        stage,
+        tokens_generated_count,
+    } = message;
     let payload = serde_json::json!({
         "type": "InferenceProgress",
         "task_id": task_id,
@@ -805,13 +854,15 @@ pub(super) async fn run_worker_inference_pipeline(
     );
     publish_worker_progress_message(
         swarm,
-        &request.task_id,
-        &request.attempt_id,
-        &request.request_id,
-        &request.model_id,
-        &peer_id_string,
-        "attempt_started",
-        None,
+        WorkerProgressMessage {
+            task_id: &request.task_id,
+            attempt_id: &request.attempt_id,
+            request_id: &request.request_id,
+            model_id: &request.model_id,
+            worker_peer_id: &peer_id_string,
+            stage: "attempt_started",
+            tokens_generated_count: None,
+        },
     );
 
     println!(
@@ -838,33 +889,39 @@ pub(super) async fn run_worker_inference_pipeline(
 
     publish_worker_progress_message(
         swarm,
-        &request.task_id,
-        &request.attempt_id,
-        &request.request_id,
-        &request.model_id,
-        &peer_id_string,
-        "model_load_started",
-        None,
+        WorkerProgressMessage {
+            task_id: &request.task_id,
+            attempt_id: &request.attempt_id,
+            request_id: &request.request_id,
+            model_id: &request.model_id,
+            worker_peer_id: &peer_id_string,
+            stage: "model_load_started",
+            tokens_generated_count: None,
+        },
     );
     publish_worker_progress_message(
         swarm,
-        &request.task_id,
-        &request.attempt_id,
-        &request.request_id,
-        &request.model_id,
-        &peer_id_string,
-        "model_load_completed",
-        None,
+        WorkerProgressMessage {
+            task_id: &request.task_id,
+            attempt_id: &request.attempt_id,
+            request_id: &request.request_id,
+            model_id: &request.model_id,
+            worker_peer_id: &peer_id_string,
+            stage: "model_load_completed",
+            tokens_generated_count: None,
+        },
     );
     publish_worker_progress_message(
         swarm,
-        &request.task_id,
-        &request.attempt_id,
-        &request.request_id,
-        &request.model_id,
-        &peer_id_string,
-        "inference_started",
-        None,
+        WorkerProgressMessage {
+            task_id: &request.task_id,
+            attempt_id: &request.attempt_id,
+            request_id: &request.request_id,
+            model_id: &request.model_id,
+            worker_peer_id: &peer_id_string,
+            stage: "inference_started",
+            tokens_generated_count: None,
+        },
     );
 
     let engine_ref = Arc::clone(inference_engine);
@@ -956,24 +1013,28 @@ pub(super) async fn run_worker_inference_pipeline(
             first_token_emitted = true;
             publish_worker_progress_message(
                 swarm,
-                &request.task_id,
-                &request.attempt_id,
-                &request.request_id,
-                &request.model_id,
-                &peer_id_string,
-                "first_token_generated",
-                Some(produced_tokens),
+                WorkerProgressMessage {
+                    task_id: &request.task_id,
+                    attempt_id: &request.attempt_id,
+                    request_id: &request.request_id,
+                    model_id: &request.model_id,
+                    worker_peer_id: &peer_id_string,
+                    stage: "first_token_generated",
+                    tokens_generated_count: Some(produced_tokens),
+                },
             );
-        } else if produced_tokens % 16 == 0 {
+        } else if produced_tokens.is_multiple_of(16) {
             publish_worker_progress_message(
                 swarm,
-                &request.task_id,
-                &request.attempt_id,
-                &request.request_id,
-                &request.model_id,
-                &peer_id_string,
-                "tokens_generated_count",
-                Some(produced_tokens),
+                WorkerProgressMessage {
+                    task_id: &request.task_id,
+                    attempt_id: &request.attempt_id,
+                    request_id: &request.request_id,
+                    model_id: &request.model_id,
+                    worker_peer_id: &peer_id_string,
+                    stage: "tokens_generated_count",
+                    tokens_generated_count: Some(produced_tokens),
+                },
             );
         }
         token_idx += 1;
@@ -991,13 +1052,15 @@ pub(super) async fn run_worker_inference_pipeline(
             }
             publish_worker_progress_message(
                 swarm,
-                &request.task_id,
-                &request.attempt_id,
-                &request.request_id,
-                &request.model_id,
-                &peer_id_string,
-                "inference_finished",
-                Some(result.tokens_generated as u64),
+                WorkerProgressMessage {
+                    task_id: &request.task_id,
+                    attempt_id: &request.attempt_id,
+                    request_id: &request.request_id,
+                    model_id: &request.model_id,
+                    worker_peer_id: &peer_id_string,
+                    stage: "inference_finished",
+                    tokens_generated_count: Some(result.tokens_generated as u64),
+                },
             );
             let result_size = result.output.len();
             emit_worker_task_completed_event(
@@ -1015,13 +1078,15 @@ pub(super) async fn run_worker_inference_pipeline(
             }
             publish_worker_progress_message(
                 swarm,
-                &request.task_id,
-                &request.attempt_id,
-                &request.request_id,
-                &request.model_id,
-                &peer_id_string,
-                "result_serialized",
-                Some(result.tokens_generated as u64),
+                WorkerProgressMessage {
+                    task_id: &request.task_id,
+                    attempt_id: &request.attempt_id,
+                    request_id: &request.request_id,
+                    model_id: &request.model_id,
+                    worker_peer_id: &peer_id_string,
+                    stage: "result_serialized",
+                    tokens_generated_count: Some(result.tokens_generated as u64),
+                },
             );
             let payload_size = result_payload.to_string().len();
             match serde_json::to_vec(&result_payload) {
@@ -1034,13 +1099,15 @@ pub(super) async fn run_worker_inference_pipeline(
                         Ok(message_id) => {
                             publish_worker_progress_message(
                                 swarm,
-                                &request.task_id,
-                                &request.attempt_id,
-                                &request.request_id,
-                                &request.model_id,
-                                &peer_id_string,
-                                "result_published",
-                                Some(result.tokens_generated as u64),
+                                WorkerProgressMessage {
+                                    task_id: &request.task_id,
+                                    attempt_id: &request.attempt_id,
+                                    request_id: &request.request_id,
+                                    model_id: &request.model_id,
+                                    worker_peer_id: &peer_id_string,
+                                    stage: "result_published",
+                                    tokens_generated_count: Some(result.tokens_generated as u64),
+                                },
                             );
                             emit_worker_result_published_event(
                                 &request.task_id,

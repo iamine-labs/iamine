@@ -81,16 +81,16 @@ fn test_no_progress_attempt_becomes_stalled() {
 #[test]
 fn test_late_result_received_event_emitted() {
     let trace_id = format!("late-result-{}", uuid_simple());
-    emit_late_result_received_event(
-        &trace_id,
-        "attempt-late-1",
-        "peer-late-1",
-        Some("mistral-7b"),
-        16_500,
-        false,
-        "arrived_after_timeout_policy_ignore",
-        "timed_out",
-    );
+    emit_late_result_received_event(LateResultReceivedEvent {
+        trace_task_id: &trace_id,
+        attempt_id: "attempt-late-1",
+        worker_peer_id: "peer-late-1",
+        model_id: Some("mistral-7b"),
+        elapsed_ms: 16_500,
+        accepted: false,
+        reason: "arrived_after_timeout_policy_ignore",
+        prior_attempt_state: "timed_out",
+    });
 
     iamine_network::flush_structured_logs().unwrap();
     let path = iamine_network::default_node_log_path();

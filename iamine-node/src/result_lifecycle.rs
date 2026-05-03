@@ -71,16 +71,16 @@ pub(super) async fn apply_late_result_lifecycle(
         .get(attempt_id)
         .map(|watchdog| watchdog.elapsed_ms())
         .unwrap_or(execution_ms);
-    emit_late_result_received_event(
-        task_id,
+    emit_late_result_received_event(LateResultReceivedEvent {
+        trace_task_id: task_id,
         attempt_id,
         worker_peer_id,
         model_id,
         elapsed_ms,
-        false,
-        "arrived_after_timeout_policy_ignore",
-        &prior_state,
-    );
+        accepted: false,
+        reason: "arrived_after_timeout_policy_ignore",
+        prior_attempt_state: &prior_state,
+    });
     let _ = record_distributed_task_late_result();
 
     if let Some(watchdog) = attempt_watchdogs.get_mut(attempt_id) {

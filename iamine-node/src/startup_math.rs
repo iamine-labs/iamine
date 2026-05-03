@@ -91,18 +91,32 @@ pub(super) fn resource_policy_value(resource_policy: &ResourcePolicy) -> Value {
     })
 }
 
-pub(super) fn emit_worker_startup_overflow_event(
-    trace_id: &str,
-    node_id: &str,
-    peer_id: &str,
-    port: u16,
-    resource_policy: &ResourcePolicy,
-    worker_slots: usize,
-    max_concurrent: usize,
-    available_slots: usize,
-    error: &StartupMathError,
-    fallback_behavior: &str,
-) {
+pub(super) struct WorkerStartupOverflowContext<'a> {
+    pub(super) trace_id: &'a str,
+    pub(super) node_id: &'a str,
+    pub(super) peer_id: &'a str,
+    pub(super) port: u16,
+    pub(super) resource_policy: &'a ResourcePolicy,
+    pub(super) worker_slots: usize,
+    pub(super) max_concurrent: usize,
+    pub(super) available_slots: usize,
+    pub(super) error: &'a StartupMathError,
+    pub(super) fallback_behavior: &'a str,
+}
+
+pub(super) fn emit_worker_startup_overflow_event(context: WorkerStartupOverflowContext<'_>) {
+    let WorkerStartupOverflowContext {
+        trace_id,
+        node_id,
+        peer_id,
+        port,
+        resource_policy,
+        worker_slots,
+        max_concurrent,
+        available_slots,
+        error,
+        fallback_behavior,
+    } = context;
     let mut fields = Map::new();
     fields.insert("node_id".to_string(), node_id.into());
     fields.insert("peer_id".to_string(), peer_id.into());

@@ -41,16 +41,16 @@ fn test_dispatch_observability_events_emitted() {
     let model_id = "tinyllama-1b";
     let candidates = vec![model_id.to_string(), "llama3-3b".to_string()];
 
-    emit_dispatch_context_event(
-        &trace_id,
+    emit_dispatch_context_event(DispatchContextEvent {
+        trace_task_id: &trace_id,
         attempt_id,
-        model_id,
-        &candidates,
-        3,
-        2,
-        DIRECT_INF_TOPIC,
-        Some("peer-target-1"),
-    );
+        selected_model: model_id,
+        candidates: &candidates,
+        connected_peer_count: 3,
+        topic_peer_count: 2,
+        selected_topic: DIRECT_INF_TOPIC,
+        target_peer_id: Some("peer-target-1"),
+    });
     emit_task_publish_attempt_event(
         &trace_id,
         attempt_id,
@@ -61,14 +61,16 @@ fn test_dispatch_observability_events_emitted() {
         Some("peer-target-1"),
     );
     emit_task_published_event(
-        &trace_id,
-        attempt_id,
-        model_id,
-        DIRECT_INF_TOPIC,
-        2,
-        128,
+        PublishEventContext {
+            trace_task_id: &trace_id,
+            attempt_id,
+            model_id,
+            topic: DIRECT_INF_TOPIC,
+            publish_peer_count: 2,
+            payload_size: 128,
+            selected_peer_id: Some("peer-target-1"),
+        },
         "message-1",
-        Some("peer-target-1"),
     );
 
     iamine_network::flush_structured_logs().unwrap();
@@ -117,14 +119,16 @@ fn test_dispatch_observability_events_emitted() {
 fn test_error_events_include_required_error_fields() {
     let trace_id = format!("dispatch-error-{}", uuid_simple());
     emit_task_publish_failed_event(
-        &trace_id,
-        "attempt-error-1",
-        "tinyllama-1b",
-        DIRECT_INF_TOPIC,
-        0,
-        256,
+        PublishEventContext {
+            trace_task_id: &trace_id,
+            attempt_id: "attempt-error-1",
+            model_id: "tinyllama-1b",
+            topic: DIRECT_INF_TOPIC,
+            publish_peer_count: 0,
+            payload_size: 256,
+            selected_peer_id: Some("peer-target-err"),
+        },
         "insufficient peers",
-        Some("peer-target-err"),
     );
 
     iamine_network::flush_structured_logs().unwrap();
