@@ -57,6 +57,7 @@ mod worker_capabilities;
 mod worker_heartbeat_runtime;
 mod worker_pool;
 mod worker_simulation;
+mod worker_startup_runtime;
 
 use iamine_models::{
     can_node_run_model, normalize_output, AutoProvisionProfile, DirectInferenceRequest,
@@ -160,7 +161,9 @@ use runtime_ids::uuid_simple;
 use runtime_state::{ClientRuntimeState, DistributedInferState, InferRuntimeState};
 use serde_json::{Map, Value};
 use setup_wizard::{DetectedHardware, NodeSetupConfig};
-use startup_bootstrap::{bootstrap_core_state, bootstrap_model_state};
+use startup_bootstrap::{
+    bootstrap_core_state, bootstrap_model_state, bootstrap_runtime_services, RuntimeServicesState,
+};
 #[cfg(test)]
 use startup_math::{checked_sub_usize, StartupMathError};
 use startup_math::{
@@ -180,6 +183,9 @@ use worker_capabilities::WorkerCapabilities;
 use worker_heartbeat_runtime::{handle_worker_heartbeat_tick, WorkerHeartbeatContext};
 use worker_pool::WorkerPool;
 use worker_simulation::simulate_workers;
+use worker_startup_runtime::{
+    compute_worker_metrics_port, emit_worker_started_event, print_runtime_mode_banner,
+};
 
 use futures::StreamExt;
 use libp2p::{
@@ -374,89 +380,41 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let (mut swarm, mut pubsub_topics) = build_swarm_and_topics(peer_id, &id_keys)?;
     let task_topic = gossipsub::IdentTopic::new(TASK_TOPIC);
 
-    let pool = Arc::new(WorkerPool::with_slots(worker_slots));
-    let queue = Arc::new(TaskQueue::new(peer_id.to_string()));
-    let scheduler = Arc::new(TaskScheduler::new());
-    let task_manager = Arc::new(TaskManager::new());
-    let (task_response_tx, mut task_response_rx) =
-        tokio::sync::mpsc::channel::<PendingTaskResponse>(64);
-    let heartbeat = Arc::new(HeartbeatService::new());
-    let metrics = Arc::new(RwLock::new(NodeMetrics::new()));
-    let capabilities = WorkerCapabilities::detect();
-    let mut task_cache = TaskCache::new(1000);
-    let mut peer_tracker = PeerTracker::new();
-    let mut rate_limiter = RateLimiter::new(100); // ← 100 msgs/sec max
+    let RuntimeServicesState {
+        pool,
+        queue,
+        scheduler,
+        task_manager,
+        task_response_tx,
+        task_response_rx,
+        heartbeat,
+        metrics,
+        capabilities,
+        mut task_cache,
+        mut peer_tracker,
+        mut rate_limiter,
+    } = bootstrap_runtime_services(peer_id, worker_slots, wallet.reputation).await;
+    let mut task_response_rx = task_response_rx;
 
-    // ← Actualizar métricas con wallet
-    {
-        let mut m = metrics.write().await;
-        m.reputation_score = wallet.reputation as u32;
-    }
-
-    // Relay mode
-    if matches!(mode, NodeMode::Relay) {
-        println!("🔀 Modo RELAY activo — ayudando a peers detrás de NAT");
-        println!("   Peer ID (compartir con otros nodos): {}", peer_id);
-    }
-
-    println!("   Slots paralelos: {}", pool.max_concurrent);
-    println!("   Task queue: activa (max 3 reintentos)");
-    println!("   Scheduler: activo (bid window 1.5s)\n");
+    print_runtime_mode_banner(&mode, peer_id, &pool);
 
     dial_bootnodes_from_args(&mut swarm, &args);
 
     let worker_port = worker_port_from_args(&args);
-    if matches!(mode, NodeMode::Worker) {
-        log_observability_event(
-            LogLevel::Info,
-            "worker_started",
-            "startup",
-            None,
-            None,
-            None,
-            {
-                let mut fields = Map::new();
-                fields.insert("peer_id".to_string(), peer_id.to_string().into());
-                fields.insert("port".to_string(), (worker_port as u64).into());
-                fields.insert("worker_slots".to_string(), (worker_slots as u64).into());
-                fields.insert(
-                    "resource_policy".to_string(),
-                    resource_policy_value(&resource_policy),
-                );
-                fields
-            },
-        );
-    }
+    emit_worker_started_event(&mode, peer_id, worker_port, worker_slots, &resource_policy);
 
     let listen_addr = listen_address_for_mode(&mode, worker_port)?;
     swarm.listen_on(listen_addr)?;
 
-    let metrics_port = if matches!(mode, NodeMode::Worker) {
-        match compute_metrics_port(worker_port) {
-            Ok(port) => Some(port),
-            Err(error) => {
-                emit_worker_startup_overflow_event(WorkerStartupOverflowContext {
-                    trace_id: "startup",
-                    node_id: &node_identity.node_id,
-                    peer_id: &peer_id.to_string(),
-                    port: worker_port,
-                    resource_policy: &resource_policy,
-                    worker_slots,
-                    max_concurrent: pool.max_concurrent,
-                    available_slots: pool.available_slots(),
-                    error: &error,
-                    fallback_behavior: "continue_without_metrics_server",
-                });
-                println!(
-                    "⚠️  [Startup] Cálculo de metrics port inválido: {}. Continuando en modo degradado (metrics deshabilitado).",
-                    error.describe()
-                );
-                None
-            }
-        }
-    } else {
-        None
-    };
+    let metrics_port = compute_worker_metrics_port(
+        &mode,
+        worker_port,
+        &node_identity,
+        peer_id,
+        &resource_policy,
+        worker_slots,
+        &pool,
+    );
 
     if let Some(metrics_port) = metrics_port {
         let m = Arc::clone(&metrics);

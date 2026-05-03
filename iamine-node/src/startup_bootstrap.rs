@@ -18,6 +18,21 @@ pub(super) struct ModelStartupState {
     pub(super) validated_advertised_models: Vec<String>,
 }
 
+pub(super) struct RuntimeServicesState {
+    pub(super) pool: Arc<WorkerPool>,
+    pub(super) queue: Arc<TaskQueue>,
+    pub(super) scheduler: Arc<TaskScheduler>,
+    pub(super) task_manager: Arc<TaskManager>,
+    pub(super) task_response_tx: tokio::sync::mpsc::Sender<PendingTaskResponse>,
+    pub(super) task_response_rx: tokio::sync::mpsc::Receiver<PendingTaskResponse>,
+    pub(super) heartbeat: Arc<HeartbeatService>,
+    pub(super) metrics: Arc<RwLock<NodeMetrics>>,
+    pub(super) capabilities: WorkerCapabilities,
+    pub(super) task_cache: TaskCache,
+    pub(super) peer_tracker: PeerTracker,
+    pub(super) rate_limiter: RateLimiter,
+}
+
 pub(super) fn bootstrap_core_state(args: &[String], mode: &NodeMode) -> CoreStartupState {
     if matches!(mode, NodeMode::Worker) {
         println!("╔══════════════════════════════════╗");
@@ -244,4 +259,43 @@ pub(super) async fn bootstrap_model_state(
         node_caps,
         validated_advertised_models,
     })
+}
+
+pub(super) async fn bootstrap_runtime_services(
+    peer_id: PeerId,
+    worker_slots: usize,
+    wallet_reputation: f32,
+) -> RuntimeServicesState {
+    let pool = Arc::new(WorkerPool::with_slots(worker_slots));
+    let queue = Arc::new(TaskQueue::new(peer_id.to_string()));
+    let scheduler = Arc::new(TaskScheduler::new());
+    let task_manager = Arc::new(TaskManager::new());
+    let (task_response_tx, task_response_rx) =
+        tokio::sync::mpsc::channel::<PendingTaskResponse>(64);
+    let heartbeat = Arc::new(HeartbeatService::new());
+    let metrics = Arc::new(RwLock::new(NodeMetrics::new()));
+    let capabilities = WorkerCapabilities::detect();
+    let task_cache = TaskCache::new(1000);
+    let peer_tracker = PeerTracker::new();
+    let rate_limiter = RateLimiter::new(100);
+
+    {
+        let mut runtime_metrics = metrics.write().await;
+        runtime_metrics.reputation_score = wallet_reputation as u32;
+    }
+
+    RuntimeServicesState {
+        pool,
+        queue,
+        scheduler,
+        task_manager,
+        task_response_tx,
+        task_response_rx,
+        heartbeat,
+        metrics,
+        capabilities,
+        task_cache,
+        peer_tracker,
+        rate_limiter,
+    }
 }
