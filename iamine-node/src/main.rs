@@ -12,6 +12,7 @@ mod event_loop_control;
 mod executor;
 mod gossipsub_handlers;
 mod heartbeat;
+mod heartbeat_tick_runtime;
 mod infer_cli_handlers;
 mod infer_mode_handlers;
 mod local_inference_runtime;
@@ -124,6 +125,7 @@ use distributed_infer_runtime::{handle_distributed_infer_tick, DistributedInferT
 use event_loop_control::EventLoopDirective;
 use gossipsub_handlers::{handle_gossipsub_message, GossipsubHandlerContext};
 use heartbeat::HeartbeatService;
+use heartbeat_tick_runtime::{handle_heartbeat_tick, HeartbeatTickContext};
 use infer_cli_handlers::handle_test_inference;
 use local_inference_runtime::{run_local_inference_with_timeout, InferenceRuntime};
 use metrics::{start_metrics_server, NodeMetrics};
@@ -415,7 +417,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
             // Heartbeat tick
             Some(_) = heartbeat_rx.recv() => {
-                handle_worker_heartbeat_tick(WorkerHeartbeatContext {
+                match handle_heartbeat_tick(HeartbeatTickContext {
                     mode: &mode,
                     queue: &queue,
                     heartbeat: &heartbeat,
@@ -436,23 +438,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     resource_policy: &resource_policy,
                     node_identity: &node_identity,
                     worker_port,
-                }).await?;
-
-                match handle_distributed_infer_tick(DistributedInferTickContext {
-                    mode: &mode,
                     infer_runtime: &mut infer_runtime,
                     model_storage: &model_storage,
-                    topology: &topology,
-                    peer_id,
-                    registry: &registry,
                     pubsub_topics: &pubsub_topics,
                     client_state: &mut client_state,
                     debug_flags,
-                    swarm: &mut swarm,
-                    metrics: &metrics,
                     task_manager: &task_manager,
-                })
-                .await?
+                }).await?
                 {
                     EventLoopDirective::None => {}
                     EventLoopDirective::Continue => continue,
