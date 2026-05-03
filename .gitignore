@@ -22,3 +22,9 @@ target
 
 # Runtime semantic feedback logs
 semantic_logs.json
+
+# Local runtime diagnostics and LAN smoke logs
+*.log
+*.log~
+logs/
+iamine-node/logs/
