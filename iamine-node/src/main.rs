@@ -49,6 +49,7 @@ mod task_scheduler;
 mod tests;
 mod wallet;
 mod worker_capabilities;
+mod worker_heartbeat_runtime;
 mod worker_pool;
 
 use iamine_models::{
@@ -154,8 +155,8 @@ use startup_bootstrap::{bootstrap_core_state, bootstrap_model_state};
 #[cfg(test)]
 use startup_math::{checked_sub_usize, StartupMathError};
 use startup_math::{
-    compute_active_tasks, compute_metrics_port, emit_worker_startup_overflow_event,
-    resource_policy_value, WorkerStartupOverflowContext,
+    compute_metrics_port, emit_worker_startup_overflow_event, resource_policy_value,
+    WorkerStartupOverflowContext,
 };
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -165,6 +166,7 @@ use task_scheduler::TaskScheduler;
 use tokio::sync::RwLock;
 use wallet::Wallet;
 use worker_capabilities::WorkerCapabilities;
+use worker_heartbeat_runtime::{handle_worker_heartbeat_tick, WorkerHeartbeatContext};
 use worker_pool::WorkerPool;
 
 use futures::StreamExt;
@@ -532,113 +534,28 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
             // Heartbeat tick
             Some(_) = heartbeat_rx.recv() => {
-                if matches!(mode, NodeMode::Worker) {
-                    let rep = queue.reputation().await;
-                    let uptime = heartbeat.uptime_secs();
-                    let available_slots = pool.available_slots();
-                    let active_tasks = match compute_active_tasks(pool.max_concurrent, available_slots) {
-                        Ok(value) => value,
-                        Err(error) => {
-                            emit_worker_startup_overflow_event(WorkerStartupOverflowContext {
-                                trace_id: "startup",
-                                node_id: &node_identity.node_id,
-                                peer_id: &peer_id.to_string(),
-                                port: worker_port,
-                                resource_policy: &resource_policy,
-                                worker_slots,
-                                max_concurrent: pool.max_concurrent,
-                                available_slots,
-                                error: &error,
-                                fallback_behavior: "exit_cleanly_invalid_startup_state",
-                            });
-                            return Err(format!(
-                                "Worker startup math invalid: {} [{}]",
-                                error.describe(),
-                                WORKER_STARTUP_OVERFLOW_001
-                            )
-                            .into());
-                        }
-                    };
-                    {
-                        let mut m = metrics.write().await;
-                        m.uptime_secs = uptime;
-                        m.reputation_score = rep.reputation_score;
-                        m.active_workers = active_tasks;
-                        m.network_peers = peer_tracker.peer_count();
-                        m.direct_peers = client_state.known_workers.len();
-                        m.avg_latency_ms = peer_tracker.avg_latency();
-                    }
-
-                    if rate_limiter.allow("Heartbeat") {
-                        let hb = serde_json::json!({
-                            "type": "Heartbeat",
-                            "peer_id": peer_id.to_string(),
-                            "available_slots": available_slots,
-                            "reputation_score": rep.reputation_score,
-                            "uptime_secs": uptime,
-                            "avg_latency_ms": rep.avg_execution_ms,
-                            "capabilities": {
-                                "cpu_cores": capabilities.cpu_cores,
-                                "ram_gb": capabilities.ram_gb,
-                                "gpu_available": capabilities.gpu_available,
-                                "supported_tasks": capabilities.supported_tasks,
-                            }
-                        });
-                        let hb_topic = gossipsub::IdentTopic::new("iamine-heartbeat");
-                        let _ = swarm.behaviour_mut().gossipsub.publish(
-                            hb_topic, serde_json::to_vec(&hb).unwrap(),
-                        );
-                    }
-
-                    // ─── Broadcast NodeModelsBroadcast
-                    let installer = ModelInstaller::new();
-                    let allowed_model_ids: HashSet<_> =
-                        validated_advertised_models.iter().cloned().collect();
-                    let mut nm = installer.build_node_models(&peer_id.to_string());
-                    nm.models
-                        .retain(|model| allowed_model_ids.contains(&model.id));
-                    if !nm.models.is_empty() {
-                        let payload = serde_json::json!({
-                            "type": "NodeModelsBroadcast",
-                            "node_id": peer_id.to_string(),
-                            "models": nm.models,
-                        });
-                        let _ = swarm.behaviour_mut().gossipsub.publish(
-                            gossipsub::IdentTopic::new("iamine-heartbeat"),
-                            serde_json::to_vec(&payload).unwrap(),
-                        );
-                    }
-
-                    // Broadcast capabilities
-                    let cap_hb = NodeCapabilityHeartbeat {
-                        peer_id: peer_id.to_string(),
-                        cpu_score: benchmark.as_ref().map(|b| b.cpu_score as u64).unwrap_or(0),
-                        ram_gb: benchmark.as_ref().map(|b| b.ram_available_gb as u32).unwrap_or(8),
-                        gpu_available: benchmark.as_ref().map(|b| b.gpu_available).unwrap_or(false),
-                        storage_available_gb: node_caps.storage_available_gb,
-                        accelerator: node_caps.accelerator.clone(),
-                        models: validated_advertised_models.clone(),
-                        worker_slots: worker_slots as u32,
-                        active_tasks: active_tasks as u32,
-                        latency_ms: peer_tracker.avg_latency().max(1.0) as u32,
-                    };
-                    let _ = swarm.behaviour_mut().gossipsub.publish(
-                        gossipsub::IdentTopic::new(CAP_TOPIC),
-                        serde_json::to_vec(&cap_hb).unwrap(),
-                    );
-
-                    // Sync topology clusters to registry
-                    {
-                        let mut topo = topology.write().await;
-                        topo.assign_clusters(&peer_id.to_string());
-                        let mut reg = registry.write().await;
-                        for cluster in topo.all_clusters() {
-                            for node_id in &cluster.nodes {
-                                reg.set_cluster(&node_id.to_string(), &cluster.id);
-                            }
-                        }
-                    }
-                }
+                handle_worker_heartbeat_tick(WorkerHeartbeatContext {
+                    mode: &mode,
+                    queue: &queue,
+                    heartbeat: &heartbeat,
+                    pool: &pool,
+                    metrics: &metrics,
+                    peer_tracker: &mut peer_tracker,
+                    direct_peers_count: client_state.known_workers.len(),
+                    rate_limiter: &mut rate_limiter,
+                    swarm: &mut swarm,
+                    peer_id,
+                    capabilities: &capabilities,
+                    validated_advertised_models: &validated_advertised_models,
+                    benchmark: benchmark.as_ref(),
+                    node_caps: &node_caps,
+                    worker_slots,
+                    topology: &topology,
+                    registry: &registry,
+                    resource_policy: &resource_policy,
+                    node_identity: &node_identity,
+                    worker_port,
+                }).await?;
 
                 // Smart routing: intento envío directo cuando ya hay registry
                 if matches!(mode, NodeMode::Infer { .. }) && !infer_runtime.infer_broadcast_sent {
