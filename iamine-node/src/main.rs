@@ -41,6 +41,7 @@ mod setup_wizard;
 mod startup_bootstrap;
 mod startup_math;
 mod startup_model_validation;
+mod swarm_event_runtime;
 mod task_cache;
 mod task_codec;
 mod task_protocol;
@@ -162,6 +163,7 @@ use startup_math::{
 };
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+use swarm_event_runtime::{handle_swarm_event, SwarmEventRuntimeContext};
 use task_cache::TaskCache;
 use task_queue::TaskQueue;
 use task_scheduler::TaskScheduler;
@@ -570,142 +572,39 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 }
             }
 
-            event = swarm.select_next_some() => match event {
-
-                SwarmEvent::NewListenAddr { address, .. } => {
-                    println!("🌐 Escuchando en: {}", address);
-                    swarm.behaviour_mut().kademlia.add_address(&peer_id, address);
+            event = swarm.select_next_some() => {
+                match handle_swarm_event(SwarmEventRuntimeContext {
+                    swarm: &mut swarm,
+                    event,
+                    mode: &mode,
+                    peer_id,
+                    debug_flags,
+                    is_client,
+                    client_state: &mut client_state,
+                    pubsub_topics: &mut pubsub_topics,
+                    registry: &registry,
+                    task_cache: &mut task_cache,
+                    capabilities: &capabilities,
+                    pool: &pool,
+                    queue: &queue,
+                    scheduler: &scheduler,
+                    peer_tracker: &mut peer_tracker,
+                    metrics: &metrics,
+                    infer_runtime: &mut infer_runtime,
+                    model_storage: &model_storage,
+                    node_caps: &node_caps,
+                    inference_engine: &inference_engine,
+                    task_manager: &task_manager,
+                    topology: &topology,
+                    task_response_tx: &task_response_tx,
+                    task_topic: &task_topic,
+                })
+                .await
+                {
+                    EventLoopDirective::None => {}
+                    EventLoopDirective::Continue => continue,
+                    EventLoopDirective::Break => break,
                 }
-
-                SwarmEvent::Behaviour(IaMineEvent::Mdns(mdns::Event::Discovered(peers))) => {
-                    handle_mdns_discovered(
-                        &mut swarm,
-                        &mut client_state,
-                        is_client,
-                        debug_flags,
-                        peer_id,
-                        peers,
-                    );
-                }
-
-                SwarmEvent::Behaviour(IaMineEvent::Mdns(mdns::Event::Expired(peers))) => {
-                    handle_mdns_expired(&mut swarm, &mut client_state, &mut pubsub_topics, peers);
-                }
-
-                SwarmEvent::Behaviour(IaMineEvent::Gossipsub(gossipsub::Event::Message {
-                    propagation_source,
-                    message,
-                    ..
-                })) => {
-                    match handle_gossipsub_message(GossipsubHandlerContext {
-                        swarm: &mut swarm,
-                        mode: &mode,
-                        propagation_source,
-                        message,
-                        registry: &registry,
-                        task_cache: &mut task_cache,
-                        capabilities: &capabilities,
-                        pool: &pool,
-                        queue: &queue,
-                        peer_id,
-                        scheduler: &scheduler,
-                        client_state: &mut client_state,
-                        task_topic: &task_topic,
-                        peer_tracker: &mut peer_tracker,
-                        metrics: &metrics,
-                        infer_runtime: &mut infer_runtime,
-                        model_storage: &model_storage,
-                        node_caps: &node_caps,
-                        inference_engine: &inference_engine,
-                        task_manager: &task_manager,
-                    })
-                    .await
-                    {
-                        EventLoopDirective::None => {}
-                        EventLoopDirective::Continue => continue,
-                        EventLoopDirective::Break => break,
-                    }
-                }
-
-                // ← Direct result routing — origin recibe resultado
-                SwarmEvent::Behaviour(IaMineEvent::ResultResponse(RREvent::Message {
-                    peer,
-                    message: Message::Request { request, channel, .. },
-                })) => {
-                    handle_result_response_request(&mut swarm, &peer, request, channel);
-                }
-
-                SwarmEvent::Behaviour(IaMineEvent::ResultResponse(RREvent::Message {
-                    peer,
-                    message: Message::Response { response, .. },
-                })) => {
-                    handle_result_response_ack(&peer, response);
-                }
-
-                SwarmEvent::Behaviour(IaMineEvent::Gossipsub(gossipsub::Event::Subscribed { peer_id: pid, topic })) => {
-                    handle_pubsub_subscribed(&mut pubsub_topics, pid, topic);
-                }
-
-                SwarmEvent::Behaviour(IaMineEvent::Gossipsub(gossipsub::Event::Unsubscribed { peer_id: pid, topic })) => {
-                    handle_pubsub_unsubscribed(&mut pubsub_topics, pid, topic);
-                }
-
-                SwarmEvent::ConnectionEstablished { peer_id: pid, endpoint, .. } => {
-                    handle_connection_established(
-                        &mut swarm,
-                        &mut client_state,
-                        is_client,
-                        &mode,
-                        pid,
-                        endpoint.get_remote_address().clone(),
-                    );
-                }
-
-                SwarmEvent::ConnectionClosed { peer_id: pid, .. } => {
-                    if handle_connection_closed(
-                        &mut client_state,
-                        &mut pubsub_topics,
-                        is_client,
-                        &mode,
-                        pid,
-                    ) {
-                        break;
-                    }
-                }
-
-                SwarmEvent::Behaviour(IaMineEvent::Ping(ping::Event { peer, result, .. })) => {
-                    handle_ping_event(&mut peer_tracker, &topology, peer, result).await;
-                }
-
-                SwarmEvent::Behaviour(IaMineEvent::Kademlia(kad::Event::RoutingUpdated { peer, .. })) => {
-                    handle_kademlia_routing_updated(debug_flags, peer);
-                }
-
-                SwarmEvent::Behaviour(IaMineEvent::RequestResponse(event)) => {
-                    match handle_request_response_event(RequestResponseHandlerContext {
-                        swarm: &mut swarm,
-                        event,
-                        peer_id,
-                        debug_flags,
-                        is_client,
-                        topology: &topology,
-                        queue: &queue,
-                        task_manager: &task_manager,
-                        task_response_tx: &task_response_tx,
-                        registry: &registry,
-                        model_storage: &model_storage,
-                        infer_runtime: &mut infer_runtime,
-                        client_state: &mut client_state,
-                    })
-                    .await
-                    {
-                        EventLoopDirective::None => {}
-                        EventLoopDirective::Continue => continue,
-                        EventLoopDirective::Break => break,
-                    }
-                }
-
-                _ => {}
             }
         }
     }
