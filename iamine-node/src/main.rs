@@ -36,6 +36,7 @@ mod resource_policy;
 mod result_lifecycle;
 mod result_protocol;
 mod runtime_config;
+mod runtime_constants;
 mod runtime_ids;
 mod runtime_state;
 mod security_checks;
@@ -96,7 +97,8 @@ use attempt_watchdog::{
 use backend_runtime::choose_inference_runtime;
 use benchmark::NodeBenchmark;
 use cli::{
-    is_control_plane_mode, mode_label, parse_args, DebugFlags, InferenceControlFlags, NodeMode,
+    is_control_plane_mode, mode_label, parse_args, print_usage, DebugFlags, InferenceControlFlags,
+    NodeMode,
 };
 use cli_mode_handlers::{
     handle_capabilities, handle_check_code, handle_check_security, handle_models_download,
@@ -157,6 +159,7 @@ use result_lifecycle::{
 };
 use result_protocol::{TaskResultRequest, TaskResultResponse};
 use runtime_config::{listen_address_for_mode, worker_port_from_args};
+use runtime_constants::*;
 use runtime_ids::uuid_simple;
 use runtime_state::{ClientRuntimeState, DistributedInferState, InferRuntimeState};
 use serde_json::{Map, Value};
@@ -210,20 +213,6 @@ use std::time::Duration;
 
 use executor::TaskExecutor;
 use task_protocol::{TaskRequest, TaskResponse};
-
-const TASK_TOPIC: &str = "iamine-tasks";
-const CAP_TOPIC: &str = "iamine-capabilities";
-const DIRECT_INF_TOPIC: &str = "iamine-direct-inference";
-const RESULTS_TOPIC: &str = "iamine-results";
-const INFER_TIMEOUT_MS: u64 = 5_000;
-const INFER_FALLBACK_AFTER_MS: u64 = 2_000;
-const MAX_DISTRIBUTED_RETRIES: u8 = 2;
-const MIN_ADAPTIVE_TIMEOUT_MS: u64 = 7_500;
-const MAX_ADAPTIVE_TIMEOUT_MS: u64 = 45_000;
-const WATCHDOG_EXTENSION_STEP_MS: u64 = 4_000;
-const WATCHDOG_STALL_FACTOR_NUM: u64 = 3;
-const WATCHDOG_STALL_FACTOR_DEN: u64 = 5;
-const WATCHDOG_MIN_STALL_MS: u64 = 6_000;
 
 struct PendingTaskResponse {
     channel: request_response::ResponseChannel<TaskResponse>,
@@ -299,30 +288,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         Ok(m) => m,
         Err(e) => {
             eprintln!("❌ {}", e);
-            eprintln!("Uso:");
-            eprintln!("  iamine-node --worker [--port=N] [--cpu=N] [--ram=N] [--gpu]");
-            eprintln!("  iamine-node --relay");
-            eprintln!("  iamine-node --broadcast <type> <data>");
-            eprintln!("  iamine-node models list");
-            eprintln!("  iamine-node models stats");
-            eprintln!("  iamine-node models download <model_id>");
-            eprintln!("  iamine-node models remove <model_id>");
-            eprintln!("  iamine-node semantic-eval");
-            eprintln!("  iamine-node regression-run");
-            eprintln!("  iamine-node check-code");
-            eprintln!("  iamine-node check-security");
-            eprintln!("  iamine-node validate-release");
-            eprintln!("  iamine-node tasks stats");
-            eprintln!("  iamine-node tasks trace <task_id>");
-            eprintln!("  iamine-node --daemon");
-            eprintln!("Flags:");
-            eprintln!("  --debug-network");
-            eprintln!("  --debug-scheduler");
-            eprintln!("  --debug-tasks");
-            eprintln!("  --force-network");
-            eprintln!("  --no-local");
-            eprintln!("  --prefer-local");
-            // eprintln!("  iamine-node nodes");
+            print_usage();
             std::process::exit(1);
         }
     };

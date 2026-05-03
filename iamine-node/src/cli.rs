@@ -140,6 +140,32 @@ pub(super) fn parse_args() -> Result<NodeMode, String> {
     parse_mode_from_args(std::env::args().collect())
 }
 
+pub(super) fn print_usage() {
+    eprintln!("Uso:");
+    eprintln!("  iamine-node --worker [--port=N] [--cpu=N] [--ram=N] [--gpu]");
+    eprintln!("  iamine-node --relay");
+    eprintln!("  iamine-node --broadcast <type> <data>");
+    eprintln!("  iamine-node models list");
+    eprintln!("  iamine-node models stats");
+    eprintln!("  iamine-node models download <model_id>");
+    eprintln!("  iamine-node models remove <model_id>");
+    eprintln!("  iamine-node semantic-eval");
+    eprintln!("  iamine-node regression-run");
+    eprintln!("  iamine-node check-code");
+    eprintln!("  iamine-node check-security");
+    eprintln!("  iamine-node validate-release");
+    eprintln!("  iamine-node tasks stats");
+    eprintln!("  iamine-node tasks trace <task_id>");
+    eprintln!("  iamine-node --daemon");
+    eprintln!("Flags:");
+    eprintln!("  --debug-network");
+    eprintln!("  --debug-scheduler");
+    eprintln!("  --debug-tasks");
+    eprintln!("  --force-network");
+    eprintln!("  --no-local");
+    eprintln!("  --prefer-local");
+}
+
 pub(super) fn parse_mode_from_args(raw_args: Vec<String>) -> Result<NodeMode, String> {
     let args: Vec<String> = raw_args
         .into_iter()
