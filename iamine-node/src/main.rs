@@ -36,6 +36,7 @@ mod resource_policy;
 mod result_lifecycle;
 mod result_protocol;
 mod runtime_config;
+mod runtime_ids;
 mod runtime_state;
 mod security_checks;
 mod setup_wizard;
@@ -54,6 +55,7 @@ mod wallet;
 mod worker_capabilities;
 mod worker_heartbeat_runtime;
 mod worker_pool;
+mod worker_simulation;
 
 use iamine_models::{
     can_node_run_model, normalize_output, AutoProvisionProfile, DirectInferenceRequest,
@@ -153,6 +155,7 @@ use result_lifecycle::{
 };
 use result_protocol::{TaskResultRequest, TaskResultResponse};
 use runtime_config::{listen_address_for_mode, worker_port_from_args};
+use runtime_ids::uuid_simple;
 use runtime_state::{ClientRuntimeState, DistributedInferState, InferRuntimeState};
 use serde_json::{Map, Value};
 use setup_wizard::{DetectedHardware, NodeSetupConfig};
@@ -174,6 +177,7 @@ use wallet::Wallet;
 use worker_capabilities::WorkerCapabilities;
 use worker_heartbeat_runtime::{handle_worker_heartbeat_tick, WorkerHeartbeatContext};
 use worker_pool::WorkerPool;
+use worker_simulation::simulate_workers;
 
 use futures::StreamExt;
 use libp2p::{
@@ -579,34 +583,4 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     #[allow(unreachable_code)]
     Ok(())
-}
-
-fn uuid_simple() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let t = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
-    format!("{}{}", t.as_secs(), t.subsec_nanos())
-}
-
-async fn simulate_workers(count: usize, _base_peer_id: String) {
-    println!("🔥 Iniciando simulación de {} workers...", count);
-    let mut handles = vec![];
-    for i in 0..count {
-        let handle = tokio::spawn(async move {
-            let mut interval = tokio::time::interval(Duration::from_millis(500));
-            let mut tasks_done = 0u64;
-            loop {
-                interval.tick().await;
-                tasks_done += 1;
-                if tasks_done.is_multiple_of(10) {
-                    println!("👷 Worker-{}: {} tareas simuladas", i, tasks_done);
-                }
-            }
-        });
-        handles.push(handle);
-    }
-    println!(
-        "✅ {} workers simulados activos. Ctrl+C para detener.",
-        count
-    );
-    tokio::time::sleep(Duration::from_secs(60)).await;
 }
