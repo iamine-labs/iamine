@@ -99,7 +99,7 @@ pub use task_analyzer::{
 pub use task_manager::{TaskClaim, TaskManager};
 pub use task_state::TaskStatus as DistributedTaskStatus;
 pub use task_trace::{
-    all_task_traces, default_task_trace_path, global_task_trace_manager, record_task_attempt,
-    record_task_latency, task_trace, TaskTrace, TaskTraceManager,
+    all_task_traces, claim_task_attempt_peer, default_task_trace_path, global_task_trace_manager,
+    record_task_attempt, record_task_latency, task_trace, TaskTrace, TaskTraceManager,
 };
 pub use topology::{NetworkTopology, SharedNetworkTopology};

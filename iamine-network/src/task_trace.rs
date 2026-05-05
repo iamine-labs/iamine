@@ -85,6 +85,29 @@ impl TaskTraceStore {
         trace.clone()
     }
 
+    pub fn claim_latest_unclaimed_peer(
+        &mut self,
+        task_id: &str,
+        worker_peer_id: &str,
+    ) -> Option<TaskTrace> {
+        if worker_peer_id.trim().is_empty()
+            || worker_peer_id == "-"
+            || worker_peer_id == "unclaimed"
+            || worker_peer_id == "unknown"
+        {
+            return None;
+        }
+
+        let trace = self.traces.get_mut(task_id)?;
+        let peer = trace
+            .node_history
+            .iter_mut()
+            .rev()
+            .find(|peer| peer.as_str() == "-" || peer.as_str() == "unclaimed")?;
+        *peer = worker_peer_id.to_string();
+        Some(trace.clone())
+    }
+
     pub fn traces(&self) -> &HashMap<String, TaskTrace> {
         &self.traces
     }
@@ -136,6 +159,20 @@ impl TaskTraceManager {
         Ok(trace)
     }
 
+    pub fn claim_attempt_peer(
+        &self,
+        task_id: &str,
+        worker_peer_id: &str,
+    ) -> io::Result<Option<TaskTrace>> {
+        let mut latest = TaskTraceStore::from_traces(load_traces_from_path(&self.path)?);
+        let trace = latest.claim_latest_unclaimed_peer(task_id, worker_peer_id);
+        if trace.is_some() {
+            save_traces_to_path(&self.path, latest.traces())?;
+            *self.store.write().expect("task trace manager poisoned") = latest;
+        }
+        Ok(trace)
+    }
+
     pub fn get(&self, task_id: &str) -> Option<TaskTrace> {
         self.store
             .read()
@@ -177,6 +214,13 @@ pub fn record_task_latency(task_id: &str, latency_ms: u64) -> Option<TaskTrace> 
 
 pub fn task_trace(task_id: &str) -> Option<TaskTrace> {
     global_task_trace_manager().get(task_id)
+}
+
+pub fn claim_task_attempt_peer(task_id: &str, worker_peer_id: &str) -> Option<TaskTrace> {
+    global_task_trace_manager()
+        .claim_attempt_peer(task_id, worker_peer_id)
+        .ok()
+        .flatten()
 }
 
 pub fn all_task_traces() -> Vec<TaskTrace> {
@@ -269,6 +313,23 @@ mod tests {
         let trace = store.upsert_attempt("task-1", "peer-b", "mistral-7b", true, true);
         assert_eq!(trace.fallbacks, 1);
         assert_eq!(trace.model_history.last().unwrap(), "mistral-7b");
+    }
+
+    #[test]
+    fn test_claim_latest_unclaimed_fallback_peer_updates_trace() {
+        let mut store = TaskTraceStore::new();
+        store.upsert_attempt("task-1", "mac-worker", "mistral-7b", false, false);
+        store.upsert_attempt("task-1", "-", "mistral-7b", true, true);
+
+        let trace = store
+            .claim_latest_unclaimed_peer("task-1", "ts140-worker")
+            .expect("unclaimed fallback should be claimable");
+
+        assert_eq!(
+            trace.node_history,
+            vec!["mac-worker".to_string(), "ts140-worker".to_string()]
+        );
+        assert_eq!(trace.fallbacks, 1);
     }
 
     #[test]
