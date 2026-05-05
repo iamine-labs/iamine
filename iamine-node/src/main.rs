@@ -124,6 +124,8 @@ const WATCHDOG_STALL_FACTOR_NUM: u64 = 3;
 const WATCHDOG_STALL_FACTOR_DEN: u64 = 5;
 const WATCHDOG_MIN_STALL_MS: u64 = 6_000;
 const LATE_RESULT_ACCEPTANCE_WINDOW_MS: u64 = 15_000;
+const MIN_REMOTE_EXECUTION_TIMEOUT_MS: u64 = 120_000;
+const MAX_REMOTE_EXECUTION_TIMEOUT_MS: u64 = 900_000;
 const UNCLAIMED_WORKER_PEER_ID: &str = "-";
 
 struct PendingTaskResponse {
@@ -957,7 +959,6 @@ impl AttemptDispatchType {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum AttemptClaimSource {
-    #[cfg(test)]
     TaskMessageReceived,
     AttemptProgress,
     ResultReceived,
@@ -966,7 +967,6 @@ enum AttemptClaimSource {
 impl AttemptClaimSource {
     fn as_str(self) -> &'static str {
         match self {
-            #[cfg(test)]
             Self::TaskMessageReceived => "task_message_received",
             Self::AttemptProgress => "attempt_progress",
             Self::ResultReceived => "result_received",
@@ -995,6 +995,7 @@ fn is_meaningfully_in_flight(state: AttemptLifecycleState) -> bool {
 
 fn lifecycle_state_from_progress_stage(stage: &str) -> Option<AttemptLifecycleState> {
     match stage {
+        "task_message_received" => Some(AttemptLifecycleState::Starting),
         "attempt_started" => Some(AttemptLifecycleState::Starting),
         "model_load_started" => Some(AttemptLifecycleState::LoadingModel),
         "model_load_completed" | "inference_started" => Some(AttemptLifecycleState::Running),
@@ -1011,9 +1012,12 @@ fn lifecycle_state_from_progress_stage(stage: &str) -> Option<AttemptLifecycleSt
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct AttemptTimeoutPolicy {
     timeout_ms: u64,
+    claim_timeout_ms: u64,
+    first_progress_timeout_ms: u64,
     stall_timeout_ms: u64,
     extension_step_ms: u64,
     max_wait_ms: u64,
+    max_execution_timeout_ms: u64,
     latency_class: &'static str,
 }
 
@@ -1058,15 +1062,24 @@ impl AttemptTimeoutPolicy {
         let stall_timeout_ms = ((timeout_ms.saturating_mul(WATCHDOG_STALL_FACTOR_NUM))
             / WATCHDOG_STALL_FACTOR_DEN)
             .max(WATCHDOG_MIN_STALL_MS);
+        let claim_timeout_ms = (timeout_ms / 2).max(INFER_FALLBACK_AFTER_MS);
+        let first_progress_timeout_ms = timeout_ms;
         let max_wait_ms = timeout_ms
             .saturating_add(timeout_ms / 2)
             .min(MAX_ADAPTIVE_TIMEOUT_MS.saturating_add(10_000));
+        let max_execution_timeout_ms = timeout_ms.saturating_mul(24).clamp(
+            MIN_REMOTE_EXECUTION_TIMEOUT_MS,
+            MAX_REMOTE_EXECUTION_TIMEOUT_MS,
+        );
 
         Self {
             timeout_ms,
+            claim_timeout_ms,
+            first_progress_timeout_ms,
             stall_timeout_ms,
             extension_step_ms: WATCHDOG_EXTENSION_STEP_MS,
             max_wait_ms,
+            max_execution_timeout_ms,
             latency_class,
         }
     }
@@ -1088,6 +1101,7 @@ struct AttemptWatchdog {
     max_deadline_at: tokio::time::Instant,
     last_progress_stage: String,
     last_tokens_generated: u64,
+    progress_observed: bool,
     no_progress_warning_emitted: bool,
 }
 
@@ -1119,9 +1133,10 @@ impl AttemptWatchdog {
             started_at: now,
             last_progress_at: now,
             deadline_at: now + Duration::from_millis(policy.timeout_ms),
-            max_deadline_at: now + Duration::from_millis(policy.max_wait_ms),
+            max_deadline_at: now + Duration::from_millis(policy.max_execution_timeout_ms),
             last_progress_stage: "queued".to_string(),
             last_tokens_generated: 0,
+            progress_observed: false,
             no_progress_warning_emitted: false,
             policy,
         }
@@ -1211,6 +1226,7 @@ impl AttemptWatchdog {
         let now = tokio::time::Instant::now();
         self.last_progress_at = now;
         self.last_progress_stage = stage.to_string();
+        self.progress_observed = true;
         if let Some(tokens) = tokens_generated_count {
             self.last_tokens_generated = tokens.max(self.last_tokens_generated);
         }
@@ -1218,7 +1234,12 @@ impl AttemptWatchdog {
             let _ = self.transition_state(next_state);
         }
         if now < self.max_deadline_at {
-            let proposed_deadline = now + Duration::from_millis(self.policy.extension_step_ms);
+            let proposed_deadline = now
+                + Duration::from_millis(
+                    self.policy
+                        .stall_timeout_ms
+                        .max(self.policy.extension_step_ms),
+                );
             self.deadline_at = std::cmp::max(
                 self.deadline_at,
                 std::cmp::min(proposed_deadline, self.max_deadline_at),
@@ -1229,17 +1250,29 @@ impl AttemptWatchdog {
 
     fn check(&mut self) -> WatchdogCheck {
         let now = tokio::time::Instant::now();
-        if now < self.deadline_at {
-            return WatchdogCheck::Healthy;
+        if now >= self.max_deadline_at {
+            return WatchdogCheck::TimedOut;
         }
 
-        let no_progress_ms = self.elapsed_since_last_progress_ms();
-        if no_progress_ms >= self.policy.stall_timeout_ms {
-            return if now >= self.max_deadline_at {
-                WatchdogCheck::TimedOut
+        if !self.progress_observed {
+            let first_evidence_timeout_ms = if self.is_unclaimed() {
+                self.policy.claim_timeout_ms
             } else {
-                WatchdogCheck::Stalled
+                self.policy.first_progress_timeout_ms
             };
+            return if self.elapsed_ms() >= first_evidence_timeout_ms {
+                WatchdogCheck::Stalled
+            } else {
+                WatchdogCheck::Healthy
+            };
+        }
+
+        if self.elapsed_since_last_progress_ms() >= self.policy.stall_timeout_ms {
+            return WatchdogCheck::Stalled;
+        }
+
+        if now < self.deadline_at {
+            return WatchdogCheck::Healthy;
         }
 
         let grace_deadline =
@@ -1251,11 +1284,7 @@ impl AttemptWatchdog {
             }
         }
 
-        if now >= self.max_deadline_at {
-            WatchdogCheck::TimedOut
-        } else {
-            WatchdogCheck::Stalled
-        }
+        WatchdogCheck::Healthy
     }
 }
 
@@ -2258,6 +2287,7 @@ fn emit_attempt_progress_event(
     model_id: &str,
     worker_peer_id: &str,
     stage: &str,
+    elapsed_ms: u64,
     tokens_generated_count: Option<u64>,
 ) {
     log_observability_event(
@@ -2272,6 +2302,7 @@ fn emit_attempt_progress_event(
             fields.insert("attempt_id".to_string(), attempt_id.into());
             fields.insert("worker_peer_id".to_string(), worker_peer_id.into());
             fields.insert("stage".to_string(), stage.into());
+            fields.insert("elapsed_ms".to_string(), elapsed_ms.into());
             if let Some(tokens_generated_count) = tokens_generated_count {
                 fields.insert(
                     "tokens_generated_count".to_string(),
@@ -2283,12 +2314,61 @@ fn emit_attempt_progress_event(
     );
 }
 
+fn remote_progress_status(stage: &str, tokens_generated_count: Option<u64>) -> &'static str {
+    if matches!(
+        stage,
+        "inference_finished" | "result_serialized" | "result_published"
+    ) {
+        "completed"
+    } else if tokens_generated_count.unwrap_or_default() > 0
+        || matches!(stage, "first_token_generated" | "tokens_generated_count")
+    {
+        "generating"
+    } else {
+        "thinking"
+    }
+}
+
+fn format_remote_progress_line(
+    worker_peer_id: &str,
+    attempt_id: &str,
+    stage: &str,
+    elapsed_ms: u64,
+    tokens_generated_count: Option<u64>,
+) -> String {
+    let elapsed_secs = elapsed_ms / 1_000;
+    match remote_progress_status(stage, tokens_generated_count) {
+        "completed" => format!(
+            "[Remote] worker={} attempt={} status=completed tokens={}",
+            worker_peer_id,
+            attempt_id,
+            tokens_generated_count.unwrap_or_default()
+        ),
+        "generating" => format!(
+            "[Remote] worker={} attempt={} status=generating elapsed={}s tokens={}",
+            worker_peer_id,
+            attempt_id,
+            elapsed_secs,
+            tokens_generated_count.unwrap_or_default()
+        ),
+        _ => format!(
+            "[Remote] worker={} attempt={} status=thinking elapsed={}s stage={}",
+            worker_peer_id, attempt_id, elapsed_secs, stage
+        ),
+    }
+}
+
+fn elapsed_ms_since(started_at: tokio::time::Instant) -> u64 {
+    started_at.elapsed().as_millis() as u64
+}
+
 fn emit_attempt_progress_received_event(
     trace_task_id: &str,
     attempt_id: &str,
     model_id: Option<&str>,
     worker_peer_id: &str,
     stage: &str,
+    elapsed_ms: u64,
     tokens_generated_count: Option<u64>,
 ) {
     log_observability_event(
@@ -2303,6 +2383,7 @@ fn emit_attempt_progress_received_event(
             fields.insert("attempt_id".to_string(), attempt_id.into());
             fields.insert("worker_peer_id".to_string(), worker_peer_id.into());
             fields.insert("stage".to_string(), stage.into());
+            fields.insert("elapsed_ms".to_string(), elapsed_ms.into());
             if let Some(tokens_generated_count) = tokens_generated_count {
                 fields.insert(
                     "tokens_generated_count".to_string(),
@@ -2418,6 +2499,7 @@ fn publish_worker_progress_message(
     model_id: &str,
     worker_peer_id: &str,
     stage: &str,
+    elapsed_ms: u64,
     tokens_generated_count: Option<u64>,
 ) {
     let payload = serde_json::json!({
@@ -2427,21 +2509,84 @@ fn publish_worker_progress_message(
         "request_id": request_id,
         "model_id": model_id,
         "worker_peer": worker_peer_id,
+        "worker_peer_id": worker_peer_id,
         "stage": stage,
+        "elapsed_ms": elapsed_ms,
         "tokens_generated_count": tokens_generated_count,
     });
-    let _ = swarm.behaviour_mut().gossipsub.publish(
-        gossipsub::IdentTopic::new(RESULTS_TOPIC),
-        serde_json::to_vec(&payload).unwrap_or_default(),
-    );
+    for topic in [RESULTS_TOPIC, TASK_TOPIC] {
+        if let Err(error) = swarm.behaviour_mut().gossipsub.publish(
+            gossipsub::IdentTopic::new(topic),
+            serde_json::to_vec(&payload).unwrap_or_default(),
+        ) {
+            log_observability_event(
+                LogLevel::Warn,
+                "remote_progress_publish_failed",
+                task_id,
+                Some(task_id),
+                Some(model_id),
+                Some(TASK_DISPATCH_UNCONFIRMED_001),
+                {
+                    let mut fields = Map::new();
+                    fields.insert("attempt_id".to_string(), attempt_id.into());
+                    fields.insert("worker_peer_id".to_string(), worker_peer_id.into());
+                    fields.insert("topic".to_string(), topic.into());
+                    fields.insert("stage".to_string(), stage.into());
+                    fields.insert("error".to_string(), error.to_string().into());
+                    fields
+                },
+            );
+        }
+    }
     emit_attempt_progress_event(
         task_id,
         attempt_id,
         model_id,
         worker_peer_id,
         stage,
+        elapsed_ms,
         tokens_generated_count,
     );
+}
+
+fn publish_worker_result_payload(
+    swarm: &mut Swarm<IamineBehaviour>,
+    task_id: &str,
+    attempt_id: &str,
+    model_id: &str,
+    worker_peer_id: &str,
+    result_payload: &serde_json::Value,
+) -> Option<String> {
+    let mut first_message_id = None;
+    for topic in [RESULTS_TOPIC, TASK_TOPIC] {
+        match swarm.behaviour_mut().gossipsub.publish(
+            gossipsub::IdentTopic::new(topic),
+            serde_json::to_vec(result_payload).unwrap_or_default(),
+        ) {
+            Ok(message_id) => {
+                if first_message_id.is_none() {
+                    first_message_id = Some(message_id.to_string());
+                }
+            }
+            Err(error) => log_observability_event(
+                LogLevel::Error,
+                "result_publish_failed",
+                task_id,
+                Some(task_id),
+                Some(model_id),
+                Some(TASK_DISPATCH_UNCONFIRMED_001),
+                {
+                    let mut fields = Map::new();
+                    fields.insert("attempt_id".to_string(), attempt_id.into());
+                    fields.insert("worker_peer_id".to_string(), worker_peer_id.into());
+                    fields.insert("topic".to_string(), topic.into());
+                    fields.insert("error".to_string(), error.to_string().into());
+                    fields
+                },
+            ),
+        }
+    }
+    first_message_id
 }
 
 fn clear_stream_state(
@@ -4826,12 +4971,24 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                 timeout_policy.timeout_ms.into(),
                                             );
                                             fields.insert(
+                                                "claim_timeout_ms".to_string(),
+                                                timeout_policy.claim_timeout_ms.into(),
+                                            );
+                                            fields.insert(
+                                                "first_progress_timeout_ms".to_string(),
+                                                timeout_policy.first_progress_timeout_ms.into(),
+                                            );
+                                            fields.insert(
                                                 "stall_timeout_ms".to_string(),
                                                 timeout_policy.stall_timeout_ms.into(),
                                             );
                                             fields.insert(
                                                 "max_wait_ms".to_string(),
                                                 timeout_policy.max_wait_ms.into(),
+                                            );
+                                            fields.insert(
+                                                "max_execution_timeout_ms".to_string(),
+                                                timeout_policy.max_execution_timeout_ms.into(),
                                             );
                                             fields.insert(
                                                 "latency_class".to_string(),
@@ -5058,12 +5215,24 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                 timeout_policy.timeout_ms.into(),
                                             );
                                             fields.insert(
+                                                "claim_timeout_ms".to_string(),
+                                                timeout_policy.claim_timeout_ms.into(),
+                                            );
+                                            fields.insert(
+                                                "first_progress_timeout_ms".to_string(),
+                                                timeout_policy.first_progress_timeout_ms.into(),
+                                            );
+                                            fields.insert(
                                                 "stall_timeout_ms".to_string(),
                                                 timeout_policy.stall_timeout_ms.into(),
                                             );
                                             fields.insert(
                                                 "max_wait_ms".to_string(),
                                                 timeout_policy.max_wait_ms.into(),
+                                            );
+                                            fields.insert(
+                                                "max_execution_timeout_ms".to_string(),
+                                                timeout_policy.max_execution_timeout_ms.into(),
                                             );
                                             fields.insert(
                                                 "latency_class".to_string(),
@@ -5766,6 +5935,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 let max_tokens = msg["max_tokens"].as_u64().unwrap_or(200) as u32;
                                 let temperature = msg["temperature"].as_f64().unwrap_or(0.7) as f32;
                                 let _requester = msg["requester_peer"].as_str().unwrap_or("").to_string();
+                                let remote_attempt_started_at = tokio::time::Instant::now();
                                 let local_model_available = model_storage.has_model(&model_id);
                                 emit_worker_task_message_received_event(
                                     &task_id,
@@ -5784,34 +5954,30 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     &peer_id.to_string(),
                                     local_model_available,
                                 );
-                                publish_worker_progress_message(
-                                    &mut swarm,
-                                    &task_id,
-                                    &attempt_id,
-                                    &request_id,
-                                    &model_id,
-                                    &peer_id.to_string(),
-                                    "attempt_started",
-                                    None,
-                                );
-                                emit_direct_inference_request_received_event(
-                                    &task_id,
-                                    &attempt_id,
-                                    &model_id,
-                                    &from_peer,
-                                    &peer_id.to_string(),
-                                    local_model_available,
-                                );
-                                publish_worker_progress_message(
-                                    &mut swarm,
-                                    &task_id,
-                                    &attempt_id,
-                                    &request_id,
-                                    &model_id,
-                                    &peer_id.to_string(),
-                                    "attempt_started",
-                                    None,
-                                );
+                                if local_model_available {
+                                    publish_worker_progress_message(
+                                        &mut swarm,
+                                        &task_id,
+                                        &attempt_id,
+                                        &request_id,
+                                        &model_id,
+                                        &peer_id.to_string(),
+                                        "task_message_received",
+                                        elapsed_ms_since(remote_attempt_started_at),
+                                        None,
+                                    );
+                                    publish_worker_progress_message(
+                                        &mut swarm,
+                                        &task_id,
+                                        &attempt_id,
+                                        &request_id,
+                                        &model_id,
+                                        &peer_id.to_string(),
+                                        "attempt_started",
+                                        elapsed_ms_since(remote_attempt_started_at),
+                                        None,
+                                    );
+                                }
 
                                 println!("🧠 [Worker] InferenceRequest: model={} prompt='{}'",
                                     model_id, &prompt[..prompt.len().min(40)]);
@@ -5837,6 +6003,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     &model_id,
                                     &peer_id.to_string(),
                                     "model_load_started",
+                                    elapsed_ms_since(remote_attempt_started_at),
                                     None,
                                 );
                                 publish_worker_progress_message(
@@ -5847,6 +6014,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     &model_id,
                                     &peer_id.to_string(),
                                     "model_load_completed",
+                                    elapsed_ms_since(remote_attempt_started_at),
                                     None,
                                 );
                                 publish_worker_progress_message(
@@ -5857,36 +6025,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     &model_id,
                                     &peer_id.to_string(),
                                     "inference_started",
-                                    None,
-                                );
-                                publish_worker_progress_message(
-                                    &mut swarm,
-                                    &task_id,
-                                    &attempt_id,
-                                    &request_id,
-                                    &model_id,
-                                    &peer_id.to_string(),
-                                    "model_load_started",
-                                    None,
-                                );
-                                publish_worker_progress_message(
-                                    &mut swarm,
-                                    &task_id,
-                                    &attempt_id,
-                                    &request_id,
-                                    &model_id,
-                                    &peer_id.to_string(),
-                                    "model_load_completed",
-                                    None,
-                                );
-                                publish_worker_progress_message(
-                                    &mut swarm,
-                                    &task_id,
-                                    &attempt_id,
-                                    &request_id,
-                                    &model_id,
-                                    &peer_id.to_string(),
-                                    "inference_started",
+                                    elapsed_ms_since(remote_attempt_started_at),
                                     None,
                                 );
 
@@ -5980,6 +6119,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                             &model_id,
                                             &peer_id.to_string(),
                                             "first_token_generated",
+                                            elapsed_ms_since(remote_attempt_started_at),
                                             Some(produced_tokens),
                                         );
                                     } else if produced_tokens % 16 == 0 {
@@ -5991,6 +6131,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                             &model_id,
                                             &peer_id.to_string(),
                                             "tokens_generated_count",
+                                            elapsed_ms_since(remote_attempt_started_at),
                                             Some(produced_tokens),
                                         );
                                     }
@@ -6014,6 +6155,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         &model_id,
                                         &peer_id.to_string(),
                                         "inference_finished",
+                                        elapsed_ms_since(remote_attempt_started_at),
                                         Some(result.tokens_generated as u64),
                                     );
                                     let result_size = result.output.len();
@@ -6029,6 +6171,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     if let Some(map) = result_payload.as_object_mut() {
                                         map.insert("task_id".to_string(), task_id.clone().into());
                                         map.insert("attempt_id".to_string(), attempt_id.clone().into());
+                                        map.insert("worker_peer_id".to_string(), peer_id.to_string().into());
                                     }
                                     publish_worker_progress_message(
                                         &mut swarm,
@@ -6038,50 +6181,39 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         &model_id,
                                         &peer_id.to_string(),
                                         "result_serialized",
+                                        elapsed_ms_since(remote_attempt_started_at),
                                         Some(result.tokens_generated as u64),
                                     );
                                     let payload_size = result_payload.to_string().len();
-                                    let publish_result = swarm.behaviour_mut().gossipsub.publish(
-                                        gossipsub::IdentTopic::new(RESULTS_TOPIC),
-                                        serde_json::to_vec(&result_payload).unwrap(),
+                                    let message_id = publish_worker_result_payload(
+                                        &mut swarm,
+                                        &task_id,
+                                        &attempt_id,
+                                        &model_id,
+                                        &peer_id.to_string(),
+                                        &result_payload,
                                     );
-                                    match publish_result {
-                                        Ok(message_id) => {
-                                            publish_worker_progress_message(
-                                                &mut swarm,
-                                                &task_id,
-                                                &attempt_id,
-                                                &request_id,
-                                                &model_id,
-                                                &peer_id.to_string(),
-                                                "result_published",
-                                                Some(result.tokens_generated as u64),
-                                            );
-                                            emit_worker_result_published_event(
-                                                &task_id,
-                                                &attempt_id,
-                                                &model_id,
-                                                RESULTS_TOPIC,
-                                                payload_size,
-                                                Some(&message_id.to_string()),
-                                                &peer_id.to_string(),
-                                            )
-                                        }
-                                        Err(error) => log_observability_event(
-                                            LogLevel::Error,
-                                            "result_publish_failed",
+                                    if message_id.is_some() {
+                                        publish_worker_progress_message(
+                                            &mut swarm,
                                             &task_id,
-                                            Some(&task_id),
-                                            Some(&model_id),
-                                            Some(TASK_DISPATCH_UNCONFIRMED_001),
-                                            {
-                                                let mut fields = Map::new();
-                                                fields.insert("attempt_id".to_string(), attempt_id.clone().into());
-                                                fields.insert("topic".to_string(), RESULTS_TOPIC.into());
-                                                fields.insert("error".to_string(), error.to_string().into());
-                                                fields
-                                            },
-                                        ),
+                                            &attempt_id,
+                                            &request_id,
+                                            &model_id,
+                                            &peer_id.to_string(),
+                                            "result_published",
+                                            elapsed_ms_since(remote_attempt_started_at),
+                                            Some(result.tokens_generated as u64),
+                                        );
+                                        emit_worker_result_published_event(
+                                            &task_id,
+                                            &attempt_id,
+                                            &model_id,
+                                            RESULTS_TOPIC,
+                                            payload_size,
+                                            message_id.as_deref(),
+                                            &peer_id.to_string(),
+                                        )
                                     }
                                     println!("✅ [Worker] Inference completada: {} tokens en {}ms",
                                         result.tokens_generated, result.execution_ms);
@@ -6092,8 +6224,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 let task_id = msg["task_id"].as_str().unwrap_or("").to_string();
                                 let attempt_id = msg["attempt_id"].as_str().unwrap_or("").to_string();
                                 let stage = msg["stage"].as_str().unwrap_or("unknown");
-                                let worker_peer = msg["worker_peer"].as_str().unwrap_or("unknown");
+                                let worker_peer = msg["worker_peer_id"]
+                                    .as_str()
+                                    .or_else(|| msg["worker_peer"].as_str())
+                                    .unwrap_or("unknown");
                                 let model_id = msg["model_id"].as_str().unwrap_or("").to_string();
+                                let elapsed_ms = msg["elapsed_ms"].as_u64().unwrap_or_else(|| {
+                                    attempt_watchdogs
+                                        .get(&attempt_id)
+                                        .map(|watchdog| watchdog.elapsed_ms())
+                                        .unwrap_or_default()
+                                });
                                 let tokens_generated_count =
                                     msg["tokens_generated_count"].as_u64();
                                 let expected_task_id = distributed_infer_state
@@ -6115,7 +6256,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         };
                                         if let Some(previous_worker_peer_id) = watchdog.claim_worker(
                                             worker_peer,
-                                            AttemptClaimSource::AttemptProgress,
+                                            if stage == "task_message_received" {
+                                                AttemptClaimSource::TaskMessageReceived
+                                            } else {
+                                                AttemptClaimSource::AttemptProgress
+                                            },
                                         ) {
                                             emit_fallback_attempt_claimed_event(
                                                 &task_id,
@@ -6123,7 +6268,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                 Some(&model_for_event),
                                                 worker_peer,
                                                 &previous_worker_peer_id,
-                                                AttemptClaimSource::AttemptProgress,
+                                                if stage == "task_message_received" {
+                                                    AttemptClaimSource::TaskMessageReceived
+                                                } else {
+                                                    AttemptClaimSource::AttemptProgress
+                                                },
                                             );
                                             if let Some(infer_state) = distributed_infer_state.as_mut() {
                                                 let _ = infer_state.claim_attempt_record(&attempt_id, worker_peer);
@@ -6198,12 +6347,23 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                     &worker_peer_id,
                                                 );
                                             }
+                                            println!(
+                                                "{}",
+                                                format_remote_progress_line(
+                                                    &worker_peer_id,
+                                                    &attempt_id,
+                                                    stage,
+                                                    elapsed_ms,
+                                                    tokens_generated_count,
+                                                )
+                                            );
                                             emit_attempt_progress_received_event(
                                                 &task_id,
                                                 &attempt_id,
                                                 Some(&model_for_event),
                                                 &worker_peer_id,
                                                 stage,
+                                                elapsed_ms,
                                                 tokens_generated_count,
                                             );
                                         }
@@ -6250,7 +6410,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     let truncated = msg["truncated"].as_bool().unwrap_or(false);
                                     let continuation_steps = msg["continuation_steps"].as_u64().unwrap_or(0);
                                     let ms = msg["execution_ms"].as_u64().unwrap_or(0);
-                                    let worker = msg["worker_peer"].as_str().unwrap_or("unknown");
+                                    let worker = msg["worker_peer_id"]
+                                        .as_str()
+                                        .or_else(|| msg["worker_peer"].as_str())
+                                        .unwrap_or("unknown");
                                     let accel = msg["accelerator"].as_str().unwrap_or("unknown");
                                     let full_output = msg["output"].as_str().unwrap_or("").to_string();
                                     let latency_ms = infer_started_at
@@ -6842,6 +7005,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 let model_id = msg["model"].as_str().unwrap_or("tinyllama-1b").to_string();
                                 let prompt = msg["prompt"].as_str().unwrap_or("").to_string();
                                 let max_tokens = msg["max_tokens"].as_u64().unwrap_or(200) as u32;
+                                let remote_attempt_started_at = tokio::time::Instant::now();
                                 let local_model_available = model_storage.has_model(&model_id);
                                 emit_worker_task_message_received_event(
                                     &task_id,
@@ -6860,6 +7024,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     println!("   ⚠️ Modelo {} no instalado — ignorando", model_id);
                                     continue;
                                 }
+                                publish_worker_progress_message(
+                                    &mut swarm,
+                                    &task_id,
+                                    &attempt_id,
+                                    &request_id,
+                                    &model_id,
+                                    &peer_id.to_string(),
+                                    "task_message_received",
+                                    elapsed_ms_since(remote_attempt_started_at),
+                                    None,
+                                );
 
                                 if let Some(req) = ModelRequirements::for_model(&model_id) {
                                     if !can_node_run_model(&node_caps, &req) {
@@ -6867,6 +7042,28 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         continue;
                                     }
                                 }
+                                publish_worker_progress_message(
+                                    &mut swarm,
+                                    &task_id,
+                                    &attempt_id,
+                                    &request_id,
+                                    &model_id,
+                                    &peer_id.to_string(),
+                                    "attempt_started",
+                                    elapsed_ms_since(remote_attempt_started_at),
+                                    None,
+                                );
+                                publish_worker_progress_message(
+                                    &mut swarm,
+                                    &task_id,
+                                    &attempt_id,
+                                    &request_id,
+                                    &model_id,
+                                    &peer_id.to_string(),
+                                    "inference_started",
+                                    elapsed_ms_since(remote_attempt_started_at),
+                                    None,
+                                );
 
                                 let engine_ref = Arc::clone(&inference_engine);
                                 let metrics_ref = Arc::clone(&metrics);
@@ -6956,6 +7153,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                             &model_id,
                                             &peer_id.to_string(),
                                             "first_token_generated",
+                                            elapsed_ms_since(remote_attempt_started_at),
                                             Some(produced_tokens),
                                         );
                                     } else if produced_tokens % 16 == 0 {
@@ -6967,6 +7165,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                             &model_id,
                                             &peer_id.to_string(),
                                             "tokens_generated_count",
+                                            elapsed_ms_since(remote_attempt_started_at),
                                             Some(produced_tokens),
                                         );
                                     }
@@ -6990,6 +7189,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         &model_id,
                                         &peer_id.to_string(),
                                         "inference_finished",
+                                        elapsed_ms_since(remote_attempt_started_at),
                                         Some(result.tokens_generated as u64),
                                     );
                                     let result_size = result.output.len();
@@ -7005,6 +7205,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     if let Some(map) = result_payload.as_object_mut() {
                                         map.insert("task_id".to_string(), task_id.clone().into());
                                         map.insert("attempt_id".to_string(), attempt_id.clone().into());
+                                        map.insert("worker_peer_id".to_string(), peer_id.to_string().into());
                                     }
                                     publish_worker_progress_message(
                                         &mut swarm,
@@ -7014,50 +7215,39 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         &model_id,
                                         &peer_id.to_string(),
                                         "result_serialized",
+                                        elapsed_ms_since(remote_attempt_started_at),
                                         Some(result.tokens_generated as u64),
                                     );
                                     let payload_size = result_payload.to_string().len();
-                                    let publish_result = swarm.behaviour_mut().gossipsub.publish(
-                                        gossipsub::IdentTopic::new(RESULTS_TOPIC),
-                                        serde_json::to_vec(&result_payload).unwrap(),
+                                    let message_id = publish_worker_result_payload(
+                                        &mut swarm,
+                                        &task_id,
+                                        &attempt_id,
+                                        &model_id,
+                                        &peer_id.to_string(),
+                                        &result_payload,
                                     );
-                                    match publish_result {
-                                        Ok(message_id) => {
-                                            publish_worker_progress_message(
-                                                &mut swarm,
-                                                &task_id,
-                                                &attempt_id,
-                                                &request_id,
-                                                &model_id,
-                                                &peer_id.to_string(),
-                                                "result_published",
-                                                Some(result.tokens_generated as u64),
-                                            );
-                                            emit_worker_result_published_event(
-                                                &task_id,
-                                                &attempt_id,
-                                                &model_id,
-                                                RESULTS_TOPIC,
-                                                payload_size,
-                                                Some(&message_id.to_string()),
-                                                &peer_id.to_string(),
-                                            )
-                                        }
-                                        Err(error) => log_observability_event(
-                                            LogLevel::Error,
-                                            "result_publish_failed",
+                                    if message_id.is_some() {
+                                        publish_worker_progress_message(
+                                            &mut swarm,
                                             &task_id,
-                                            Some(&task_id),
-                                            Some(&model_id),
-                                            Some(TASK_DISPATCH_UNCONFIRMED_001),
-                                            {
-                                                let mut fields = Map::new();
-                                                fields.insert("attempt_id".to_string(), attempt_id.clone().into());
-                                                fields.insert("topic".to_string(), RESULTS_TOPIC.into());
-                                                fields.insert("error".to_string(), error.to_string().into());
-                                                fields
-                                            },
-                                        ),
+                                            &attempt_id,
+                                            &request_id,
+                                            &model_id,
+                                            &peer_id.to_string(),
+                                            "result_published",
+                                            elapsed_ms_since(remote_attempt_started_at),
+                                            Some(result.tokens_generated as u64),
+                                        );
+                                        emit_worker_result_published_event(
+                                            &task_id,
+                                            &attempt_id,
+                                            &model_id,
+                                            RESULTS_TOPIC,
+                                            payload_size,
+                                            message_id.as_deref(),
+                                            &peer_id.to_string(),
+                                        )
                                     }
 
                                     println!("✅ [Worker] Direct inference completada: {} tokens en {}ms",
@@ -8157,9 +8347,12 @@ mod tests {
     fn test_attempt_timeout_policy() -> AttemptTimeoutPolicy {
         AttemptTimeoutPolicy {
             timeout_ms: 20,
+            claim_timeout_ms: 10,
+            first_progress_timeout_ms: 20,
             stall_timeout_ms: 25,
             extension_step_ms: 25,
             max_wait_ms: 120,
+            max_execution_timeout_ms: 250,
             latency_class: "test",
         }
     }
@@ -8646,9 +8839,12 @@ mod tests {
             "mistral-7b".to_string(),
             AttemptTimeoutPolicy {
                 timeout_ms: 20,
+                claim_timeout_ms: 10,
+                first_progress_timeout_ms: 20,
                 stall_timeout_ms: 50,
                 extension_step_ms: 25,
                 max_wait_ms: 120,
+                max_execution_timeout_ms: 250,
                 latency_class: "high",
             },
         );
@@ -8682,9 +8878,12 @@ mod tests {
             "llama3-3b".to_string(),
             AttemptTimeoutPolicy {
                 timeout_ms: 15,
+                claim_timeout_ms: 10,
+                first_progress_timeout_ms: 15,
                 stall_timeout_ms: 25,
                 extension_step_ms: 5,
                 max_wait_ms: 120,
+                max_execution_timeout_ms: 250,
                 latency_class: "medium",
             },
         );
@@ -8772,6 +8971,24 @@ mod tests {
     }
 
     #[test]
+    fn test_watchdog_no_progress_is_not_returned_while_tokens_increase() {
+        let mut watchdog = AttemptWatchdog::new_fallback_broadcast(
+            "task-token-progress".to_string(),
+            "attempt-2".to_string(),
+            "mistral-7b".to_string(),
+            test_attempt_timeout_policy(),
+        );
+        let _ = watchdog.claim_worker("TS140", AttemptClaimSource::AttemptProgress);
+
+        for tokens in [1, 2, 3] {
+            assert!(watchdog.record_progress("tokens_generated_count", Some(tokens)));
+            std::thread::sleep(Duration::from_millis(5));
+            assert_ne!(watchdog.check(), WatchdogCheck::Stalled);
+            assert_ne!(watchdog.check(), WatchdogCheck::TimedOut);
+        }
+    }
+
+    #[test]
     fn test_result_from_claimed_fallback_worker_is_accepted_after_current_request_moves() {
         let mut watchdog = AttemptWatchdog::new_fallback_broadcast(
             "task-result-claim".to_string(),
@@ -8799,6 +9016,28 @@ mod tests {
             "Mac",
             false,
         ));
+    }
+
+    #[test]
+    fn test_human_remote_progress_output_formatting() {
+        assert_eq!(
+            format_remote_progress_line("TS140", "attempt-2", "inference_started", 12_300, None),
+            "[Remote] worker=TS140 attempt=attempt-2 status=thinking elapsed=12s stage=inference_started"
+        );
+        assert_eq!(
+            format_remote_progress_line(
+                "TS140",
+                "attempt-2",
+                "tokens_generated_count",
+                65_000,
+                Some(32),
+            ),
+            "[Remote] worker=TS140 attempt=attempt-2 status=generating elapsed=65s tokens=32"
+        );
+        assert_eq!(
+            format_remote_progress_line("TS140", "attempt-2", "result_published", 70_000, Some(48)),
+            "[Remote] worker=TS140 attempt=attempt-2 status=completed tokens=48"
+        );
     }
 
     #[test]
@@ -8846,6 +9085,7 @@ mod tests {
             "mistral-7b",
             "peer-progress-1",
             "first_token_generated",
+            1_250,
             Some(1),
         );
 
@@ -8861,6 +9101,13 @@ mod tests {
         assert_eq!(
             entry.fields.get("stage").and_then(|value| value.as_str()),
             Some("first_token_generated")
+        );
+        assert_eq!(
+            entry
+                .fields
+                .get("elapsed_ms")
+                .and_then(|value| value.as_u64()),
+            Some(1_250)
         );
     }
 
@@ -9060,6 +9307,60 @@ mod tests {
         assert!(entries
             .iter()
             .any(|entry| entry.trace_id == trace_id && entry.event == "final_outcome_success"));
+    }
+
+    #[test]
+    fn test_field_like_disconnect_fallback_progress_result_sequence_succeeds() {
+        let mut state = DistributedInferState::new("Explain gravity".to_string(), None, None);
+        state.register_attempt_record("attempt-1", "Mac", "mistral-7b", false);
+        state.update_attempt_state(
+            "attempt-1",
+            "timed_out",
+            Some("timeout"),
+            Some("worker_disconnected"),
+        );
+        state.register_attempt_record("attempt-2", UNCLAIMED_WORKER_PEER_ID, "mistral-7b", true);
+        state.increment_task_retry_count();
+        state.increment_task_fallback_count();
+
+        let mut watchdog = AttemptWatchdog::new_fallback_broadcast(
+            state.trace_task_id.clone(),
+            "attempt-2".to_string(),
+            "mistral-7b".to_string(),
+            test_attempt_timeout_policy(),
+        );
+        assert_eq!(watchdog.worker_peer_id, UNCLAIMED_WORKER_PEER_ID);
+
+        let previous = watchdog.claim_worker("TS140", AttemptClaimSource::TaskMessageReceived);
+        assert_eq!(previous.as_deref(), Some(UNCLAIMED_WORKER_PEER_ID));
+        assert!(state.claim_attempt_record("attempt-2", "TS140"));
+        assert!(watchdog.record_progress("task_message_received", None));
+        assert!(watchdog.record_progress("inference_started", None));
+        assert!(watchdog.record_progress("first_token_generated", Some(1)));
+        assert!(watchdog.record_progress("tokens_generated_count", Some(32)));
+        assert_ne!(watchdog.check(), WatchdogCheck::Stalled);
+        assert_ne!(watchdog.check(), WatchdogCheck::TimedOut);
+
+        let mut watchdogs = HashMap::new();
+        watchdogs.insert("attempt-2".to_string(), watchdog.clone());
+        assert!(should_accept_result_for_attempt(
+            &watchdogs,
+            Some(&state.trace_task_id),
+            &state.trace_task_id,
+            "attempt-2",
+            "TS140",
+            false,
+        ));
+
+        assert!(watchdog.transition_state(AttemptLifecycleState::Completed));
+        state.update_attempt_state("attempt-2", "completed", Some("success"), None);
+        let lines = state.attempt_summary_lines();
+
+        assert!(lines[0].contains("peer=Mac"));
+        assert!(lines[0].contains("outcome=timeout"));
+        assert!(lines[1].contains("peer=TS140"));
+        assert!(!lines[1].contains("peer=-"));
+        assert!(lines[1].contains("outcome=success"));
     }
 
     #[test]
