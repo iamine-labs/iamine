@@ -5,9 +5,12 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaskResultRequest {
     pub task_id: String,
+    pub attempt_id: String,
+    pub model_id: String,
     pub worker_id: String,
     pub success: bool,
     pub result: String,
+    pub tokens_generated: u64,
     pub execution_ms: u64,
     pub attempts: u32,
 }

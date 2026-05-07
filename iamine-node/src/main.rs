@@ -1080,8 +1080,12 @@ impl AttemptTimeoutPolicy {
         let stall_timeout_ms = ((timeout_ms.saturating_mul(WATCHDOG_STALL_FACTOR_NUM))
             / WATCHDOG_STALL_FACTOR_DEN)
             .max(WATCHDOG_MIN_STALL_MS);
-        let claim_timeout_ms = (timeout_ms / 2).max(INFER_FALLBACK_AFTER_MS);
-        let first_progress_timeout_ms = timeout_ms;
+        let mut claim_timeout_ms = (timeout_ms / 2).max(INFER_FALLBACK_AFTER_MS);
+        let mut first_progress_timeout_ms = timeout_ms;
+        if lower_model.contains("mistral-7b") {
+            claim_timeout_ms = claim_timeout_ms.max(120_000);
+            first_progress_timeout_ms = first_progress_timeout_ms.max(120_000);
+        }
         let model_load_timeout_ms = timeout_ms
             .saturating_mul(10)
             .clamp(60_000, MAX_REMOTE_EXECUTION_TIMEOUT_MS / 2);
@@ -1239,7 +1243,7 @@ impl AttemptWatchdog {
 
     fn late_acceptance_deadline_ms(&self) -> u64 {
         self.policy
-            .max_wait_ms
+            .max_execution_timeout_ms
             .saturating_add(LATE_RESULT_ACCEPTANCE_WINDOW_MS)
     }
 
@@ -1602,6 +1606,65 @@ impl PubsubTopicTracker {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct AttemptKey {
+    task_id: String,
+    attempt_id: String,
+}
+
+impl AttemptKey {
+    fn new(task_id: impl Into<String>, attempt_id: impl Into<String>) -> Self {
+        Self {
+            task_id: task_id.into(),
+            attempt_id: attempt_id.into(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct ActiveAttempt {
+    model_id: String,
+    worker_peer_id: String,
+    attempt_type: AttemptDispatchType,
+}
+
+impl ActiveAttempt {
+    fn new(
+        model_id: impl Into<String>,
+        worker_peer_id: impl Into<String>,
+        attempt_type: AttemptDispatchType,
+    ) -> Self {
+        Self {
+            model_id: model_id.into(),
+            worker_peer_id: worker_peer_id.into(),
+            attempt_type,
+        }
+    }
+
+    fn is_fallback_broadcast(&self) -> bool {
+        self.attempt_type == AttemptDispatchType::FallbackBroadcast
+    }
+
+    fn accepts_worker(&self, worker_peer_id: &str) -> bool {
+        is_valid_claiming_worker(worker_peer_id)
+            && (is_unclaimed_worker_peer_id(&self.worker_peer_id)
+                || self.worker_peer_id == worker_peer_id)
+    }
+
+    fn claim_worker(&mut self, worker_peer_id: &str) -> Option<String> {
+        if !self.is_fallback_broadcast()
+            || !is_unclaimed_worker_peer_id(&self.worker_peer_id)
+            || !is_valid_claiming_worker(worker_peer_id)
+        {
+            return None;
+        }
+
+        let previous = self.worker_peer_id.clone();
+        self.worker_peer_id = worker_peer_id.to_string();
+        Some(previous)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct DispatchReadinessError {
     code: &'static str,
@@ -1627,6 +1690,10 @@ struct DispatchReadinessSnapshot {
 
 fn topic_hash_string(topic_name: &str) -> String {
     gossipsub::IdentTopic::new(topic_name).hash().to_string()
+}
+
+fn is_remote_delivery_topic(topic_name: &str) -> bool {
+    matches!(topic_name, RESULTS_TOPIC | TASK_TOPIC | DIRECT_INF_TOPIC)
 }
 
 fn evaluate_dispatch_readiness(
@@ -1666,6 +1733,57 @@ fn evaluate_dispatch_readiness(
     Ok(())
 }
 
+fn emit_remote_delivery_topic_ready_events(
+    trace_task_id: &str,
+    attempt_id: &str,
+    model_id: &str,
+    tracker: &PubsubTopicTracker,
+) {
+    let result_peer_count = tracker.topic_peer_count(RESULTS_TOPIC);
+    let progress_peer_count = tracker
+        .topic_peer_count(TASK_TOPIC)
+        .max(tracker.topic_peer_count(RESULTS_TOPIC));
+    for (event_name, topic, peer_count, field_name) in [
+        (
+            "result_topic_ready",
+            RESULTS_TOPIC,
+            result_peer_count,
+            "result_subscription_peer_count",
+        ),
+        (
+            "progress_topic_ready",
+            TASK_TOPIC,
+            progress_peer_count,
+            "progress_subscription_peer_count",
+        ),
+    ] {
+        log_observability_event(
+            LogLevel::Info,
+            event_name,
+            trace_task_id,
+            Some(trace_task_id),
+            Some(model_id),
+            None,
+            {
+                let mut fields = Map::new();
+                fields.insert("attempt_id".to_string(), attempt_id.into());
+                fields.insert("topic".to_string(), topic.into());
+                fields.insert("joined".to_string(), tracker.joined(topic).into());
+                fields.insert(field_name.to_string(), (peer_count as u64).into());
+                fields.insert(
+                    "result_subscription_peer_count".to_string(),
+                    (result_peer_count as u64).into(),
+                );
+                fields.insert(
+                    "progress_subscription_peer_count".to_string(),
+                    (progress_peer_count as u64).into(),
+                );
+                fields
+            },
+        );
+    }
+}
+
 fn should_print_result_output(output: &str) -> bool {
     !output.trim().is_empty()
 }
@@ -1686,6 +1804,7 @@ fn apply_retry_fallback_metrics(
 
 fn should_accept_result_for_attempt(
     attempt_watchdogs: &HashMap<String, AttemptWatchdog>,
+    active_attempts: &HashMap<AttemptKey, ActiveAttempt>,
     expected_task_id: Option<&str>,
     task_id: &str,
     attempt_id: &str,
@@ -1698,6 +1817,10 @@ fn should_accept_result_for_attempt(
 
     if current_request_matches {
         return true;
+    }
+
+    if let Some(active_attempt) = active_attempts.get(&AttemptKey::new(task_id, attempt_id)) {
+        return active_attempt.accepts_worker(worker_peer_id);
     }
 
     let Some(watchdog) = attempt_watchdogs.get(attempt_id) else {
@@ -2434,6 +2557,127 @@ fn emit_remote_progress_published_event(
     }
 }
 
+fn emit_remote_progress_publish_attempt_event(
+    trace_task_id: &str,
+    attempt_id: &str,
+    model_id: &str,
+    worker_peer_id: &str,
+    stage: &str,
+    topic: &str,
+    elapsed_ms: u64,
+) {
+    log_observability_event(
+        LogLevel::Info,
+        "remote_progress_publish_attempt",
+        trace_task_id,
+        Some(trace_task_id),
+        Some(model_id),
+        None,
+        {
+            let mut fields = Map::new();
+            fields.insert("attempt_id".to_string(), attempt_id.into());
+            fields.insert("worker_peer_id".to_string(), worker_peer_id.into());
+            fields.insert("stage".to_string(), stage.into());
+            fields.insert("topic".to_string(), topic.into());
+            fields.insert("elapsed_ms".to_string(), elapsed_ms.into());
+            fields
+        },
+    );
+}
+
+fn emit_remote_progress_publish_success_event(
+    trace_task_id: &str,
+    attempt_id: &str,
+    model_id: &str,
+    worker_peer_id: &str,
+    stage: &str,
+    topic: &str,
+    elapsed_ms: u64,
+    message_id: &str,
+) {
+    log_observability_event(
+        LogLevel::Info,
+        "remote_progress_publish_success",
+        trace_task_id,
+        Some(trace_task_id),
+        Some(model_id),
+        None,
+        {
+            let mut fields = Map::new();
+            fields.insert("attempt_id".to_string(), attempt_id.into());
+            fields.insert("worker_peer_id".to_string(), worker_peer_id.into());
+            fields.insert("stage".to_string(), stage.into());
+            fields.insert("topic".to_string(), topic.into());
+            fields.insert("elapsed_ms".to_string(), elapsed_ms.into());
+            fields.insert("message_id".to_string(), message_id.into());
+            fields
+        },
+    );
+}
+
+fn emit_remote_progress_client_received_event(
+    trace_task_id: &str,
+    attempt_id: &str,
+    model_id: Option<&str>,
+    worker_peer_id: &str,
+    stage: &str,
+    topic: &str,
+    elapsed_ms: u64,
+    tokens_generated_count: Option<u64>,
+) {
+    log_observability_event(
+        LogLevel::Info,
+        "remote_progress_client_received",
+        trace_task_id,
+        Some(trace_task_id),
+        model_id,
+        None,
+        {
+            let mut fields = Map::new();
+            fields.insert("attempt_id".to_string(), attempt_id.into());
+            fields.insert("worker_peer_id".to_string(), worker_peer_id.into());
+            fields.insert("stage".to_string(), stage.into());
+            fields.insert("topic".to_string(), topic.into());
+            fields.insert("elapsed_ms".to_string(), elapsed_ms.into());
+            if let Some(tokens_generated_count) = tokens_generated_count {
+                fields.insert(
+                    "tokens_generated_count".to_string(),
+                    tokens_generated_count.into(),
+                );
+            }
+            fields
+        },
+    );
+}
+
+fn emit_remote_result_client_received_event(
+    trace_task_id: &str,
+    attempt_id: &str,
+    model_id: Option<&str>,
+    worker_peer_id: &str,
+    topic_or_protocol: &str,
+    elapsed_ms: u64,
+    success: bool,
+) {
+    log_observability_event(
+        LogLevel::Info,
+        "remote_result_client_received",
+        trace_task_id,
+        Some(trace_task_id),
+        model_id,
+        None,
+        {
+            let mut fields = Map::new();
+            fields.insert("attempt_id".to_string(), attempt_id.into());
+            fields.insert("worker_peer_id".to_string(), worker_peer_id.into());
+            fields.insert("transport".to_string(), topic_or_protocol.into());
+            fields.insert("elapsed_ms".to_string(), elapsed_ms.into());
+            fields.insert("success".to_string(), success.into());
+            fields
+        },
+    );
+}
+
 fn remote_progress_status(stage: &str, tokens_generated_count: Option<u64>) -> &'static str {
     if matches!(
         stage,
@@ -2651,11 +2895,34 @@ fn publish_worker_progress_message(
     });
     let mut published_topics = Vec::new();
     for topic in [RESULTS_TOPIC, TASK_TOPIC] {
-        if let Err(error) = swarm.behaviour_mut().gossipsub.publish(
+        emit_remote_progress_publish_attempt_event(
+            task_id,
+            attempt_id,
+            model_id,
+            worker_peer_id,
+            stage,
+            topic,
+            elapsed_ms,
+        );
+        match swarm.behaviour_mut().gossipsub.publish(
             gossipsub::IdentTopic::new(topic),
             serde_json::to_vec(&payload).unwrap_or_default(),
         ) {
-            log_observability_event(
+            Ok(message_id) => {
+                let message_id = message_id.to_string();
+                published_topics.push(topic);
+                emit_remote_progress_publish_success_event(
+                    task_id,
+                    attempt_id,
+                    model_id,
+                    worker_peer_id,
+                    stage,
+                    topic,
+                    elapsed_ms,
+                    &message_id,
+                );
+            }
+            Err(error) => log_observability_event(
                 LogLevel::Warn,
                 "remote_progress_publish_failed",
                 task_id,
@@ -2671,9 +2938,7 @@ fn publish_worker_progress_message(
                     fields.insert("error".to_string(), error.to_string().into());
                     fields
                 },
-            );
-        } else {
-            published_topics.push(topic);
+            ),
         }
     }
     emit_remote_progress_published_event(
@@ -2735,6 +3000,74 @@ fn publish_worker_result_payload(
         }
     }
     first_message_id
+}
+
+fn send_worker_result_direct_response(
+    swarm: &mut Swarm<IamineBehaviour>,
+    origin_peer_id: &str,
+    task_id: &str,
+    attempt_id: &str,
+    model_id: &str,
+    worker_peer_id: &str,
+    result: &InferenceTaskResult,
+) {
+    if origin_peer_id.trim().is_empty() || origin_peer_id == worker_peer_id {
+        return;
+    }
+
+    match PeerId::from_str(origin_peer_id) {
+        Ok(origin_peer) => {
+            let request = TaskResultRequest {
+                task_id: task_id.to_string(),
+                attempt_id: attempt_id.to_string(),
+                model_id: model_id.to_string(),
+                worker_id: worker_peer_id.to_string(),
+                success: result.success,
+                result: result.output.clone(),
+                tokens_generated: result.tokens_generated as u64,
+                execution_ms: result.execution_ms,
+                attempts: 1,
+            };
+            let request_id = swarm
+                .behaviour_mut()
+                .result_response
+                .send_request(&origin_peer, request);
+            log_observability_event(
+                LogLevel::Info,
+                "remote_result_direct_publish_attempt",
+                task_id,
+                Some(task_id),
+                Some(model_id),
+                None,
+                {
+                    let mut fields = Map::new();
+                    fields.insert("attempt_id".to_string(), attempt_id.into());
+                    fields.insert("worker_peer_id".to_string(), worker_peer_id.into());
+                    fields.insert("origin_peer_id".to_string(), origin_peer_id.into());
+                    fields.insert("request_id".to_string(), format!("{:?}", request_id).into());
+                    fields
+                },
+            );
+        }
+        Err(error) => {
+            log_observability_event(
+                LogLevel::Warn,
+                "remote_result_direct_publish_failed",
+                task_id,
+                Some(task_id),
+                Some(model_id),
+                Some(TASK_DISPATCH_UNCONFIRMED_001),
+                {
+                    let mut fields = Map::new();
+                    fields.insert("attempt_id".to_string(), attempt_id.into());
+                    fields.insert("worker_peer_id".to_string(), worker_peer_id.into());
+                    fields.insert("origin_peer_id".to_string(), origin_peer_id.into());
+                    fields.insert("error".to_string(), error.to_string().into());
+                    fields
+                },
+            );
+        }
+    }
 }
 
 fn clear_stream_state(
@@ -4563,6 +4896,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut pending_inference: std::collections::HashMap<String, tokio::time::Instant> =
         std::collections::HashMap::new();
     let mut attempt_watchdogs: HashMap<String, AttemptWatchdog> = HashMap::new();
+    let mut active_attempts: HashMap<AttemptKey, ActiveAttempt> = HashMap::new();
     let mut infer_started_at: Option<tokio::time::Instant> = None;
     let mut distributed_infer_state: Option<DistributedInferState> = None;
 
@@ -5018,6 +5352,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 )
                                 .into());
                             }
+                            emit_remote_delivery_topic_ready_events(
+                                &trace_task_id,
+                                &rid,
+                                &routed_model,
+                                &pubsub_topics,
+                            );
 
                             let direct = DirectInferenceRequest {
                                 request_id: rid.clone(),
@@ -5171,6 +5511,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         watchdog.state.as_str(),
                                     );
                                     attempt_watchdogs.insert(rid.clone(), watchdog);
+                                    active_attempts.insert(
+                                        AttemptKey::new(trace_task_id.clone(), rid.clone()),
+                                        ActiveAttempt::new(
+                                            routed_model.clone(),
+                                            best_peer.clone(),
+                                            AttemptDispatchType::Direct,
+                                        ),
+                                    );
                                     metrics
                                         .write()
                                         .await
@@ -5310,6 +5658,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 )
                                 .into());
                             }
+                            emit_remote_delivery_topic_ready_events(
+                                &trace_task_id,
+                                &rid,
+                                &selected_model,
+                                &pubsub_topics,
+                            );
 
                             let mut fallback_payload = task.to_gossip_json();
                             if let Some(map) = fallback_payload.as_object_mut() {
@@ -5422,6 +5776,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         watchdog.state.as_str(),
                                     );
                                     attempt_watchdogs.insert(rid.clone(), watchdog);
+                                    active_attempts.insert(
+                                        AttemptKey::new(trace_task_id.clone(), rid.clone()),
+                                        ActiveAttempt::new(
+                                            selected_model.clone(),
+                                            UNCLAIMED_WORKER_PEER_ID,
+                                            AttemptDispatchType::FallbackBroadcast,
+                                        ),
+                                    );
                                     emit_fallback_attempt_created_event(
                                         &trace_task_id,
                                         &rid,
@@ -6098,7 +6460,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 let prompt = msg["prompt"].as_str().unwrap_or("").to_string();
                                 let max_tokens = msg["max_tokens"].as_u64().unwrap_or(200) as u32;
                                 let temperature = msg["temperature"].as_f64().unwrap_or(0.7) as f32;
-                                let _requester = msg["requester_peer"].as_str().unwrap_or("").to_string();
+                                let requester_peer =
+                                    msg["requester_peer"].as_str().unwrap_or("").to_string();
                                 let remote_attempt_started_at = tokio::time::Instant::now();
                                 let local_model_available = model_storage.has_model(&model_id);
                                 emit_worker_task_message_received_event(
@@ -6394,14 +6757,27 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                             &peer_id.to_string(),
                                         )
                                     }
+                                    send_worker_result_direct_response(
+                                        &mut swarm,
+                                        &requester_peer,
+                                        &task_id,
+                                        &attempt_id,
+                                        &model_id,
+                                        &peer_id.to_string(),
+                                        &result,
+                                    );
                                     println!("✅ [Worker] Inference completada: {} tokens en {}ms",
                                         result.tokens_generated, result.execution_ms);
                                 }
                             }
 
                             "InferenceProgress" if matches!(mode, NodeMode::Infer { .. }) => {
+                                if !is_remote_delivery_topic(message_topic) {
+                                    continue;
+                                }
                                 let task_id = msg["task_id"].as_str().unwrap_or("").to_string();
                                 let attempt_id = msg["attempt_id"].as_str().unwrap_or("").to_string();
+                                let attempt_key = AttemptKey::new(task_id.clone(), attempt_id.clone());
                                 let stage = msg["stage"].as_str().unwrap_or("unknown");
                                 let worker_peer = msg["worker_peer_id"]
                                     .as_str()
@@ -6423,6 +6799,30 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     continue;
                                 }
 
+                                let model_for_received_event = if model_id.is_empty() {
+                                    active_attempts
+                                        .get(&attempt_key)
+                                        .map(|attempt| attempt.model_id.as_str())
+                                } else {
+                                    Some(model_id.as_str())
+                                };
+                                emit_remote_progress_client_received_event(
+                                    &task_id,
+                                    &attempt_id,
+                                    model_for_received_event,
+                                    worker_peer,
+                                    stage,
+                                    message_topic,
+                                    elapsed_ms,
+                                    tokens_generated_count,
+                                );
+
+                                if let Some(active_attempt) = active_attempts.get(&attempt_key) {
+                                    if !active_attempt.accepts_worker(worker_peer) {
+                                        continue;
+                                    }
+                                }
+
                                     if let Some(watchdog) = attempt_watchdogs.get_mut(&attempt_id) {
                                         if !watchdog.accepts_worker(worker_peer) {
                                             continue;
@@ -6437,6 +6837,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         if let Some(previous_worker_peer_id) =
                                             watchdog.claim_worker(worker_peer, claim_source)
                                         {
+                                            if let Some(active_attempt) =
+                                                active_attempts.get_mut(&attempt_key)
+                                            {
+                                                let _ = active_attempt.claim_worker(worker_peer);
+                                            }
                                             emit_fallback_attempt_claimed_event(
                                                 &task_id,
                                                 &attempt_id,
@@ -6560,6 +6965,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             }
 
                                 "InferenceResult" if matches!(mode, NodeMode::Infer { .. }) => {
+                                    if !is_remote_delivery_topic(message_topic) {
+                                        continue;
+                                    }
                                     let rid = msg["request_id"].as_str().unwrap_or("");
                                     let task_id = msg["task_id"]
                                         .as_str()
@@ -6591,12 +6999,25 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         .as_ref()
                                         .map(|started| started.elapsed().as_millis() as u64)
                                         .unwrap_or(ms);
+                                    emit_remote_result_client_received_event(
+                                        &task_id,
+                                        &attempt_id,
+                                        distributed_infer_state
+                                            .as_ref()
+                                            .and_then(|state| state.current_model.as_deref())
+                                            .or_else(|| msg["model_id"].as_str()),
+                                        worker,
+                                        message_topic,
+                                        latency_ms,
+                                        success,
+                                    );
                                     let expected_task_id = distributed_infer_state
                                         .as_ref()
                                         .map(|state| state.trace_task_id.as_str());
                                     let current_request_matches = infer_request_id.as_deref() == Some(rid);
                                     if should_accept_result_for_attempt(
                                         &attempt_watchdogs,
+                                        &active_attempts,
                                         expected_task_id,
                                         &task_id,
                                         &attempt_id,
@@ -6614,6 +7035,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                 worker,
                                                 AttemptClaimSource::ResultReceived,
                                             ) {
+                                                if let Some(active_attempt) = active_attempts
+                                                    .get_mut(&AttemptKey::new(
+                                                        task_id.as_str(),
+                                                        attempt_id.as_str(),
+                                                    ))
+                                                {
+                                                    let _ = active_attempt.claim_worker(worker);
+                                                }
                                                 emit_fallback_attempt_claimed_event(
                                                     &task_id,
                                                     &attempt_id,
@@ -7164,6 +7593,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 if target != peer_id.to_string() {
                                     continue;
                                 }
+                                let requester_peer = from_peer.clone();
 
                                 let request_id = msg["request_id"].as_str().unwrap_or("").to_string();
                                 let task_id = msg["task_id"]
@@ -7464,6 +7894,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                             &peer_id.to_string(),
                                         )
                                     }
+                                    send_worker_result_direct_response(
+                                        &mut swarm,
+                                        &requester_peer,
+                                        &task_id,
+                                        &attempt_id,
+                                        &model_id,
+                                        &peer_id.to_string(),
+                                        &result,
+                                    );
 
                                     println!("✅ [Worker] Direct inference completada: {} tokens en {}ms",
                                         result.tokens_generated, result.execution_ms);
@@ -7511,6 +7950,222 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         channel,
                         TaskResultResponse { acknowledged: true },
                     );
+
+                    if matches!(mode, NodeMode::Infer { .. }) {
+                        let worker_peer_id = if is_valid_claiming_worker(&request.worker_id) {
+                            request.worker_id.clone()
+                        } else {
+                            peer.to_string()
+                        };
+                        let expected_task_id = distributed_infer_state
+                            .as_ref()
+                            .map(|infer_state| infer_state.trace_task_id.as_str());
+                        let current_request_matches =
+                            infer_request_id.as_deref() == Some(request.attempt_id.as_str());
+                        let latency_ms = infer_started_at
+                            .as_ref()
+                            .map(|started| started.elapsed().as_millis() as u64)
+                            .unwrap_or(request.execution_ms);
+                        emit_remote_result_client_received_event(
+                            &request.task_id,
+                            &request.attempt_id,
+                            Some(&request.model_id),
+                            &worker_peer_id,
+                            "request_response",
+                            latency_ms,
+                            request.success,
+                        );
+
+                        if should_accept_result_for_attempt(
+                            &attempt_watchdogs,
+                            &active_attempts,
+                            expected_task_id,
+                            &request.task_id,
+                            &request.attempt_id,
+                            &worker_peer_id,
+                            current_request_matches,
+                        ) && request.success
+                            && should_print_result_output(&request.result)
+                            && distributed_infer_state
+                                .as_ref()
+                                .map(|infer_state| {
+                                    matches!(
+                                        validate_result(
+                                            infer_state
+                                                .current_semantic_prompt
+                                                .as_deref()
+                                                .unwrap_or(""),
+                                            infer_state
+                                                .current_task_type
+                                                .unwrap_or(PromptTaskType::General),
+                                            &request.result,
+                                        ),
+                                        ResultStatus::Valid
+                                    )
+                                })
+                                .unwrap_or(true)
+                        {
+                            pending_inference.remove(&request.attempt_id);
+                            let accepted_after_current_moved = !current_request_matches;
+                            let prior_state = attempt_watchdogs
+                                .get(&request.attempt_id)
+                                .map(|watchdog| watchdog.state.as_str().to_string())
+                                .unwrap_or_else(|| "unknown".to_string());
+                            if let Some(watchdog) =
+                                attempt_watchdogs.get_mut(&request.attempt_id)
+                            {
+                                if let Some(previous_worker_peer_id) = watchdog.claim_worker(
+                                    &worker_peer_id,
+                                    AttemptClaimSource::ResultReceived,
+                                ) {
+                                    if let Some(active_attempt) = active_attempts.get_mut(
+                                        &AttemptKey::new(
+                                            request.task_id.as_str(),
+                                            request.attempt_id.as_str(),
+                                        ),
+                                    ) {
+                                        let _ = active_attempt.claim_worker(&worker_peer_id);
+                                    }
+                                    emit_fallback_attempt_claimed_event(
+                                        &request.task_id,
+                                        &request.attempt_id,
+                                        Some(&watchdog.model_id),
+                                        &worker_peer_id,
+                                        &previous_worker_peer_id,
+                                        AttemptClaimSource::ResultReceived,
+                                    );
+                                    if let Some(infer_state) = distributed_infer_state.as_mut() {
+                                        let _ = infer_state.claim_attempt_record(
+                                            &request.attempt_id,
+                                            &worker_peer_id,
+                                        );
+                                    }
+                                    let _ = claim_task_attempt_peer(
+                                        &request.task_id,
+                                        &worker_peer_id,
+                                    );
+                                }
+                                let previous_state = watchdog.state;
+                                if watchdog.transition_state(AttemptLifecycleState::Completed) {
+                                    emit_attempt_state_changed_event(
+                                        &request.task_id,
+                                        &request.attempt_id,
+                                        Some(&watchdog.model_id),
+                                        Some(&worker_peer_id),
+                                        previous_state.as_str(),
+                                        watchdog.state.as_str(),
+                                    );
+                                }
+                            }
+                            if accepted_after_current_moved {
+                                emit_late_result_received_event(
+                                    &request.task_id,
+                                    &request.attempt_id,
+                                    &worker_peer_id,
+                                    Some(&request.model_id),
+                                    latency_ms,
+                                    true,
+                                    "accepted_via_direct_result_response",
+                                    &prior_state,
+                                );
+                            }
+                            emit_result_received_event(
+                                &request.task_id,
+                                &request.attempt_id,
+                                Some(&request.model_id),
+                                &worker_peer_id,
+                                latency_ms,
+                            );
+                            emit_retry_result_accepted_event(
+                                &request.task_id,
+                                &request.attempt_id,
+                                Some(&request.model_id),
+                                &worker_peer_id,
+                                accepted_after_current_moved,
+                            );
+                            if rendered_output.is_empty() {
+                                print!("{}", request.result);
+                            } else if request.result.starts_with(&rendered_output) {
+                                let suffix = &request.result[rendered_output.len()..];
+                                if !suffix.is_empty() {
+                                    print!("{}", suffix);
+                                }
+                            }
+                            let _ = std::io::Write::flush(&mut std::io::stdout());
+
+                            if let Some(health) = registry
+                                .write()
+                                .await
+                                .record_success(&worker_peer_id, latency_ms)
+                            {
+                                log_health_update(
+                                    &request.task_id,
+                                    &worker_peer_id,
+                                    Some(&request.model_id),
+                                    &health,
+                                    None,
+                                );
+                                record_health_policy_state_transition(
+                                    &mut health_state_tracker,
+                                    &request.task_id,
+                                    &worker_peer_id,
+                                    Some(&request.model_id),
+                                    "success",
+                                    &health,
+                                );
+                            }
+                            if let Some(infer_state) = distributed_infer_state.as_mut() {
+                                infer_state.update_attempt_state(
+                                    &request.attempt_id,
+                                    "completed",
+                                    Some("success"),
+                                    None,
+                                );
+                            }
+                            log_observability_event(
+                                LogLevel::Info,
+                                "task_completed",
+                                &request.task_id,
+                                Some(&request.task_id),
+                                Some(&request.model_id),
+                                None,
+                                {
+                                    let mut fields = Map::new();
+                                    fields.insert("attempt_id".to_string(), request.attempt_id.clone().into());
+                                    fields.insert("success".to_string(), true.into());
+                                    fields.insert("worker_peer_id".to_string(), worker_peer_id.clone().into());
+                                    fields.insert("tokens_generated".to_string(), request.tokens_generated.into());
+                                    fields.insert("transport".to_string(), "request_response".into());
+                                    fields
+                                },
+                            );
+                            let (trace, aggregate_metrics) =
+                                finalize_distributed_task_observability(
+                                    &request.task_id,
+                                    infer_started_at,
+                                    false,
+                                );
+                            if let Some(trace) = trace {
+                                println!(
+                                    "[Metrics] latency={} retries={} fallbacks={}",
+                                    trace.total_latency_ms, trace.retries, trace.fallbacks
+                                );
+                            }
+                            if let Some(infer_state) = distributed_infer_state.as_ref() {
+                                emit_final_trace_summary_event(
+                                    infer_state,
+                                    &aggregate_metrics,
+                                    false,
+                                );
+                                print_human_final_task_summary(
+                                    infer_state,
+                                    &aggregate_metrics,
+                                    false,
+                                );
+                            }
+                            break;
+                        }
+                    }
                 }
 
                 SwarmEvent::Behaviour(IaMineEvent::ResultResponse(RREvent::Message {
@@ -7988,8 +8643,23 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     let current_request_matches = infer_request_id.as_deref()
                                         == Some(distributed_result.attempt_id.as_str());
                                     let peer_id = peer.to_string();
+                                    emit_remote_result_client_received_event(
+                                        &distributed_result.task_id,
+                                        &distributed_result.attempt_id,
+                                        distributed_infer_state
+                                            .as_ref()
+                                            .and_then(|state| state.current_model.as_deref()),
+                                        &peer_id,
+                                        "task_request_response",
+                                        infer_started_at
+                                            .as_ref()
+                                            .map(|started| started.elapsed().as_millis() as u64)
+                                            .unwrap_or_default(),
+                                        distributed_result.success,
+                                    );
                                     if !should_accept_result_for_attempt(
                                         &attempt_watchdogs,
+                                        &active_attempts,
                                         expected_task_id,
                                         &distributed_result.task_id,
                                         &distributed_result.attempt_id,
@@ -8093,6 +8763,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                             &peer_id,
                                             AttemptClaimSource::ResultReceived,
                                         ) {
+                                            if let Some(active_attempt) = active_attempts.get_mut(
+                                                &AttemptKey::new(
+                                                    distributed_result.task_id.as_str(),
+                                                    distributed_result.attempt_id.as_str(),
+                                                ),
+                                            ) {
+                                                let _ = active_attempt.claim_worker(&peer_id);
+                                            }
                                             emit_fallback_attempt_claimed_event(
                                                 &distributed_result.task_id,
                                                 &distributed_result.attempt_id,
@@ -8784,6 +9462,59 @@ mod tests {
     }
 
     #[test]
+    fn test_client_consumes_progress_topic_before_fallback_dispatch() {
+        let trace_id = format!("topic-ready-{}", uuid_simple());
+        let mut tracker = PubsubTopicTracker::default();
+        tracker.register_local_subscription(TASK_TOPIC);
+        tracker.register_local_subscription(DIRECT_INF_TOPIC);
+        tracker.register_local_subscription(RESULTS_TOPIC);
+        let peer = PeerId::random();
+        tracker.register_peer_subscription(&peer, &gossipsub::IdentTopic::new(TASK_TOPIC).hash());
+        tracker
+            .register_peer_subscription(&peer, &gossipsub::IdentTopic::new(RESULTS_TOPIC).hash());
+
+        emit_remote_delivery_topic_ready_events(&trace_id, "attempt-2", "mistral-7b", &tracker);
+
+        iamine_network::flush_structured_logs().unwrap();
+        let path = iamine_network::default_node_log_path();
+        let entries = iamine_network::read_log_entries(&path).unwrap();
+        let result_ready = entries
+            .iter()
+            .rev()
+            .find(|entry| entry.trace_id == trace_id && entry.event == "result_topic_ready")
+            .expect("result_topic_ready entry not found");
+        let progress_ready = entries
+            .iter()
+            .rev()
+            .find(|entry| entry.trace_id == trace_id && entry.event == "progress_topic_ready")
+            .expect("progress_topic_ready entry not found");
+
+        assert_eq!(
+            result_ready
+                .fields
+                .get("result_subscription_peer_count")
+                .and_then(|value| value.as_u64()),
+            Some(1)
+        );
+        assert_eq!(
+            progress_ready
+                .fields
+                .get("progress_subscription_peer_count")
+                .and_then(|value| value.as_u64()),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn test_progress_result_topic_mismatch_is_not_delivery_topic() {
+        assert!(is_remote_delivery_topic(TASK_TOPIC));
+        assert!(is_remote_delivery_topic(RESULTS_TOPIC));
+        assert!(is_remote_delivery_topic(DIRECT_INF_TOPIC));
+        assert!(!is_remote_delivery_topic(CAP_TOPIC));
+        assert!(!is_remote_delivery_topic("iamine-heartbeat"));
+    }
+
+    #[test]
     fn test_dispatch_observability_events_emitted() {
         let trace_id = format!("dispatch-observability-{}", uuid_simple());
         let attempt_id = "attempt-observability-1";
@@ -9171,6 +9902,30 @@ mod tests {
     }
 
     #[test]
+    fn test_active_attempts_map_accepts_fallback_progress_by_task_and_attempt() {
+        let key = AttemptKey::new("task-active", "attempt-2");
+        let mut active_attempts = HashMap::new();
+        active_attempts.insert(
+            key.clone(),
+            ActiveAttempt::new(
+                "mistral-7b",
+                UNCLAIMED_WORKER_PEER_ID,
+                AttemptDispatchType::FallbackBroadcast,
+            ),
+        );
+
+        let active_attempt = active_attempts.get_mut(&key).unwrap();
+        assert!(active_attempt.accepts_worker("TS140"));
+        assert_eq!(
+            active_attempt.claim_worker("TS140").as_deref(),
+            Some(UNCLAIMED_WORKER_PEER_ID)
+        );
+        assert_eq!(active_attempt.worker_peer_id, "TS140");
+        assert!(active_attempt.accepts_worker("TS140"));
+        assert!(!active_attempt.accepts_worker("Mac"));
+    }
+
+    #[test]
     fn test_progress_resets_no_progress_watchdog_warning() {
         let mut watchdog = AttemptWatchdog::new_fallback_broadcast(
             "task-progress-reset".to_string(),
@@ -9276,6 +10031,31 @@ mod tests {
     }
 
     #[test]
+    fn test_heavy_cpu_mistral_timeout_policy_allows_over_180s() {
+        let node_capability = NodeCapability {
+            peer_id: "TS140".to_string(),
+            cpu_score: 38_000,
+            ram_gb: 16,
+            gpu_available: false,
+            storage_available_gb: 100,
+            accelerator: "cpu".to_string(),
+            models: vec!["mistral-7b".to_string()],
+            worker_slots: 2,
+            active_tasks: 0,
+            latency_ms: 120,
+            last_seen: std::time::Instant::now(),
+            cluster_id: None,
+            health: NodeHealth::default(),
+        };
+        let policy =
+            AttemptTimeoutPolicy::from_model_and_node("mistral-7b", Some(&node_capability));
+
+        assert!(policy.claim_timeout_ms >= 120_000);
+        assert!(policy.first_progress_timeout_ms >= 120_000);
+        assert!(policy.max_execution_timeout_ms >= 180_000);
+    }
+
+    #[test]
     fn test_heavy_startup_delay_does_not_fail_before_model_load_timeout() {
         let mut watchdog = AttemptWatchdog::new_fallback_broadcast(
             "task-heavy-startup".to_string(),
@@ -9306,9 +10086,19 @@ mod tests {
         let _ = watchdog.claim_worker("TS140", AttemptClaimSource::AttemptProgress);
         let mut watchdogs = HashMap::new();
         watchdogs.insert("attempt-2".to_string(), watchdog);
+        let mut active_attempts = HashMap::new();
+        active_attempts.insert(
+            AttemptKey::new("task-result-claim", "attempt-2"),
+            ActiveAttempt::new(
+                "mistral-7b",
+                "TS140",
+                AttemptDispatchType::FallbackBroadcast,
+            ),
+        );
 
         assert!(should_accept_result_for_attempt(
             &watchdogs,
+            &active_attempts,
             Some("task-result-claim"),
             "task-result-claim",
             "attempt-2",
@@ -9317,10 +10107,43 @@ mod tests {
         ));
         assert!(!should_accept_result_for_attempt(
             &watchdogs,
+            &active_attempts,
             Some("task-result-claim"),
             "task-result-claim",
             "attempt-2",
             "Mac",
+            false,
+        ));
+    }
+
+    #[test]
+    fn test_result_for_older_fallback_attempt_is_accepted_from_active_attempts_map() {
+        let mut watchdog = AttemptWatchdog::new_fallback_broadcast(
+            "task-old-fallback".to_string(),
+            "attempt-2".to_string(),
+            "mistral-7b".to_string(),
+            test_attempt_timeout_policy(),
+        );
+        let _ = watchdog.claim_worker("TS140", AttemptClaimSource::AttemptProgress);
+        let mut watchdogs = HashMap::new();
+        watchdogs.insert("attempt-2".to_string(), watchdog);
+        let mut active_attempts = HashMap::new();
+        active_attempts.insert(
+            AttemptKey::new("task-old-fallback", "attempt-2"),
+            ActiveAttempt::new(
+                "mistral-7b",
+                "TS140",
+                AttemptDispatchType::FallbackBroadcast,
+            ),
+        );
+
+        assert!(should_accept_result_for_attempt(
+            &watchdogs,
+            &active_attempts,
+            Some("task-old-fallback"),
+            "task-old-fallback",
+            "attempt-2",
+            "TS140",
             false,
         ));
     }
@@ -9476,6 +10299,67 @@ mod tests {
         assert!(entries
             .iter()
             .any(|entry| entry.trace_id == trace_id && entry.event == "remote_still_running"));
+    }
+
+    #[test]
+    fn test_remote_progress_delivery_observability_events_are_emitted() {
+        let trace_id = format!("remote-progress-delivery-{}", uuid_simple());
+        emit_remote_progress_publish_attempt_event(
+            &trace_id,
+            "attempt-2",
+            "mistral-7b",
+            "TS140",
+            "tokens_generated_count",
+            RESULTS_TOPIC,
+            108_000,
+        );
+        emit_remote_progress_publish_success_event(
+            &trace_id,
+            "attempt-2",
+            "mistral-7b",
+            "TS140",
+            "tokens_generated_count",
+            RESULTS_TOPIC,
+            108_000,
+            "msg-1",
+        );
+        emit_remote_progress_client_received_event(
+            &trace_id,
+            "attempt-2",
+            Some("mistral-7b"),
+            "TS140",
+            "tokens_generated_count",
+            RESULTS_TOPIC,
+            108_000,
+            Some(340),
+        );
+        emit_remote_result_client_received_event(
+            &trace_id,
+            "attempt-2",
+            Some("mistral-7b"),
+            "TS140",
+            RESULTS_TOPIC,
+            109_000,
+            true,
+        );
+
+        iamine_network::flush_structured_logs().unwrap();
+        let path = iamine_network::default_node_log_path();
+        let entries = iamine_network::read_log_entries(&path).unwrap();
+
+        for event in [
+            "remote_progress_publish_attempt",
+            "remote_progress_publish_success",
+            "remote_progress_client_received",
+            "remote_result_client_received",
+        ] {
+            assert!(
+                entries
+                    .iter()
+                    .any(|entry| entry.trace_id == trace_id && entry.event == event),
+                "{event} entry missing"
+            );
+        }
     }
 
     #[test]
@@ -9718,8 +10602,18 @@ mod tests {
 
         let mut watchdogs = HashMap::new();
         watchdogs.insert("attempt-2".to_string(), watchdog.clone());
+        let mut active_attempts = HashMap::new();
+        active_attempts.insert(
+            AttemptKey::new(state.trace_task_id.as_str(), "attempt-2"),
+            ActiveAttempt::new(
+                "mistral-7b",
+                "TS140",
+                AttemptDispatchType::FallbackBroadcast,
+            ),
+        );
         assert!(should_accept_result_for_attempt(
             &watchdogs,
+            &active_attempts,
             Some(&state.trace_task_id),
             &state.trace_task_id,
             "attempt-2",
@@ -9736,6 +10630,33 @@ mod tests {
         assert!(lines[1].contains("peer=TS140"));
         assert!(!lines[1].contains("peer=-"));
         assert!(lines[1].contains("outcome=success"));
+    }
+
+    #[test]
+    fn test_final_outcome_success_when_fallback_worker_completes_after_100s() {
+        let mut metrics = DistributedTaskMetrics::default();
+        apply_retry_fallback_metrics(&mut metrics, true, false);
+        apply_retry_fallback_metrics(&mut metrics, false, true);
+
+        let mut watchdog = AttemptWatchdog::new_fallback_broadcast(
+            "task-long-fallback".to_string(),
+            "attempt-2".to_string(),
+            "mistral-7b".to_string(),
+            AttemptTimeoutPolicy::from_model_and_node("mistral-7b", None),
+        );
+        let _ = watchdog.claim_worker("TS140", AttemptClaimSource::AttemptProgress);
+        assert!(watchdog.record_progress("tokens_generated_count", Some(340)));
+        watchdog.started_at = tokio::time::Instant::now() - Duration::from_secs(109);
+        watchdog.last_progress_at = tokio::time::Instant::now();
+
+        assert_ne!(watchdog.check(), WatchdogCheck::TimedOut);
+        assert_ne!(watchdog.check(), WatchdogCheck::Stalled);
+        assert!(watchdog.transition_state(AttemptLifecycleState::Completed));
+
+        metrics.total_tasks = 1;
+        assert_eq!(metrics.failed_tasks, 0);
+        assert_eq!(watchdog.worker_peer_id, "TS140");
+        assert_eq!(watchdog.state, AttemptLifecycleState::Completed);
     }
 
     #[test]
