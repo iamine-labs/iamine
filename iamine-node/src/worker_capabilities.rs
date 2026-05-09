@@ -30,6 +30,8 @@ impl WorkerCapabilities {
             disk_available_gb,
             supported_tasks: vec![
                 "reverse_string".to_string(),
+                "test".to_string(),
+                "echo".to_string(),
                 "compute_hash".to_string(),
                 "validate_challenge".to_string(),
                 "inference".to_string(),

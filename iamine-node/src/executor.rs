@@ -9,6 +9,7 @@ impl TaskExecutor {
     pub fn execute_task(task_id: String, task_type: String, data: String) -> TaskResponse {
         let result = match task_type.as_str() {
             "reverse_string" => Ok(data.chars().rev().collect::<String>()),
+            "test" | "echo" => Ok(data),
             "compute_hash" => {
                 let mut hasher = Sha256::new();
                 hasher.update(data.as_bytes());

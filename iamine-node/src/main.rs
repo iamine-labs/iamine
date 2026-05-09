@@ -533,6 +533,14 @@ fn parse_optional_u32_flag(args: &[String], flag: &str) -> Result<Option<u32>, S
         .map_err(|_| format!("Valor invalido para {}: {}", flag, raw))
 }
 
+fn parse_worker_port(args: &[String]) -> u16 {
+    if let Some(port_arg) = args.iter().find(|arg| arg.starts_with("--port=")) {
+        port_arg.replace("--port=", "").parse().unwrap_or(9000)
+    } else {
+        9000
+    }
+}
+
 fn prompt_language_label(language: PromptLanguage) -> &'static str {
     match language {
         PromptLanguage::English => "English",
@@ -3837,10 +3845,37 @@ fn validate_models_for_advertising(
     registry: &ModelRegistry,
     storage: &ModelStorage,
     node_caps: &ModelNodeCapabilities,
+    startup_policy: &WorkerStartupPolicy,
 ) -> Vec<String> {
+    validate_model_advertisement_candidates(
+        storage.list_local_models(),
+        registry,
+        node_caps,
+        startup_policy,
+        |model_id, expected_hash| {
+            let engine = RealInferenceEngine::new(ModelStorage::new());
+            engine.load_model(model_id, expected_hash)
+        },
+    )
+}
+
+fn validate_model_advertisement_candidates<F>(
+    local_models: Vec<String>,
+    registry: &ModelRegistry,
+    node_caps: &ModelNodeCapabilities,
+    startup_policy: &WorkerStartupPolicy,
+    mut load_model: F,
+) -> Vec<String>
+where
+    F: FnMut(&str, &str) -> Result<(), String>,
+{
     let mut validated = Vec::new();
 
-    for model_id in storage.list_local_models() {
+    if !startup_policy.real_inference_available {
+        return validated;
+    }
+
+    for model_id in local_models {
         if let Some(requirements) = ModelRequirements::for_model(&model_id) {
             if !can_node_run_model(node_caps, &requirements) {
                 println!(
@@ -3872,8 +3907,8 @@ fn validate_models_for_advertising(
             continue;
         };
 
-        let engine = RealInferenceEngine::new(ModelStorage::new());
-        match engine.load_model(&model_id, &model_desc.hash) {
+        emit_worker_model_load_attempt_event(&model_id, "advertisement_validation");
+        match load_model(&model_id, &model_desc.hash) {
             Ok(()) => {
                 log_observability_event(
                     LogLevel::Info,
@@ -3890,6 +3925,11 @@ fn validate_models_for_advertising(
                 println!(
                     "[Health] Skipping advertisement for {}: backend validation failed ({})",
                     model_id, error
+                );
+                emit_worker_model_load_failed_event(
+                    &model_id,
+                    &error,
+                    "continue_degraded_without_model_advertisement",
                 );
                 log_observability_event(
                     LogLevel::Error,
@@ -3909,6 +3949,347 @@ fn validate_models_for_advertising(
     }
 
     validated
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WorkerInferenceBackend {
+    Real,
+    Mock,
+}
+
+impl WorkerInferenceBackend {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Real => "real",
+            Self::Mock => "mock",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct WorkerStartupPolicy {
+    backend: WorkerInferenceBackend,
+    skip_model_load_on_startup: bool,
+    cpu_feature_compatible: bool,
+    real_inference_available: bool,
+    model_load_skip_reason: Option<&'static str>,
+}
+
+impl WorkerStartupPolicy {
+    fn from_env(node_caps: &ModelNodeCapabilities) -> Self {
+        let backend_env = std::env::var("IAMINE_INFERENCE_BACKEND").ok();
+        let skip_env = std::env::var("IAMINE_SKIP_MODEL_LOAD_ON_STARTUP").ok();
+        Self::from_values(
+            backend_env.as_deref(),
+            skip_env.as_deref(),
+            &node_caps.cpu_features,
+            &node_caps.accelerator,
+            std::env::consts::ARCH,
+        )
+    }
+
+    fn from_values(
+        backend_env: Option<&str>,
+        skip_env: Option<&str>,
+        cpu_features: &[String],
+        accelerator: &str,
+        target_arch: &str,
+    ) -> Self {
+        let backend = if backend_env
+            .map(|value| value.eq_ignore_ascii_case("mock"))
+            .unwrap_or(false)
+        {
+            WorkerInferenceBackend::Mock
+        } else {
+            WorkerInferenceBackend::Real
+        };
+        let skip_model_load_on_startup = skip_env.map(env_truthy).unwrap_or(false);
+        let cpu_feature_compatible =
+            cpu_features_are_compatible_for_real_backend(cpu_features, accelerator, target_arch);
+        let model_load_skip_reason = if backend == WorkerInferenceBackend::Mock {
+            Some("mock_backend")
+        } else if skip_model_load_on_startup {
+            Some("skip_model_load_on_startup")
+        } else if !cpu_feature_compatible {
+            Some("cpu_feature_incompatible")
+        } else {
+            None
+        };
+        let real_inference_available = backend == WorkerInferenceBackend::Real
+            && !skip_model_load_on_startup
+            && cpu_feature_compatible;
+
+        Self {
+            backend,
+            skip_model_load_on_startup,
+            cpu_feature_compatible,
+            real_inference_available,
+            model_load_skip_reason,
+        }
+    }
+
+    fn mock_backend(&self) -> bool {
+        self.backend == WorkerInferenceBackend::Mock
+    }
+}
+
+fn env_truthy(value: &str) -> bool {
+    matches!(
+        value.trim().to_ascii_lowercase().as_str(),
+        "1" | "true" | "yes" | "on"
+    )
+}
+
+fn cpu_features_are_compatible_for_real_backend(
+    cpu_features: &[String],
+    accelerator: &str,
+    target_arch: &str,
+) -> bool {
+    if !target_arch.eq_ignore_ascii_case("x86_64") {
+        return true;
+    }
+
+    if !accelerator.eq_ignore_ascii_case("cpu") {
+        return true;
+    }
+
+    cpu_features
+        .iter()
+        .any(|feature| feature.eq_ignore_ascii_case("AVX2"))
+}
+
+fn apply_worker_startup_policy_to_capabilities(
+    capabilities: &mut WorkerCapabilities,
+    startup_policy: &WorkerStartupPolicy,
+) {
+    if !startup_policy.real_inference_available {
+        capabilities
+            .supported_tasks
+            .retain(|task_type| task_type != "inference");
+    }
+    for task_type in [
+        "reverse_string",
+        "compute_hash",
+        "validate_challenge",
+        "test",
+        "echo",
+    ] {
+        if !capabilities.supports(task_type) {
+            capabilities.supported_tasks.push(task_type.to_string());
+        }
+    }
+}
+
+fn emit_worker_startup_started_event(peer_id: &str, port: u16) {
+    log_observability_event(
+        LogLevel::Info,
+        "worker_startup_started",
+        "startup",
+        None,
+        None,
+        None,
+        {
+            let mut fields = Map::new();
+            fields.insert("peer_id".to_string(), peer_id.into());
+            fields.insert("port".to_string(), (port as u64).into());
+            fields
+        },
+    );
+}
+
+fn emit_inference_backend_selected_event(policy: &WorkerStartupPolicy) {
+    log_observability_event(
+        LogLevel::Info,
+        "inference_backend_selected",
+        "startup",
+        None,
+        None,
+        None,
+        {
+            let mut fields = Map::new();
+            fields.insert("backend".to_string(), policy.backend.as_str().into());
+            fields.insert(
+                "skip_model_load_on_startup".to_string(),
+                policy.skip_model_load_on_startup.into(),
+            );
+            fields.insert(
+                "real_inference_available".to_string(),
+                policy.real_inference_available.into(),
+            );
+            fields
+        },
+    );
+}
+
+fn emit_worker_model_load_attempt_event(model_id: &str, reason: &str) {
+    log_observability_event(
+        LogLevel::Info,
+        "worker_model_load_attempt",
+        "startup",
+        None,
+        Some(model_id),
+        None,
+        {
+            let mut fields = Map::new();
+            fields.insert("reason".to_string(), reason.into());
+            fields
+        },
+    );
+}
+
+fn emit_worker_model_load_skipped_event(reason: &str) {
+    log_observability_event(
+        LogLevel::Info,
+        "worker_model_load_skipped",
+        "startup",
+        None,
+        None,
+        None,
+        {
+            let mut fields = Map::new();
+            fields.insert("reason".to_string(), reason.into());
+            fields
+        },
+    );
+}
+
+fn emit_worker_model_load_failed_event(model_id: &str, error: &str, action: &str) {
+    log_observability_event(
+        LogLevel::Warn,
+        "worker_model_load_failed",
+        "startup",
+        None,
+        Some(model_id),
+        Some(MODEL_LOAD_FAILED_001),
+        {
+            let mut fields = Map::new();
+            fields.insert("error".to_string(), error.into());
+            fields.insert("action".to_string(), action.into());
+            fields
+        },
+    );
+}
+
+fn emit_backend_cpu_feature_incompatible_event(
+    cpu_features: &[String],
+    accelerator: &str,
+    action: &str,
+) {
+    log_observability_event(
+        LogLevel::Warn,
+        "backend_cpu_feature_incompatible",
+        "startup",
+        None,
+        None,
+        Some(MODEL_UNSUPPORTED_HW_002),
+        {
+            let mut fields = Map::new();
+            fields.insert("accelerator".to_string(), accelerator.into());
+            fields.insert("cpu_features".to_string(), serde_json::json!(cpu_features));
+            fields.insert("required_feature".to_string(), "AVX2".into());
+            fields.insert("action".to_string(), action.into());
+            fields
+        },
+    );
+}
+
+fn emit_worker_listening_event(peer_id: &str, port: u16, address: &Multiaddr) {
+    log_observability_event(
+        LogLevel::Info,
+        "worker_listening",
+        "startup",
+        None,
+        None,
+        None,
+        {
+            let mut fields = Map::new();
+            fields.insert("peer_id".to_string(), peer_id.into());
+            fields.insert("port".to_string(), (port as u64).into());
+            fields.insert("address".to_string(), address.to_string().into());
+            fields
+        },
+    );
+}
+
+fn emit_worker_startup_ready_event(peer_id: &str, port: u16, policy: &WorkerStartupPolicy) {
+    log_observability_event(
+        LogLevel::Info,
+        "worker_startup_ready",
+        "startup",
+        None,
+        None,
+        None,
+        {
+            let mut fields = Map::new();
+            fields.insert("peer_id".to_string(), peer_id.into());
+            fields.insert("port".to_string(), (port as u64).into());
+            fields.insert("backend".to_string(), policy.backend.as_str().into());
+            fields.insert(
+                "real_inference_available".to_string(),
+                policy.real_inference_available.into(),
+            );
+            fields
+        },
+    );
+}
+
+fn emit_worker_startup_failed_event(peer_id: &str, port: u16, reason: &str, action_hint: &str) {
+    log_observability_event(
+        LogLevel::Error,
+        "worker_startup_failed",
+        "startup",
+        None,
+        None,
+        Some(TASK_FAILED_002),
+        {
+            let mut fields = Map::new();
+            fields.insert("peer_id".to_string(), peer_id.into());
+            fields.insert("port".to_string(), (port as u64).into());
+            fields.insert("reason".to_string(), reason.into());
+            fields.insert("action_hint".to_string(), action_hint.into());
+            fields
+        },
+    );
+}
+
+fn startup_listen_error_hint(error: &str, port: u16) -> String {
+    let lower = error.to_ascii_lowercase();
+    if lower.contains("address already in use") || lower.contains("addrinuse") {
+        format!(
+            "port {} already in use; try: lsof -nP -iTCP:{} -sTCP:LISTEN",
+            port, port
+        )
+    } else {
+        "check listen address and worker port".to_string()
+    }
+}
+
+fn mock_real_inference_result(
+    task_id: String,
+    model_id: String,
+    prompt: String,
+    max_tokens: u32,
+) -> RealInferenceResult {
+    let started = std::time::Instant::now();
+    let output = if prompt.trim().is_empty() {
+        "[mock] empty prompt".to_string()
+    } else {
+        format!("[mock:{}] {}", model_id, prompt)
+    };
+    let tokens = output
+        .split_whitespace()
+        .count()
+        .min(max_tokens as usize)
+        .max(1) as u32;
+    RealInferenceResult::success(
+        task_id,
+        model_id,
+        output,
+        tokens,
+        false,
+        started.elapsed().as_millis() as u64,
+        "mock".to_string(),
+    )
 }
 
 fn log_observability_event(
@@ -4223,6 +4604,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let runtime_version = runtime_version_metadata();
     set_global_runtime_context(mode_label(&mode), &runtime_version);
     let control_plane_only = is_control_plane_mode(&mode);
+    let worker_port = parse_worker_port(&args);
 
     // v0.6.1: Registry global para smart routing (capabilities + selección de nodo)
     let registry: SharedNodeRegistry = Arc::new(RwLock::new(NodeRegistry::new()));
@@ -4821,6 +5203,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
     set_global_node_id(&peer_id.to_string());
     let id_keys = node_identity.keypair.clone();
 
+    if matches!(mode, NodeMode::Worker) {
+        emit_worker_startup_started_event(&peer_id.to_string(), worker_port);
+    }
+
     if use_ephemeral_identity {
         log_observability_event(
             LogLevel::Info,
@@ -4892,15 +5278,45 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let storage_config = StorageConfig::load();
     let model_registry = ModelRegistry::new();
     let model_storage = ModelStorage::new();
-    let inference_engine = Arc::new(RealInferenceEngine::new(ModelStorage::new()));
 
     // v0.5.4: Detectar capabilities del nodo
-    let node_caps = ModelNodeCapabilities::detect(&peer_id.to_string());
+    let mut node_caps = ModelNodeCapabilities::detect(&peer_id.to_string());
+    let worker_startup_policy = if matches!(mode, NodeMode::Worker) {
+        let policy = WorkerStartupPolicy::from_env(&node_caps);
+        emit_inference_backend_selected_event(&policy);
+        if !policy.cpu_feature_compatible {
+            emit_backend_cpu_feature_incompatible_event(
+                &node_caps.cpu_features,
+                &node_caps.accelerator,
+                "continue_degraded_without_real_inference",
+            );
+        }
+        if let Some(reason) = policy.model_load_skip_reason {
+            emit_worker_model_load_skipped_event(reason);
+        }
+        Some(policy)
+    } else {
+        None
+    };
+    let inference_engine = if matches!(mode, NodeMode::Worker) {
+        worker_startup_policy
+            .as_ref()
+            .filter(|policy| policy.real_inference_available)
+            .map(|_| Arc::new(RealInferenceEngine::new(ModelStorage::new())))
+    } else {
+        Some(Arc::new(RealInferenceEngine::new(ModelStorage::new())))
+    };
     let validated_advertised_models = if matches!(mode, NodeMode::Worker) {
-        validate_models_for_advertising(&model_registry, &model_storage, &node_caps)
+        let policy = worker_startup_policy
+            .as_ref()
+            .expect("worker startup policy must be present in worker mode");
+        validate_models_for_advertising(&model_registry, &model_storage, &node_caps, policy)
     } else {
         model_storage.list_local_models()
     };
+    if matches!(mode, NodeMode::Worker) {
+        node_caps.supported_models = validated_advertised_models.clone();
+    }
 
     let worker_setup = if matches!(mode, NodeMode::Worker) {
         let detected = DetectedHardware {
@@ -5119,12 +5535,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
         tokio::sync::mpsc::channel::<PendingTaskResponse>(64);
     let heartbeat = Arc::new(HeartbeatService::new());
     let metrics = Arc::new(RwLock::new(NodeMetrics::new()));
-    let capabilities = WorkerCapabilities::detect();
+    let mut capabilities = WorkerCapabilities::detect();
+    if let Some(policy) = worker_startup_policy.as_ref() {
+        apply_worker_startup_policy_to_capabilities(&mut capabilities, policy);
+    }
     let mut task_cache = TaskCache::new(1000);
     let mut peer_tracker = PeerTracker::new();
     let mut rate_limiter = RateLimiter::new(100); // ← 100 msgs/sec max
     let mut health_state_tracker: HashMap<String, String> = HashMap::new();
     let mut human_log_throttle = HumanLogThrottle::default();
+    let mut worker_startup_ready_emitted = false;
 
     // ← Actualizar métricas con wallet
     {
@@ -5153,13 +5573,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     }
 
-    let worker_port: u16 = {
-        if let Some(port_arg) = args.iter().find(|a| a.starts_with("--port=")) {
-            port_arg.replace("--port=", "").parse().unwrap_or(9000)
-        } else {
-            9000
-        }
-    };
     if matches!(mode, NodeMode::Worker) {
         let (timeout_blacklist_threshold, failure_blacklist_threshold) = health_policy_thresholds();
         log_observability_event(
@@ -5214,7 +5627,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
     } else {
         "/ip4/0.0.0.0/tcp/0".parse()?
     };
-    swarm.listen_on(listen_addr)?;
+    if let Err(error) = swarm.listen_on(listen_addr) {
+        if matches!(mode, NodeMode::Worker) {
+            let error_text = error.to_string();
+            let hint = startup_listen_error_hint(&error_text, worker_port);
+            emit_worker_startup_failed_event(&peer_id.to_string(), worker_port, &error_text, &hint);
+            eprintln!(
+                "❌ [Worker] No se pudo abrir puerto {}: {}",
+                worker_port, error_text
+            );
+            eprintln!("   {}", hint);
+        }
+        return Err(error.into());
+    }
 
     let metrics_port = if matches!(mode, NodeMode::Worker) {
         match compute_metrics_port(worker_port) {
@@ -6731,7 +7156,21 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                 SwarmEvent::NewListenAddr { address, .. } => {
                     println!("🌐 Escuchando en: {}", address);
-                    swarm.behaviour_mut().kademlia.add_address(&peer_id, address);
+                    swarm
+                        .behaviour_mut()
+                        .kademlia
+                        .add_address(&peer_id, address.clone());
+                    if matches!(mode, NodeMode::Worker) && !worker_startup_ready_emitted {
+                        emit_worker_listening_event(&peer_id.to_string(), worker_port, &address);
+                        if let Some(policy) = worker_startup_policy.as_ref() {
+                            emit_worker_startup_ready_event(
+                                &peer_id.to_string(),
+                                worker_port,
+                                policy,
+                            );
+                        }
+                        worker_startup_ready_emitted = true;
+                    }
                 }
 
                 SwarmEvent::Behaviour(IaMineEvent::Mdns(mdns::Event::Discovered(peers))) => {
@@ -7183,17 +7622,28 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 println!("🧠 [Worker] InferenceRequest: model={} prompt='{}'",
                                     model_id, &prompt[..prompt.len().min(40)]);
 
-                                // Check model installed
-                                if !local_model_available {
+                                let mock_backend_enabled = worker_startup_policy
+                                    .as_ref()
+                                    .map(|policy| policy.mock_backend())
+                                    .unwrap_or(false);
+                                let real_inference_available = worker_startup_policy
+                                    .as_ref()
+                                    .map(|policy| policy.real_inference_available)
+                                    .unwrap_or(true);
+
+                                // Check model installed unless the explicit mock backend handles it.
+                                if !local_model_available && !mock_backend_enabled {
                                     println!("   ⚠️ Modelo {} no instalado — ignorando", model_id);
                                     continue;
                                 }
 
                                 // v0.5.4: Validar requisitos de hardware
-                                if let Some(req) = ModelRequirements::for_model(&model_id) {
+                                if !mock_backend_enabled {
+                                    if let Some(req) = ModelRequirements::for_model(&model_id) {
                                     if !can_node_run_model(&node_caps, &req) {
                                         println!("   ⚠️ Hardware insuficiente para {} — ignorando", model_id);
                                         continue;
+                                    }
                                     }
                                 }
                                 for stage in [
@@ -7215,12 +7665,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     );
                                 }
 
-                                let engine_ref = Arc::clone(&inference_engine);
+                                let engine_ref = inference_engine.clone();
                                 let metrics_ref = Arc::clone(&metrics);
                                 let registry_clone = ModelRegistry::new();
                                 let peer_id_str = peer_id.to_string();
                                 let request_id_clone = request_id.clone();
                                 let model_id_for_inference = model_id.clone();
+                                let mock_backend_for_task = mock_backend_enabled;
+                                let real_inference_available_for_task = real_inference_available;
 
                                 let (token_tx, mut token_rx) = tokio::sync::mpsc::channel::<String>(100);
                                 let (worker_progress_tx, mut worker_progress_rx) =
@@ -7237,7 +7689,22 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         temperature,
                                     };
                                     let daemon_socket = daemon_socket_path();
-                                    let result = if daemon_is_available(&daemon_socket).await {
+                                    let result = if mock_backend_for_task {
+                                        let _ = progress_tx.try_send("inference_started");
+                                        mock_real_inference_result(
+                                            request_id_clone.clone(),
+                                            model_id_for_inference.clone(),
+                                            req.prompt.clone(),
+                                            req.max_tokens,
+                                        )
+                                    } else if !real_inference_available_for_task {
+                                        return InferenceTaskResult::failure(
+                                            request_id_clone.clone(),
+                                            model_id_for_inference.clone(),
+                                            peer_id_str.clone(),
+                                            "real inference unavailable by worker startup policy".to_string(),
+                                        );
+                                    } else if daemon_is_available(&daemon_socket).await {
                                         let _ = progress_tx.try_send("model_loading");
                                         let _ = progress_tx.try_send("inference_warmup");
                                         let _ = progress_tx.try_send("inference_started");
@@ -7255,7 +7722,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                             }
                                         }
                                     } else {
-                                        let eng = Arc::clone(&engine_ref);
+                                        let Some(eng) = engine_ref.clone() else {
+                                            return InferenceTaskResult::failure(
+                                                request_id_clone.clone(),
+                                                model_id_for_inference.clone(),
+                                                peer_id_str.clone(),
+                                                "real inference engine unavailable".to_string(),
+                                            );
+                                        };
                                         let hash = registry_clone.get(&model_id_for_inference)
                                             .map(|m| m.hash.clone())
                                             .unwrap_or_default();
@@ -8323,15 +8797,26 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 println!("🧠 [Worker] DirectInferenceRequest: model={} prompt='{}'",
                                     model_id, &prompt[..prompt.len().min(40)]);
 
-                                if !local_model_available {
+                                let mock_backend_enabled = worker_startup_policy
+                                    .as_ref()
+                                    .map(|policy| policy.mock_backend())
+                                    .unwrap_or(false);
+                                let real_inference_available = worker_startup_policy
+                                    .as_ref()
+                                    .map(|policy| policy.real_inference_available)
+                                    .unwrap_or(true);
+
+                                if !local_model_available && !mock_backend_enabled {
                                     println!("   ⚠️ Modelo {} no instalado — ignorando", model_id);
                                     continue;
                                 }
 
-                                if let Some(req) = ModelRequirements::for_model(&model_id) {
+                                if !mock_backend_enabled {
+                                    if let Some(req) = ModelRequirements::for_model(&model_id) {
                                     if !can_node_run_model(&node_caps, &req) {
                                         println!("   ⚠️ Hardware insuficiente para {} — ignorando", model_id);
                                         continue;
+                                    }
                                     }
                                 }
                                 for stage in [
@@ -8353,12 +8838,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     );
                                 }
 
-                                let engine_ref = Arc::clone(&inference_engine);
+                                let engine_ref = inference_engine.clone();
                                 let metrics_ref = Arc::clone(&metrics);
                                 let registry_clone = ModelRegistry::new();
                                 let peer_id_str = peer_id.to_string();
                                 let request_id_clone = request_id.clone();
                                 let model_id_for_inference = model_id.clone();
+                                let mock_backend_for_task = mock_backend_enabled;
+                                let real_inference_available_for_task = real_inference_available;
 
                                 let (token_tx, mut token_rx) = tokio::sync::mpsc::channel::<String>(100);
                                 let (worker_progress_tx, mut worker_progress_rx) =
@@ -8374,7 +8861,22 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         temperature: 0.7,
                                     };
                                     let daemon_socket = daemon_socket_path();
-                                    let result = if daemon_is_available(&daemon_socket).await {
+                                    let result = if mock_backend_for_task {
+                                        let _ = progress_tx.try_send("inference_started");
+                                        mock_real_inference_result(
+                                            request_id_clone.clone(),
+                                            model_id_for_inference.clone(),
+                                            req.prompt.clone(),
+                                            req.max_tokens,
+                                        )
+                                    } else if !real_inference_available_for_task {
+                                        return InferenceTaskResult::failure(
+                                            request_id_clone.clone(),
+                                            model_id_for_inference.clone(),
+                                            peer_id_str.clone(),
+                                            "real inference unavailable by worker startup policy".to_string(),
+                                        );
+                                    } else if daemon_is_available(&daemon_socket).await {
                                         let _ = progress_tx.try_send("model_loading");
                                         let _ = progress_tx.try_send("inference_warmup");
                                         let _ = progress_tx.try_send("inference_started");
@@ -8392,7 +8894,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                             }
                                         }
                                     } else {
-                                        let eng = Arc::clone(&engine_ref);
+                                        let Some(eng) = engine_ref.clone() else {
+                                            return InferenceTaskResult::failure(
+                                                request_id_clone.clone(),
+                                                model_id_for_inference.clone(),
+                                                peer_id_str.clone(),
+                                                "real inference engine unavailable".to_string(),
+                                            );
+                                        };
                                         let hash = registry_clone.get(&model_id_for_inference)
                                             .map(|m| m.hash.clone())
                                             .unwrap_or_default();
@@ -9120,6 +9629,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 let attempt_id = task.attempt_id.clone();
                                 let peer_string = peer.to_string();
                                 let local_cluster_for_task = local_cluster_id.clone();
+                                let mock_backend_for_task = worker_startup_policy
+                                    .as_ref()
+                                    .map(|policy| policy.mock_backend())
+                                    .unwrap_or(false);
+                                let real_inference_available_for_task = worker_startup_policy
+                                    .as_ref()
+                                    .map(|policy| policy.real_inference_available)
+                                    .unwrap_or(true);
+                                let engine_ref = inference_engine.clone();
 
                                 tokio::spawn(async move {
                                     match task_manager_ref.claim_task(task.clone()).await {
@@ -9183,7 +9701,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     let output_policy =
                                         resolve_output_policy(&profile, &semantic_prompt, None);
 
-                                    let result = if let Some(runtime) = choose_inference_runtime().await {
+                                    let result = if mock_backend_for_task {
+                                        Ok(mock_real_inference_result(
+                                            task_id.clone(),
+                                            model.clone(),
+                                            semantic_prompt.clone(),
+                                            output_policy.max_tokens as u32,
+                                        ))
+                                    } else if !real_inference_available_for_task {
+                                        Err("real inference unavailable by worker startup policy".to_string())
+                                    } else if let Some(runtime) = choose_inference_runtime().await {
                                         run_local_inference_with_timeout(
                                             runtime,
                                             task_id.clone(),
@@ -9219,7 +9746,23 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                 return;
                                             }
                                         };
-                                        let engine = Arc::new(RealInferenceEngine::new(ModelStorage::new()));
+                                        let Some(engine) = engine_ref.clone() else {
+                                            let error = "real inference engine unavailable".to_string();
+                                            task_manager_ref.fail(&task_id, &error).await;
+                                            let _ = task_response_tx_ref
+                                                .send(PendingTaskResponse {
+                                                    channel,
+                                                    response: TaskResponse::distributed(
+                                                        DistributedTaskResult::failure_for_attempt(
+                                                            task_id.clone(),
+                                                            attempt_id.clone(),
+                                                            error,
+                                                        ),
+                                                    ),
+                                                })
+                                                .await;
+                                            return;
+                                        };
                                         if let Err(error) = engine.load_model(&model, &model_desc.hash) {
                                             task_manager_ref.fail(&task_id, &error).await;
                                             let _ = task_response_tx_ref
@@ -9949,6 +10492,317 @@ mod tests {
             max_execution_timeout_ms: 250,
             latency_class: "test",
         }
+    }
+
+    fn test_node_caps_for_startup() -> ModelNodeCapabilities {
+        ModelNodeCapabilities {
+            node_id: "node-startup-test".to_string(),
+            cpu_cores: 8,
+            ram_gb: 16,
+            gpu_type: None,
+            npu_type: None,
+            storage_available_gb: 100,
+            worker_slots: 4,
+            supported_models: vec!["tinyllama-1b".to_string()],
+            cpu_features: vec!["AVX2".to_string(), "FMA".to_string()],
+            accelerator: "CPU".to_string(),
+        }
+    }
+
+    #[test]
+    fn worker_skip_model_load_on_startup_does_not_load_model() {
+        let registry = ModelRegistry::new();
+        let caps = test_node_caps_for_startup();
+        let policy = WorkerStartupPolicy::from_values(
+            None,
+            Some("1"),
+            &caps.cpu_features,
+            &caps.accelerator,
+            "x86_64",
+        );
+        let mut load_attempts = 0usize;
+
+        let advertised = validate_model_advertisement_candidates(
+            vec!["tinyllama-1b".to_string()],
+            &registry,
+            &caps,
+            &policy,
+            |_model_id, _hash| {
+                load_attempts += 1;
+                Ok(())
+            },
+        );
+        emit_worker_model_load_skipped_event(
+            policy
+                .model_load_skip_reason
+                .expect("skip policy should set skip reason"),
+        );
+
+        assert!(advertised.is_empty());
+        assert_eq!(load_attempts, 0);
+        assert_eq!(
+            policy.model_load_skip_reason,
+            Some("skip_model_load_on_startup")
+        );
+
+        iamine_network::flush_structured_logs().unwrap();
+        let entries =
+            iamine_network::read_log_entries(&iamine_network::default_node_log_path()).unwrap();
+        assert!(entries.iter().rev().any(|entry| {
+            entry.event == "worker_model_load_skipped"
+                && entry.fields.get("reason").and_then(|value| value.as_str())
+                    == Some("skip_model_load_on_startup")
+        }));
+    }
+
+    #[test]
+    fn worker_mock_backend_does_not_initialize_real_cpu_backend() {
+        let registry = ModelRegistry::new();
+        let caps = test_node_caps_for_startup();
+        let policy = WorkerStartupPolicy::from_values(
+            Some("mock"),
+            None,
+            &caps.cpu_features,
+            &caps.accelerator,
+            "x86_64",
+        );
+        let mut load_attempts = 0usize;
+
+        emit_inference_backend_selected_event(&policy);
+        let advertised = validate_model_advertisement_candidates(
+            vec!["tinyllama-1b".to_string()],
+            &registry,
+            &caps,
+            &policy,
+            |_model_id, _hash| {
+                load_attempts += 1;
+                Ok(())
+            },
+        );
+
+        assert_eq!(policy.backend, WorkerInferenceBackend::Mock);
+        assert!(!policy.real_inference_available);
+        assert!(advertised.is_empty());
+        assert_eq!(load_attempts, 0);
+
+        iamine_network::flush_structured_logs().unwrap();
+        let entries =
+            iamine_network::read_log_entries(&iamine_network::default_node_log_path()).unwrap();
+        assert!(entries.iter().rev().any(|entry| {
+            entry.event == "inference_backend_selected"
+                && entry.fields.get("backend").and_then(|value| value.as_str()) == Some("mock")
+        }));
+    }
+
+    #[test]
+    fn worker_mock_skip_startup_reaches_ready_state() {
+        let caps = test_node_caps_for_startup();
+        let policy = WorkerStartupPolicy::from_values(
+            Some("mock"),
+            Some("1"),
+            &caps.cpu_features,
+            &caps.accelerator,
+            "x86_64",
+        );
+        let peer_id = format!("peer-ready-{}", uuid_simple());
+
+        emit_worker_startup_ready_event(&peer_id, 4101, &policy);
+
+        iamine_network::flush_structured_logs().unwrap();
+        let entries =
+            iamine_network::read_log_entries(&iamine_network::default_node_log_path()).unwrap();
+        assert!(entries.iter().rev().any(|entry| {
+            entry.event == "worker_startup_ready"
+                && entry.fields.get("peer_id").and_then(|value| value.as_str())
+                    == Some(peer_id.as_str())
+                && entry.fields.get("backend").and_then(|value| value.as_str()) == Some("mock")
+        }));
+    }
+
+    #[test]
+    fn worker_startup_emits_ndjson_before_model_load() {
+        let peer_id = format!("peer-order-{}", uuid_simple());
+        let model_id = format!("tinyllama-order-{}", uuid_simple());
+
+        emit_worker_startup_started_event(&peer_id, 4101);
+        emit_worker_model_load_attempt_event(&model_id, "test_order");
+
+        iamine_network::flush_structured_logs().unwrap();
+        let entries =
+            iamine_network::read_log_entries(&iamine_network::default_node_log_path()).unwrap();
+        let started_index = entries
+            .iter()
+            .position(|entry| {
+                entry.event == "worker_startup_started"
+                    && entry.fields.get("peer_id").and_then(|value| value.as_str())
+                        == Some(peer_id.as_str())
+            })
+            .expect("worker_startup_started entry not found");
+        let attempt_index = entries
+            .iter()
+            .position(|entry| {
+                entry.event == "worker_model_load_attempt"
+                    && entry.model_id.as_deref() == Some(model_id.as_str())
+            })
+            .expect("worker_model_load_attempt entry not found");
+
+        assert!(started_index < attempt_index);
+    }
+
+    #[test]
+    fn cpu_feature_incompatible_marks_real_backend_unavailable() {
+        let caps = ModelNodeCapabilities {
+            cpu_features: vec![],
+            ..test_node_caps_for_startup()
+        };
+        let policy = WorkerStartupPolicy::from_values(
+            None,
+            None,
+            &caps.cpu_features,
+            &caps.accelerator,
+            "x86_64",
+        );
+        let registry = ModelRegistry::new();
+        let mut load_attempts = 0usize;
+
+        emit_backend_cpu_feature_incompatible_event(
+            &caps.cpu_features,
+            &caps.accelerator,
+            "test_degraded",
+        );
+        let advertised = validate_model_advertisement_candidates(
+            vec!["tinyllama-1b".to_string()],
+            &registry,
+            &caps,
+            &policy,
+            |_model_id, _hash| {
+                load_attempts += 1;
+                Ok(())
+            },
+        );
+
+        assert!(!policy.cpu_feature_compatible);
+        assert!(!policy.real_inference_available);
+        assert_eq!(
+            policy.model_load_skip_reason,
+            Some("cpu_feature_incompatible")
+        );
+        assert!(advertised.is_empty());
+        assert_eq!(load_attempts, 0);
+
+        iamine_network::flush_structured_logs().unwrap();
+        let entries =
+            iamine_network::read_log_entries(&iamine_network::default_node_log_path()).unwrap();
+        assert!(entries
+            .iter()
+            .rev()
+            .any(|entry| entry.event == "backend_cpu_feature_incompatible"));
+    }
+
+    #[test]
+    fn simple_broadcast_task_does_not_require_llm_model_loaded() {
+        let caps = test_node_caps_for_startup();
+        let policy = WorkerStartupPolicy::from_values(
+            Some("mock"),
+            Some("1"),
+            &caps.cpu_features,
+            &caps.accelerator,
+            "x86_64",
+        );
+        let mut worker_caps = WorkerCapabilities {
+            cpu_cores: 4,
+            ram_gb: 8,
+            gpu_available: false,
+            disk_available_gb: 10,
+            supported_tasks: vec!["inference".to_string()],
+            avg_latency_ms: 0.0,
+        };
+
+        apply_worker_startup_policy_to_capabilities(&mut worker_caps, &policy);
+        let response = TaskExecutor::execute_task(
+            "simple-task".to_string(),
+            "reverse_string".to_string(),
+            "broadcast".to_string(),
+        );
+        let echo = TaskExecutor::execute_task(
+            "echo-task".to_string(),
+            "echo".to_string(),
+            "smoke".to_string(),
+        );
+
+        assert!(worker_caps.supports("reverse_string"));
+        assert!(worker_caps.supports("test"));
+        assert!(!worker_caps.supports("inference"));
+        assert!(response.success);
+        assert_eq!(response.result, "tsacdaorb");
+        assert!(echo.success);
+        assert_eq!(echo.result, "smoke");
+    }
+
+    #[test]
+    fn capabilities_do_not_advertise_real_models_when_backend_unavailable() {
+        let registry = ModelRegistry::new();
+        let caps = test_node_caps_for_startup();
+        let policy = WorkerStartupPolicy::from_values(
+            Some("mock"),
+            Some("1"),
+            &caps.cpu_features,
+            &caps.accelerator,
+            "x86_64",
+        );
+        let mut load_attempts = 0usize;
+
+        let advertised = validate_model_advertisement_candidates(
+            vec!["tinyllama-1b".to_string()],
+            &registry,
+            &caps,
+            &policy,
+            |_model_id, _hash| {
+                load_attempts += 1;
+                Ok(())
+            },
+        );
+
+        assert!(advertised.is_empty());
+        assert_eq!(load_attempts, 0);
+    }
+
+    #[test]
+    fn worker_model_load_failure_can_continue_degraded_when_policy_allows() {
+        let registry = ModelRegistry::new();
+        let caps = test_node_caps_for_startup();
+        let policy = WorkerStartupPolicy::from_values(
+            None,
+            None,
+            &caps.cpu_features,
+            &caps.accelerator,
+            "x86_64",
+        );
+        let mut load_attempts = 0usize;
+
+        let advertised = validate_model_advertisement_candidates(
+            vec!["tinyllama-1b".to_string()],
+            &registry,
+            &caps,
+            &policy,
+            |_model_id, _hash| {
+                load_attempts += 1;
+                Err("simulated load failure".to_string())
+            },
+        );
+
+        assert!(policy.real_inference_available);
+        assert!(advertised.is_empty());
+        assert_eq!(load_attempts, 1);
+
+        iamine_network::flush_structured_logs().unwrap();
+        let entries =
+            iamine_network::read_log_entries(&iamine_network::default_node_log_path()).unwrap();
+        assert!(entries.iter().rev().any(|entry| {
+            entry.event == "worker_model_load_failed"
+                && entry.fields.get("error").and_then(|value| value.as_str())
+                    == Some("simulated load failure")
+        }));
     }
 
     #[test]
