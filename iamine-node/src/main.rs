@@ -114,6 +114,8 @@ const TASK_TOPIC: &str = "iamine-tasks";
 const CAP_TOPIC: &str = "iamine-capabilities";
 const DIRECT_INF_TOPIC: &str = "iamine-direct-inference";
 const RESULTS_TOPIC: &str = "iamine-results";
+const BIDS_TOPIC: &str = "iamine-bids";
+const ASSIGN_TOPIC: &str = "iamine-assign";
 const INFER_TIMEOUT_MS: u64 = 5_000;
 const INFER_FALLBACK_AFTER_MS: u64 = 2_000;
 const MAX_DISTRIBUTED_RETRIES: u8 = 2;
@@ -127,6 +129,10 @@ const LATE_RESULT_ACCEPTANCE_WINDOW_MS: u64 = 15_000;
 const MIN_REMOTE_EXECUTION_TIMEOUT_MS: u64 = 120_000;
 const MAX_REMOTE_EXECUTION_TIMEOUT_MS: u64 = 900_000;
 const UNCLAIMED_WORKER_PEER_ID: &str = "-";
+const BROADCAST_READINESS_DELAY_MS: u64 = 1_500;
+const BROADCAST_READINESS_TIMEOUT_MS: u64 = 15_000;
+const BROADCAST_OFFER_RETRY_DELAY_MS: u64 = 1_000;
+const BROADCAST_OFFER_MAX_ATTEMPTS: u32 = 5;
 
 struct PendingTaskResponse {
     channel: request_response::ResponseChannel<TaskResponse>,
@@ -196,6 +202,7 @@ impl From<gossipsub::Event> for IaMineEvent {
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
 enum NodeMode {
+    Help,
     Daemon,
     Worker,
     Relay,
@@ -332,6 +339,7 @@ impl DebugFlags {
 
 fn mode_label(mode: &NodeMode) -> &'static str {
     match mode {
+        NodeMode::Help => "help",
         NodeMode::Daemon => "daemon",
         NodeMode::Worker => "worker",
         NodeMode::Relay => "relay",
@@ -362,7 +370,10 @@ fn mode_label(mode: &NodeMode) -> &'static str {
 }
 
 fn parse_args() -> Result<NodeMode, String> {
-    let raw_args: Vec<String> = std::env::args().collect();
+    parse_args_from(std::env::args().collect())
+}
+
+fn parse_args_from(raw_args: Vec<String>) -> Result<NodeMode, String> {
     let args: Vec<String> = raw_args
         .into_iter()
         .filter(|arg| {
@@ -374,6 +385,7 @@ fn parse_args() -> Result<NodeMode, String> {
         .collect();
 
     match args.get(1).map(|s| s.as_str()) {
+        Some("--help") | Some("-h") | Some("help") => Ok(NodeMode::Help),
         Some("--daemon") => Ok(NodeMode::Daemon),
         Some("--worker") | None => Ok(NodeMode::Worker),
         Some("--relay") => Ok(NodeMode::Relay),
@@ -497,6 +509,14 @@ fn parse_args() -> Result<NodeMode, String> {
 
         Some(unknown) => Err(format!("Modo desconocido: {}", unknown)),
     }
+}
+
+fn usage_text() -> &'static str {
+    "Uso:\n  iamine-node --worker [--port=N] [--cpu=N] [--ram=N] [--gpu]\n  iamine-node --relay\n  iamine-node --broadcast <type> <data>\n  iamine-node models list\n  iamine-node models stats\n  iamine-node models download <model_id>\n  iamine-node models remove <model_id>\n  iamine-node semantic-eval\n  iamine-node regression-run\n  iamine-node check-code\n  iamine-node check-security\n  iamine-node validate-release\n  iamine-node tasks stats\n  iamine-node tasks trace <task_id>\n  iamine-node --daemon\nFlags:\n  --debug-network\n  --debug-scheduler\n  --debug-tasks\n  --force-network\n  --no-local\n  --prefer-local"
+}
+
+fn print_usage() {
+    eprintln!("{}", usage_text());
 }
 
 fn parse_optional_u32_flag(args: &[String], flag: &str) -> Result<Option<u32>, String> {
@@ -1831,6 +1851,407 @@ fn should_accept_result_for_attempt(
         && watchdog.is_fallback_broadcast()
         && watchdog.accepts_worker(worker_peer_id)
         && watchdog.elapsed_ms() <= watchdog.late_acceptance_deadline_ms()
+}
+
+#[derive(Debug, Clone)]
+struct BroadcastOfferState {
+    task_id: String,
+    prepared: bool,
+    published: bool,
+    failed: bool,
+    attempts: u32,
+    scheduler_registered: bool,
+    assignment_published: bool,
+    started_at: tokio::time::Instant,
+    last_attempt_at: Option<tokio::time::Instant>,
+    last_readiness_log_at: Option<tokio::time::Instant>,
+}
+
+impl BroadcastOfferState {
+    fn new(task_id: String) -> Self {
+        Self {
+            task_id,
+            prepared: false,
+            published: false,
+            failed: false,
+            attempts: 0,
+            scheduler_registered: false,
+            assignment_published: false,
+            started_at: tokio::time::Instant::now(),
+            last_attempt_at: None,
+            last_readiness_log_at: None,
+        }
+    }
+
+    fn elapsed_ms(&self) -> u64 {
+        self.started_at.elapsed().as_millis() as u64
+    }
+
+    fn can_attempt_publish(&self) -> bool {
+        if self.published || self.failed || self.attempts >= BROADCAST_OFFER_MAX_ATTEMPTS {
+            return false;
+        }
+
+        self.last_attempt_at
+            .map(|last| last.elapsed().as_millis() as u64 >= BROADCAST_OFFER_RETRY_DELAY_MS)
+            .unwrap_or(true)
+    }
+
+    fn record_publish_result(&mut self, success: bool) {
+        self.attempts = self.attempts.saturating_add(1);
+        self.last_attempt_at = Some(tokio::time::Instant::now());
+        if success {
+            self.published = true;
+        } else if self.attempts >= BROADCAST_OFFER_MAX_ATTEMPTS {
+            self.failed = true;
+        }
+    }
+
+    fn should_log_readiness_wait(&mut self) -> bool {
+        let should_log = self
+            .last_readiness_log_at
+            .map(|last| last.elapsed().as_millis() as u64 >= BROADCAST_OFFER_RETRY_DELAY_MS)
+            .unwrap_or(true);
+        if should_log {
+            self.last_readiness_log_at = Some(tokio::time::Instant::now());
+        }
+        should_log
+    }
+}
+
+fn broadcast_offer_ready(
+    subscribed_task_peers: usize,
+    connected_peers: usize,
+    readiness_elapsed_ms: u64,
+) -> bool {
+    subscribed_task_peers > 0
+        || (connected_peers > 0 && readiness_elapsed_ms >= BROADCAST_READINESS_DELAY_MS)
+}
+
+fn build_broadcast_task_offer_payload(
+    task_id: &str,
+    task_type: &str,
+    data: &str,
+    requester_peer_id: &str,
+) -> Value {
+    serde_json::json!({
+        "type": "TaskOffer",
+        "task_id": task_id,
+        "task_type": task_type,
+        "data": data,
+        "requester_id": requester_peer_id,
+        "origin_peer": requester_peer_id,
+        "is_retry": false,
+    })
+}
+
+fn build_task_bid_payload(
+    task_id: &str,
+    worker_id: &str,
+    origin_peer: &str,
+    reputation_score: u32,
+    available_slots: usize,
+    estimated_ms: u64,
+) -> Value {
+    serde_json::json!({
+        "type": "TaskBid",
+        "task_id": task_id,
+        "worker_id": worker_id,
+        "origin_peer": origin_peer,
+        "reputation_score": reputation_score,
+        "available_slots": available_slots,
+        "estimated_ms": estimated_ms,
+    })
+}
+
+fn build_broadcast_task_assign_payload(
+    task_id: &str,
+    assigned_worker: &str,
+    origin_peer: &str,
+    deadline_ms: u64,
+    task_type: &str,
+    data: &str,
+) -> Value {
+    serde_json::json!({
+        "type": "TaskAssign",
+        "task_id": task_id,
+        "assigned_worker": assigned_worker,
+        "origin_peer": origin_peer,
+        "deadline_ms": deadline_ms,
+        "task_type": task_type,
+        "data": data,
+    })
+}
+
+fn should_execute_task_assignment(
+    assigned_worker: &str,
+    local_peer_id: &str,
+    already_executed: bool,
+) -> bool {
+    assigned_worker == local_peer_id && !already_executed
+}
+
+fn emit_broadcast_task_offer_prepared_event(
+    task_id: &str,
+    task_type: &str,
+    data: &str,
+    controller_peer_id: &str,
+) {
+    log_observability_event(
+        LogLevel::Info,
+        "broadcast_task_offer_prepared",
+        task_id,
+        Some(task_id),
+        None,
+        None,
+        {
+            let mut fields = Map::new();
+            fields.insert("task_type".to_string(), task_type.into());
+            fields.insert("data".to_string(), data.into());
+            fields.insert("requester_id".to_string(), controller_peer_id.into());
+            fields.insert("origin_peer".to_string(), controller_peer_id.into());
+            fields.insert("topic".to_string(), TASK_TOPIC.into());
+            fields
+        },
+    );
+}
+
+fn emit_broadcast_readiness_waiting_event(
+    task_id: &str,
+    subscribed_task_peers: usize,
+    connected_peers: usize,
+    elapsed_ms: u64,
+) {
+    log_observability_event(
+        LogLevel::Info,
+        "broadcast_readiness_waiting",
+        task_id,
+        Some(task_id),
+        None,
+        None,
+        {
+            let mut fields = Map::new();
+            fields.insert("topic".to_string(), TASK_TOPIC.into());
+            fields.insert(
+                "subscribed_peers".to_string(),
+                (subscribed_task_peers as u64).into(),
+            );
+            fields.insert(
+                "connected_peers".to_string(),
+                (connected_peers as u64).into(),
+            );
+            fields.insert("elapsed_ms".to_string(), elapsed_ms.into());
+            fields
+        },
+    );
+}
+
+fn emit_broadcast_task_offer_publish_attempt_event(
+    task_id: &str,
+    task_type: &str,
+    topic_peer_count: usize,
+    payload_size: usize,
+    attempt_number: u32,
+) {
+    log_observability_event(
+        LogLevel::Info,
+        "broadcast_task_offer_publish_attempt",
+        task_id,
+        Some(task_id),
+        None,
+        None,
+        {
+            let mut fields = Map::new();
+            fields.insert("task_type".to_string(), task_type.into());
+            fields.insert("topic".to_string(), TASK_TOPIC.into());
+            fields.insert(
+                "topic_peer_count".to_string(),
+                (topic_peer_count as u64).into(),
+            );
+            fields.insert("payload_size".to_string(), (payload_size as u64).into());
+            fields.insert("attempt_number".to_string(), attempt_number.into());
+            fields
+        },
+    );
+}
+
+fn emit_broadcast_task_offer_published_event(
+    task_id: &str,
+    task_type: &str,
+    data: &str,
+    message_id: &str,
+    attempt_number: u32,
+) {
+    log_observability_event(
+        LogLevel::Info,
+        "broadcast_task_offer_published",
+        task_id,
+        Some(task_id),
+        None,
+        None,
+        {
+            let mut fields = Map::new();
+            fields.insert("task_type".to_string(), task_type.into());
+            fields.insert("data".to_string(), data.into());
+            fields.insert("topic".to_string(), TASK_TOPIC.into());
+            fields.insert("message_id".to_string(), message_id.into());
+            fields.insert("attempt_number".to_string(), attempt_number.into());
+            fields
+        },
+    );
+}
+
+fn emit_broadcast_task_offer_publish_failed_event(
+    task_id: &str,
+    task_type: &str,
+    reason: &str,
+    attempt_number: u32,
+    recoverable: bool,
+) {
+    log_observability_event(
+        LogLevel::Error,
+        "broadcast_task_offer_publish_failed",
+        task_id,
+        Some(task_id),
+        None,
+        Some(TASK_DISPATCH_UNCONFIRMED_001),
+        {
+            let mut fields = Map::new();
+            fields.insert("task_type".to_string(), task_type.into());
+            fields.insert("topic".to_string(), TASK_TOPIC.into());
+            fields.insert("reason".to_string(), reason.into());
+            fields.insert("attempt_number".to_string(), attempt_number.into());
+            fields.insert("recoverable".to_string(), recoverable.into());
+            fields
+        },
+    );
+}
+
+fn emit_broadcast_bid_received_event(
+    task_id: &str,
+    worker_id: &str,
+    reputation_score: u32,
+    available_slots: usize,
+    latency_ms: f64,
+) {
+    log_observability_event(
+        LogLevel::Info,
+        "broadcast_bid_received",
+        task_id,
+        Some(task_id),
+        None,
+        None,
+        {
+            let mut fields = Map::new();
+            fields.insert("worker_id".to_string(), worker_id.into());
+            fields.insert("reputation_score".to_string(), reputation_score.into());
+            fields.insert(
+                "available_slots".to_string(),
+                (available_slots as u64).into(),
+            );
+            fields.insert("latency_ms".to_string(), latency_ms.into());
+            fields
+        },
+    );
+}
+
+fn emit_broadcast_task_assign_published_event(
+    task_id: &str,
+    assigned_worker: &str,
+    message_id: &str,
+    deadline_ms: u64,
+) {
+    log_observability_event(
+        LogLevel::Info,
+        "broadcast_task_assign_published",
+        task_id,
+        Some(task_id),
+        None,
+        None,
+        {
+            let mut fields = Map::new();
+            fields.insert("assigned_worker".to_string(), assigned_worker.into());
+            fields.insert("topic".to_string(), ASSIGN_TOPIC.into());
+            fields.insert("message_id".to_string(), message_id.into());
+            fields.insert("deadline_ms".to_string(), deadline_ms.into());
+            fields
+        },
+    );
+}
+
+fn emit_worker_task_offer_received_event(
+    task_id: &str,
+    task_type: &str,
+    data: &str,
+    origin_peer: &str,
+    from_peer: &str,
+) {
+    log_observability_event(
+        LogLevel::Info,
+        "task_offer_received",
+        task_id,
+        Some(task_id),
+        None,
+        None,
+        {
+            let mut fields = Map::new();
+            fields.insert("task_type".to_string(), task_type.into());
+            fields.insert("data".to_string(), data.into());
+            fields.insert("origin_peer".to_string(), origin_peer.into());
+            fields.insert("from_peer".to_string(), from_peer.into());
+            fields
+        },
+    );
+}
+
+fn emit_worker_task_bid_published_event(
+    task_id: &str,
+    worker_id: &str,
+    message_id: &str,
+    available_slots: usize,
+) {
+    log_observability_event(
+        LogLevel::Info,
+        "task_bid_published",
+        task_id,
+        Some(task_id),
+        None,
+        None,
+        {
+            let mut fields = Map::new();
+            fields.insert("worker_id".to_string(), worker_id.into());
+            fields.insert("topic".to_string(), BIDS_TOPIC.into());
+            fields.insert("message_id".to_string(), message_id.into());
+            fields.insert(
+                "available_slots".to_string(),
+                (available_slots as u64).into(),
+            );
+            fields
+        },
+    );
+}
+
+fn emit_worker_task_assign_received_event(
+    task_id: &str,
+    assigned_worker: &str,
+    local_peer_id: &str,
+    will_execute: bool,
+) {
+    log_observability_event(
+        LogLevel::Info,
+        "task_assign_received",
+        task_id,
+        Some(task_id),
+        None,
+        None,
+        {
+            let mut fields = Map::new();
+            fields.insert("assigned_worker".to_string(), assigned_worker.into());
+            fields.insert("local_peer_id".to_string(), local_peer_id.into());
+            fields.insert("will_execute".to_string(), will_execute.into());
+            fields
+        },
+    );
 }
 
 fn emit_dispatch_context_event(
@@ -3785,33 +4206,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
         Ok(m) => m,
         Err(e) => {
             eprintln!("❌ {}", e);
-            eprintln!("Uso:");
-            eprintln!("  iamine-node --worker [--port=N] [--cpu=N] [--ram=N] [--gpu]");
-            eprintln!("  iamine-node --relay");
-            eprintln!("  iamine-node --broadcast <type> <data>");
-            eprintln!("  iamine-node models list");
-            eprintln!("  iamine-node models stats");
-            eprintln!("  iamine-node models download <model_id>");
-            eprintln!("  iamine-node models remove <model_id>");
-            eprintln!("  iamine-node semantic-eval");
-            eprintln!("  iamine-node regression-run");
-            eprintln!("  iamine-node check-code");
-            eprintln!("  iamine-node check-security");
-            eprintln!("  iamine-node validate-release");
-            eprintln!("  iamine-node tasks stats");
-            eprintln!("  iamine-node tasks trace <task_id>");
-            eprintln!("  iamine-node --daemon");
-            eprintln!("Flags:");
-            eprintln!("  --debug-network");
-            eprintln!("  --debug-scheduler");
-            eprintln!("  --debug-tasks");
-            eprintln!("  --force-network");
-            eprintln!("  --no-local");
-            eprintln!("  --prefer-local");
-            // eprintln!("  iamine-node nodes");
+            print_usage();
             std::process::exit(1);
         }
     };
+    if matches!(mode, NodeMode::Help) {
+        print_usage();
+        return Ok(());
+    }
     if debug_flags.network || debug_flags.scheduler || debug_flags.tasks {
         println!(
             "[Debug] network={} scheduler={} tasks={}",
@@ -4643,8 +5045,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let task_topic = gossipsub::IdentTopic::new(TASK_TOPIC);
     gossipsub_behaviour.subscribe(&task_topic)?;
-    gossipsub_behaviour.subscribe(&gossipsub::IdentTopic::new("iamine-bids"))?;
-    gossipsub_behaviour.subscribe(&gossipsub::IdentTopic::new("iamine-assign"))?;
+    gossipsub_behaviour.subscribe(&gossipsub::IdentTopic::new(BIDS_TOPIC))?;
+    gossipsub_behaviour.subscribe(&gossipsub::IdentTopic::new(ASSIGN_TOPIC))?;
     gossipsub_behaviour.subscribe(&gossipsub::IdentTopic::new("iamine-heartbeat"))?;
     gossipsub_behaviour.subscribe(&gossipsub::IdentTopic::new(RESULTS_TOPIC))?;
     gossipsub_behaviour.subscribe(&gossipsub::IdentTopic::new(CAP_TOPIC))?;
@@ -4852,6 +5254,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let mut heartbeat_rx = HeartbeatService::start(5);
     let mut nodes_tick = tokio::time::interval(Duration::from_secs(5)); // ← nuevo ticker dedicado
+    let mut broadcast_tick = tokio::time::interval(Duration::from_millis(500));
 
     // Estado
     let mut pending_tasks: Vec<TaskRequest> = Vec::new();
@@ -4864,6 +5267,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut origin_peer_map: std::collections::HashMap<String, PeerId> =
         std::collections::HashMap::new();
     let mut tasks_sent = false;
+    let mut broadcast_offer_state = match &mode {
+        NodeMode::Broadcast { .. } => Some(BroadcastOfferState::new(uuid_simple())),
+        _ => None,
+    };
+    let mut executed_broadcast_assignments: HashSet<String> = HashSet::new();
 
     match &mode {
         NodeMode::Client {
@@ -4984,6 +5392,175 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         println!("\n(Ctrl+C para salir)");
                     } else {
                         println!("(esperando peers...)");
+                    }
+                }
+            }
+
+            _ = broadcast_tick.tick(), if matches!(mode, NodeMode::Broadcast { .. }) => {
+                let NodeMode::Broadcast { task_type, data } = &mode else {
+                    continue;
+                };
+                let Some(state) = broadcast_offer_state.as_mut() else {
+                    continue;
+                };
+
+                if !state.prepared {
+                    state.prepared = true;
+                    emit_broadcast_task_offer_prepared_event(
+                        &state.task_id,
+                        task_type,
+                        data,
+                        &peer_id.to_string(),
+                    );
+                }
+
+                if state.published && !state.assignment_published {
+                    if let Some(winner) = scheduler.try_assign(&state.task_id).await {
+                        let deadline_ms = 30_000u64;
+                        let assign = build_broadcast_task_assign_payload(
+                            &state.task_id,
+                            &winner,
+                            &peer_id.to_string(),
+                            deadline_ms,
+                            task_type,
+                            data,
+                        );
+                        match swarm.behaviour_mut().gossipsub.publish(
+                            gossipsub::IdentTopic::new(ASSIGN_TOPIC),
+                            serde_json::to_vec(&assign).unwrap_or_default(),
+                        ) {
+                            Ok(message_id) => {
+                                state.assignment_published = true;
+                                emit_broadcast_task_assign_published_event(
+                                    &state.task_id,
+                                    &winner,
+                                    &message_id.to_string(),
+                                    deadline_ms,
+                                );
+                                println!("🏆 Asignando worker={} task_id={}", winner, state.task_id);
+                            }
+                            Err(error) => {
+                                log_observability_event(
+                                    LogLevel::Error,
+                                    "broadcast_task_assign_publish_failed",
+                                    &state.task_id,
+                                    Some(&state.task_id),
+                                    None,
+                                    Some(TASK_DISPATCH_UNCONFIRMED_001),
+                                    {
+                                        let mut fields = Map::new();
+                                        fields.insert("assigned_worker".to_string(), winner.into());
+                                        fields.insert("topic".to_string(), ASSIGN_TOPIC.into());
+                                        fields.insert("error".to_string(), error.to_string().into());
+                                        fields
+                                    },
+                                );
+                            }
+                        }
+                    }
+                    continue;
+                }
+
+                if state.published || state.failed {
+                    continue;
+                }
+
+                let subscribed_peers = pubsub_topics.topic_peer_count(TASK_TOPIC);
+                let connected_peers = swarm.connected_peers().count();
+                let elapsed_ms = state.elapsed_ms();
+                if !broadcast_offer_ready(subscribed_peers, connected_peers, elapsed_ms) {
+                    if elapsed_ms >= BROADCAST_READINESS_TIMEOUT_MS {
+                        state.failed = true;
+                        emit_broadcast_task_offer_publish_failed_event(
+                            &state.task_id,
+                            task_type,
+                            "pubsub_readiness_timeout",
+                            state.attempts.saturating_add(1),
+                            false,
+                        );
+                        eprintln!(
+                            "❌ [Broadcast] PubSub no quedó listo: task_id={} peers={} subscribed_peers={}",
+                            state.task_id, connected_peers, subscribed_peers
+                        );
+                        break;
+                    }
+                    if state.should_log_readiness_wait() {
+                        emit_broadcast_readiness_waiting_event(
+                            &state.task_id,
+                            subscribed_peers,
+                            connected_peers,
+                            elapsed_ms,
+                        );
+                    }
+                    continue;
+                }
+
+                if !state.can_attempt_publish() {
+                    continue;
+                }
+
+                if !state.scheduler_registered {
+                    scheduler
+                        .register_task(state.task_id.clone(), task_type.clone())
+                        .await;
+                    state.scheduler_registered = true;
+                }
+
+                let offer = build_broadcast_task_offer_payload(
+                    &state.task_id,
+                    task_type,
+                    data,
+                    &peer_id.to_string(),
+                );
+                let payload = serde_json::to_vec(&offer)
+                    .map_err(|error| format!("Broadcast TaskOffer payload error: {}", error))?;
+                let attempt_number = state.attempts.saturating_add(1);
+                emit_broadcast_task_offer_publish_attempt_event(
+                    &state.task_id,
+                    task_type,
+                    subscribed_peers,
+                    payload.len(),
+                    attempt_number,
+                );
+
+                match swarm.behaviour_mut().gossipsub.publish(
+                    gossipsub::IdentTopic::new(TASK_TOPIC),
+                    payload,
+                ) {
+                    Ok(message_id) => {
+                        state.record_publish_result(true);
+                        let message_id = message_id.to_string();
+                        emit_broadcast_task_offer_published_event(
+                            &state.task_id,
+                            task_type,
+                            data,
+                            &message_id,
+                            attempt_number,
+                        );
+                        waiting_for_response = true;
+                        tasks_sent = true;
+                        println!(
+                            "📣 [Broadcast] TaskOffer publicado: task_id={} type={} data='{}'",
+                            state.task_id, task_type, data
+                        );
+                    }
+                    Err(error) => {
+                        let error_text = error.to_string();
+                        state.record_publish_result(false);
+                        emit_broadcast_task_offer_publish_failed_event(
+                            &state.task_id,
+                            task_type,
+                            &error_text,
+                            attempt_number,
+                            !state.failed,
+                        );
+                        if state.failed {
+                            eprintln!(
+                                "❌ [Broadcast] No se pudo publicar TaskOffer tras {} intentos: {}",
+                                state.attempts, error_text
+                            );
+                            break;
+                        }
                     }
                 }
             }
@@ -6218,6 +6795,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     let from_peer = propagation_source.to_string();
                     let message_topic = if message.topic == gossipsub::IdentTopic::new(TASK_TOPIC).hash() {
                         TASK_TOPIC
+                    } else if message.topic == gossipsub::IdentTopic::new(BIDS_TOPIC).hash() {
+                        BIDS_TOPIC
+                    } else if message.topic == gossipsub::IdentTopic::new(ASSIGN_TOPIC).hash() {
+                        ASSIGN_TOPIC
                     } else if message.topic == gossipsub::IdentTopic::new(DIRECT_INF_TOPIC).hash() {
                         DIRECT_INF_TOPIC
                     } else if message.topic == gossipsub::IdentTopic::new(RESULTS_TOPIC).hash() {
@@ -6245,7 +6826,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             "TaskOffer" if matches!(mode, NodeMode::Worker) => {
                                 let task_id = msg["task_id"].as_str().unwrap_or("").to_string();
                                 let task_type = msg["task_type"].as_str().unwrap_or("").to_string();
+                                let data = msg["data"].as_str().unwrap_or("").to_string();
                                 let origin_peer = msg["origin_peer"].as_str().unwrap_or("").to_string();
+                                emit_worker_task_offer_received_event(
+                                    &task_id,
+                                    &task_type,
+                                    &data,
+                                    &origin_peer,
+                                    &from_peer,
+                                );
+                                println!(
+                                    "📥 [Worker] TaskOffer recibido: task_id={} type={} data='{}'",
+                                    task_id, task_type, data
+                                );
 
                                 if task_cache.is_duplicate(&task_id) {
                                     println!("⚡ [Cache] Tarea {} ya vista", &task_id[..8.min(task_id.len())]);
@@ -6254,20 +6847,43 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 } else {
                                     let available = pool.available_slots();
                                     if available > 0 {
-                                        println!("📋 [Worker] Bid para tarea {} ({} slots)", task_id, available);
-                                        let bid = serde_json::json!({
-                                            "type": "TaskBid",
-                                            "task_id": task_id,
-                                            "worker_id": peer_id.to_string(),
-                                            "origin_peer": origin_peer,
-                                            "reputation_score": queue.reputation().await.reputation_score,
-                                            "available_slots": available,
-                                            "estimated_ms": 10,
-                                        });
-                                        let _ = swarm.behaviour_mut().gossipsub.publish(
-                                            gossipsub::IdentTopic::new("iamine-bids"),
-                                            serde_json::to_vec(&bid).unwrap(),
+                                        println!("📋 [Worker] Bid para tarea {}", task_id);
+                                        let reputation_score = queue.reputation().await.reputation_score;
+                                        let worker_id = peer_id.to_string();
+                                        let bid = build_task_bid_payload(
+                                            &task_id,
+                                            &worker_id,
+                                            &origin_peer,
+                                            reputation_score,
+                                            available,
+                                            10,
                                         );
+                                        match swarm.behaviour_mut().gossipsub.publish(
+                                            gossipsub::IdentTopic::new(BIDS_TOPIC),
+                                            serde_json::to_vec(&bid).unwrap_or_default(),
+                                        ) {
+                                            Ok(message_id) => emit_worker_task_bid_published_event(
+                                                &task_id,
+                                                &worker_id,
+                                                &message_id.to_string(),
+                                                available,
+                                            ),
+                                            Err(error) => log_observability_event(
+                                                LogLevel::Error,
+                                                "task_bid_publish_failed",
+                                                &task_id,
+                                                Some(&task_id),
+                                                None,
+                                                Some(TASK_DISPATCH_UNCONFIRMED_001),
+                                                {
+                                                    let mut fields = Map::new();
+                                                    fields.insert("worker_id".to_string(), worker_id.into());
+                                                    fields.insert("topic".to_string(), BIDS_TOPIC.into());
+                                                    fields.insert("error".to_string(), error.to_string().into());
+                                                    fields
+                                                },
+                                            ),
+                                        }
                                     }
                                 }
                             }
@@ -6280,11 +6896,27 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 let est_ms = msg["estimated_ms"].as_u64().unwrap_or(1000);
                                 let latency = peer_tracker.get_latency(&worker_id);
 
-                                println!("📨 [Scheduler] Bid: worker={}... rep={} slots={} latency={:.1}ms",
-                                    &worker_id[..8.min(worker_id.len())], rep, slots, latency);
+                                emit_broadcast_bid_received_event(
+                                    &task_id,
+                                    &worker_id,
+                                    rep,
+                                    slots,
+                                    latency,
+                                );
+                                println!(
+                                    "📨 [Scheduler] Bid: worker={} task_id={} rep={} slots={} latency={:.1}ms",
+                                    worker_id, task_id, rep, slots, latency
+                                );
 
                                 if let Some(winner) = scheduler.receive_bid(&task_id, worker_id.clone(), rep, slots, est_ms).await {
-                                    println!("🏆 Asignando {} a {}...", &task_id[..8], &winner[..8.min(winner.len())]);
+                                    if broadcast_offer_state
+                                        .as_ref()
+                                        .map(|state| state.task_id == task_id && state.assignment_published)
+                                        .unwrap_or(false)
+                                    {
+                                        continue;
+                                    }
+                                    println!("🏆 Asignando worker={} task_id={}", winner, task_id);
 
                                     let deadline_ms = 30_000u64;
 
@@ -6296,19 +6928,53 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         origin_peer_map.insert(task_id.clone(), winner_peer);
                                     }
 
-                                    let assign = serde_json::json!({
-                                        "type": "TaskAssign",
-                                        "task_id": task_id,
-                                        "assigned_worker": winner,
-                                        "origin_peer": peer_id.to_string(),
-                                        "deadline_ms": deadline_ms,
-                                        "task_type": if let NodeMode::Broadcast { task_type, .. } = &mode { task_type } else { "" },
-                                        "data": if let NodeMode::Broadcast { data, .. } = &mode { data } else { "" },
-                                    });
-                                    let _ = swarm.behaviour_mut().gossipsub.publish(
-                                        gossipsub::IdentTopic::new("iamine-assign"),
-                                        serde_json::to_vec(&assign).unwrap(),
+                                    let (task_type_value, data_value) =
+                                        if let NodeMode::Broadcast { task_type, data } = &mode {
+                                            (task_type.as_str(), data.as_str())
+                                        } else {
+                                            ("", "")
+                                        };
+                                    let assign = build_broadcast_task_assign_payload(
+                                        &task_id,
+                                        &winner,
+                                        &peer_id.to_string(),
+                                        deadline_ms,
+                                        task_type_value,
+                                        data_value,
                                     );
+                                    match swarm.behaviour_mut().gossipsub.publish(
+                                        gossipsub::IdentTopic::new(ASSIGN_TOPIC),
+                                        serde_json::to_vec(&assign).unwrap_or_default(),
+                                    ) {
+                                        Ok(message_id) => {
+                                            if let Some(state) = broadcast_offer_state.as_mut() {
+                                                if state.task_id == task_id {
+                                                    state.assignment_published = true;
+                                                }
+                                            }
+                                            emit_broadcast_task_assign_published_event(
+                                                &task_id,
+                                                &winner,
+                                                &message_id.to_string(),
+                                                deadline_ms,
+                                            );
+                                        }
+                                        Err(error) => log_observability_event(
+                                            LogLevel::Error,
+                                            "broadcast_task_assign_publish_failed",
+                                            &task_id,
+                                            Some(&task_id),
+                                            None,
+                                            Some(TASK_DISPATCH_UNCONFIRMED_001),
+                                            {
+                                                let mut fields = Map::new();
+                                                fields.insert("assigned_worker".to_string(), winner.clone().into());
+                                                fields.insert("topic".to_string(), ASSIGN_TOPIC.into());
+                                                fields.insert("error".to_string(), error.to_string().into());
+                                                fields
+                                            },
+                                        ),
+                                    }
 
                                     // ← Timeout recovery COMPLETO: rebroadcast si expira
                                     let rebroadcast_task_id = task_id.clone();
@@ -6361,9 +7027,24 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 let data = msg["data"].as_str().unwrap_or("").to_string();
                                 let origin_peer_str = msg["origin_peer"].as_str().unwrap_or("").to_string();
                                 let deadline_ms = msg["deadline_ms"].as_u64().unwrap_or(30_000);
+                                let local_peer_id = peer_id.to_string();
+                                let already_executed =
+                                    executed_broadcast_assignments.contains(&task_id);
+                                let will_execute = should_execute_task_assignment(
+                                    assigned,
+                                    &local_peer_id,
+                                    already_executed,
+                                );
+                                emit_worker_task_assign_received_event(
+                                    &task_id,
+                                    assigned,
+                                    &local_peer_id,
+                                    will_execute,
+                                );
 
-                                if assigned == peer_id.to_string() {
-                                    println!("🎯 [Worker] ¡Asignado! {} (deadline: {}ms)", task_id, deadline_ms);
+                                if will_execute {
+                                    executed_broadcast_assignments.insert(task_id.clone());
+                                    println!("🎯 [Worker] ¡Asignado! task_id={} (deadline: {}ms)", task_id, deadline_ms);
 
                                     let _origin_pid = known_workers.iter()  // ← _ prefix
                                         .find(|p| p.to_string() == origin_peer_str)
@@ -6371,7 +7052,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                                     let queue_ref = Arc::clone(&queue);
                                     let metrics_ref = Arc::clone(&metrics);
-                                    let _worker_id_str = peer_id.to_string(); // ← _ prefix
+                                    let worker_id_str = local_peer_id.clone();
 
                                     tokio::spawn(async move {
                                         let exec = async {
@@ -6386,6 +7067,22 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                     let mut m = metrics_ref.write().await;
                                                     if success { m.task_success(0); } else { m.task_failed(); }
                                                 }
+                                                log_observability_event(
+                                                    LogLevel::Info,
+                                                    "task_completed",
+                                                    &outcome.task_id,
+                                                    Some(&outcome.task_id),
+                                                    None,
+                                                    None,
+                                                    {
+                                                        let mut fields = Map::new();
+                                                        fields.insert("success".to_string(), success.into());
+                                                        fields.insert("worker_peer_id".to_string(), worker_id_str.clone().into());
+                                                        fields.insert("attempts".to_string(), outcome.attempts.into());
+                                                        fields.insert("source".to_string(), "broadcast_task_assign".into());
+                                                        fields
+                                                    },
+                                                );
                                                 println!("✅ [Worker] Tarea {} completada (success={})", outcome.task_id, success);
                                                 let rep = queue_ref.reputation().await;
                                                 println!("⭐ Reputación: {}/100", rep.reputation_score);
@@ -6401,6 +7098,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                             }
                                         }
                                     });
+                                } else if assigned == local_peer_id {
+                                    println!("⏭️  [Worker] TaskAssign duplicado ignorado: task_id={}", task_id);
                                 } else {
                                     println!("⏭️  [Worker] Tarea {} → otro worker ganó", task_id);
                                 }
@@ -9250,6 +9949,156 @@ mod tests {
             max_execution_timeout_ms: 250,
             latency_class: "test",
         }
+    }
+
+    #[test]
+    fn broadcast_mode_prepares_initial_task_offer() {
+        let payload = build_broadcast_task_offer_payload(
+            "broadcast-task-1",
+            "reverse_string",
+            "qa-payload",
+            "controller-peer",
+        );
+
+        assert_eq!(payload["type"], "TaskOffer");
+        assert_eq!(payload["task_id"], "broadcast-task-1");
+        assert_eq!(payload["task_type"], "reverse_string");
+        assert_eq!(payload["data"], "qa-payload");
+        assert_eq!(payload["requester_id"], "controller-peer");
+        assert_eq!(payload["origin_peer"], "controller-peer");
+        assert_eq!(payload["is_retry"], false);
+    }
+
+    #[test]
+    fn broadcast_waits_for_pubsub_readiness_before_offer() {
+        assert!(!broadcast_offer_ready(0, 0, 0));
+        assert!(broadcast_offer_ready(1, 0, 0));
+        assert!(!broadcast_offer_ready(
+            0,
+            1,
+            BROADCAST_READINESS_DELAY_MS - 1
+        ));
+        assert!(broadcast_offer_ready(0, 1, BROADCAST_READINESS_DELAY_MS));
+    }
+
+    #[test]
+    fn broadcast_publishes_initial_task_offer_once() {
+        let mut state = BroadcastOfferState::new("broadcast-task-once".to_string());
+
+        assert!(state.can_attempt_publish());
+        state.record_publish_result(true);
+
+        assert!(state.published);
+        assert_eq!(state.attempts, 1);
+        assert!(!state.can_attempt_publish());
+    }
+
+    #[test]
+    fn broadcast_retries_offer_publish_if_publish_fails() {
+        let mut state = BroadcastOfferState::new("broadcast-task-retry".to_string());
+
+        state.record_publish_result(false);
+        assert!(!state.published);
+        assert!(!state.failed);
+        state.last_attempt_at = Some(
+            tokio::time::Instant::now() - Duration::from_millis(BROADCAST_OFFER_RETRY_DELAY_MS),
+        );
+        assert!(state.can_attempt_publish());
+
+        while state.attempts < BROADCAST_OFFER_MAX_ATTEMPTS {
+            state.last_attempt_at = Some(
+                tokio::time::Instant::now() - Duration::from_millis(BROADCAST_OFFER_RETRY_DELAY_MS),
+            );
+            state.record_publish_result(false);
+        }
+
+        assert!(state.failed);
+        assert!(!state.can_attempt_publish());
+    }
+
+    #[test]
+    fn worker_receives_task_offer_and_publishes_bid() {
+        let bid = build_task_bid_payload(
+            "broadcast-task-bid",
+            "worker-peer",
+            "controller-peer",
+            91,
+            2,
+            10,
+        );
+
+        assert_eq!(bid["type"], "TaskBid");
+        assert_eq!(bid["task_id"], "broadcast-task-bid");
+        assert_eq!(bid["worker_id"], "worker-peer");
+        assert_eq!(bid["origin_peer"], "controller-peer");
+        assert_eq!(bid["reputation_score"], 91);
+        assert_eq!(bid["available_slots"], 2);
+    }
+
+    #[test]
+    fn broadcaster_receives_bid_and_publishes_assignment() {
+        let assign = build_broadcast_task_assign_payload(
+            "broadcast-task-assign",
+            "worker-peer",
+            "controller-peer",
+            30_000,
+            "reverse_string",
+            "qa-payload",
+        );
+
+        assert_eq!(assign["type"], "TaskAssign");
+        assert_eq!(assign["task_id"], "broadcast-task-assign");
+        assert_eq!(assign["assigned_worker"], "worker-peer");
+        assert_eq!(assign["origin_peer"], "controller-peer");
+        assert_eq!(assign["deadline_ms"], 30_000);
+        assert_eq!(assign["task_type"], "reverse_string");
+        assert_eq!(assign["data"], "qa-payload");
+    }
+
+    #[test]
+    fn only_assigned_worker_executes_task() {
+        assert!(should_execute_task_assignment(
+            "worker-peer",
+            "worker-peer",
+            false
+        ));
+        assert!(!should_execute_task_assignment(
+            "worker-peer",
+            "worker-peer",
+            true
+        ));
+    }
+
+    #[test]
+    fn non_assigned_worker_ignores_task_assign() {
+        assert!(!should_execute_task_assignment(
+            "winner-peer",
+            "other-peer",
+            false
+        ));
+    }
+
+    #[test]
+    fn ram_mb_display_is_not_labeled_as_gb() {
+        assert_eq!(
+            resource_policy::format_ram_limit_for_display(4096),
+            "4096 MB (4 GB)"
+        );
+        assert_eq!(
+            resource_policy::format_ram_limit_for_display(16_384),
+            "16384 MB (16 GB)"
+        );
+        assert_eq!(resource_policy::format_ram_limit_for_display(4), "4 GB");
+    }
+
+    #[test]
+    fn cli_help_prints_usage() {
+        let mode = parse_args_from(vec!["iamine-node".to_string(), "--help".to_string()])
+            .expect("--help should parse");
+
+        assert!(matches!(mode, NodeMode::Help));
+        assert!(usage_text().contains("iamine-node --broadcast <type> <data>"));
+        assert!(usage_text().contains("--debug-network"));
     }
 
     #[test]

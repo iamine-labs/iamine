@@ -41,7 +41,10 @@ impl ResourcePolicy {
         println!("⚙️  Resource Policy:");
         println!("   CPU cores:    {}", self.cpu_cores);
         println!("   Max CPU load: {}%", self.max_cpu_load);
-        println!("   RAM limit:    {} GB", self.ram_limit_gb);
+        println!(
+            "   RAM limit:    {}",
+            format_ram_limit_for_display(self.ram_limit_gb)
+        );
         println!(
             "   GPU:          {}",
             if self.gpu_enabled { "✅" } else { "❌" }
@@ -50,6 +53,23 @@ impl ResourcePolicy {
             "   Disk limit:   {} GB @ {}",
             self.disk_limit_gb, self.disk_path
         );
+    }
+}
+
+pub(crate) fn format_ram_limit_for_display(raw_ram_limit: u64) -> String {
+    if raw_ram_limit >= 1024 {
+        let gb = raw_ram_limit / 1024;
+        if raw_ram_limit % 1024 == 0 {
+            format!("{} MB ({} GB)", raw_ram_limit, gb)
+        } else {
+            format!(
+                "{} MB ({:.1} GB)",
+                raw_ram_limit,
+                raw_ram_limit as f64 / 1024.0
+            )
+        }
+    } else {
+        format!("{} GB", raw_ram_limit)
     }
 }
 
