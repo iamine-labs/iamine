@@ -116,6 +116,16 @@ const DIRECT_INF_TOPIC: &str = "iamine-direct-inference";
 const RESULTS_TOPIC: &str = "iamine-results";
 const BIDS_TOPIC: &str = "iamine-bids";
 const ASSIGN_TOPIC: &str = "iamine-assign";
+const HEARTBEAT_TOPIC: &str = "iamine-heartbeat";
+const BROADCAST_PUBSUB_TOPICS: [&str; 7] = [
+    TASK_TOPIC,
+    BIDS_TOPIC,
+    ASSIGN_TOPIC,
+    RESULTS_TOPIC,
+    HEARTBEAT_TOPIC,
+    CAP_TOPIC,
+    DIRECT_INF_TOPIC,
+];
 const INFER_TIMEOUT_MS: u64 = 5_000;
 const INFER_FALLBACK_AFTER_MS: u64 = 2_000;
 const MAX_DISTRIBUTED_RETRIES: u8 = 2;
@@ -129,10 +139,11 @@ const LATE_RESULT_ACCEPTANCE_WINDOW_MS: u64 = 15_000;
 const MIN_REMOTE_EXECUTION_TIMEOUT_MS: u64 = 120_000;
 const MAX_REMOTE_EXECUTION_TIMEOUT_MS: u64 = 900_000;
 const UNCLAIMED_WORKER_PEER_ID: &str = "-";
-const BROADCAST_READINESS_DELAY_MS: u64 = 1_500;
-const BROADCAST_READINESS_TIMEOUT_MS: u64 = 15_000;
+const BROADCAST_CONNECTED_FALLBACK_DELAY_MS: u64 = 12_000;
+const BROADCAST_READINESS_TIMEOUT_MS: u64 = 45_000;
 const BROADCAST_OFFER_RETRY_DELAY_MS: u64 = 1_000;
-const BROADCAST_OFFER_MAX_ATTEMPTS: u32 = 5;
+const BROADCAST_OFFER_MAX_RETRY_DELAY_MS: u64 = 5_000;
+const BROADCAST_OFFER_MAX_ATTEMPTS: u32 = 20;
 
 struct PendingTaskResponse {
     channel: request_response::ResponseChannel<TaskResponse>,
@@ -1873,6 +1884,9 @@ struct BroadcastOfferState {
     started_at: tokio::time::Instant,
     last_attempt_at: Option<tokio::time::Instant>,
     last_readiness_log_at: Option<tokio::time::Instant>,
+    last_subscription_event_at: Option<tokio::time::Instant>,
+    last_peer_connected_at: Option<tokio::time::Instant>,
+    last_publish_failure_reason: Option<String>,
 }
 
 impl BroadcastOfferState {
@@ -1888,6 +1902,9 @@ impl BroadcastOfferState {
             started_at: tokio::time::Instant::now(),
             last_attempt_at: None,
             last_readiness_log_at: None,
+            last_subscription_event_at: None,
+            last_peer_connected_at: None,
+            last_publish_failure_reason: None,
         }
     }
 
@@ -1901,18 +1918,36 @@ impl BroadcastOfferState {
         }
 
         self.last_attempt_at
-            .map(|last| last.elapsed().as_millis() as u64 >= BROADCAST_OFFER_RETRY_DELAY_MS)
+            .map(|last| last.elapsed().as_millis() as u64 >= self.current_retry_delay_ms())
             .unwrap_or(true)
     }
 
-    fn record_publish_result(&mut self, success: bool) {
+    fn record_publish_result(&mut self, success: bool, failure_reason: Option<&str>) {
         self.attempts = self.attempts.saturating_add(1);
         self.last_attempt_at = Some(tokio::time::Instant::now());
         if success {
             self.published = true;
-        } else if self.attempts >= BROADCAST_OFFER_MAX_ATTEMPTS {
-            self.failed = true;
+            self.last_publish_failure_reason = None;
+        } else if let Some(reason) = failure_reason {
+            self.last_publish_failure_reason = Some(reason.to_string());
         }
+    }
+
+    fn current_retry_delay_ms(&self) -> u64 {
+        match self.attempts {
+            0 => BROADCAST_OFFER_RETRY_DELAY_MS,
+            1 => 2_000,
+            2 => 3_000,
+            _ => BROADCAST_OFFER_MAX_RETRY_DELAY_MS,
+        }
+    }
+
+    fn mark_subscription_seen(&mut self) {
+        self.last_subscription_event_at = Some(tokio::time::Instant::now());
+    }
+
+    fn mark_peer_connected(&mut self) {
+        self.last_peer_connected_at = Some(tokio::time::Instant::now());
     }
 
     fn should_log_readiness_wait(&mut self) -> bool {
@@ -1927,13 +1962,97 @@ impl BroadcastOfferState {
     }
 }
 
+#[derive(Debug, Clone)]
+struct BroadcastReadinessSnapshot {
+    connected_peers: usize,
+    subscribed_peers: usize,
+    mesh_peers: usize,
+    elapsed_ms: u64,
+    attempts: u32,
+    readiness_reason: &'static str,
+    ready: bool,
+}
+
+impl BroadcastReadinessSnapshot {
+    fn new(
+        connected_peers: usize,
+        subscribed_peers: usize,
+        mesh_peers: usize,
+        elapsed_ms: u64,
+        attempts: u32,
+    ) -> Self {
+        let (ready, readiness_reason) = if mesh_peers > 0 {
+            (true, "task_topic_mesh_ready")
+        } else if subscribed_peers > 0 {
+            (true, "task_topic_subscriber_seen")
+        } else if connected_peers > 0 && elapsed_ms >= BROADCAST_CONNECTED_FALLBACK_DELAY_MS {
+            (true, "connected_peers_after_propagation_delay")
+        } else if connected_peers > 0 {
+            (false, "waiting_for_task_topic_subscription")
+        } else {
+            (false, "waiting_for_connected_peers")
+        };
+
+        Self {
+            connected_peers,
+            subscribed_peers,
+            mesh_peers,
+            elapsed_ms,
+            attempts,
+            readiness_reason,
+            ready,
+        }
+    }
+}
+
 fn broadcast_offer_ready(
     subscribed_task_peers: usize,
+    mesh_peers: usize,
     connected_peers: usize,
     readiness_elapsed_ms: u64,
 ) -> bool {
-    subscribed_task_peers > 0
-        || (connected_peers > 0 && readiness_elapsed_ms >= BROADCAST_READINESS_DELAY_MS)
+    BroadcastReadinessSnapshot::new(
+        connected_peers,
+        subscribed_task_peers,
+        mesh_peers,
+        readiness_elapsed_ms,
+        0,
+    )
+    .ready
+}
+
+fn broadcast_payload_preview(data: &str) -> String {
+    const PREVIEW_CHARS: usize = 64;
+    let mut preview: String = data.chars().take(PREVIEW_CHARS).collect();
+    if data.chars().count() > PREVIEW_CHARS {
+        preview.push_str("...");
+    }
+    preview
+}
+
+fn add_broadcast_readiness_fields(
+    fields: &mut Map<String, Value>,
+    snapshot: &BroadcastReadinessSnapshot,
+) {
+    fields.insert(
+        "connected_peers".to_string(),
+        (snapshot.connected_peers as u64).into(),
+    );
+    fields.insert(
+        "subscribed_peers".to_string(),
+        (snapshot.subscribed_peers as u64).into(),
+    );
+    fields.insert(
+        "mesh_peers".to_string(),
+        (snapshot.mesh_peers as u64).into(),
+    );
+    fields.insert("elapsed_ms".to_string(), snapshot.elapsed_ms.into());
+    fields.insert("attempts".to_string(), snapshot.attempts.into());
+    fields.insert(
+        "readiness_reason".to_string(),
+        snapshot.readiness_reason.into(),
+    );
+    fields.insert("ready".to_string(), snapshot.ready.into());
 }
 
 fn build_broadcast_task_offer_payload(
@@ -2024,12 +2143,7 @@ fn emit_broadcast_task_offer_prepared_event(
     );
 }
 
-fn emit_broadcast_readiness_waiting_event(
-    task_id: &str,
-    subscribed_task_peers: usize,
-    connected_peers: usize,
-    elapsed_ms: u64,
-) {
+fn emit_broadcast_readiness_waiting_event(task_id: &str, snapshot: &BroadcastReadinessSnapshot) {
     log_observability_event(
         LogLevel::Info,
         "broadcast_readiness_waiting",
@@ -2040,15 +2154,56 @@ fn emit_broadcast_readiness_waiting_event(
         {
             let mut fields = Map::new();
             fields.insert("topic".to_string(), TASK_TOPIC.into());
+            add_broadcast_readiness_fields(&mut fields, snapshot);
+            fields
+        },
+    );
+}
+
+fn emit_broadcast_readiness_state_event(task_id: &str, snapshot: &BroadcastReadinessSnapshot) {
+    log_observability_event(
+        LogLevel::Info,
+        "broadcast_readiness_state",
+        task_id,
+        Some(task_id),
+        None,
+        None,
+        {
+            let mut fields = Map::new();
+            fields.insert("topic".to_string(), TASK_TOPIC.into());
+            add_broadcast_readiness_fields(&mut fields, snapshot);
+            fields
+        },
+    );
+}
+
+fn emit_broadcast_topic_subscriber_seen_event(
+    topic: &str,
+    peer_id: &str,
+    connected_peers: usize,
+    subscribed_peers: usize,
+    mesh_peers: usize,
+) {
+    log_observability_event(
+        LogLevel::Info,
+        "broadcast_topic_subscriber_seen",
+        "network",
+        None,
+        None,
+        None,
+        {
+            let mut fields = Map::new();
+            fields.insert("topic".to_string(), topic.into());
+            fields.insert("peer_id".to_string(), peer_id.into());
             fields.insert(
-                "subscribed_peers".to_string(),
-                (subscribed_task_peers as u64).into(),
+                "subscribed_peers_count".to_string(),
+                (subscribed_peers as u64).into(),
             );
             fields.insert(
-                "connected_peers".to_string(),
+                "connected_peers_count".to_string(),
                 (connected_peers as u64).into(),
             );
-            fields.insert("elapsed_ms".to_string(), elapsed_ms.into());
+            fields.insert("mesh_peers_count".to_string(), (mesh_peers as u64).into());
             fields
         },
     );
@@ -2057,9 +2212,10 @@ fn emit_broadcast_readiness_waiting_event(
 fn emit_broadcast_task_offer_publish_attempt_event(
     task_id: &str,
     task_type: &str,
-    topic_peer_count: usize,
+    data: &str,
     payload_size: usize,
     attempt_number: u32,
+    snapshot: &BroadcastReadinessSnapshot,
 ) {
     log_observability_event(
         LogLevel::Info,
@@ -2073,11 +2229,12 @@ fn emit_broadcast_task_offer_publish_attempt_event(
             fields.insert("task_type".to_string(), task_type.into());
             fields.insert("topic".to_string(), TASK_TOPIC.into());
             fields.insert(
-                "topic_peer_count".to_string(),
-                (topic_peer_count as u64).into(),
+                "payload_preview".to_string(),
+                broadcast_payload_preview(data).into(),
             );
             fields.insert("payload_size".to_string(), (payload_size as u64).into());
             fields.insert("attempt_number".to_string(), attempt_number.into());
+            add_broadcast_readiness_fields(&mut fields, snapshot);
             fields
         },
     );
@@ -2089,6 +2246,7 @@ fn emit_broadcast_task_offer_published_event(
     data: &str,
     message_id: &str,
     attempt_number: u32,
+    snapshot: &BroadcastReadinessSnapshot,
 ) {
     log_observability_event(
         LogLevel::Info,
@@ -2101,9 +2259,14 @@ fn emit_broadcast_task_offer_published_event(
             let mut fields = Map::new();
             fields.insert("task_type".to_string(), task_type.into());
             fields.insert("data".to_string(), data.into());
+            fields.insert(
+                "payload_preview".to_string(),
+                broadcast_payload_preview(data).into(),
+            );
             fields.insert("topic".to_string(), TASK_TOPIC.into());
             fields.insert("message_id".to_string(), message_id.into());
             fields.insert("attempt_number".to_string(), attempt_number.into());
+            add_broadcast_readiness_fields(&mut fields, snapshot);
             fields
         },
     );
@@ -2115,6 +2278,7 @@ fn emit_broadcast_task_offer_publish_failed_event(
     reason: &str,
     attempt_number: u32,
     recoverable: bool,
+    snapshot: &BroadcastReadinessSnapshot,
 ) {
     log_observability_event(
         LogLevel::Error,
@@ -2130,6 +2294,37 @@ fn emit_broadcast_task_offer_publish_failed_event(
             fields.insert("reason".to_string(), reason.into());
             fields.insert("attempt_number".to_string(), attempt_number.into());
             fields.insert("recoverable".to_string(), recoverable.into());
+            add_broadcast_readiness_fields(&mut fields, snapshot);
+            fields
+        },
+    );
+}
+
+fn emit_broadcast_task_offer_readiness_timeout_event(
+    task_id: &str,
+    task_type: &str,
+    snapshot: &BroadcastReadinessSnapshot,
+    last_failure_reason: Option<&str>,
+) {
+    log_observability_event(
+        LogLevel::Error,
+        "broadcast_task_offer_readiness_timeout",
+        task_id,
+        Some(task_id),
+        None,
+        Some(TASK_DISPATCH_UNCONFIRMED_001),
+        {
+            let mut fields = Map::new();
+            fields.insert("task_type".to_string(), task_type.into());
+            fields.insert("topic".to_string(), TASK_TOPIC.into());
+            fields.insert(
+                "timeout_ms".to_string(),
+                BROADCAST_READINESS_TIMEOUT_MS.into(),
+            );
+            if let Some(reason) = last_failure_reason {
+                fields.insert("last_publish_failure_reason".to_string(), reason.into());
+            }
+            add_broadcast_readiness_fields(&mut fields, snapshot);
             fields
         },
     );
@@ -2257,6 +2452,86 @@ fn emit_worker_task_assign_received_event(
             fields.insert("assigned_worker".to_string(), assigned_worker.into());
             fields.insert("local_peer_id".to_string(), local_peer_id.into());
             fields.insert("will_execute".to_string(), will_execute.into());
+            fields
+        },
+    );
+}
+
+fn emit_worker_topic_subscribed_event(topic: &str, peer_id: &str, backend: &str) {
+    log_observability_event(
+        LogLevel::Info,
+        "worker_topic_subscribed",
+        "startup",
+        None,
+        None,
+        None,
+        {
+            let mut fields = Map::new();
+            fields.insert("topic".to_string(), topic.into());
+            fields.insert("peer_id".to_string(), peer_id.into());
+            fields.insert("mode".to_string(), "worker".into());
+            fields.insert("backend".to_string(), backend.into());
+            fields
+        },
+    );
+}
+
+fn emit_worker_pubsub_ready_event(peer_id: &str, backend: &str, topics: &[&str]) {
+    log_observability_event(
+        LogLevel::Info,
+        "worker_pubsub_ready",
+        "startup",
+        None,
+        None,
+        None,
+        {
+            let mut fields = Map::new();
+            fields.insert("peer_id".to_string(), peer_id.into());
+            fields.insert("mode".to_string(), "worker".into());
+            fields.insert("backend".to_string(), backend.into());
+            fields.insert(
+                "topics".to_string(),
+                Value::Array(topics.iter().map(|topic| (*topic).into()).collect()),
+            );
+            fields
+        },
+    );
+}
+
+fn emit_controller_topic_subscribed_event(topic: &str, peer_id: &str) {
+    log_observability_event(
+        LogLevel::Info,
+        "controller_topic_subscribed",
+        "startup",
+        None,
+        None,
+        None,
+        {
+            let mut fields = Map::new();
+            fields.insert("topic".to_string(), topic.into());
+            fields.insert("peer_id".to_string(), peer_id.into());
+            fields.insert("mode".to_string(), "broadcast".into());
+            fields
+        },
+    );
+}
+
+fn emit_broadcast_pubsub_ready_event(peer_id: &str, topics: &[&str]) {
+    log_observability_event(
+        LogLevel::Info,
+        "broadcast_pubsub_ready",
+        "startup",
+        None,
+        None,
+        None,
+        {
+            let mut fields = Map::new();
+            fields.insert("peer_id".to_string(), peer_id.into());
+            fields.insert("mode".to_string(), "broadcast".into());
+            fields.insert(
+                "topics".to_string(),
+                Value::Array(topics.iter().map(|topic| (*topic).into()).collect()),
+            );
             fields
         },
     );
@@ -5459,19 +5734,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
     )
     .map_err(|e| format!("Gossipsub error: {}", e))?;
 
-    let task_topic = gossipsub::IdentTopic::new(TASK_TOPIC);
-    gossipsub_behaviour.subscribe(&task_topic)?;
-    gossipsub_behaviour.subscribe(&gossipsub::IdentTopic::new(BIDS_TOPIC))?;
-    gossipsub_behaviour.subscribe(&gossipsub::IdentTopic::new(ASSIGN_TOPIC))?;
-    gossipsub_behaviour.subscribe(&gossipsub::IdentTopic::new("iamine-heartbeat"))?;
-    gossipsub_behaviour.subscribe(&gossipsub::IdentTopic::new(RESULTS_TOPIC))?;
-    gossipsub_behaviour.subscribe(&gossipsub::IdentTopic::new(CAP_TOPIC))?;
-    gossipsub_behaviour.subscribe(&gossipsub::IdentTopic::new(DIRECT_INF_TOPIC))?;
+    for topic_name in BROADCAST_PUBSUB_TOPICS {
+        gossipsub_behaviour.subscribe(&gossipsub::IdentTopic::new(topic_name))?;
+    }
     let mut pubsub_topics = PubsubTopicTracker::default();
-    pubsub_topics.register_local_subscription(TASK_TOPIC);
-    pubsub_topics.register_local_subscription(DIRECT_INF_TOPIC);
-    pubsub_topics.register_local_subscription(RESULTS_TOPIC);
-    for topic_name in [TASK_TOPIC, DIRECT_INF_TOPIC, RESULTS_TOPIC] {
+    let local_backend = worker_startup_policy
+        .as_ref()
+        .map(|policy| policy.backend.as_str())
+        .unwrap_or("real");
+    for topic_name in BROADCAST_PUBSUB_TOPICS {
+        pubsub_topics.register_local_subscription(topic_name);
         log_observability_event(
             LogLevel::Info,
             "pubsub_topic_joined",
@@ -5486,6 +5758,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 fields
             },
         );
+        if matches!(mode, NodeMode::Worker) {
+            emit_worker_topic_subscribed_event(topic_name, &peer_id.to_string(), local_backend);
+        } else if matches!(mode, NodeMode::Broadcast { .. }) {
+            emit_controller_topic_subscribed_event(topic_name, &peer_id.to_string());
+        }
+    }
+    if matches!(mode, NodeMode::Worker) {
+        emit_worker_pubsub_ready_event(
+            &peer_id.to_string(),
+            local_backend,
+            &BROADCAST_PUBSUB_TOPICS,
+        );
+    } else if matches!(mode, NodeMode::Broadcast { .. }) {
+        emit_broadcast_pubsub_ready_event(&peer_id.to_string(), &BROADCAST_PUBSUB_TOPICS);
     }
 
     let mut kad_cfg = kad::Config::default();
@@ -5892,31 +6178,63 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                 let subscribed_peers = pubsub_topics.topic_peer_count(TASK_TOPIC);
                 let connected_peers = swarm.connected_peers().count();
+                let task_topic_hash = gossipsub::IdentTopic::new(TASK_TOPIC).hash();
+                let mesh_peers = swarm
+                    .behaviour()
+                    .gossipsub
+                    .mesh_peers(&task_topic_hash)
+                    .count();
                 let elapsed_ms = state.elapsed_ms();
-                if !broadcast_offer_ready(subscribed_peers, connected_peers, elapsed_ms) {
-                    if elapsed_ms >= BROADCAST_READINESS_TIMEOUT_MS {
-                        state.failed = true;
-                        emit_broadcast_task_offer_publish_failed_event(
-                            &state.task_id,
-                            task_type,
-                            "pubsub_readiness_timeout",
-                            state.attempts.saturating_add(1),
-                            false,
-                        );
-                        eprintln!(
-                            "❌ [Broadcast] PubSub no quedó listo: task_id={} peers={} subscribed_peers={}",
-                            state.task_id, connected_peers, subscribed_peers
-                        );
-                        break;
+                let readiness_snapshot = BroadcastReadinessSnapshot::new(
+                    connected_peers,
+                    subscribed_peers,
+                    mesh_peers,
+                    elapsed_ms,
+                    state.attempts,
+                );
+                if state.should_log_readiness_wait() {
+                    emit_broadcast_readiness_state_event(&state.task_id, &readiness_snapshot);
+                    if !readiness_snapshot.ready {
+                        emit_broadcast_readiness_waiting_event(&state.task_id, &readiness_snapshot);
                     }
-                    if state.should_log_readiness_wait() {
-                        emit_broadcast_readiness_waiting_event(
-                            &state.task_id,
-                            subscribed_peers,
-                            connected_peers,
-                            elapsed_ms,
-                        );
-                    }
+                }
+
+                if elapsed_ms >= BROADCAST_READINESS_TIMEOUT_MS
+                    || state.attempts >= BROADCAST_OFFER_MAX_ATTEMPTS
+                {
+                    state.failed = true;
+                    let reason = if elapsed_ms >= BROADCAST_READINESS_TIMEOUT_MS {
+                        "pubsub_readiness_timeout"
+                    } else {
+                        "publish_attempts_exhausted"
+                    };
+                    emit_broadcast_task_offer_publish_failed_event(
+                        &state.task_id,
+                        task_type,
+                        reason,
+                        state.attempts.saturating_add(1),
+                        false,
+                        &readiness_snapshot,
+                    );
+                    emit_broadcast_task_offer_readiness_timeout_event(
+                        &state.task_id,
+                        task_type,
+                        &readiness_snapshot,
+                        state.last_publish_failure_reason.as_deref(),
+                    );
+                    eprintln!(
+                        "❌ [Broadcast] PubSub no quedó listo: task_id={} peers={} subscribed_peers={} mesh_peers={} attempts={} reason={}",
+                        state.task_id,
+                        connected_peers,
+                        subscribed_peers,
+                        mesh_peers,
+                        state.attempts,
+                        reason
+                    );
+                    break;
+                }
+
+                if !broadcast_offer_ready(subscribed_peers, mesh_peers, connected_peers, elapsed_ms) {
                     continue;
                 }
 
@@ -5943,9 +6261,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 emit_broadcast_task_offer_publish_attempt_event(
                     &state.task_id,
                     task_type,
-                    subscribed_peers,
+                    data,
                     payload.len(),
                     attempt_number,
+                    &readiness_snapshot,
                 );
 
                 match swarm.behaviour_mut().gossipsub.publish(
@@ -5953,7 +6272,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     payload,
                 ) {
                     Ok(message_id) => {
-                        state.record_publish_result(true);
+                        state.record_publish_result(true, None);
+                        let published_snapshot = BroadcastReadinessSnapshot::new(
+                            connected_peers,
+                            subscribed_peers,
+                            mesh_peers,
+                            state.elapsed_ms(),
+                            state.attempts,
+                        );
                         let message_id = message_id.to_string();
                         emit_broadcast_task_offer_published_event(
                             &state.task_id,
@@ -5961,6 +6287,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             data,
                             &message_id,
                             attempt_number,
+                            &published_snapshot,
                         );
                         waiting_for_response = true;
                         tasks_sent = true;
@@ -5971,15 +6298,32 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     }
                     Err(error) => {
                         let error_text = error.to_string();
-                        state.record_publish_result(false);
+                        state.record_publish_result(false, Some(&error_text));
+                        let failure_snapshot = BroadcastReadinessSnapshot::new(
+                            connected_peers,
+                            subscribed_peers,
+                            mesh_peers,
+                            state.elapsed_ms(),
+                            state.attempts,
+                        );
+                        let still_recoverable = state.elapsed_ms() < BROADCAST_READINESS_TIMEOUT_MS
+                            && state.attempts < BROADCAST_OFFER_MAX_ATTEMPTS;
                         emit_broadcast_task_offer_publish_failed_event(
                             &state.task_id,
                             task_type,
                             &error_text,
                             attempt_number,
-                            !state.failed,
+                            still_recoverable,
+                            &failure_snapshot,
                         );
-                        if state.failed {
+                        if !still_recoverable {
+                            state.failed = true;
+                            emit_broadcast_task_offer_readiness_timeout_event(
+                                &state.task_id,
+                                task_type,
+                                &failure_snapshot,
+                                state.last_publish_failure_reason.as_deref(),
+                            );
                             eprintln!(
                                 "❌ [Broadcast] No se pudo publicar TaskOffer tras {} intentos: {}",
                                 state.attempts, error_text
@@ -7452,7 +7796,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     // Procesar rebroadcast en el loop principal
                                     if let Ok(offer) = rebroadcast_rx.try_recv() {
                                         let _ = swarm.behaviour_mut().gossipsub.publish(
-                                            task_topic.clone(),
+                                            gossipsub::IdentTopic::new(TASK_TOPIC),
                                             serde_json::to_vec(&offer).unwrap(),
                                         );
                                     }
@@ -9388,6 +9732,28 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 SwarmEvent::Behaviour(IaMineEvent::Gossipsub(gossipsub::Event::Subscribed { peer_id: pid, topic })) => {
                     println!("📢 Peer {} suscrito a: {}", pid, topic);
                     pubsub_topics.register_peer_subscription(&pid, &topic);
+                    if matches!(mode, NodeMode::Broadcast { .. })
+                        && topic.to_string() == topic_hash_string(TASK_TOPIC)
+                    {
+                        if let Some(state) = broadcast_offer_state.as_mut() {
+                            state.mark_subscription_seen();
+                        }
+                        let connected_peers = swarm.connected_peers().count();
+                        let subscribed_peers = pubsub_topics.topic_peer_count(TASK_TOPIC);
+                        let task_topic_hash = gossipsub::IdentTopic::new(TASK_TOPIC).hash();
+                        let mesh_peers = swarm
+                            .behaviour()
+                            .gossipsub
+                            .mesh_peers(&task_topic_hash)
+                            .count();
+                        emit_broadcast_topic_subscriber_seen_event(
+                            TASK_TOPIC,
+                            &pid.to_string(),
+                            connected_peers,
+                            subscribed_peers,
+                            mesh_peers,
+                        );
+                    }
                     log_observability_event(
                         LogLevel::Info,
                         "pubsub_topic_joined",
@@ -9417,6 +9783,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                 SwarmEvent::ConnectionEstablished { peer_id: pid, endpoint, .. } => {
                     println!("✅ Conectado a: {} ({})", pid, endpoint.get_remote_address());
+                    if let Some(state) = broadcast_offer_state.as_mut() {
+                        state.mark_peer_connected();
+                    }
                     log_observability_event(
                         LogLevel::Info,
                         "peer_connected",
@@ -10824,15 +11193,26 @@ mod tests {
     }
 
     #[test]
-    fn broadcast_waits_for_pubsub_readiness_before_offer() {
-        assert!(!broadcast_offer_ready(0, 0, 0));
-        assert!(broadcast_offer_ready(1, 0, 0));
+    fn broadcast_waits_for_task_topic_subscriber_before_publish() {
+        assert!(!broadcast_offer_ready(0, 0, 0, 0));
         assert!(!broadcast_offer_ready(
             0,
+            0,
             1,
-            BROADCAST_READINESS_DELAY_MS - 1
+            BROADCAST_CONNECTED_FALLBACK_DELAY_MS - 1
         ));
-        assert!(broadcast_offer_ready(0, 1, BROADCAST_READINESS_DELAY_MS));
+    }
+
+    #[test]
+    fn broadcast_publishes_after_task_topic_subscriber_seen() {
+        assert!(broadcast_offer_ready(1, 0, 0, 0));
+        assert!(broadcast_offer_ready(0, 1, 0, 0));
+        assert!(broadcast_offer_ready(
+            0,
+            0,
+            1,
+            BROADCAST_CONNECTED_FALLBACK_DELAY_MS
+        ));
     }
 
     #[test]
@@ -10840,7 +11220,7 @@ mod tests {
         let mut state = BroadcastOfferState::new("broadcast-task-once".to_string());
 
         assert!(state.can_attempt_publish());
-        state.record_publish_result(true);
+        state.record_publish_result(true, None);
 
         assert!(state.published);
         assert_eq!(state.attempts, 1);
@@ -10851,23 +11231,215 @@ mod tests {
     fn broadcast_retries_offer_publish_if_publish_fails() {
         let mut state = BroadcastOfferState::new("broadcast-task-retry".to_string());
 
-        state.record_publish_result(false);
+        state.record_publish_result(false, Some("InsufficientPeers"));
         assert!(!state.published);
         assert!(!state.failed);
+        assert_eq!(
+            state.last_publish_failure_reason.as_deref(),
+            Some("InsufficientPeers")
+        );
         state.last_attempt_at = Some(
-            tokio::time::Instant::now() - Duration::from_millis(BROADCAST_OFFER_RETRY_DELAY_MS),
+            tokio::time::Instant::now() - Duration::from_millis(state.current_retry_delay_ms()),
         );
         assert!(state.can_attempt_publish());
+    }
 
-        while state.attempts < BROADCAST_OFFER_MAX_ATTEMPTS {
-            state.last_attempt_at = Some(
-                tokio::time::Instant::now() - Duration::from_millis(BROADCAST_OFFER_RETRY_DELAY_MS),
-            );
-            state.record_publish_result(false);
-        }
+    #[test]
+    fn broadcast_insufficient_peers_triggers_backoff_not_immediate_terminal_failure() {
+        let mut state = BroadcastOfferState::new("broadcast-task-insufficient".to_string());
 
-        assert!(state.failed);
+        state.record_publish_result(false, Some("InsufficientPeers"));
+        assert!(!state.failed);
         assert!(!state.can_attempt_publish());
+        assert_eq!(state.attempts, 1);
+        assert_eq!(
+            state.last_publish_failure_reason.as_deref(),
+            Some("InsufficientPeers")
+        );
+    }
+
+    #[test]
+    fn broadcast_readiness_state_includes_peer_counts() {
+        let task_id = format!("broadcast-readiness-state-{}", uuid_simple());
+        let snapshot = BroadcastReadinessSnapshot::new(3, 2, 1, 2_500, 4);
+
+        emit_broadcast_readiness_state_event(&task_id, &snapshot);
+
+        iamine_network::flush_structured_logs().unwrap();
+        let entries =
+            iamine_network::read_log_entries(&iamine_network::default_node_log_path()).unwrap();
+        let entry = entries
+            .iter()
+            .rev()
+            .find(|entry| entry.event == "broadcast_readiness_state")
+            .expect("readiness event should be present");
+
+        assert_eq!(
+            entry.fields.get("topic").and_then(|value| value.as_str()),
+            Some(TASK_TOPIC)
+        );
+        assert_eq!(
+            entry
+                .fields
+                .get("connected_peers")
+                .and_then(|value| value.as_u64()),
+            Some(3)
+        );
+        assert_eq!(
+            entry
+                .fields
+                .get("subscribed_peers")
+                .and_then(|value| value.as_u64()),
+            Some(2)
+        );
+        assert_eq!(
+            entry
+                .fields
+                .get("mesh_peers")
+                .and_then(|value| value.as_u64()),
+            Some(1)
+        );
+        assert_eq!(
+            entry
+                .fields
+                .get("attempts")
+                .and_then(|value| value.as_u64()),
+            Some(4)
+        );
+    }
+
+    #[test]
+    fn worker_emits_topic_subscribed_for_required_topics() {
+        let peer_id = format!("worker-topic-test-{}", uuid_simple());
+        for topic in BROADCAST_PUBSUB_TOPICS {
+            emit_worker_topic_subscribed_event(topic, &peer_id, "mock");
+        }
+        emit_worker_pubsub_ready_event(&peer_id, "mock", &BROADCAST_PUBSUB_TOPICS);
+
+        iamine_network::flush_structured_logs().unwrap();
+        let entries =
+            iamine_network::read_log_entries(&iamine_network::default_node_log_path()).unwrap();
+        let topics: HashSet<String> = entries
+            .iter()
+            .filter(|entry| entry.event == "worker_topic_subscribed")
+            .filter(|entry| {
+                entry.fields.get("peer_id").and_then(|value| value.as_str())
+                    == Some(peer_id.as_str())
+            })
+            .filter_map(|entry| {
+                entry
+                    .fields
+                    .get("topic")
+                    .and_then(|value| value.as_str())
+                    .map(str::to_string)
+            })
+            .collect();
+
+        for topic in BROADCAST_PUBSUB_TOPICS {
+            assert!(topics.contains(topic), "missing worker topic {topic}");
+        }
+        assert!(entries.iter().rev().any(|entry| {
+            entry.event == "worker_pubsub_ready"
+                && entry.fields.get("peer_id").and_then(|value| value.as_str())
+                    == Some(peer_id.as_str())
+        }));
+    }
+
+    #[test]
+    fn controller_emits_topic_subscribed_for_required_topics() {
+        let peer_id = format!("controller-topic-test-{}", uuid_simple());
+        for topic in BROADCAST_PUBSUB_TOPICS {
+            emit_controller_topic_subscribed_event(topic, &peer_id);
+        }
+        emit_broadcast_pubsub_ready_event(&peer_id, &BROADCAST_PUBSUB_TOPICS);
+
+        iamine_network::flush_structured_logs().unwrap();
+        let entries =
+            iamine_network::read_log_entries(&iamine_network::default_node_log_path()).unwrap();
+        let topics: HashSet<String> = entries
+            .iter()
+            .filter(|entry| entry.event == "controller_topic_subscribed")
+            .filter(|entry| {
+                entry.fields.get("peer_id").and_then(|value| value.as_str())
+                    == Some(peer_id.as_str())
+            })
+            .filter_map(|entry| {
+                entry
+                    .fields
+                    .get("topic")
+                    .and_then(|value| value.as_str())
+                    .map(str::to_string)
+            })
+            .collect();
+
+        for topic in BROADCAST_PUBSUB_TOPICS {
+            assert!(topics.contains(topic), "missing controller topic {topic}");
+        }
+        assert!(entries.iter().rev().any(|entry| {
+            entry.event == "broadcast_pubsub_ready"
+                && entry.fields.get("peer_id").and_then(|value| value.as_str())
+                    == Some(peer_id.as_str())
+        }));
+    }
+
+    #[test]
+    fn broadcast_does_not_spin_all_retries_before_subscription_propagates() {
+        let mut state = BroadcastOfferState::new("broadcast-task-backoff".to_string());
+        state.record_publish_result(false, Some("InsufficientPeers"));
+
+        assert_eq!(state.attempts, 1);
+        assert!(!state.can_attempt_publish());
+
+        state.last_attempt_at = Some(
+            tokio::time::Instant::now() - Duration::from_millis(state.current_retry_delay_ms() - 1),
+        );
+        assert!(!state.can_attempt_publish());
+
+        state.mark_subscription_seen();
+        assert!(broadcast_offer_ready(1, 0, 1, state.elapsed_ms()));
+    }
+
+    #[test]
+    fn broadcast_task_offer_published_after_readiness() {
+        let task_id = format!("broadcast-published-{}", uuid_simple());
+        let snapshot = BroadcastReadinessSnapshot::new(3, 1, 1, 1_200, 1);
+
+        emit_broadcast_task_offer_published_event(
+            &task_id,
+            "reverse_string",
+            "qa-payload",
+            "message-id-test",
+            1,
+            &snapshot,
+        );
+
+        iamine_network::flush_structured_logs().unwrap();
+        let entries =
+            iamine_network::read_log_entries(&iamine_network::default_node_log_path()).unwrap();
+        let entry = entries
+            .iter()
+            .rev()
+            .find(|entry| entry.event == "broadcast_task_offer_published")
+            .expect("published event should be present");
+
+        assert_eq!(
+            entry
+                .fields
+                .get("task_type")
+                .and_then(|value| value.as_str()),
+            Some("reverse_string")
+        );
+        assert_eq!(
+            entry.fields.get("topic").and_then(|value| value.as_str()),
+            Some(TASK_TOPIC)
+        );
+        assert_eq!(
+            entry
+                .fields
+                .get("attempt_number")
+                .and_then(|value| value.as_u64()),
+            Some(1)
+        );
     }
 
     #[test]
@@ -10907,6 +11479,46 @@ mod tests {
         assert_eq!(assign["deadline_ms"], 30_000);
         assert_eq!(assign["task_type"], "reverse_string");
         assert_eq!(assign["data"], "qa-payload");
+    }
+
+    #[test]
+    fn broadcast_flow_taskoffer_to_bid_to_assign_still_works() {
+        let offer = build_broadcast_task_offer_payload(
+            "broadcast-flow-task",
+            "reverse_string",
+            "abc",
+            "controller-peer",
+        );
+        let bid = build_task_bid_payload(
+            offer["task_id"].as_str().unwrap(),
+            "worker-peer",
+            offer["origin_peer"].as_str().unwrap(),
+            90,
+            1,
+            10,
+        );
+        let assign = build_broadcast_task_assign_payload(
+            bid["task_id"].as_str().unwrap(),
+            bid["worker_id"].as_str().unwrap(),
+            "controller-peer",
+            30_000,
+            offer["task_type"].as_str().unwrap(),
+            offer["data"].as_str().unwrap(),
+        );
+
+        assert_eq!(offer["type"], "TaskOffer");
+        assert_eq!(bid["type"], "TaskBid");
+        assert_eq!(assign["type"], "TaskAssign");
+        assert!(should_execute_task_assignment(
+            assign["assigned_worker"].as_str().unwrap(),
+            "worker-peer",
+            false
+        ));
+        assert!(!should_execute_task_assignment(
+            assign["assigned_worker"].as_str().unwrap(),
+            "other-peer",
+            false
+        ));
     }
 
     #[test]
