@@ -3,15 +3,18 @@ mod benchmark;
 mod broadcast_protocol;
 mod broadcast_runtime;
 mod broadcast_worker;
+mod cli;
 mod code_quality;
 mod cpu_feature_guard;
 mod daemon_runtime;
 mod executor;
 mod heartbeat;
 mod metrics;
+mod mode_dispatch;
 mod model_selector_cli;
 mod network;
 mod node_identity;
+mod node_modes;
 mod peer_tracker;
 mod protocol;
 mod quality_gate;
@@ -26,6 +29,7 @@ mod task_codec;
 mod task_protocol;
 mod task_queue;
 mod task_scheduler;
+mod usage;
 mod wallet;
 mod worker_capabilities;
 mod worker_capability_advertisement;
@@ -34,31 +38,31 @@ mod worker_startup_policy;
 
 use iamine_models::{
     can_node_run_model, normalize_output, AutoProvisionProfile, DirectInferenceRequest,
-    HardwareAcceleration, InferenceTask, InferenceTaskResult, InstallResult, ModelAutoProvision,
-    ModelInstaller, ModelNodeCapabilities, ModelRegistry, ModelRequirements, ModelStorage,
-    RealInferenceEngine, RealInferenceRequest, RealInferenceResult, StorageConfig, StreamedToken,
+    HardwareAcceleration, InferenceTask, InferenceTaskResult, ModelAutoProvision, ModelInstaller,
+    ModelNodeCapabilities, ModelRegistry, ModelRequirements, ModelStorage, RealInferenceEngine,
+    RealInferenceRequest, RealInferenceResult, StorageConfig, StreamedToken,
 };
 
 use iamine_network::{
     analyze_prompt_semantics, claim_task_attempt_peer, default_semantic_log_path,
     describe_output_policy, detect_exact_subtype, distributed_task_metrics,
-    evaluate_default_dataset, health_policy_thresholds, log_structured, normalize_expression,
-    prompt_log_entry, ranked_models, record_distributed_task_failed,
-    record_distributed_task_fallback, record_distributed_task_late_result,
-    record_distributed_task_latency, record_distributed_task_retry,
-    record_distributed_task_started, record_model_metrics, record_task_attempt,
-    record_task_latency, select_retry_target, set_global_node_id, set_global_runtime_context,
-    task_trace, validate_result, validate_semantic_decision, Complexity as PromptComplexityLevel,
-    DeterministicLevel as PromptDeterministicLevel, DistributedTaskMetrics, DistributedTaskResult,
-    Domain as PromptDomain, ExactSubtype as PromptExactSubtype, FailureKind, IntelligentScheduler,
-    Language as PromptLanguage, LogLevel, ModelKarma, ModelMetrics, ModelPolicyEngine,
-    NetworkTopology, NodeCapability, NodeCapabilityHeartbeat, NodeHealth, NodeRegistry,
-    OutputPolicyDecision, OutputStyle as PromptOutputStyle, PromptProfile, ResultStatus,
-    RetryPolicy, RetryState, SemanticFeedbackEngine, SemanticRoutingDecision,
-    SharedNetworkTopology, SharedNodeRegistry, StructuredLogEntry, TaskClaim, TaskManager,
-    TaskTrace, TaskType as PromptTaskType, ValidationResult as SemanticValidationResult,
-    NETWORK_NO_PUBSUB_PEERS_001, NET_PEER_DISCONNECTED_002, NODE_BLACKLISTED_001,
-    NODE_UNHEALTHY_002, PUBSUB_TOPIC_NOT_READY_001, SCH_NO_NODE_001, TASK_DISPATCH_UNCONFIRMED_001,
+    health_policy_thresholds, log_structured, normalize_expression, prompt_log_entry,
+    record_distributed_task_failed, record_distributed_task_fallback,
+    record_distributed_task_late_result, record_distributed_task_latency,
+    record_distributed_task_retry, record_distributed_task_started, record_model_metrics,
+    record_task_attempt, record_task_latency, select_retry_target, set_global_node_id,
+    set_global_runtime_context, task_trace, validate_result, validate_semantic_decision,
+    Complexity as PromptComplexityLevel, DeterministicLevel as PromptDeterministicLevel,
+    DistributedTaskMetrics, DistributedTaskResult, Domain as PromptDomain,
+    ExactSubtype as PromptExactSubtype, FailureKind, IntelligentScheduler,
+    Language as PromptLanguage, LogLevel, ModelMetrics, ModelPolicyEngine, NetworkTopology,
+    NodeCapability, NodeCapabilityHeartbeat, NodeHealth, NodeRegistry, OutputPolicyDecision,
+    OutputStyle as PromptOutputStyle, PromptProfile, ResultStatus, RetryPolicy, RetryState,
+    SemanticFeedbackEngine, SemanticRoutingDecision, SharedNetworkTopology, SharedNodeRegistry,
+    StructuredLogEntry, TaskClaim, TaskManager, TaskTrace, TaskType as PromptTaskType,
+    ValidationResult as SemanticValidationResult, NETWORK_NO_PUBSUB_PEERS_001,
+    NET_PEER_DISCONNECTED_002, NODE_BLACKLISTED_001, NODE_UNHEALTHY_002,
+    PUBSUB_TOPIC_NOT_READY_001, SCH_NO_NODE_001, TASK_DISPATCH_UNCONFIRMED_001,
     TASK_EMPTY_RESULT_003, TASK_FAILED_002, TASK_TIMEOUT_001, WORKER_STARTUP_OVERFLOW_001,
 };
 
@@ -66,19 +70,15 @@ use iamine_network::{
 use iamine_network::analyze_prompt;
 
 use benchmark::NodeBenchmark;
-use code_quality::run_code_quality_checks;
 use daemon_runtime::{daemon_is_available, daemon_socket_path, infer_via_daemon, run_daemon};
 use heartbeat::HeartbeatService;
 use metrics::{start_metrics_server, NodeMetrics};
-use model_selector_cli::ModelSelectorCLI;
 use node_identity::NodeIdentity; // ← actualizado
 use peer_tracker::PeerTracker;
-use quality_gate::{run_release_validation, runtime_version_metadata};
+use quality_gate::runtime_version_metadata;
 use rate_limiter::RateLimiter;
-use regression_runner::run_default_regression_suite;
 use resource_policy::ResourcePolicy;
 use result_protocol::{TaskResultRequest, TaskResultResponse};
-use security_checks::run_security_checks;
 use serde_json::{Map, Value};
 use setup_wizard::{DetectedHardware, NodeSetupConfig};
 use std::collections::{HashMap, HashSet};
@@ -116,8 +116,12 @@ use std::time::Duration;
 use broadcast_protocol::*;
 use broadcast_runtime::*;
 use broadcast_worker::*;
+use cli::{parse_args, parse_worker_port};
 use executor::TaskExecutor;
+use mode_dispatch::{handle_pre_network_mode, is_control_plane_mode};
+use node_modes::{mode_label, DebugFlags, InferenceControlFlags, NodeMode};
 use task_protocol::{TaskRequest, TaskResponse};
+use usage::print_usage;
 use worker_capability_advertisement::*;
 use worker_startup_policy::*;
 
@@ -220,74 +224,6 @@ impl From<gossipsub::Event> for IaMineEvent {
     }
 }
 
-#[allow(dead_code)]
-#[derive(Debug, Clone)]
-enum NodeMode {
-    Help,
-    Daemon,
-    Worker,
-    Relay,
-    Client {
-        peer: Option<Multiaddr>,
-        task_type: String,
-        data: String,
-    },
-    Stress {
-        peer: Option<Multiaddr>,
-        count: usize,
-    },
-    Broadcast {
-        task_type: String,
-        data: String,
-    },
-    SimulateWorkers {
-        count: usize,
-    },
-    ModelsList,
-    ModelsStats,
-    ModelsDownload {
-        model_id: String,
-    },
-    ModelsRemove {
-        model_id: String,
-    },
-    ModelsMenu, // ← nuevo
-    ModelsSearch {
-        query: String,
-    }, // ← nuevo
-    TestInference {
-        prompt: String,
-    },
-    Infer {
-        prompt: String,
-        model_id: Option<String>,
-        max_tokens_override: Option<u32>,
-        force_network: bool,
-        no_local: bool,
-        prefer_local: bool,
-    },
-    SemanticEval,
-    RegressionRun,
-    CheckCode,
-    CheckSecurity,
-    ValidateRelease,
-    TasksStats,
-    TasksTrace {
-        task_id: String,
-    },
-    Capabilities,
-    Nodes,
-    Topology, // ← NEW
-    ModelsRecommend,
-}
-
-#[derive(Debug, Clone, Copy, Default)]
-struct DebugFlags {
-    network: bool,
-    scheduler: bool,
-    tasks: bool,
-}
-
 #[derive(Default)]
 struct HumanLogThrottle {
     last_log_ms: HashMap<String, u64>,
@@ -321,247 +257,6 @@ impl HumanLogThrottle {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-struct InferenceControlFlags {
-    force_network: bool,
-    no_local: bool,
-    prefer_local: bool,
-}
-
-impl InferenceControlFlags {
-    fn from_args(args: &[String]) -> Self {
-        Self {
-            force_network: args.iter().any(|arg| arg == "--force-network"),
-            no_local: args.iter().any(|arg| arg == "--no-local"),
-            prefer_local: args.iter().any(|arg| arg == "--prefer-local"),
-        }
-    }
-
-    fn should_use_local(self, has_local_model: bool) -> bool {
-        if self.force_network || self.no_local {
-            return false;
-        }
-        if self.prefer_local {
-            return has_local_model;
-        }
-        has_local_model
-    }
-}
-
-impl DebugFlags {
-    fn from_args(args: &[String]) -> Self {
-        Self {
-            network: args.iter().any(|arg| arg == "--debug-network"),
-            scheduler: args.iter().any(|arg| arg == "--debug-scheduler"),
-            tasks: args.iter().any(|arg| arg == "--debug-tasks"),
-        }
-    }
-}
-
-fn mode_label(mode: &NodeMode) -> &'static str {
-    match mode {
-        NodeMode::Help => "help",
-        NodeMode::Daemon => "daemon",
-        NodeMode::Worker => "worker",
-        NodeMode::Relay => "relay",
-        NodeMode::Client { .. } => "client",
-        NodeMode::Stress { .. } => "stress",
-        NodeMode::Broadcast { .. } => "broadcast",
-        NodeMode::SimulateWorkers { .. } => "simulate-workers",
-        NodeMode::ModelsList => "models-list",
-        NodeMode::ModelsStats => "models-stats",
-        NodeMode::ModelsDownload { .. } => "models-download",
-        NodeMode::ModelsRemove { .. } => "models-remove",
-        NodeMode::ModelsMenu => "models-menu",
-        NodeMode::ModelsSearch { .. } => "models-search",
-        NodeMode::TestInference { .. } => "test-inference",
-        NodeMode::Infer { .. } => "infer",
-        NodeMode::SemanticEval => "semantic-eval",
-        NodeMode::RegressionRun => "regression-run",
-        NodeMode::CheckCode => "check-code",
-        NodeMode::CheckSecurity => "check-security",
-        NodeMode::ValidateRelease => "validate-release",
-        NodeMode::TasksStats => "tasks-stats",
-        NodeMode::TasksTrace { .. } => "tasks-trace",
-        NodeMode::Capabilities => "capabilities",
-        NodeMode::Nodes => "nodes",
-        NodeMode::Topology => "topology",
-        NodeMode::ModelsRecommend => "models-recommend",
-    }
-}
-
-fn parse_args() -> Result<NodeMode, String> {
-    parse_args_from(std::env::args().collect())
-}
-
-fn parse_args_from(raw_args: Vec<String>) -> Result<NodeMode, String> {
-    let args: Vec<String> = raw_args
-        .into_iter()
-        .filter(|arg| {
-            !matches!(
-                arg.as_str(),
-                "--debug-network" | "--debug-scheduler" | "--debug-tasks"
-            )
-        })
-        .collect();
-
-    match args.get(1).map(|s| s.as_str()) {
-        Some("--help") | Some("-h") | Some("help") => Ok(NodeMode::Help),
-        Some("--daemon") => Ok(NodeMode::Daemon),
-        Some("--worker") | None => Ok(NodeMode::Worker),
-        Some("--relay") => Ok(NodeMode::Relay),
-        Some("models") => match args.get(2).map(|s| s.as_str()) {
-            Some("list") => Ok(NodeMode::ModelsList),
-            Some("stats") => Ok(NodeMode::ModelsStats),
-            Some("recommend") => Ok(NodeMode::ModelsRecommend),
-            Some("menu") => Ok(NodeMode::ModelsMenu),
-            Some("search") => {
-                let query = args.get(3).ok_or("Falta <query>")?.clone();
-                Ok(NodeMode::ModelsSearch { query })
-            }
-            Some("download") => {
-                let id = args.get(3).ok_or("Falta <model_id>")?.clone();
-                Ok(NodeMode::ModelsDownload { model_id: id })
-            }
-            Some("remove") => {
-                let id = args.get(3).ok_or("Falta <model_id>")?.clone();
-                Ok(NodeMode::ModelsRemove { model_id: id })
-            }
-            _ => Err(
-                "Uso: iamine models [list|stats|recommend|menu|search <q>|download <id>|remove <id>]"
-                    .to_string(),
-            ),
-        },
-        Some("--client") => {
-            let (peer, offset) = if args.get(2).map(|s| s.starts_with("/ip4")).unwrap_or(false) {
-                (
-                    Some(Multiaddr::from_str(args.get(2).unwrap()).map_err(|e| e.to_string())?),
-                    3,
-                )
-            } else {
-                (None, 2)
-            };
-            let task_type = args.get(offset).ok_or("Falta <task_type>")?.clone();
-            let data = args.get(offset + 1).ok_or("Falta <data>")?.clone();
-            Ok(NodeMode::Client {
-                peer,
-                task_type,
-                data,
-            })
-        }
-
-        Some("--stress") => {
-            let (peer, offset) = if args.get(2).map(|s| s.starts_with("/ip4")).unwrap_or(false) {
-                (
-                    Some(Multiaddr::from_str(args.get(2).unwrap()).map_err(|e| e.to_string())?),
-                    3,
-                )
-            } else {
-                (None, 2)
-            };
-            let count = args
-                .get(offset)
-                .unwrap_or(&"10".to_string())
-                .parse::<usize>()
-                .unwrap_or(10);
-            Ok(NodeMode::Stress { peer, count })
-        }
-
-        Some("--broadcast") => {
-            let task_type = args.get(2).ok_or("Falta <task_type>")?.clone();
-            let data = args.get(3).ok_or("Falta <data>")?.clone();
-            Ok(NodeMode::Broadcast { task_type, data })
-        }
-
-        Some("--simulate-workers") => {
-            let count = args
-                .get(2)
-                .unwrap_or(&"10".to_string())
-                .parse::<usize>()
-                .unwrap_or(10);
-            Ok(NodeMode::SimulateWorkers { count })
-        }
-
-        Some("test-inference") => {
-            let prompt = args
-                .get(2)
-                .cloned()
-                .unwrap_or_else(|| "What is 2+2?".to_string());
-            Ok(NodeMode::TestInference { prompt })
-        }
-
-        Some("capabilities") => Ok(NodeMode::Capabilities),
-
-        Some("infer") => {
-            let prompt = args.get(2).ok_or("Falta <prompt>")?.clone();
-            let model_id = args
-                .iter()
-                .position(|a| a == "--model")
-                .and_then(|i| args.get(i + 1).cloned());
-            let max_tokens_override = parse_optional_u32_flag(&args, "--max-tokens")?;
-            let control_flags = InferenceControlFlags::from_args(&args);
-            Ok(NodeMode::Infer {
-                prompt,
-                model_id,
-                max_tokens_override,
-                force_network: control_flags.force_network,
-                no_local: control_flags.no_local,
-                prefer_local: control_flags.prefer_local,
-            })
-        }
-
-        Some("semantic-eval") => Ok(NodeMode::SemanticEval),
-        Some("regression-run") => Ok(NodeMode::RegressionRun),
-        Some("check-code") => Ok(NodeMode::CheckCode),
-        Some("check-security") => Ok(NodeMode::CheckSecurity),
-        Some("validate-release") => Ok(NodeMode::ValidateRelease),
-        Some("tasks") => match args.get(2).map(|s| s.as_str()) {
-            Some("stats") => Ok(NodeMode::TasksStats),
-            Some("trace") => {
-                let task_id = args.get(3).ok_or("Falta <task_id>")?.clone();
-                Ok(NodeMode::TasksTrace { task_id })
-            }
-            _ => Err("Uso: iamine-node tasks [stats|trace <task_id>]".to_string()),
-        },
-
-        Some("nodes") => Ok(NodeMode::Nodes),
-
-        Some("topology") => Ok(NodeMode::Topology), // ← NEW
-
-        Some(unknown) => Err(format!("Modo desconocido: {}", unknown)),
-    }
-}
-
-fn usage_text() -> &'static str {
-    "Uso:\n  iamine-node --worker [--port=N] [--cpu=N] [--ram=N] [--gpu]\n  iamine-node --relay\n  iamine-node --broadcast <type> <data>\n  iamine-node models list\n  iamine-node models stats\n  iamine-node models download <model_id>\n  iamine-node models remove <model_id>\n  iamine-node semantic-eval\n  iamine-node regression-run\n  iamine-node check-code\n  iamine-node check-security\n  iamine-node validate-release\n  iamine-node tasks stats\n  iamine-node tasks trace <task_id>\n  iamine-node --daemon\nFlags:\n  --debug-network\n  --debug-scheduler\n  --debug-tasks\n  --force-network\n  --no-local\n  --prefer-local"
-}
-
-fn print_usage() {
-    eprintln!("{}", usage_text());
-}
-
-fn parse_optional_u32_flag(args: &[String], flag: &str) -> Result<Option<u32>, String> {
-    let Some(index) = args.iter().position(|arg| arg == flag) else {
-        return Ok(None);
-    };
-
-    let Some(raw) = args.get(index + 1) else {
-        return Err(format!("Falta valor para {}", flag));
-    };
-
-    raw.parse::<u32>()
-        .map(Some)
-        .map_err(|_| format!("Valor invalido para {}: {}", flag, raw))
-}
-
-fn parse_worker_port(args: &[String]) -> u16 {
-    if let Some(port_arg) = args.iter().find(|arg| arg.starts_with("--port=")) {
-        port_arg.replace("--port=", "").parse().unwrap_or(9000)
-    } else {
-        9000
-    }
-}
-
 fn prompt_language_label(language: PromptLanguage) -> &'static str {
     match language {
         PromptLanguage::English => "English",
@@ -578,7 +273,7 @@ fn prompt_complexity_label(complexity: PromptComplexityLevel) -> &'static str {
     }
 }
 
-fn prompt_task_label(task_type: PromptTaskType) -> &'static str {
+pub(crate) fn prompt_task_label(task_type: PromptTaskType) -> &'static str {
     match task_type {
         PromptTaskType::Math => "Math",
         PromptTaskType::ExactMath => "ExactMath",
@@ -3306,71 +3001,6 @@ fn resolve_output_policy(
     describe_output_policy(profile, prompt)
 }
 
-fn print_model_karma_stats() {
-    let registry = ModelRegistry::new();
-    let mut stats = ranked_models();
-
-    for descriptor in registry.list() {
-        if !stats.iter().any(|entry| entry.model_id == descriptor.id) {
-            stats.push(ModelKarma::new(descriptor.id.clone()));
-        }
-    }
-
-    stats.sort_by(|left, right| {
-        right
-            .karma_score()
-            .partial_cmp(&left.karma_score())
-            .unwrap_or(std::cmp::Ordering::Equal)
-            .then_with(|| left.model_id.cmp(&right.model_id))
-    });
-
-    println!("model | score | latency | success rate | semantic | runs");
-    for entry in stats {
-        println!(
-            "{} | {:.3} | {:.3} | {:.1}% | {:.1}% | {}",
-            entry.model_id,
-            entry.karma_score(),
-            entry.latency_score,
-            entry.accuracy_score * 100.0,
-            entry.semantic_success_rate * 100.0,
-            entry.total_runs
-        );
-    }
-}
-
-fn print_distributed_task_stats(metrics: &DistributedTaskMetrics) {
-    println!("metric | value");
-    println!("total_tasks | {}", metrics.total_tasks);
-    println!("failed_tasks | {}", metrics.failed_tasks);
-    println!("retries_count | {}", metrics.retries_count);
-    println!("fallback_count | {}", metrics.fallback_count);
-    println!("late_results_count | {}", metrics.late_results_count);
-    println!("avg_latency_ms | {:.1}", metrics.avg_latency_ms);
-}
-
-fn print_task_trace_entry(trace: &TaskTrace) {
-    println!("task_id: {}", trace.task_id);
-    println!(
-        "node_history: {}",
-        if trace.node_history.is_empty() {
-            "-".to_string()
-        } else {
-            trace.node_history.join(" -> ")
-        }
-    );
-    println!(
-        "model_history: {}",
-        if trace.model_history.is_empty() {
-            "-".to_string()
-        } else {
-            trace.model_history.join(" -> ")
-        }
-    );
-    println!("retries: {}", trace.retries);
-    println!("fallbacks: {}", trace.fallbacks);
-    println!("total_latency_ms: {}", trace.total_latency_ms);
-}
-
 fn debug_task_log(
     flags: DebugFlags,
     peer_id: &str,
@@ -3519,18 +3149,6 @@ fn emit_final_trace_summary_event(
             fields
         },
     );
-}
-
-fn is_control_plane_mode(mode: &NodeMode) -> bool {
-    matches!(
-        mode,
-        NodeMode::ModelsList
-            | NodeMode::ModelsStats
-            | NodeMode::ModelsDownload { .. }
-            | NodeMode::ModelsRemove { .. }
-            | NodeMode::TasksStats
-            | NodeMode::TasksTrace { .. }
-    )
 }
 
 fn mock_real_inference_result(
@@ -3750,289 +3368,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // ═══════════════════════════════════════════════
     // CLI MODELS + CAPABILITIES — salida temprana
     // ═══════════════════════════════════════════════
+    if handle_pre_network_mode(&mode, &runtime_version).await? {
+        return Ok(());
+    }
+
     match &mode {
-        NodeMode::ModelsList => {
-            println!("╔══════════════════════════════════╗");
-            println!("║       IaMine — Modelos           ║");
-            println!("╚══════════════════════════════════╝\n");
-            let installer = ModelInstaller::new();
-            let models = installer.list_models();
-            println!("📋 Modelos disponibles:\n");
-            for m in &models {
-                m.display();
-            }
-            let used = ModelStorage::new().total_size_bytes();
-            let cfg = StorageConfig::load();
-            println!(
-                "\n💾 Storage: {:.1}/{} GB usados",
-                used as f64 / 1_073_741_824.0,
-                cfg.max_storage_gb
-            );
-            return Ok(());
-        }
-
-        NodeMode::ModelsStats => {
-            println!("╔══════════════════════════════════╗");
-            println!("║    IaMine — Model Karma          ║");
-            println!("╚══════════════════════════════════╝\n");
-            print_model_karma_stats();
-            return Ok(());
-        }
-
-        NodeMode::TasksStats => {
-            println!("╔══════════════════════════════════╗");
-            println!("║   IaMine — Task Observability    ║");
-            println!("╚══════════════════════════════════╝\n");
-            let metrics = distributed_task_metrics();
-            print_distributed_task_stats(&metrics);
-            return Ok(());
-        }
-
-        NodeMode::TasksTrace { task_id } => {
-            println!("╔══════════════════════════════════╗");
-            println!("║    IaMine — Task Trace           ║");
-            println!("╚══════════════════════════════════╝\n");
-            if let Some(trace) = task_trace(task_id) {
-                print_task_trace_entry(&trace);
-                return Ok(());
-            }
-            return Err(format!("No existe trace para task_id={}", task_id).into());
-        }
-
-        NodeMode::ModelsMenu => {
-            let node_identity = NodeIdentity::load_or_create();
-            ModelSelectorCLI::show_model_menu(&node_identity.peer_id.to_string())?;
-            return Ok(());
-        }
-
-        NodeMode::ModelsSearch { query } => {
-            println!("╔══════════════════════════════════╗");
-            println!("║   IaMine — Buscar en HF          ║");
-            println!("╚══════════════════════════════════╝\n");
-
-            println!("🔍 Buscando '{}' en HuggingFace...", query);
-
-            match iamine_models::HuggingFaceSearch::search_gguf_models(query, 10).await {
-                Ok(models) => {
-                    let filtered = iamine_models::HuggingFaceSearch::filter_suitable(models);
-
-                    if filtered.is_empty() {
-                        println!("❌ Sin modelos encontrados para '{}'", query);
-                    } else {
-                        println!("\n📦 {} modelos encontrados:\n", filtered.len());
-                        println!("{:<50} {:>12} {:>8}", "Modelo", "Downloads", "Likes");
-                        println!("{}", "─".repeat(72));
-
-                        for m in &filtered {
-                            let name = if m.id.len() > 48 {
-                                format!("{}…", &m.id[..47])
-                            } else {
-                                m.id.clone()
-                            };
-                            println!("{:<50} {:>12} {:>8}", name, m.downloads, m.likes);
-                        }
-
-                        println!("\n💡 Descarga:");
-                        println!("   iamine-node models download <model_id>");
-                    }
-                }
-                Err(e) => println!("❌ Error: {}", e),
-            }
-            return Ok(());
-        }
-
-        NodeMode::ModelsDownload { model_id } => {
-            println!("╔══════════════════════════════════╗");
-            println!("║    IaMine — Descargar Modelo     ║");
-            println!("╚══════════════════════════════════╝\n");
-            let installer = ModelInstaller::new();
-            let (tx, _rx) = tokio::sync::mpsc::channel(10);
-            match installer.install(model_id, "local", Some(tx)).await {
-                InstallResult::Installed(id) => {
-                    println!("✅ Modelo {} instalado en ~/.iamine/models/", id)
-                }
-                InstallResult::AlreadyExists(id) => println!("ℹ️  Modelo {} ya está instalado", id),
-                InstallResult::InsufficientStorage {
-                    needed_gb,
-                    available_gb,
-                } => println!(
-                    "❌ Espacio insuficiente: necesita {:.1} GB, disponible {:.1} GB",
-                    needed_gb, available_gb
-                ),
-                InstallResult::DownloadFailed(e) => println!("❌ Descarga fallida: {}", e),
-                InstallResult::ValidationFailed(e) => println!("❌ Validación fallida: {}", e),
-            }
-            return Ok(());
-        }
-
-        NodeMode::ModelsRemove { model_id } => {
-            println!("╔══════════════════════════════════╗");
-            println!("║     IaMine — Remove Model        ║");
-            println!("╚══════════════════════════════════╝\n");
-            let installer = ModelInstaller::new();
-            installer.remove(model_id)?;
-            let remaining = ModelStorage::new().list_local_models();
-            println!("📦 Modelos locales restantes: {}", remaining.join(", "));
-            return Ok(());
-        }
-
-        NodeMode::SemanticEval => {
-            println!("╔══════════════════════════════════╗");
-            println!("║   IaMine — Semantic Eval         ║");
-            println!("╚══════════════════════════════════╝\n");
-
-            let report = evaluate_default_dataset()
-                .map_err(|e| format!("No se pudo cargar semantic_dataset.json: {}", e))?;
-
-            println!("📊 Accuracy: {:.1}%", report.accuracy * 100.0);
-            println!("📉 Fallback rate: {:.1}%", report.fallback_rate * 100.0);
-            println!(
-                "⚠️  Low-confidence rate: {:.1}%",
-                report.low_confidence_rate * 100.0
-            );
-            println!("🧪 Total prompts: {}", report.total);
-            println!("❌ Error cases: {}", report.error_cases.len());
-
-            if !report.error_cases.is_empty() {
-                println!("\nError breakdown:");
-                for error in &report.error_cases {
-                    println!(
-                        "- prompt='{}' expected={} predicted={} secondary(expected={:?}, predicted={:?}) style(expected={:?}, predicted={:?}) context(expected={:?}, predicted={}) normalize(expected={}, predicted={}) confidence={:.2} fallback={}",
-                        error.prompt,
-                        prompt_task_label(error.expected_task),
-                        prompt_task_label(error.predicted_task),
-                        error.expected_secondary,
-                        error.predicted_secondary,
-                        error.expected_output_style,
-                        error.predicted_output_style,
-                        error.expected_requires_context,
-                        error.predicted_requires_context,
-                        error.expected_normalize,
-                        error.predicted_normalize,
-                        error.confidence,
-                        error.fallback_applied
-                    );
-                }
-            }
-            return Ok(());
-        }
-
-        NodeMode::RegressionRun => {
-            println!("╔══════════════════════════════════╗");
-            println!("║   IaMine — Regression Runner     ║");
-            println!("╚══════════════════════════════════╝\n");
-
-            let report = run_default_regression_suite()?;
-            println!("🧪 Versions covered: {}", report.total_versions);
-            println!("🧪 Total prompts: {}", report.total_prompts);
-            println!("❌ Total failures: {}", report.total_failures);
-
-            for version in &report.version_results {
-                println!(
-                    "- {}: {}/{} passed",
-                    version.version, version.passed, version.total
-                );
-                for failure in &version.failures {
-                    println!(
-                        "  prompt='{}' expected={} predicted={} normalize(expected={}, predicted={})",
-                        failure.prompt,
-                        prompt_task_label(failure.expected_task),
-                        prompt_task_label(failure.predicted_task),
-                        failure.expected_normalize,
-                        failure.predicted_normalize
-                    );
-                }
-            }
-
-            if !report.passed() {
-                return Err("Regression suite detecto fallos".into());
-            }
-
-            return Ok(());
-        }
-
-        NodeMode::CheckCode => {
-            println!("╔══════════════════════════════════╗");
-            println!("║     IaMine — Code Quality        ║");
-            println!("╚══════════════════════════════════╝\n");
-
-            let report = run_code_quality_checks()?;
-            println!("✅ fmt passed: {}", report.format_passed);
-            println!("✅ clippy passed: {}", report.clippy_passed);
-            println!("⚠️  warnings: {}", report.warning_count);
-            println!("🚦 minor gate pass: {}", report.passed_for_minor());
-
-            for command in &report.commands {
-                println!(
-                    "- {} => success={} warnings={}",
-                    command.name, command.success, command.warning_count
-                );
-                if !command.output_excerpt.is_empty() {
-                    println!("{}", command.output_excerpt);
-                }
-            }
-
-            if !report.passed_for_minor() {
-                return Err("Code quality checks fallaron".into());
-            }
-
-            return Ok(());
-        }
-
-        NodeMode::CheckSecurity => {
-            println!("╔══════════════════════════════════╗");
-            println!("║     IaMine — Security Check      ║");
-            println!("╚══════════════════════════════════╝\n");
-
-            let report = run_security_checks()?;
-            println!("✅ security passed: {}", report.passed);
-            println!("⚠️  warnings: {}", report.warning_count);
-            println!("❌ errors: {}", report.error_count);
-
-            for finding in &report.findings {
-                println!(
-                    "- {:?} {}:{} {}",
-                    finding.severity, finding.path, finding.line, finding.message
-                );
-            }
-
-            if !report.passed {
-                return Err("Security checks detectaron hallazgos bloqueantes".into());
-            }
-
-            return Ok(());
-        }
-
-        NodeMode::ValidateRelease => {
-            println!("╔══════════════════════════════════╗");
-            println!("║   IaMine — Release Validation    ║");
-            println!("╚══════════════════════════════════╝\n");
-
-            let report = run_release_validation()?;
-            println!("🏷️  Version: {}", runtime_version);
-            println!("✅ tests_passed: {}", report.quality.tests_passed);
-            println!("✅ regression_passed: {}", report.quality.regression_passed);
-            println!("✅ security_passed: {}", report.quality.security_passed);
-            println!("✅ code_clean_passed: {}", report.quality.code_clean_passed);
-            println!("🚦 release_blocked: {}", report.quality.blocks_release());
-            println!("⚠️  code warnings: {}", report.code_quality.warning_count);
-            println!("⚠️  security warnings: {}", report.security.warning_count);
-
-            if let Some(semantic_eval) = &report.semantic_eval {
-                println!(
-                    "🧠 semantic accuracy: {:.1}% (errors={})",
-                    semantic_eval.accuracy * 100.0,
-                    semantic_eval.error_cases.len()
-                );
-            }
-
-            if report.quality.blocks_release() {
-                return Err("Release bloqueada por quality gates".into());
-            }
-
-            return Ok(());
-        }
-
         NodeMode::Daemon => {
             println!("╔══════════════════════════════════╗");
             println!("║   IaMine — Inference Daemon      ║");
@@ -4240,38 +3580,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
             }
         }
 
-        NodeMode::Capabilities => {
-            println!("╔══════════════════════════════════╗");
-            println!("║   IaMine — Node Capabilities     ║");
-            println!("╚══════════════════════════════════╝\n");
-
-            let node_identity = NodeIdentity::load_or_create();
-            let caps = ModelNodeCapabilities::detect(&node_identity.peer_id.to_string());
-            caps.display();
-
-            // Mostrar qué modelos puede ejecutar
-            let runnable = iamine_models::runnable_models(&caps);
-            println!("\n📋 Modelos ejecutables según hardware:");
-            for mid in &runnable {
-                let installed = caps.has_model(mid);
-                let icon = if installed { "✅" } else { "⬜" };
-                let req = ModelRequirements::for_model(mid).unwrap();
-                println!(
-                    "   {} {} (min {}GB RAM, {}GB storage{})",
-                    icon,
-                    mid,
-                    req.min_ram_gb,
-                    req.min_storage_gb,
-                    if req.requires_gpu {
-                        ", GPU requerida"
-                    } else {
-                        ""
-                    }
-                );
-            }
-            return Ok(());
-        }
-
         NodeMode::Nodes => {
             // NO return aquí: este modo debe levantar red para descubrir peers/capabilities.
             println!("╔══════════════════════════════════╗");
@@ -4284,32 +3592,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
             println!("║    IaMine — Network Topology     ║");
             println!("╚══════════════════════════════════╝\n");
             // This mode needs to discover peers, so don't return early
-        }
-
-        NodeMode::ModelsRecommend => {
-            let node_identity = NodeIdentity::load_or_create();
-            let caps = ModelNodeCapabilities::detect(&node_identity.peer_id.to_string());
-            let benchmark = NodeBenchmark::run();
-
-            let profile = AutoProvisionProfile {
-                cpu_score: benchmark.cpu_score as u64,
-                ram_gb: caps.ram_gb,
-                gpu_available: benchmark.gpu_available,
-                storage_available_gb: caps.storage_available_gb,
-            };
-
-            let provision = ModelAutoProvision::new(ModelRegistry::new(), ModelStorage::new());
-            let recommended = provision.recommend_for_empty_node(&profile);
-
-            println!("Compatible models for this node:");
-            if recommended.is_empty() {
-                println!("(none)");
-            } else {
-                for model in recommended {
-                    println!("{}", model.id);
-                }
-            }
-            return Ok(());
         }
 
         _ => {} // continuar con startup normal
@@ -9963,16 +9245,6 @@ mod tests {
     }
 
     #[test]
-    fn cli_help_prints_usage() {
-        let mode = parse_args_from(vec!["iamine-node".to_string(), "--help".to_string()])
-            .expect("--help should parse");
-
-        assert!(matches!(mode, NodeMode::Help));
-        assert!(usage_text().contains("iamine-node --broadcast <type> <data>"));
-        assert!(usage_text().contains("--debug-network"));
-    }
-
-    #[test]
     fn test_max_tokens_override() {
         let profile = analyze_prompt("explica la teoria de la relatividad");
         let decision =
@@ -9988,22 +9260,6 @@ mod tests {
         let decision = resolve_output_policy(&profile, "What is 2+2?", Some(10));
 
         assert_eq!(decision.max_tokens, 64);
-    }
-
-    #[test]
-    fn test_parse_optional_u32_flag() {
-        let args = vec![
-            "iamine-node".to_string(),
-            "infer".to_string(),
-            "explica".to_string(),
-            "--max-tokens".to_string(),
-            "1024".to_string(),
-        ];
-
-        assert_eq!(
-            parse_optional_u32_flag(&args, "--max-tokens").unwrap(),
-            Some(1024)
-        );
     }
 
     #[test]
@@ -10029,41 +9285,6 @@ mod tests {
             true,
         );
         assert!(guarded.contains("Keep the decimal point attached"));
-    }
-
-    #[test]
-    fn test_cli_no_runtime_start() {
-        assert!(is_control_plane_mode(&NodeMode::ModelsList));
-        assert!(is_control_plane_mode(&NodeMode::ModelsStats));
-        assert!(is_control_plane_mode(&NodeMode::ModelsDownload {
-            model_id: "llama3-3b".to_string()
-        }));
-        assert!(is_control_plane_mode(&NodeMode::ModelsRemove {
-            model_id: "llama3-3b".to_string()
-        }));
-        assert!(is_control_plane_mode(&NodeMode::TasksStats));
-        assert!(is_control_plane_mode(&NodeMode::TasksTrace {
-            task_id: "task-1".to_string()
-        }));
-        assert!(!is_control_plane_mode(&NodeMode::Worker));
-    }
-
-    #[test]
-    fn test_force_network_routing() {
-        let flags = InferenceControlFlags {
-            force_network: true,
-            no_local: false,
-            prefer_local: true,
-        };
-        assert!(!flags.should_use_local(true));
-
-        let prefer_local = InferenceControlFlags {
-            force_network: false,
-            no_local: false,
-            prefer_local: true,
-        };
-        assert!(prefer_local.should_use_local(true));
-        assert!(!prefer_local.should_use_local(false));
     }
 
     #[test]
