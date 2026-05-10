@@ -149,6 +149,20 @@ struct PendingTaskResponse {
     response: TaskResponse,
 }
 
+#[derive(Debug, Clone)]
+struct BroadcastResultToPublish {
+    task_id: String,
+    task_type: String,
+    worker_peer_id: String,
+    origin_peer: String,
+    success: bool,
+    output: String,
+    elapsed_ms: u64,
+    error: Option<String>,
+    attempts: u32,
+    source: &'static str,
+}
+
 #[derive(NetworkBehaviour)]
 #[behaviour(to_swarm = "IaMineEvent")]
 struct IamineBehaviour {
@@ -1952,6 +1966,8 @@ struct BroadcastOfferState {
     attempts: u32,
     scheduler_registered: bool,
     assignment_published: bool,
+    assigned_worker: Option<String>,
+    result_accepted: bool,
     started_at: tokio::time::Instant,
     last_attempt_at: Option<tokio::time::Instant>,
     last_readiness_log_at: Option<tokio::time::Instant>,
@@ -1970,6 +1986,8 @@ impl BroadcastOfferState {
             attempts: 0,
             scheduler_registered: false,
             assignment_published: false,
+            assigned_worker: None,
+            result_accepted: false,
             started_at: tokio::time::Instant::now(),
             last_attempt_at: None,
             last_readiness_log_at: None,
@@ -2019,6 +2037,15 @@ impl BroadcastOfferState {
 
     fn mark_peer_connected(&mut self) {
         self.last_peer_connected_at = Some(tokio::time::Instant::now());
+    }
+
+    fn mark_assigned(&mut self, worker_id: &str) {
+        self.assignment_published = true;
+        self.assigned_worker = Some(worker_id.to_string());
+    }
+
+    fn mark_result_accepted(&mut self) {
+        self.result_accepted = true;
     }
 
     fn should_log_readiness_wait(&mut self) -> bool {
@@ -2219,12 +2246,56 @@ fn build_broadcast_task_assign_payload(
     })
 }
 
+fn build_broadcast_task_result_payload(result: &BroadcastResultToPublish) -> Value {
+    serde_json::json!({
+        "type": "TaskResult",
+        "task_id": result.task_id,
+        "task_type": result.task_type,
+        "worker_id": result.worker_peer_id,
+        "worker_peer_id": result.worker_peer_id,
+        "origin_peer": result.origin_peer,
+        "controller_peer_id": result.origin_peer,
+        "success": result.success,
+        "output": result.output,
+        "elapsed_ms": result.elapsed_ms,
+        "execution_ms": result.elapsed_ms,
+        "attempts": result.attempts,
+        "error": result.error,
+        "source": result.source,
+    })
+}
+
 fn should_execute_task_assignment(
     assigned_worker: &str,
     local_peer_id: &str,
     already_executed: bool,
 ) -> bool {
     assigned_worker == local_peer_id && !already_executed
+}
+
+fn evaluate_broadcast_result_acceptance(
+    state: Option<&BroadcastOfferState>,
+    task_id: &str,
+    worker_peer_id: &str,
+    success: bool,
+) -> Result<(), &'static str> {
+    let Some(state) = state else {
+        return Err("unknown_task_id");
+    };
+    if state.task_id != task_id {
+        return Err("unknown_task_id");
+    }
+    if state.result_accepted {
+        return Err("duplicate_result");
+    }
+    if !success {
+        return Err("success_false");
+    }
+    match state.assigned_worker.as_deref() {
+        Some(assigned_worker) if assigned_worker == worker_peer_id => Ok(()),
+        Some(_) => Err("wrong_worker"),
+        None => Err("task_not_assigned"),
+    }
 }
 
 fn emit_broadcast_task_offer_prepared_event(
@@ -2511,6 +2582,140 @@ fn emit_broadcast_task_assign_published_event(
             fields.insert("topic".to_string(), ASSIGN_TOPIC.into());
             fields.insert("message_id".to_string(), message_id.into());
             fields.insert("deadline_ms".to_string(), deadline_ms.into());
+            fields
+        },
+    );
+}
+
+fn emit_broadcast_result_prepare_event(result: &BroadcastResultToPublish) {
+    log_observability_event(
+        LogLevel::Info,
+        "broadcast_result_prepare",
+        &result.task_id,
+        Some(&result.task_id),
+        None,
+        None,
+        {
+            let mut fields = Map::new();
+            fields.insert("task_type".to_string(), result.task_type.clone().into());
+            fields.insert(
+                "worker_peer_id".to_string(),
+                result.worker_peer_id.clone().into(),
+            );
+            fields.insert("origin_peer".to_string(), result.origin_peer.clone().into());
+            fields.insert(
+                "controller_peer_id".to_string(),
+                result.origin_peer.clone().into(),
+            );
+            fields.insert("success".to_string(), result.success.into());
+            fields.insert(
+                "output_preview".to_string(),
+                broadcast_payload_preview(&result.output).into(),
+            );
+            fields.insert("elapsed_ms".to_string(), result.elapsed_ms.into());
+            fields.insert("transport".to_string(), "pubsub".into());
+            fields.insert("topic".to_string(), RESULTS_TOPIC.into());
+            fields
+        },
+    );
+}
+
+fn emit_broadcast_result_publish_attempt_event(
+    result: &BroadcastResultToPublish,
+    payload_size: usize,
+) {
+    log_observability_event(
+        LogLevel::Info,
+        "broadcast_result_publish_attempt",
+        &result.task_id,
+        Some(&result.task_id),
+        None,
+        None,
+        {
+            let mut fields = Map::new();
+            fields.insert("task_type".to_string(), result.task_type.clone().into());
+            fields.insert(
+                "worker_peer_id".to_string(),
+                result.worker_peer_id.clone().into(),
+            );
+            fields.insert("origin_peer".to_string(), result.origin_peer.clone().into());
+            fields.insert("success".to_string(), result.success.into());
+            fields.insert("elapsed_ms".to_string(), result.elapsed_ms.into());
+            fields.insert(
+                "output_preview".to_string(),
+                broadcast_payload_preview(&result.output).into(),
+            );
+            fields.insert("payload_size".to_string(), (payload_size as u64).into());
+            fields.insert("transport".to_string(), "pubsub".into());
+            fields.insert("topic".to_string(), RESULTS_TOPIC.into());
+            fields
+        },
+    );
+}
+
+fn emit_broadcast_result_published_event(
+    result: &BroadcastResultToPublish,
+    message_id: &str,
+    payload_size: usize,
+) {
+    for event_name in ["broadcast_result_published", "task_result_published"] {
+        log_observability_event(
+            LogLevel::Info,
+            event_name,
+            &result.task_id,
+            Some(&result.task_id),
+            None,
+            None,
+            {
+                let mut fields = Map::new();
+                fields.insert("task_type".to_string(), result.task_type.clone().into());
+                fields.insert(
+                    "worker_peer_id".to_string(),
+                    result.worker_peer_id.clone().into(),
+                );
+                fields.insert("origin_peer".to_string(), result.origin_peer.clone().into());
+                fields.insert(
+                    "controller_peer_id".to_string(),
+                    result.origin_peer.clone().into(),
+                );
+                fields.insert("success".to_string(), result.success.into());
+                fields.insert(
+                    "output_preview".to_string(),
+                    broadcast_payload_preview(&result.output).into(),
+                );
+                fields.insert("elapsed_ms".to_string(), result.elapsed_ms.into());
+                fields.insert("transport".to_string(), "pubsub".into());
+                fields.insert("topic".to_string(), RESULTS_TOPIC.into());
+                fields.insert("message_id".to_string(), message_id.into());
+                fields.insert("payload_size".to_string(), (payload_size as u64).into());
+                fields
+            },
+        );
+    }
+}
+
+fn emit_broadcast_result_publish_failed_event(
+    result: &BroadcastResultToPublish,
+    reason: &str,
+    recoverable: bool,
+) {
+    log_observability_event(
+        LogLevel::Error,
+        "result_publish_failed",
+        &result.task_id,
+        Some(&result.task_id),
+        None,
+        Some(TASK_DISPATCH_UNCONFIRMED_001),
+        {
+            let mut fields = Map::new();
+            fields.insert(
+                "worker_peer_id".to_string(),
+                result.worker_peer_id.clone().into(),
+            );
+            fields.insert("reason".to_string(), reason.into());
+            fields.insert("transport".to_string(), "pubsub".into());
+            fields.insert("topic".to_string(), RESULTS_TOPIC.into());
+            fields.insert("recoverable".to_string(), recoverable.into());
             fields
         },
     );
@@ -3167,6 +3372,140 @@ fn emit_result_received_event(
             fields
         },
     );
+}
+
+struct BroadcastResultReceived<'a> {
+    task_id: &'a str,
+    task_type: &'a str,
+    worker_peer_id: &'a str,
+    assigned_worker_peer_id: Option<&'a str>,
+    origin_peer: Option<&'a str>,
+    success: bool,
+    output: &'a str,
+    elapsed_ms: u64,
+    transport: &'a str,
+    accepted: bool,
+    rejection_reason: Option<&'a str>,
+}
+
+fn emit_broadcast_result_received_events(result: &BroadcastResultReceived<'_>) {
+    for event_name in [
+        "task_result_received",
+        "broadcast_result_received",
+        "result_received",
+    ] {
+        log_observability_event(
+            LogLevel::Info,
+            event_name,
+            result.task_id,
+            Some(result.task_id),
+            None,
+            None,
+            {
+                let mut fields = Map::new();
+                fields.insert("task_type".to_string(), result.task_type.into());
+                fields.insert("worker_peer_id".to_string(), result.worker_peer_id.into());
+                if let Some(assigned_worker_peer_id) = result.assigned_worker_peer_id {
+                    fields.insert(
+                        "assigned_worker_peer_id".to_string(),
+                        assigned_worker_peer_id.into(),
+                    );
+                }
+                if let Some(origin_peer) = result.origin_peer {
+                    fields.insert("origin_peer".to_string(), origin_peer.into());
+                    fields.insert("controller_peer_id".to_string(), origin_peer.into());
+                }
+                fields.insert("success".to_string(), result.success.into());
+                fields.insert("output".to_string(), result.output.into());
+                fields.insert(
+                    "output_preview".to_string(),
+                    broadcast_payload_preview(result.output).into(),
+                );
+                fields.insert("elapsed_ms".to_string(), result.elapsed_ms.into());
+                fields.insert("transport".to_string(), result.transport.into());
+                fields.insert("topic".to_string(), RESULTS_TOPIC.into());
+                fields.insert("accepted".to_string(), result.accepted.into());
+                if let Some(rejection_reason) = result.rejection_reason {
+                    fields.insert("rejection_reason".to_string(), rejection_reason.into());
+                }
+                fields
+            },
+        );
+    }
+}
+
+fn emit_broadcast_result_rejected_event(result: &BroadcastResultReceived<'_>, reason: &str) {
+    log_observability_event(
+        LogLevel::Warn,
+        "broadcast_result_rejected",
+        result.task_id,
+        Some(result.task_id),
+        None,
+        Some(TASK_DISPATCH_UNCONFIRMED_001),
+        {
+            let mut fields = Map::new();
+            fields.insert("task_type".to_string(), result.task_type.into());
+            fields.insert("worker_peer_id".to_string(), result.worker_peer_id.into());
+            if let Some(assigned_worker_peer_id) = result.assigned_worker_peer_id {
+                fields.insert(
+                    "assigned_worker_peer_id".to_string(),
+                    assigned_worker_peer_id.into(),
+                );
+            }
+            if let Some(origin_peer) = result.origin_peer {
+                fields.insert("origin_peer".to_string(), origin_peer.into());
+                fields.insert("controller_peer_id".to_string(), origin_peer.into());
+            }
+            fields.insert("success".to_string(), result.success.into());
+            fields.insert("transport".to_string(), result.transport.into());
+            fields.insert("topic".to_string(), RESULTS_TOPIC.into());
+            fields.insert("accepted".to_string(), false.into());
+            fields.insert("rejection_reason".to_string(), reason.into());
+            fields
+        },
+    );
+}
+
+fn emit_broadcast_recovery_cancelled_event(task_id: &str, worker_peer_id: &str) {
+    log_observability_event(
+        LogLevel::Info,
+        "broadcast_recovery_cancelled",
+        task_id,
+        Some(task_id),
+        None,
+        None,
+        {
+            let mut fields = Map::new();
+            fields.insert("worker_peer_id".to_string(), worker_peer_id.into());
+            fields.insert("reason".to_string(), "result_accepted".into());
+            fields
+        },
+    );
+}
+
+fn emit_broadcast_final_outcome_success_event(task_id: &str, worker_peer_id: &str, output: &str) {
+    for event_name in ["final_outcome", "final_outcome_success"] {
+        log_observability_event(
+            LogLevel::Info,
+            event_name,
+            task_id,
+            Some(task_id),
+            None,
+            None,
+            {
+                let mut fields = Map::new();
+                fields.insert("outcome".to_string(), "success".into());
+                fields.insert("failed".to_string(), false.into());
+                fields.insert("worker_peer_id".to_string(), worker_peer_id.into());
+                fields.insert("output".to_string(), output.into());
+                fields.insert(
+                    "output_preview".to_string(),
+                    broadcast_payload_preview(output).into(),
+                );
+                fields
+            },
+        );
+    }
 }
 
 fn emit_attempt_state_changed_event(
@@ -5953,6 +6292,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let task_manager = Arc::new(TaskManager::new());
     let (task_response_tx, mut task_response_rx) =
         tokio::sync::mpsc::channel::<PendingTaskResponse>(64);
+    let (broadcast_result_tx, mut broadcast_result_rx) =
+        tokio::sync::mpsc::channel::<BroadcastResultToPublish>(64);
     let heartbeat = Arc::new(HeartbeatService::new());
     let metrics = Arc::new(RwLock::new(NodeMetrics::new()));
     let mut capabilities = WorkerCapabilities::detect();
@@ -6276,6 +6617,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         ) {
                             Ok(message_id) => {
                                 state.assignment_published = true;
+                                state.assigned_worker = Some(winner.clone());
                                 emit_broadcast_task_assign_published_event(
                                     &state.task_id,
                                     &winner,
@@ -6505,6 +6847,38 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             );
                             break;
                         }
+                    }
+                }
+            }
+
+            Some(broadcast_result) = broadcast_result_rx.recv() => {
+                let payload = build_broadcast_task_result_payload(&broadcast_result);
+                let payload_bytes = serde_json::to_vec(&payload).unwrap_or_default();
+                emit_broadcast_result_publish_attempt_event(
+                    &broadcast_result,
+                    payload_bytes.len(),
+                );
+                match swarm.behaviour_mut().gossipsub.publish(
+                    gossipsub::IdentTopic::new(RESULTS_TOPIC),
+                    payload_bytes,
+                ) {
+                    Ok(message_id) => {
+                        emit_broadcast_result_published_event(
+                            &broadcast_result,
+                            &message_id.to_string(),
+                            payload.to_string().len(),
+                        );
+                        println!(
+                            "📤 [Worker] TaskResult publicado: task_id={} success={}",
+                            broadcast_result.task_id, broadcast_result.success
+                        );
+                    }
+                    Err(error) => {
+                        emit_broadcast_result_publish_failed_event(
+                            &broadcast_result,
+                            &error.to_string(),
+                            true,
+                        );
                     }
                 }
             }
@@ -7907,7 +8281,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         Ok(message_id) => {
                                             if let Some(state) = broadcast_offer_state.as_mut() {
                                                 if state.task_id == task_id {
-                                                    state.assignment_published = true;
+                                                    state.mark_assigned(&winner);
                                                 }
                                             }
                                             emit_broadcast_task_assign_published_event(
@@ -7978,6 +8352,100 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 }
                             }
 
+                            "TaskResult" if matches!(mode, NodeMode::Broadcast { .. }) => {
+                                if message_topic != RESULTS_TOPIC {
+                                    continue;
+                                }
+                                let task_id = msg["task_id"].as_str().unwrap_or("").to_string();
+                                let task_type = msg["task_type"].as_str().unwrap_or("").to_string();
+                                let worker_peer_id = msg["worker_peer_id"]
+                                    .as_str()
+                                    .or_else(|| msg["worker_id"].as_str())
+                                    .unwrap_or("")
+                                    .to_string();
+                                let success = msg["success"].as_bool().unwrap_or(false);
+                                let output = msg["output"].as_str().unwrap_or("").to_string();
+                                let origin_peer = msg["origin_peer"]
+                                    .as_str()
+                                    .or_else(|| msg["controller_peer_id"].as_str())
+                                    .map(str::to_string);
+                                let elapsed_ms = msg["elapsed_ms"]
+                                    .as_u64()
+                                    .or_else(|| msg["execution_ms"].as_u64())
+                                    .unwrap_or(0);
+                                let assigned_worker = broadcast_offer_state
+                                    .as_ref()
+                                    .and_then(|state| state.assigned_worker.as_deref())
+                                    .map(str::to_string);
+                                let acceptance = evaluate_broadcast_result_acceptance(
+                                    broadcast_offer_state.as_ref(),
+                                    &task_id,
+                                    &worker_peer_id,
+                                    success,
+                                );
+                                let accepted = acceptance.is_ok();
+                                let rejection_reason = acceptance.err();
+                                let received = BroadcastResultReceived {
+                                    task_id: &task_id,
+                                    task_type: &task_type,
+                                    worker_peer_id: &worker_peer_id,
+                                    assigned_worker_peer_id: assigned_worker.as_deref(),
+                                    origin_peer: origin_peer.as_deref(),
+                                    success,
+                                    output: &output,
+                                    elapsed_ms,
+                                    transport: "pubsub",
+                                    accepted,
+                                    rejection_reason,
+                                };
+                                emit_broadcast_result_received_events(&received);
+
+                                if let Some(reason) = rejection_reason {
+                                    emit_broadcast_result_rejected_event(&received, reason);
+                                    continue;
+                                }
+
+                                if let Some(state) = broadcast_offer_state.as_mut() {
+                                    if state.task_id == task_id {
+                                        state.mark_result_accepted();
+                                    }
+                                }
+                                scheduler.mark_completed(&task_id, &worker_peer_id).await;
+                                emit_broadcast_recovery_cancelled_event(&task_id, &worker_peer_id);
+                                emit_broadcast_final_outcome_success_event(
+                                    &task_id,
+                                    &worker_peer_id,
+                                    &output,
+                                );
+                                log_observability_event(
+                                    LogLevel::Info,
+                                    "task_completed",
+                                    &task_id,
+                                    Some(&task_id),
+                                    None,
+                                    None,
+                                    {
+                                        let mut fields = Map::new();
+                                        fields.insert("success".to_string(), true.into());
+                                        fields.insert(
+                                            "worker_peer_id".to_string(),
+                                            worker_peer_id.clone().into(),
+                                        );
+                                        fields.insert("transport".to_string(), "pubsub".into());
+                                        fields.insert("source".to_string(), "broadcast_task_result".into());
+                                        fields
+                                    },
+                                );
+                                if should_print_result_output(&output) {
+                                    println!("{}", output);
+                                }
+                                println!(
+                                    "✅ [Broadcast] Resultado aceptado: task_id={} worker={} success=true",
+                                    task_id, worker_peer_id
+                                );
+                                break;
+                            }
+
                             "TaskAssign" if matches!(mode, NodeMode::Worker) => {
                                 let assigned = msg["assigned_worker"].as_str().unwrap_or("");
                                 let task_id = msg["task_id"].as_str().unwrap_or("").to_string();
@@ -8011,10 +8479,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     let queue_ref = Arc::clone(&queue);
                                     let metrics_ref = Arc::clone(&metrics);
                                     let worker_id_str = local_peer_id.clone();
+                                    let result_tx = broadcast_result_tx.clone();
+                                    let task_type_for_result = task_type.clone();
+                                    let origin_peer_for_result = origin_peer_str.clone();
 
                                     tokio::spawn(async move {
                                         let exec = async {
-                                            let _ = queue_ref.push(task_id.clone(), task_type, data).await;
+                                            let _ = queue_ref.push(task_id.clone(), task_type.clone(), data).await;
                                             queue_ref.outcome_rx.lock().await.recv().await
                                         };
 
@@ -8045,9 +8516,39 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                 let rep = queue_ref.reputation().await;
                                                 println!("⭐ Reputación: {}/100", rep.reputation_score);
 
-                                                // ← TaskResult directo al origin (no gossip)
-                                                // El PeerId lo resolvemos en el evento ResultResponse
-                                                println!("📤 [Worker] Resultado listo → origin {}", &origin_peer_str[..8.min(origin_peer_str.len())]);
+                                                let output = outcome
+                                                    .result
+                                                    .as_ref()
+                                                    .map(|result| result.output.clone())
+                                                    .unwrap_or_default();
+                                                let elapsed_ms = outcome
+                                                    .result
+                                                    .as_ref()
+                                                    .map(|result| result.execution_ms)
+                                                    .unwrap_or_default();
+                                                let error = if success {
+                                                    None
+                                                } else {
+                                                    Some("broadcast task execution failed".to_string())
+                                                };
+                                                let broadcast_result = BroadcastResultToPublish {
+                                                    task_id: outcome.task_id.clone(),
+                                                    task_type: task_type_for_result,
+                                                    worker_peer_id: worker_id_str.clone(),
+                                                    origin_peer: origin_peer_for_result.clone(),
+                                                    success,
+                                                    output,
+                                                    elapsed_ms,
+                                                    error,
+                                                    attempts: outcome.attempts,
+                                                    source: "broadcast_task_assign",
+                                                };
+                                                emit_broadcast_result_prepare_event(&broadcast_result);
+                                                let _ = result_tx.send(broadcast_result).await;
+                                                println!(
+                                                    "📤 [Worker] Resultado listo → origin {}",
+                                                    &origin_peer_for_result[..origin_peer_for_result.len().min(8)]
+                                                );
                                             }
                                             Ok(None) => eprintln!("❌ [Worker] Canal cerrado"),
                                             Err(_) => {
@@ -11902,6 +12403,253 @@ mod tests {
             "other-peer",
             false
         ));
+    }
+
+    fn test_broadcast_result(task_id: &str, worker_peer_id: &str) -> BroadcastResultToPublish {
+        BroadcastResultToPublish {
+            task_id: task_id.to_string(),
+            task_type: "reverse_string".to_string(),
+            worker_peer_id: worker_peer_id.to_string(),
+            origin_peer: "controller-peer".to_string(),
+            success: true,
+            output: "tset-tluser-tsacdaorb-aq".to_string(),
+            elapsed_ms: 42,
+            error: None,
+            attempts: 1,
+            source: "broadcast_task_assign",
+        }
+    }
+
+    #[test]
+    fn assigned_worker_publishes_task_result_after_broadcast_execution() {
+        let task_id = format!("broadcast-result-publish-{}", uuid_simple());
+        let result = test_broadcast_result(&task_id, "assigned-worker");
+        let payload = build_broadcast_task_result_payload(&result);
+
+        emit_broadcast_result_prepare_event(&result);
+        emit_broadcast_result_publish_attempt_event(&result, payload.to_string().len());
+        emit_broadcast_result_published_event(
+            &result,
+            "message-id-result",
+            payload.to_string().len(),
+        );
+
+        iamine_network::flush_structured_logs().unwrap();
+        let entries =
+            iamine_network::read_log_entries(&iamine_network::default_node_log_path()).unwrap();
+
+        assert!(entries.iter().rev().any(|entry| {
+            entry.trace_id == task_id && entry.event == "broadcast_result_prepare"
+        }));
+        assert!(entries.iter().rev().any(|entry| {
+            entry.trace_id == task_id && entry.event == "broadcast_result_publish_attempt"
+        }));
+        assert!(entries.iter().rev().any(|entry| {
+            entry.trace_id == task_id && entry.event == "broadcast_result_published"
+        }));
+        assert!(entries
+            .iter()
+            .rev()
+            .any(|entry| { entry.trace_id == task_id && entry.event == "task_result_published" }));
+    }
+
+    #[test]
+    fn broadcast_result_contains_required_fields() {
+        let result = test_broadcast_result("broadcast-result-fields", "assigned-worker");
+        let payload = build_broadcast_task_result_payload(&result);
+
+        assert_eq!(payload["type"], "TaskResult");
+        assert_eq!(payload["task_id"], "broadcast-result-fields");
+        assert_eq!(payload["task_type"], "reverse_string");
+        assert_eq!(payload["worker_id"], "assigned-worker");
+        assert_eq!(payload["worker_peer_id"], "assigned-worker");
+        assert_eq!(payload["origin_peer"], "controller-peer");
+        assert_eq!(payload["success"], true);
+        assert_eq!(payload["output"], "tset-tluser-tsacdaorb-aq");
+        assert_eq!(payload["source"], "broadcast_task_assign");
+    }
+
+    #[test]
+    fn controller_accepts_task_result_from_assigned_worker() {
+        let mut state = BroadcastOfferState::new("broadcast-result-accept".to_string());
+        state.mark_assigned("assigned-worker");
+
+        assert!(evaluate_broadcast_result_acceptance(
+            Some(&state),
+            "broadcast-result-accept",
+            "assigned-worker",
+            true,
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn controller_rejects_task_result_from_non_assigned_worker() {
+        let mut state = BroadcastOfferState::new("broadcast-result-wrong".to_string());
+        state.mark_assigned("assigned-worker");
+
+        assert_eq!(
+            evaluate_broadcast_result_acceptance(
+                Some(&state),
+                "broadcast-result-wrong",
+                "other-worker",
+                true,
+            ),
+            Err("wrong_worker")
+        );
+    }
+
+    #[test]
+    fn controller_rejects_duplicate_broadcast_result() {
+        let mut state = BroadcastOfferState::new("broadcast-result-duplicate".to_string());
+        state.mark_assigned("assigned-worker");
+        assert!(evaluate_broadcast_result_acceptance(
+            Some(&state),
+            "broadcast-result-duplicate",
+            "assigned-worker",
+            true,
+        )
+        .is_ok());
+
+        state.mark_result_accepted();
+        assert_eq!(
+            evaluate_broadcast_result_acceptance(
+                Some(&state),
+                "broadcast-result-duplicate",
+                "assigned-worker",
+                true,
+            ),
+            Err("duplicate_result")
+        );
+    }
+
+    #[test]
+    fn controller_cancels_recovery_after_result_accepted() {
+        let task_id = format!("broadcast-recovery-cancel-{}", uuid_simple());
+
+        emit_broadcast_recovery_cancelled_event(&task_id, "assigned-worker");
+
+        iamine_network::flush_structured_logs().unwrap();
+        let entries =
+            iamine_network::read_log_entries(&iamine_network::default_node_log_path()).unwrap();
+        let entry = entries
+            .iter()
+            .rev()
+            .find(|entry| {
+                entry.trace_id == task_id && entry.event == "broadcast_recovery_cancelled"
+            })
+            .expect("broadcast_recovery_cancelled should be present");
+
+        assert_eq!(
+            entry.fields.get("reason").and_then(|value| value.as_str()),
+            Some("result_accepted")
+        );
+    }
+
+    #[test]
+    fn broadcast_final_outcome_success_after_result_received() {
+        let task_id = format!("broadcast-final-success-{}", uuid_simple());
+
+        emit_broadcast_final_outcome_success_event(
+            &task_id,
+            "assigned-worker",
+            "tset-tluser-tsacdaorb-aq",
+        );
+
+        iamine_network::flush_structured_logs().unwrap();
+        let entries =
+            iamine_network::read_log_entries(&iamine_network::default_node_log_path()).unwrap();
+        let entry = entries
+            .iter()
+            .rev()
+            .find(|entry| entry.trace_id == task_id && entry.event == "final_outcome")
+            .expect("final_outcome should be present");
+
+        assert_eq!(
+            entry.fields.get("outcome").and_then(|value| value.as_str()),
+            Some("success")
+        );
+        assert_eq!(
+            entry.fields.get("failed").and_then(|value| value.as_bool()),
+            Some(false)
+        );
+    }
+
+    #[test]
+    fn broadcast_no_timeout_after_worker_success_result_accepted() {
+        let mut state = BroadcastOfferState::new("broadcast-no-timeout".to_string());
+        state.mark_assigned("assigned-worker");
+
+        assert!(evaluate_broadcast_result_acceptance(
+            Some(&state),
+            "broadcast-no-timeout",
+            "assigned-worker",
+            true,
+        )
+        .is_ok());
+        state.mark_result_accepted();
+
+        assert!(state.result_accepted);
+        assert_eq!(
+            evaluate_broadcast_result_acceptance(
+                Some(&state),
+                "broadcast-no-timeout",
+                "assigned-worker",
+                true,
+            ),
+            Err("duplicate_result")
+        );
+    }
+
+    #[test]
+    fn broadcast_result_output_matches_reverse_string() {
+        let response = TaskExecutor::execute_task(
+            "broadcast-result-output".to_string(),
+            "reverse_string".to_string(),
+            "qa-broadcast-result-test".to_string(),
+        );
+
+        assert!(response.success);
+        assert_eq!(response.result, "tset-tluser-tsacdaorb-aq");
+    }
+
+    #[test]
+    fn broadcast_flow_taskoffer_to_bid_to_assign_to_result_still_works() {
+        let task_id = "broadcast-flow-result";
+        let offer =
+            build_broadcast_task_offer_payload(task_id, "reverse_string", "abc", "controller-peer");
+        let bid = build_task_bid_payload(
+            offer["task_id"].as_str().unwrap(),
+            "assigned-worker",
+            offer["origin_peer"].as_str().unwrap(),
+            90,
+            1,
+            10,
+        );
+        let assign = build_broadcast_task_assign_payload(
+            bid["task_id"].as_str().unwrap(),
+            bid["worker_id"].as_str().unwrap(),
+            "controller-peer",
+            30_000,
+            offer["task_type"].as_str().unwrap(),
+            offer["data"].as_str().unwrap(),
+        );
+        let result = test_broadcast_result(task_id, assign["assigned_worker"].as_str().unwrap());
+        let payload = build_broadcast_task_result_payload(&result);
+        let mut state = BroadcastOfferState::new(task_id.to_string());
+        state.mark_assigned(assign["assigned_worker"].as_str().unwrap());
+
+        assert_eq!(offer["type"], "TaskOffer");
+        assert_eq!(bid["type"], "TaskBid");
+        assert_eq!(assign["type"], "TaskAssign");
+        assert_eq!(payload["type"], "TaskResult");
+        assert!(evaluate_broadcast_result_acceptance(
+            Some(&state),
+            task_id,
+            "assigned-worker",
+            true,
+        )
+        .is_ok());
     }
 
     #[test]
