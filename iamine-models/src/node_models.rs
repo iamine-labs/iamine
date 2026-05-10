@@ -19,7 +19,11 @@ pub struct NodeModels {
 
 impl NodeModels {
     pub fn new(node_id: String) -> Self {
-        Self { node_id, models: vec![], timestamp: now_secs() }
+        Self {
+            node_id,
+            models: vec![],
+            timestamp: now_secs(),
+        }
     }
 
     pub fn has_model(&self, model_id: &str) -> bool {
@@ -35,19 +39,24 @@ pub struct PeerModelRegistry {
 
 impl PeerModelRegistry {
     pub fn new() -> Self {
-        Self { peers: HashMap::new() }
+        Self {
+            peers: HashMap::new(),
+        }
     }
 
     pub fn update_peer(&mut self, node_models: NodeModels) {
-        println!("📦 [PeerRegistry] {} tiene {} modelos",
+        println!(
+            "📦 [PeerRegistry] {} tiene {} modelos",
             &node_models.node_id[..8.min(node_models.node_id.len())],
-            node_models.models.len());
+            node_models.models.len()
+        );
         self.peers.insert(node_models.node_id.clone(), node_models);
     }
 
     /// Peers que tienen un modelo específico
     pub fn peers_with_model(&self, model_id: &str) -> Vec<&NodeModels> {
-        self.peers.values()
+        self.peers
+            .values()
             .filter(|n| n.has_model(model_id))
             .collect()
     }
@@ -58,20 +67,26 @@ impl PeerModelRegistry {
         if peers.is_empty() {
             DownloadStrategy::Official(official_url.to_string())
         } else {
-            let peer_ids: Vec<String> = peers.iter()
-                .map(|n| n.node_id.clone())
-                .collect();
-            DownloadStrategy::PeerFirst { peers: peer_ids, fallback: official_url.to_string() }
+            let peer_ids: Vec<String> = peers.iter().map(|n| n.node_id.clone()).collect();
+            DownloadStrategy::PeerFirst {
+                peers: peer_ids,
+                fallback: official_url.to_string(),
+            }
         }
     }
 
-    pub fn peer_count(&self) -> usize { self.peers.len() }
+    pub fn peer_count(&self) -> usize {
+        self.peers.len()
+    }
 }
 
 #[derive(Debug, Clone)]
 pub enum DownloadStrategy {
     Official(String),
-    PeerFirst { peers: Vec<String>, fallback: String },
+    PeerFirst {
+        peers: Vec<String>,
+        fallback: String,
+    },
 }
 
 fn now_secs() -> u64 {

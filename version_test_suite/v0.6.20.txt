@@ -1,0 +1,2 @@
+# Conceptual math explanation with fallback-safe route
+Explica que son los limites en las matematicas y como aplicarlos en la vida real | Conceptual | false

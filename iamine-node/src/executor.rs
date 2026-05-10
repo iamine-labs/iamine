@@ -9,6 +9,7 @@ impl TaskExecutor {
     pub fn execute_task(task_id: String, task_type: String, data: String) -> TaskResponse {
         let result = match task_type.as_str() {
             "reverse_string" => Ok(data.chars().rev().collect::<String>()),
+            "test" | "echo" => Ok(data),
             "compute_hash" => {
                 let mut hasher = Sha256::new();
                 hasher.update(data.as_bytes());
@@ -36,20 +37,28 @@ impl TaskExecutor {
         match result {
             Ok(output) => {
                 println!("✅ Tarea {} completada: {}", task_id, output);
-                TaskResponse {
-                    task_id,
-                    result: output,
-                    success: true,
-                }
+                TaskResponse::legacy(task_id, output, true)
             }
             Err(e) => {
                 println!("❌ Error en tarea {}: {}", task_id, e);
-                TaskResponse {
-                    task_id,
-                    result: e,
-                    success: false,
-                }
+                TaskResponse::legacy(task_id, e, false)
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::TaskExecutor;
+
+    #[test]
+    fn test_task_execution() {
+        let response = TaskExecutor::execute_task(
+            "task-1".to_string(),
+            "reverse_string".to_string(),
+            "iamine".to_string(),
+        );
+        assert!(response.success);
+        assert_eq!(response.result, "enimai");
     }
 }

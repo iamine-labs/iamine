@@ -1,17 +1,17 @@
-mod solana_config;
 mod solana_client;
+mod solana_config;
 
-use sysinfo::System;
-use tokio::task;
-use sha2::{Sha256, Digest};
-use std::sync::Arc;
-use tokio::sync::RwLock;
+use serde_json::json;
+use sha2::{Digest, Sha256};
+use solana_client::SolanaManager;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::{Keypair, Signer};
-use serde_json::json;
 use std::convert::Infallible;
+use std::sync::Arc;
+use sysinfo::System;
+use tokio::sync::RwLock;
+use tokio::task;
 use warp::Filter;
-use solana_client::SolanaManager;
 
 #[derive(Clone, Debug)]
 struct NodeState {
@@ -101,8 +101,10 @@ async fn main() {
             reward: 50 + counter * 10,
         };
 
-        println!("🔵 Challenge {}: data='{}' reward={} $MIND",
-            challenge.id, challenge.data, challenge.reward);
+        println!(
+            "🔵 Challenge {}: data='{}' reward={} $MIND",
+            challenge.id, challenge.data, challenge.reward
+        );
 
         // Ejecutar localmente (simular worker)
         let computed = compute_sha256(challenge.data.as_bytes());
@@ -116,8 +118,10 @@ async fn main() {
                 let mut state = ns.write().await;
                 state.tasks_completed += 1;
                 state.total_earned += challenge.reward;
-                println!("💰 Total ganado: {} $MIND | Tareas: {}",
-                    state.total_earned, state.tasks_completed);
+                println!(
+                    "💰 Total ganado: {} $MIND | Tareas: {}",
+                    state.total_earned, state.tasks_completed
+                );
             }
 
             // Reportar a Solana
@@ -153,7 +157,9 @@ async fn start_web_server(node_state: Arc<RwLock<NodeState>>) {
         .await;
 }
 
-fn with_state(state: Arc<RwLock<NodeState>>) -> impl Filter<Extract = (Arc<RwLock<NodeState>>,), Error = Infallible> + Clone {
+fn with_state(
+    state: Arc<RwLock<NodeState>>,
+) -> impl Filter<Extract = (Arc<RwLock<NodeState>>,), Error = Infallible> + Clone {
     warp::any().map(move || Arc::clone(&state))
 }
 

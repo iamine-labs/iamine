@@ -1,0 +1,2 @@
+# Symbolic integral classification
+Evalúa la integral definida de x^2 entre 0 y 3 | SymbolicMath | false

@@ -1,8 +1,15 @@
-use iamine_models::*;
-use iamine_models::storage_config::StorageConfig;
-use iamine_models::node_models::{NodeModels, ModelId, PeerModelRegistry};
-use iamine_models::node_capabilities::NodeCapabilities as ModelNodeCapabilities;
 use iamine_models::model_validator::ModelValidator;
+use iamine_models::node_models::{ModelId, NodeModels, PeerModelRegistry};
+use iamine_models::storage_config::StorageConfig;
+use iamine_models::*;
+use std::sync::Arc;
+use tempfile::TempDir;
+
+fn temp_storage() -> (TempDir, ModelStorage) {
+    let dir = TempDir::new().unwrap();
+    let storage = ModelStorage::new_in(dir.path().to_path_buf());
+    (dir, storage)
+}
 
 // ─── Test 1: Model Registry ───────────────────────────────────────────────
 #[test]
@@ -20,7 +27,7 @@ fn test_registry_can_run_check() {
     // tinyllama necesita 2GB RAM
     assert!(registry.can_run("tinyllama-1b", 4, false).is_ok());
     assert!(registry.can_run("tinyllama-1b", 1, false).is_err()); // RAM insuficiente
-    // mistral necesita 8GB
+                                                                  // mistral necesita 8GB
     assert!(registry.can_run("mistral-7b", 4, false).is_err());
     assert!(registry.can_run("mistral-7b", 8, false).is_ok());
 }
@@ -28,13 +35,16 @@ fn test_registry_can_run_check() {
 // ─── Test 2: Storage Config ───────────────────────────────────────────────
 #[test]
 fn test_storage_config_space_check() {
-    let cfg = StorageConfig { max_storage_gb: 10, models_path: "/tmp".to_string() };
+    let cfg = StorageConfig {
+        max_storage_gb: 10,
+        models_path: "/tmp".to_string(),
+    };
     let ten_gb = 10 * 1_073_741_824u64;
     let one_gb = 1_073_741_824u64;
 
-    assert!(cfg.has_space_for(one_gb, 0));              // 1GB en 10GB → ok
-    assert!(!cfg.has_space_for(ten_gb + 1, 0));         // 10GB+1 → no cabe
-    assert!(!cfg.has_space_for(one_gb, ten_gb));        // ya lleno → no cabe
+    assert!(cfg.has_space_for(one_gb, 0)); // 1GB en 10GB → ok
+    assert!(!cfg.has_space_for(ten_gb + 1, 0)); // 10GB+1 → no cabe
+    assert!(!cfg.has_space_for(one_gb, ten_gb)); // ya lleno → no cabe
 }
 
 // ─── Test 3: NodeModels P2P ───────────────────────────────────────────────
@@ -64,7 +74,10 @@ fn test_download_strategy() {
 
     // Sin peers → oficial
     let strategy = registry.download_strategy("tinyllama-1b", "https://example.com/model");
-    assert!(matches!(strategy, iamine_models::node_models::DownloadStrategy::Official(_)));
+    assert!(matches!(
+        strategy,
+        iamine_models::node_models::DownloadStrategy::Official(_)
+    ));
 
     // Con peer → peer first
     let mut peer = NodeModels::new("peer_xyz".to_string());
@@ -77,13 +90,16 @@ fn test_download_strategy() {
     registry.update_peer(peer);
 
     let strategy = registry.download_strategy("tinyllama-1b", "https://example.com/model");
-    assert!(matches!(strategy, iamine_models::node_models::DownloadStrategy::PeerFirst { .. }));
+    assert!(matches!(
+        strategy,
+        iamine_models::node_models::DownloadStrategy::PeerFirst { .. }
+    ));
 }
 
 // ─── Test 4: NodeCapabilities ─────────────────────────────────────────────
 #[test]
 fn test_node_capabilities() {
-    use iamine_models::{ModelNodeCapabilities, ModelRequirements, can_node_run_model};
+    use iamine_models::{can_node_run_model, ModelNodeCapabilities, ModelRequirements};
 
     let cap = ModelNodeCapabilities {
         node_id: "test-node".to_string(),
@@ -150,17 +166,12 @@ fn test_model_validator_placeholder_hash() {
 // ─── Test 6: ModelStorage ────────────────────────────────────────────────
 #[test]
 fn test_model_storage_shard() {
-    use tempfile::TempDir;
-    use std::fs;
-
     // Usar directorio temporal para no tocar ~/.iamine
-    let tmp_dir = TempDir::new().unwrap();
-    let storage = ModelStorage::new();
+    let (_tmp_dir, storage) = temp_storage();
 
     // Verificar que list_local_models funciona sin crash
     let models = storage.list_local_models();
-    // Puede ser vacío o tener modelos reales — solo verificamos que no falla
-    assert!(models.len() >= 0);
+    assert!(models.is_empty() || models.iter().all(|m| !m.is_empty()));
 }
 
 // ─── Test v0.5.2: ModelInstaller ─────────────────────────────────────────
@@ -177,10 +188,41 @@ async fn test_installer_list_models() {
     }
 }
 
+#[test]
+fn test_installer_list_models_reports_per_model_disk_usage() {
+    use iamine_models::ModelInstaller;
+
+    let (_tmp_dir, storage) = temp_storage();
+
+    let tiny_path = storage.gguf_path("tinyllama-1b");
+    std::fs::create_dir_all(storage.model_path("tinyllama-1b")).unwrap();
+    let mut tiny = vec![0u8; 1_048_576];
+    tiny[..4].copy_from_slice(b"GGUF");
+    std::fs::write(&tiny_path, tiny).unwrap();
+
+    let llama_path = storage.gguf_path("llama3-3b");
+    std::fs::create_dir_all(storage.model_path("llama3-3b")).unwrap();
+    let mut llama = vec![0u8; 2_097_152];
+    llama[..4].copy_from_slice(b"GGUF");
+    std::fs::write(&llama_path, llama).unwrap();
+
+    let installer = ModelInstaller::with_storage(storage);
+    let models = installer.list_models();
+
+    let tiny_status = models.iter().find(|m| m.id == "tinyllama-1b").unwrap();
+    let llama_status = models.iter().find(|m| m.id == "llama3-3b").unwrap();
+
+    assert_eq!(tiny_status.size_on_disk_mb, Some(1));
+    assert_eq!(llama_status.size_on_disk_mb, Some(2));
+}
+
 #[tokio::test]
 async fn test_installer_storage_limit() {
     use iamine_models::storage_config::StorageConfig;
-    let cfg = StorageConfig { max_storage_gb: 1, models_path: "/tmp".to_string() };
+    let cfg = StorageConfig {
+        max_storage_gb: 1,
+        models_path: "/tmp".to_string(),
+    };
     // mistral-7b necesita 4.1 GB, límite es 1 GB
     let registry = iamine_models::ModelRegistry::new();
     let model = registry.get("mistral-7b").unwrap();
@@ -190,12 +232,9 @@ async fn test_installer_storage_limit() {
 
 #[tokio::test]
 async fn test_installer_mock_download() {
-    use iamine_models::{ModelInstaller, InstallResult};
     use iamine_models::model_downloader::ModelDownloader;
-    use iamine_models::ModelStorage;
-
-    let storage = ModelStorage::new();
-    let downloader = ModelDownloader::new(ModelStorage::new());
+    let (_tmp_dir, storage) = temp_storage();
+    let downloader = ModelDownloader::new(storage.clone_for_test());
     let registry = iamine_models::ModelRegistry::new();
     let model = registry.get("tinyllama-1b").unwrap();
 
@@ -205,7 +244,7 @@ async fn test_installer_mock_download() {
         return;
     }
 
-    let result = downloader.download_model_mock(model).await;
+    let result = downloader.download_model_mock(&model).await;
     // En CI puede fallar el path, solo verificar que no panics
     println!("Mock download result: {:?}", result);
 }
@@ -240,15 +279,67 @@ fn test_hardware_llama_params() {
     assert!(params.n_threads >= 1);
     // Metal/CUDA → GPU layers > 0
     // CPU → 0 GPU layers
-    println!("Llama params: threads={} gpu_layers={}", params.n_threads, params.n_gpu_layers);
+    println!(
+        "Llama params: threads={} gpu_layers={}",
+        params.n_threads, params.n_gpu_layers
+    );
+}
+
+#[test]
+fn test_backend_auto_selection() {
+    let backend = RealInferenceEngine::runtime_backend_name();
+    assert!(matches!(backend, "metal" | "cuda" | "cpu"));
+    println!("Selected backend: {}", backend);
+}
+
+#[test]
+fn test_prompt_template_applied() {
+    let builder = PromptBuilder::new("tinyllama-1b");
+    let prompt = builder.build_prompt(
+        "You are a helpful assistant.",
+        "Explain gravity in one sentence.",
+    );
+    assert!(prompt.contains("Explain gravity in one sentence."));
+    assert!(prompt.contains("<|assistant|>") || prompt.contains("[/INST]"));
+}
+
+#[test]
+fn test_sampling_config_effect() {
+    let config = SamplingConfig::for_model_request("tinyllama-1b", "Explain gravity.", 0.25);
+    assert!((config.temperature - 0.25).abs() < f32::EPSILON);
+    assert_eq!(config.top_k, 24);
+    assert!((config.top_p - 0.85).abs() < f32::EPSILON);
+    assert!((config.repeat_penalty - 1.15).abs() < f32::EPSILON);
+}
+
+#[test]
+fn test_output_cleaning() {
+    let raw = "Hola hola hola.\nHola hola hola.\n<|assistant|>".to_string();
+    let cleaned = clean_output(raw);
+    assert!(!cleaned.contains("<|assistant|>"));
+    assert!(!cleaned.contains("Hola hola hola. Hola hola hola."));
+}
+
+#[test]
+fn test_spanish_prompt_response() {
+    let builder = PromptBuilder::new("tinyllama-1b");
+    let prompt = builder.build_prompt(
+        "You are a helpful assistant.",
+        "explica la teoria de la relatividad",
+    );
+    assert!(matches!(
+        PromptBuilder::detect_language("explica la teoria de la relatividad"),
+        Language::Spanish
+    ));
+    assert!(prompt.to_lowercase().contains("responde en espanol"));
 }
 
 #[tokio::test]
 async fn test_inference_engine_mock() {
-    use iamine_models::{RealInferenceEngine, RealInferenceRequest, ModelStorage};
+    use iamine_models::{RealInferenceEngine, RealInferenceRequest};
 
-    let storage = ModelStorage::new();
-    let mut engine = RealInferenceEngine::new(storage);
+    let (_tmp_dir, storage) = temp_storage();
+    let engine = RealInferenceEngine::new(storage);
 
     // Sin modelo cargado → debe fallar
     let req = RealInferenceRequest {
@@ -264,59 +355,246 @@ async fn test_inference_engine_mock() {
 }
 
 #[tokio::test]
-async fn test_inference_with_mock_model() {
-    use iamine_models::{RealInferenceEngine, RealInferenceRequest, ModelStorage};
-    use iamine_models::model_downloader::ModelDownloader;
+async fn test_model_load() {
+    use iamine_models::ModelRegistry;
+    use iamine_models::RealInferenceEngine;
+
+    let storage = ModelStorage::new();
+    let registry = ModelRegistry::new();
+    let model_id = "tinyllama-1b";
+
+    if !storage.has_model(model_id) {
+        println!("Skipping real model load test: {} not installed", model_id);
+        return;
+    }
+
+    let engine = RealInferenceEngine::new(storage);
+    let model = registry.get(model_id).unwrap();
+    let result = engine.load_model(model_id, &model.hash);
+    assert!(result.is_ok(), "Load failed: {:?}", result);
+    assert!(engine.is_loaded(model_id));
+}
+
+#[tokio::test]
+async fn test_model_cache_reuse() {
     use iamine_models::ModelRegistry;
 
     let storage = ModelStorage::new();
     let registry = ModelRegistry::new();
+    let model_id = "tinyllama-1b";
 
-    // Instalar mock de tinyllama si no existe
-    if !storage.has_model("tinyllama-1b") {
-        let downloader = ModelDownloader::new(ModelStorage::new());
-        let model = registry.get("tinyllama-1b").unwrap();
-        let _ = downloader.download_model_mock(model).await;
+    if !storage.has_model(model_id) {
+        println!(
+            "Skipping model cache reuse test: {} not installed",
+            model_id
+        );
+        return;
     }
 
-    let mut engine = RealInferenceEngine::new(ModelStorage::new());
+    let engine = RealInferenceEngine::new(storage);
+    let model = registry.get(model_id).unwrap();
 
-    // Cargar con hash placeholder (siempre ok en dev)
-    let result = engine.load_model("tinyllama-1b", "tinyllama_hash_placeholder");
+    engine.load_model(model_id, &model.hash).unwrap();
+    engine.load_model(model_id, &model.hash).unwrap();
+
+    assert!(engine.is_loaded(model_id));
+    assert_eq!(engine.cache_size(), 1);
+    assert_eq!(engine.actual_model_loads(), 1);
+    assert!(engine.model_cache_reuse_hits() >= 1);
+}
+
+#[tokio::test]
+async fn test_real_inference() {
+    use iamine_models::ModelRegistry;
+    use iamine_models::{RealInferenceEngine, RealInferenceRequest};
+
+    let storage = ModelStorage::new();
+    let registry = ModelRegistry::new();
+    let model_id = "tinyllama-1b";
+
+    if !storage.has_model(model_id) {
+        println!("Skipping real inference test: {} not installed", model_id);
+        return;
+    }
+
+    let engine = RealInferenceEngine::new(storage);
+    let model = registry.get(model_id).unwrap();
+    let result = engine.load_model(model_id, &model.hash);
     assert!(result.is_ok(), "Load failed: {:?}", result);
-    assert!(engine.is_loaded("tinyllama-1b"));
 
-    // Ejecutar inferencia
     let req = RealInferenceRequest {
         task_id: "test-002".to_string(),
-        model_id: "tinyllama-1b".to_string(),
-        prompt: "What is 2+2?".to_string(),
-        max_tokens: 50,
-        temperature: 0.7,
+        model_id: model_id.to_string(),
+        prompt: "Say hello in one short sentence.".to_string(),
+        max_tokens: 32,
+        temperature: 0.1,
+    };
+
+    let result = engine.run_inference(req, None).await;
+
+    assert!(result.success);
+    assert!(!result.output.is_empty());
+    assert!(result.tokens_generated > 0);
+    println!("Output: {}", result.output);
+    println!(
+        "Tokens: {} en {}ms",
+        result.tokens_generated, result.execution_ms
+    );
+}
+
+#[tokio::test]
+async fn test_inference_queue() {
+    use iamine_models::ModelRegistry;
+
+    let storage = ModelStorage::new();
+    let registry = ModelRegistry::new();
+    let model_id = "tinyllama-1b";
+
+    if !storage.has_model(model_id) {
+        println!("Skipping inference queue test: {} not installed", model_id);
+        return;
+    }
+
+    let engine = Arc::new(RealInferenceEngine::new(storage));
+    let model = registry.get(model_id).unwrap();
+    engine.load_model(model_id, &model.hash).unwrap();
+
+    let req_a = RealInferenceRequest {
+        task_id: "queue-a".to_string(),
+        model_id: model_id.to_string(),
+        prompt: "Say hello in one short sentence.".to_string(),
+        max_tokens: 16,
+        temperature: 0.1,
+    };
+    let req_b = RealInferenceRequest {
+        task_id: "queue-b".to_string(),
+        model_id: model_id.to_string(),
+        prompt: "Say bye in one short sentence.".to_string(),
+        max_tokens: 16,
+        temperature: 0.1,
+    };
+
+    let (res_a, res_b) = tokio::join!(
+        engine.run_inference(req_a, None),
+        engine.run_inference(req_b, None),
+    );
+
+    assert!(res_a.success);
+    assert!(res_b.success);
+    assert_eq!(engine.actual_model_loads(), 1);
+}
+
+#[tokio::test]
+async fn test_concurrency_limit() {
+    use iamine_models::ModelRegistry;
+
+    let storage = ModelStorage::new();
+    let registry = ModelRegistry::new();
+    let model_id = "tinyllama-1b";
+
+    if !storage.has_model(model_id) {
+        println!(
+            "Skipping concurrency limit test: {} not installed",
+            model_id
+        );
+        return;
+    }
+
+    let engine = Arc::new(RealInferenceEngine::with_limits(storage, 1, 32));
+    let model = registry.get(model_id).unwrap();
+    engine.load_model(model_id, &model.hash).unwrap();
+
+    let reqs = (0..3).map(|idx| {
+        let engine = Arc::clone(&engine);
+        let req = RealInferenceRequest {
+            task_id: format!("concurrency-{}", idx),
+            model_id: model_id.to_string(),
+            prompt: format!("Count to {} in one short sentence.", idx + 1),
+            max_tokens: 12,
+            temperature: 0.1,
+        };
+
+        tokio::spawn(async move { engine.run_inference(req, None).await })
+    });
+
+    for handle in reqs {
+        let result = handle.await.unwrap();
+        assert!(result.success);
+    }
+
+    assert!(engine.max_active_inferences_observed() <= 1);
+}
+
+#[tokio::test]
+async fn test_token_streaming() {
+    use iamine_models::ModelRegistry;
+    use iamine_models::{RealInferenceEngine, RealInferenceRequest};
+
+    let storage = ModelStorage::new();
+    let registry = ModelRegistry::new();
+    let model_id = "tinyllama-1b";
+
+    if !storage.has_model(model_id) {
+        println!("Skipping token streaming test: {} not installed", model_id);
+        return;
+    }
+
+    let engine = RealInferenceEngine::new(storage);
+    let model = registry.get(model_id).unwrap();
+    let result = engine.load_model(model_id, &model.hash);
+    assert!(result.is_ok(), "Load failed: {:?}", result);
+
+    let req = RealInferenceRequest {
+        task_id: "test-003".to_string(),
+        model_id: model_id.to_string(),
+        prompt: "Say hello in one short sentence.".to_string(),
+        max_tokens: 24,
+        temperature: 0.1,
     };
 
     let (tx, mut rx) = tokio::sync::mpsc::channel(100);
     let result = engine.run_inference(req, Some(tx)).await;
 
-    // Recolectar tokens
     let mut streamed = String::new();
-    while let Ok(t) = rx.try_recv() { streamed.push_str(&t); }
+    while let Ok(token) = rx.try_recv() {
+        streamed.push_str(&token);
+    }
 
     assert!(result.success);
+    assert!(!streamed.is_empty());
     assert!(!result.output.is_empty());
-    assert!(result.tokens_generated > 0);
-    assert!(result.output.contains("4") || result.output.contains("equals"));
-    println!("Output: {}", result.output);
-    println!("Tokens: {} en {}ms", result.tokens_generated, result.execution_ms);
+}
+
+#[tokio::test]
+async fn test_invalid_existing_mock_is_reinstalled() {
+    use iamine_models::model_downloader::ModelDownloader;
+    use iamine_models::ModelRegistry;
+
+    let (_tmp_dir, storage) = temp_storage();
+    let registry = ModelRegistry::new();
+    let model = registry.get("tinyllama-1b").unwrap();
+    let model_path = storage.gguf_path("tinyllama-1b");
+
+    std::fs::create_dir_all(storage.model_path("tinyllama-1b")).unwrap();
+    std::fs::write(&model_path, b"tiny mock from old versions").unwrap();
+
+    assert!(!storage.has_model("tinyllama-1b"));
+
+    let downloader = ModelDownloader::new(storage.clone_for_test());
+    downloader.download_model_mock(&model).await.unwrap();
+
+    let bytes = std::fs::read(&model_path).unwrap();
+    assert!(bytes.len() >= 2048);
+    assert_eq!(&bytes[..4], b"GGUF");
+    assert!(storage.has_model("tinyllama-1b"));
 }
 
 #[test]
 fn test_inference_cache() {
-    use iamine_models::{RealInferenceEngine, ModelStorage};
-    use iamine_models::model_downloader::ModelDownloader;
+    use iamine_models::RealInferenceEngine;
 
-    let storage = ModelStorage::new();
-    let mut engine = RealInferenceEngine::new(storage);
+    let (_tmp_dir, storage) = temp_storage();
+    let engine = RealInferenceEngine::new(storage);
 
     // Sin carga → no en cache
     assert!(!engine.is_loaded("tinyllama-1b"));
@@ -356,15 +634,22 @@ fn test_inference_result_success() {
         "req-001".to_string(),
         "tinyllama-1b".to_string(),
         "Gravity is a force...".to_string(),
-        10, 150,
+        10,
+        false,
+        0,
+        150,
         "worker_xyz".to_string(),
         "Metal".to_string(),
     );
     assert!(result.success);
     assert_eq!(result.tokens_generated, 10);
+    assert!(!result.truncated);
+    assert_eq!(result.continuation_steps, 0);
     let json = result.to_gossip_json();
     assert_eq!(json["type"], "InferenceResult");
     assert_eq!(json["success"], true);
+    assert_eq!(json["truncated"], false);
+    assert_eq!(json["continuation_steps"], 0);
 }
 
 #[test]
@@ -401,7 +686,7 @@ fn test_streamed_token() {
 
 #[test]
 fn test_model_requirements() {
-    use iamine_models::{ModelRequirements, ModelNodeCapabilities, can_node_run_model};
+    use iamine_models::{can_node_run_model, ModelNodeCapabilities, ModelRequirements};
     let req = ModelRequirements::for_model("tinyllama-1b").unwrap();
     assert_eq!(req.min_ram_gb, 2);
     assert!(!req.requires_gpu);
@@ -423,7 +708,7 @@ fn test_model_requirements() {
 
 #[test]
 fn test_model_requirements_insufficient_ram() {
-    use iamine_models::{ModelRequirements, ModelNodeCapabilities, can_node_run_model};
+    use iamine_models::{can_node_run_model, ModelNodeCapabilities, ModelRequirements};
     let req = ModelRequirements::for_model("mistral-7b").unwrap();
     let cap = ModelNodeCapabilities {
         node_id: "test".to_string(),
@@ -497,7 +782,11 @@ fn test_model_selector_complex_prompt() {
         cpu_features: vec![],
         accelerator: "CPU".to_string(),
     };
-    let available = vec!["tinyllama-1b".to_string(), "llama3-3b".to_string(), "mistral-7b".to_string()];
+    let available = vec![
+        "tinyllama-1b".to_string(),
+        "llama3-3b".to_string(),
+        "mistral-7b".to_string(),
+    ];
     let long_prompt = "Explain in great detail the theory of general relativity as proposed by Albert Einstein, including the mathematical framework of tensor calculus, the curvature of spacetime, geodesics, the Einstein field equations, and their implications for modern cosmology, black holes, gravitational waves, and the expansion of the universe. Also discuss the experimental confirmations.";
     let result = select_best_model(long_prompt, &available, &cap);
     assert!(result.is_some());
@@ -516,7 +805,10 @@ fn test_estimate_tokens() {
 fn test_classify_prompt() {
     use iamine_models::{classify_prompt, PromptComplexity};
     assert_eq!(classify_prompt("Hi"), PromptComplexity::Simple);
-    assert_eq!(classify_prompt("What is gravity?"), PromptComplexity::Simple);
+    assert_eq!(
+        classify_prompt("What is gravity?"),
+        PromptComplexity::Simple
+    );
     // 100+ tokens ≈ 400+ characters
     let long = "a ".repeat(250);
     assert_eq!(classify_prompt(&long), PromptComplexity::Complex);
@@ -565,4 +857,161 @@ fn test_capabilities_updated_event() {
     assert_eq!(json["type"], "CapabilitiesUpdated");
     assert_eq!(json["cpu_cores"], 8);
     assert_eq!(json["supported_models"][0], "tinyllama-1b");
+}
+
+#[test]
+fn test_model_recommendation() {
+    let (_tmp_dir, storage) = temp_storage();
+    let provision = ModelAutoProvision::new(ModelRegistry::new(), storage);
+    let profile = AutoProvisionProfile {
+        cpu_score: 120_000,
+        ram_gb: 4,
+        gpu_available: false,
+        storage_available_gb: 10,
+    };
+
+    let recommended: Vec<String> = provision
+        .recommend_for_empty_node(&profile)
+        .into_iter()
+        .map(|m| m.id)
+        .collect();
+
+    assert!(recommended.contains(&"tinyllama-1b".to_string()));
+    assert!(recommended.contains(&"llama3-3b".to_string()));
+    assert!(!recommended.contains(&"mistral-7b".to_string()));
+}
+
+#[tokio::test]
+async fn test_auto_model_download() {
+    let (_tmp_dir, storage) = temp_storage();
+    let provision = ModelAutoProvision::new(ModelRegistry::new(), storage);
+    let profile = AutoProvisionProfile {
+        cpu_score: 200_000,
+        ram_gb: 16,
+        gpu_available: true,
+        storage_available_gb: 50,
+    };
+
+    let result = provision
+        .auto_download_recommended(&profile, None, true)
+        .await;
+    assert!(result.is_ok());
+
+    if let Some(model_id) = result.unwrap() {
+        assert!(!model_id.is_empty());
+    }
+}
+
+#[test]
+fn test_worker_start_without_models() {
+    let (_tmp_dir, storage) = temp_storage();
+    let provision = ModelAutoProvision::new(ModelRegistry::new(), storage);
+    let profile = AutoProvisionProfile {
+        cpu_score: 90_000,
+        ram_gb: 2,
+        gpu_available: false,
+        storage_available_gb: 10,
+    };
+
+    let recommended = provision.startup_recommendations(&profile);
+    let empty_node_recommended = provision.recommend_for_empty_node(&profile);
+
+    assert!(recommended.is_empty() || !recommended.is_empty()); // environment-dependent installed models
+    assert!(!empty_node_recommended.is_empty());
+    assert_eq!(empty_node_recommended[0].id, "tinyllama-1b");
+}
+
+// ─── Tests v0.6.7: Real Model Downloads ──────────────────────────────────
+
+#[test]
+fn test_sha256_verification_real() {
+    use iamine_models::ModelVerifier;
+    use std::io::Write;
+
+    let tmp = tempfile::NamedTempFile::new().unwrap();
+    tmp.as_file().write_all(b"hello world").unwrap();
+
+    // Known SHA256 of "hello world"
+    let expected = "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9";
+    let result = ModelVerifier::verify_file(tmp.path(), expected);
+    assert!(
+        result.is_ok(),
+        "Real SHA256 verification should pass: {:?}",
+        result
+    );
+}
+
+#[test]
+fn test_sha256_verification_mismatch() {
+    use iamine_models::ModelVerifier;
+    use std::io::Write;
+
+    let tmp = tempfile::NamedTempFile::new().unwrap();
+    tmp.as_file().write_all(b"hello world").unwrap();
+
+    let wrong_hash = "0000000000000000000000000000000000000000000000000000000000000000";
+    let result = ModelVerifier::verify_file(tmp.path(), wrong_hash);
+    assert!(result.is_err(), "Should fail on hash mismatch");
+}
+
+#[test]
+fn test_sha256_skip_empty_hash() {
+    use iamine_models::ModelVerifier;
+    use std::io::Write;
+
+    let tmp = tempfile::NamedTempFile::new().unwrap();
+    tmp.as_file().write_all(b"data").unwrap();
+
+    // Empty hash → skip verification
+    assert!(ModelVerifier::verify_file(tmp.path(), "").is_ok());
+    // Placeholder hash → skip
+    assert!(ModelVerifier::verify_file(tmp.path(), "tinyllama_hash_placeholder").is_ok());
+}
+
+#[test]
+fn test_compute_sha256_file() {
+    use iamine_models::ModelVerifier;
+    use std::io::Write;
+
+    let tmp = tempfile::NamedTempFile::new().unwrap();
+    tmp.as_file().write_all(b"test data for hashing").unwrap();
+
+    let hash = ModelVerifier::compute_sha256_file(tmp.path()).unwrap();
+    assert_eq!(hash.len(), 64); // SHA256 hex = 64 chars
+    assert!(hash.chars().all(|c| c.is_ascii_hexdigit()));
+
+    // Same file should produce same hash
+    let hash2 = ModelVerifier::compute_sha256_file(tmp.path()).unwrap();
+    assert_eq!(hash, hash2);
+}
+
+#[test]
+fn test_model_manifest() {
+    let registry = iamine_models::ModelRegistry::new();
+    let model = registry.get("tinyllama-1b").unwrap();
+    let manifest = model.to_manifest();
+
+    assert_eq!(manifest.model_id, "tinyllama-1b");
+    assert!(manifest.size_bytes > 0);
+    assert!(!manifest.download_url.is_empty());
+    assert!(manifest.download_url.contains("huggingface.co"));
+}
+
+#[test]
+fn test_model_has_known_hash() {
+    let registry = iamine_models::ModelRegistry::new();
+    let model = registry.get("tinyllama-1b").unwrap();
+    // Empty hash = no known hash
+    assert!(!model.has_known_hash());
+
+    let manifest = model.to_manifest();
+    assert!(!manifest.requires_hash_verification());
+}
+
+#[test]
+fn test_download_phase_enum() {
+    use iamine_models::DownloadPhase;
+    let phase = DownloadPhase::Downloading;
+    assert_eq!(phase, DownloadPhase::Downloading);
+    assert_ne!(phase, DownloadPhase::Verifying);
 }

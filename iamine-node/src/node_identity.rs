@@ -23,7 +23,9 @@ impl NodeIdentity {
                 .expect("node_key corrupto — borra ~/.iamine/node_key")
         } else {
             let kp = identity::Keypair::generate_ed25519();
-            let bytes = kp.to_protobuf_encoding().expect("Error serializando keypair");
+            let bytes = kp
+                .to_protobuf_encoding()
+                .expect("Error serializando keypair");
             fs::write(&key_path, &bytes).expect("Error guardando node_key");
             println!("🆕 Identidad nueva generada → ~/.iamine/node_key");
             kp
@@ -36,6 +38,26 @@ impl NodeIdentity {
         println!("🔑 Identidad cargada:");
         println!("   Peer ID: {}", peer_id);
         println!("   Wallet:  {}", wallet_address);
+
+        Self {
+            node_id: peer_id.to_string(),
+            peer_id,
+            keypair,
+            public_key,
+            wallet_address,
+        }
+    }
+
+    pub fn ephemeral(reason: &str) -> Self {
+        let keypair = identity::Keypair::generate_ed25519();
+        let peer_id = PeerId::from(keypair.public());
+        let public_key = keypair.public().encode_protobuf();
+        let wallet_address = format!("iamine1{}", &peer_id.to_string()[..16]);
+
+        println!("🔑 Identidad efimera generada:");
+        println!("   Peer ID: {}", peer_id);
+        println!("   Wallet:  {}", wallet_address);
+        println!("   Reason:  {}", reason);
 
         Self {
             node_id: peer_id.to_string(),

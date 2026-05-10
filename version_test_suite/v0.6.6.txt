@@ -1,0 +1,2 @@
+# Summarization prompt
+genera un resumen de la relatividad | Summarization | false

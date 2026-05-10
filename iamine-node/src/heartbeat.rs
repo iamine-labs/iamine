@@ -7,7 +7,9 @@ pub struct HeartbeatService {
 
 impl HeartbeatService {
     pub fn new() -> Self {
-        Self { start_time: Instant::now() }
+        Self {
+            start_time: Instant::now(),
+        }
     }
 
     pub fn uptime_secs(&self) -> u64 {

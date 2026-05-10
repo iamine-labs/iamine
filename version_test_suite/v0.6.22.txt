@@ -1,0 +1,2 @@
+# Exact scalar prompt remains strict
+6*9 | ExactMath | true

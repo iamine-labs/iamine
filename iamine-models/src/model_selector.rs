@@ -1,6 +1,6 @@
-use serde::{Deserialize, Serialize};
+use crate::model_requirements::{can_node_run_model, ModelRequirements};
 use crate::node_capabilities::NodeCapabilities;
-use crate::model_requirements::{ModelRequirements, can_node_run_model};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelInfo {
@@ -13,9 +13,24 @@ pub struct ModelInfo {
 impl ModelInfo {
     pub fn registry() -> Vec<Self> {
         vec![
-            Self { model_id: "tinyllama-1b".to_string(), size_gb: 0.6, quality_score: 30, speed_score: 95 },
-            Self { model_id: "llama3-3b".to_string(), size_gb: 1.7, quality_score: 65, speed_score: 60 },
-            Self { model_id: "mistral-7b".to_string(), size_gb: 3.8, quality_score: 90, speed_score: 30 },
+            Self {
+                model_id: "tinyllama-1b".to_string(),
+                size_gb: 0.6,
+                quality_score: 30,
+                speed_score: 95,
+            },
+            Self {
+                model_id: "llama3-3b".to_string(),
+                size_gb: 1.7,
+                quality_score: 65,
+                speed_score: 60,
+            },
+            Self {
+                model_id: "mistral-7b".to_string(),
+                size_gb: 3.8,
+                quality_score: 90,
+                speed_score: 30,
+            },
         ]
     }
 }
@@ -29,9 +44,9 @@ pub fn estimate_tokens(prompt: &str) -> usize {
 /// Clasificar complejidad del prompt
 #[derive(Debug, Clone, PartialEq)]
 pub enum PromptComplexity {
-    Simple,   // < 20 tokens
-    Medium,   // 20-100 tokens
-    Complex,  // > 100 tokens
+    Simple,  // < 20 tokens
+    Medium,  // 20-100 tokens
+    Complex, // > 100 tokens
 }
 
 pub fn classify_prompt(prompt: &str) -> PromptComplexity {
@@ -66,7 +81,8 @@ pub fn select_best_model(
     let registry = ModelInfo::registry();
 
     // Filtrar modelos que el nodo puede ejecutar
-    let runnable: Vec<&ModelInfo> = registry.iter()
+    let runnable: Vec<&ModelInfo> = registry
+        .iter()
         .filter(|m| available_models.contains(&m.model_id))
         .filter(|m| {
             ModelRequirements::for_model(&m.model_id)
@@ -87,11 +103,15 @@ pub fn select_best_model(
         }
         PromptComplexity::Medium => {
             // Balance calidad/velocidad
-            runnable.iter().max_by_key(|m| m.quality_score + m.speed_score)
+            runnable
+                .iter()
+                .max_by_key(|m| m.quality_score + m.speed_score)
         }
         PromptComplexity::Complex => {
             // Priorizar calidad fuertemente
-            runnable.iter().max_by_key(|m| m.quality_score * 3 + m.speed_score)
+            runnable
+                .iter()
+                .max_by_key(|m| m.quality_score * 3 + m.speed_score)
         }
     };
 

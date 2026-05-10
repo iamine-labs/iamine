@@ -35,23 +35,21 @@ pub enum TaskType {
 impl TaskType {
     pub fn execute(&self, data: &str) -> Result<String, String> {
         match self {
-            TaskType::ReverseString => {
-                Ok(data.chars().rev().collect())
-            }
+            TaskType::ReverseString => Ok(data.chars().rev().collect()),
             TaskType::ComputeHash => {
-                use sha2::{Sha256, Digest};
+                use sha2::{Digest, Sha256};
                 let mut hasher = Sha256::new();
                 hasher.update(data.as_bytes());
                 let result = hasher.finalize();
                 Ok(format!("{:x}", result))
             }
             TaskType::ValidateChallenge { expected_hash } => {
-                use sha2::{Sha256, Digest};
+                use sha2::{Digest, Sha256};
                 let mut hasher = Sha256::new();
                 hasher.update(data.as_bytes());
                 let result = hasher.finalize();
                 let computed = format!("{:x}", result);
-                
+
                 if computed == *expected_hash {
                     Ok(computed)
                 } else {

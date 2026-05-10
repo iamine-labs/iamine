@@ -34,7 +34,10 @@ impl ModelInstalledEvent {
         Self {
             node_id: node_id.to_string(),
             model_id: model_id.to_string(),
-            timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
+            timestamp: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
             size_bytes,
             hash: hash.to_string(),
         }
@@ -57,7 +60,10 @@ impl ModelRemovedEvent {
         Self {
             node_id: node_id.to_string(),
             model_id: model_id.to_string(),
-            timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
+            timestamp: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
         }
     }
 

@@ -1,0 +1,2 @@
+# Matrix reasoning should avoid strict normalization
+Multiplica la matriz A=[[1,2],[3,4]] por la matriz B=[[2,0],[1,2]] | SymbolicMath | false

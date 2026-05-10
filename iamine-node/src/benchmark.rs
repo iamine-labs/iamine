@@ -1,12 +1,12 @@
-use std::time::Instant;
+use sha2::{Digest, Sha256};
 use std::io::Write;
-use sha2::{Sha256, Digest};
+use std::time::Instant;
 
 #[derive(Debug, Clone)]
 pub struct NodeBenchmark {
-    pub cpu_score: f64,        // operaciones/segundo
+    pub cpu_score: f64, // operaciones/segundo
     pub ram_available_gb: u64,
-    pub disk_speed_mb: f64,    // MB/s escritura
+    pub disk_speed_mb: f64, // MB/s escritura
     pub gpu_available: bool,
     pub gpu_vram_gb: u64,
 }
@@ -41,8 +41,10 @@ impl NodeBenchmark {
         let ram_slots = self.ram_available_gb.max(1) as usize;
         let final_slots = slots.min(ram_slots);
 
-        println!("⚡ Worker slots calculados: {} (cpu_score={:.0}, ram={}GB, cores={})",
-            final_slots, self.cpu_score, self.ram_available_gb, policy.cpu_cores);
+        println!(
+            "⚡ Worker slots calculados: {} (cpu_score={:.0}, ram={}GB, cores={})",
+            final_slots, self.cpu_score, self.ram_available_gb, policy.cpu_cores
+        );
 
         final_slots.max(1)
     }
@@ -52,11 +54,14 @@ impl NodeBenchmark {
         println!("   CPU Score:    {:.0} ops/sec", self.cpu_score);
         println!("   RAM:          {} GB disponibles", self.ram_available_gb);
         println!("   Disk:         {:.1} MB/s", self.disk_speed_mb);
-        println!("   GPU:          {}", if self.gpu_available {
-            format!("✅ {} GB VRAM", self.gpu_vram_gb)
-        } else {
-            "❌ No detectada".to_string()
-        });
+        println!(
+            "   GPU:          {}",
+            if self.gpu_available {
+                format!("✅ {} GB VRAM", self.gpu_vram_gb)
+            } else {
+                "❌ No detectada".to_string()
+            }
+        );
     }
 }
 
@@ -92,9 +97,12 @@ fn detect_ram() -> u64 {
         if let Ok(content) = std::fs::read_to_string("/proc/meminfo") {
             for line in content.lines() {
                 if line.starts_with("MemAvailable:") {
-                    let kb: u64 = line.split_whitespace()
-                        .nth(1).unwrap_or("0")
-                        .parse().unwrap_or(0);
+                    let kb: u64 = line
+                        .split_whitespace()
+                        .nth(1)
+                        .unwrap_or("0")
+                        .parse()
+                        .unwrap_or(0);
                     let gb = kb / 1_048_576;
                     println!("{} GB ✅", gb);
                     return gb;
@@ -139,7 +147,9 @@ fn detect_gpu() -> (bool, u64) {
     {
         if output.status.success() {
             let vram_mb: u64 = String::from_utf8_lossy(&output.stdout)
-                .trim().parse().unwrap_or(0);
+                .trim()
+                .parse()
+                .unwrap_or(0);
             let vram_gb = vram_mb / 1024;
             println!("NVIDIA {} GB VRAM ✅", vram_gb);
             return (true, vram_gb);

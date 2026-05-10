@@ -1,0 +1,2 @@
+# Power expression handling
+2^10 | ExactMath | true

@@ -1,14 +1,14 @@
-pub mod task;
-pub mod result;
-pub mod node;
 pub mod errors;
 pub mod message;
+pub mod node;
+pub mod result;
+pub mod task;
 
-pub use task::{Task, TaskStatus, TaskType};
-pub use result::TaskResult;
-pub use node::{NodeCapabilities, NodeReputation};
 pub use errors::{IaMineError, IaMineResult};
 pub use message::IaMineMessage;
+pub use node::{NodeCapabilities, NodeReputation};
+pub use result::TaskResult;
+pub use task::{Task, TaskStatus, TaskType};
 
 pub fn sha256_hex(data: &[u8]) -> String {
     use sha2::{Digest, Sha256};

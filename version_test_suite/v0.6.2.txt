@@ -1,0 +1,2 @@
+# Early deterministic list handling
+dame el abecedario | StructuredList | true

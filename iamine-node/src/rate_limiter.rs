@@ -18,8 +18,7 @@ impl RateLimiter {
     /// Retorna true si se permite el mensaje, false si está rate-limited
     pub fn allow(&mut self, msg_type: &str) -> bool {
         let now = Instant::now();
-        let entry = self.counts.entry(msg_type.to_string())
-            .or_insert((0, now));
+        let entry = self.counts.entry(msg_type.to_string()).or_insert((0, now));
 
         // Reset cada segundo
         if entry.1.elapsed() >= Duration::from_secs(1) {

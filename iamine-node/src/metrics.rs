@@ -1,6 +1,6 @@
+use serde::Serialize;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use serde::Serialize;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct NodeMetrics {
@@ -57,13 +57,19 @@ impl NodeMetrics {
         self.avg_execution_ms = (self.avg_execution_ms * (n - 1.0) + execution_ms as f64) / n;
     }
 
-    pub fn task_failed(&mut self) { self.tasks_failed += 1; }
-    pub fn task_timed_out(&mut self) { self.tasks_timed_out += 1; }
+    pub fn task_failed(&mut self) {
+        self.tasks_failed += 1;
+    }
+    pub fn task_timed_out(&mut self) {
+        self.tasks_timed_out += 1;
+    }
 
     #[allow(dead_code)]
     pub fn success_rate(&self) -> f64 {
         let total = self.tasks_executed + self.tasks_failed + self.tasks_timed_out;
-        if total == 0 { return 1.0; }
+        if total == 0 {
+            return 1.0;
+        }
         self.tasks_executed as f64 / total as f64
     }
 

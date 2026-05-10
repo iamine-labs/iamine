@@ -1,0 +1,2 @@
+# Structured output remains strict after semantic validation
+dame el abecedario | StructuredList | true

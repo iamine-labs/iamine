@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use crate::task::TaskType;
+use serde::{Deserialize, Serialize};
 
 /// Capacidades de un nodo worker
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -30,8 +30,7 @@ impl NodeCapabilities {
     }
 
     pub fn can_handle(&self, task_type: &TaskType) -> bool {
-        self.supported_tasks.contains(task_type)
-            && task_type.required_cores() <= self.cores
+        self.supported_tasks.contains(task_type) && task_type.required_cores() <= self.cores
     }
 }
 
@@ -84,7 +83,9 @@ impl NodeReputation {
 
     pub fn success_rate(&self) -> f64 {
         let total = self.tasks_completed + self.tasks_failed + self.tasks_timed_out;
-        if total == 0 { return 1.0; }
+        if total == 0 {
+            return 1.0;
+        }
         self.tasks_completed as f64 / total as f64
     }
 

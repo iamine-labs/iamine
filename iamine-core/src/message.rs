@@ -1,7 +1,7 @@
-use serde::{Deserialize, Serialize};
-use crate::task::Task;
-use crate::result::TaskResult;
 use crate::node::NodeCapabilities;
+use crate::result::TaskResult;
+use crate::task::Task;
+use serde::{Deserialize, Serialize};
 
 /// Mensajes P2P entre nodos
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -16,7 +16,7 @@ pub enum IaMineMessage {
     TaskOffer {
         task: Task,
         requester_id: String,
-        origin_peer: String,  // ← nuevo: PeerId del broadcaster para result routing
+        origin_peer: String, // ← nuevo: PeerId del broadcaster para result routing
     },
 
     /// Worker hace bid (se postula para ejecutar)
@@ -32,7 +32,7 @@ pub enum IaMineMessage {
     TaskAssign {
         task_id: String,
         assigned_worker: String,
-        origin_peer: String,  // ← nuevo: para que el worker sepa a quién enviar el resultado
+        origin_peer: String, // ← nuevo: para que el worker sepa a quién enviar el resultado
     },
 
     /// Worker rechaza (ya ocupado, cambió de estado)
@@ -65,8 +65,5 @@ pub enum IaMineMessage {
     },
 
     /// Cancelación de tarea por timeout
-    TaskCancelled {
-        task_id: String,
-        reason: String,
-    },
+    TaskCancelled { task_id: String, reason: String },
 }
