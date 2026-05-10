@@ -6,7 +6,16 @@ pub(crate) fn parse_args() -> Result<NodeMode, String> {
     parse_args_from(std::env::args().collect())
 }
 
+pub(crate) fn contains_help_flag(args: &[String]) -> bool {
+    args.iter()
+        .any(|arg| matches!(arg.as_str(), "--help" | "-h"))
+}
+
 pub(crate) fn parse_args_from(raw_args: Vec<String>) -> Result<NodeMode, String> {
+    if contains_help_flag(&raw_args) {
+        return Ok(NodeMode::Help);
+    }
+
     let args: Vec<String> = raw_args
         .into_iter()
         .filter(|arg| {
@@ -184,8 +193,74 @@ mod tests {
     }
 
     #[test]
+    fn cli_short_help_prints_usage() {
+        let mode = parse_args_from(args(&["iamine-node", "-h"])).expect("-h should parse");
+
+        assert!(matches!(mode, NodeMode::Help));
+        assert!(crate::usage::usage_text().contains("iamine-node --worker [--port=N]"));
+    }
+
+    #[test]
     fn cli_help_does_not_start_runtime() {
+        let mode = parse_args_from(args(&["iamine-node", "--help"])).expect("help should parse");
+
+        assert!(matches!(mode, NodeMode::Help));
+    }
+
+    #[test]
+    fn cli_short_help_does_not_start_runtime() {
+        let mode = parse_args_from(args(&["iamine-node", "-h"])).expect("short help should parse");
+
+        assert!(matches!(mode, NodeMode::Help));
+    }
+
+    #[test]
+    fn cli_legacy_help_word_does_not_start_runtime() {
         let mode = parse_args_from(args(&["iamine-node", "help"])).expect("help should parse");
+
+        assert!(matches!(mode, NodeMode::Help));
+    }
+
+    #[test]
+    fn cli_worker_help_does_not_start_runtime() {
+        let mode = parse_args_from(args(&["iamine-node", "--worker", "--help"]))
+            .expect("worker help should parse");
+
+        assert!(matches!(mode, NodeMode::Help));
+    }
+
+    #[test]
+    fn cli_worker_port_help_does_not_start_runtime() {
+        let mode = parse_args_from(args(&["iamine-node", "--worker", "--port=4101", "--help"]))
+            .expect("worker port help should parse");
+
+        assert!(matches!(mode, NodeMode::Help));
+    }
+
+    #[test]
+    fn cli_broadcast_help_does_not_start_runtime() {
+        let mode = parse_args_from(args(&[
+            "iamine-node",
+            "--broadcast",
+            "reverse_string",
+            "test",
+            "--help",
+        ]))
+        .expect("broadcast help should parse");
+
+        assert!(matches!(mode, NodeMode::Help));
+    }
+
+    #[test]
+    fn cli_infer_force_network_help_does_not_start_runtime() {
+        let mode = parse_args_from(args(&[
+            "iamine-node",
+            "infer",
+            "2+2",
+            "--force-network",
+            "--help",
+        ]))
+        .expect("infer help should parse");
 
         assert!(matches!(mode, NodeMode::Help));
     }
@@ -244,6 +319,31 @@ mod tests {
             }
             other => panic!("unexpected mode: {other:?}"),
         }
+    }
+
+    #[test]
+    fn cli_valid_commands_do_not_show_unknown_mode() {
+        assert!(matches!(
+            parse_args_from(args(&["iamine-node", "--worker", "--port=4101"])).unwrap(),
+            NodeMode::Worker
+        ));
+        assert!(matches!(
+            parse_args_from(args(&[
+                "iamine-node",
+                "--broadcast",
+                "reverse_string",
+                "abc"
+            ]))
+            .unwrap(),
+            NodeMode::Broadcast { .. }
+        ));
+        assert!(matches!(
+            parse_args_from(args(&["iamine-node", "infer", "2+2", "--force-network"])).unwrap(),
+            NodeMode::Infer {
+                force_network: true,
+                ..
+            }
+        ));
     }
 
     #[test]
