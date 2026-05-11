@@ -9,6 +9,7 @@ mod code_quality;
 mod cpu_feature_guard;
 mod daemon_runtime;
 mod executor;
+mod final_outcome;
 mod heartbeat;
 mod metrics;
 mod mode_dispatch;
@@ -28,6 +29,8 @@ mod quality_gate;
 mod rate_limiter;
 mod regression_runner;
 mod resource_policy;
+mod result_acceptance;
+mod result_observability;
 mod result_protocol;
 mod security_checks;
 mod setup_wizard;
@@ -51,18 +54,16 @@ use iamine_models::{
 
 use iamine_network::{
     analyze_prompt_semantics, claim_task_attempt_peer, default_semantic_log_path,
-    describe_output_policy, detect_exact_subtype, distributed_task_metrics,
-    health_policy_thresholds, log_structured, normalize_expression, prompt_log_entry,
-    record_distributed_task_failed, record_distributed_task_fallback,
-    record_distributed_task_late_result, record_distributed_task_latency,
-    record_distributed_task_retry, record_distributed_task_started, record_model_metrics,
-    record_task_attempt, record_task_latency, select_retry_target, set_global_node_id,
-    set_global_runtime_context, task_trace, validate_result, validate_semantic_decision,
-    DistributedTaskMetrics, DistributedTaskResult, FailureKind, IntelligentScheduler, LogLevel,
+    describe_output_policy, detect_exact_subtype, health_policy_thresholds, log_structured,
+    normalize_expression, prompt_log_entry, record_distributed_task_fallback,
+    record_distributed_task_late_result, record_distributed_task_retry,
+    record_distributed_task_started, record_model_metrics, record_task_attempt,
+    select_retry_target, set_global_node_id, set_global_runtime_context, validate_result,
+    validate_semantic_decision, DistributedTaskResult, FailureKind, IntelligentScheduler, LogLevel,
     ModelMetrics, ModelPolicyEngine, NetworkTopology, NodeCapability, NodeCapabilityHeartbeat,
     NodeHealth, NodeRegistry, OutputPolicyDecision, PromptProfile, ResultStatus, RetryPolicy,
     RetryState, SemanticFeedbackEngine, SharedNetworkTopology, SharedNodeRegistry,
-    StructuredLogEntry, TaskClaim, TaskManager, TaskTrace, TaskType as PromptTaskType,
+    StructuredLogEntry, TaskClaim, TaskManager, TaskType as PromptTaskType,
     ValidationResult as SemanticValidationResult, NET_PEER_DISCONNECTED_002, NODE_BLACKLISTED_001,
     NODE_UNHEALTHY_002, SCH_NO_NODE_001, TASK_DISPATCH_UNCONFIRMED_001, TASK_EMPTY_RESULT_003,
     TASK_FAILED_002, TASK_TIMEOUT_001, WORKER_STARTUP_OVERFLOW_001,
@@ -70,6 +71,8 @@ use iamine_network::{
 
 #[cfg(test)]
 use iamine_network::analyze_prompt;
+#[cfg(test)]
+use iamine_network::DistributedTaskMetrics;
 
 use benchmark::NodeBenchmark;
 use daemon_runtime::{daemon_is_available, daemon_socket_path, infer_via_daemon, run_daemon};
@@ -80,7 +83,11 @@ use peer_tracker::PeerTracker;
 use quality_gate::runtime_version_metadata;
 use rate_limiter::RateLimiter;
 use resource_policy::ResourcePolicy;
-use result_protocol::{TaskResultRequest, TaskResultResponse};
+use result_observability::*;
+use result_protocol::{
+    publish_worker_result_payload, send_worker_result_direct_response, BroadcastTaskResultMessage,
+    TaskResultRequest, TaskResultResponse,
+};
 use serde_json::{Map, Value};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -111,7 +118,6 @@ use libp2p::{
 };
 use std::error::Error;
 use std::path::PathBuf;
-use std::str::FromStr;
 use std::time::Duration;
 
 use broadcast_protocol::*;
@@ -120,6 +126,7 @@ use broadcast_worker::*;
 use capability_display::*;
 use cli::{parse_args, parse_worker_port};
 use executor::TaskExecutor;
+use final_outcome::*;
 use mode_dispatch::{handle_pre_network_mode, is_control_plane_mode};
 use model_display_policy::*;
 use model_executability::*;
@@ -1204,10 +1211,6 @@ impl ActiveAttempt {
     }
 }
 
-fn should_print_result_output(output: &str) -> bool {
-    !output.trim().is_empty()
-}
-
 #[cfg(test)]
 fn apply_retry_fallback_metrics(
     metrics: &mut DistributedTaskMetrics,
@@ -1462,87 +1465,6 @@ fn emit_fallback_attempt_claimed_event(
     );
 }
 
-fn emit_worker_task_completed_event(
-    trace_task_id: &str,
-    attempt_id: &str,
-    model_id: &str,
-    result_size: usize,
-    success: bool,
-    worker_peer_id: &str,
-) {
-    log_observability_event(
-        LogLevel::Info,
-        "task_completed",
-        trace_task_id,
-        Some(trace_task_id),
-        Some(model_id),
-        None,
-        {
-            let mut fields = Map::new();
-            fields.insert("attempt_id".to_string(), attempt_id.into());
-            fields.insert("result_size".to_string(), (result_size as u64).into());
-            fields.insert("success".to_string(), success.into());
-            fields.insert("worker_peer_id".to_string(), worker_peer_id.into());
-            fields
-        },
-    );
-}
-
-fn emit_worker_result_published_event(
-    trace_task_id: &str,
-    attempt_id: &str,
-    model_id: &str,
-    topic: &str,
-    result_size: usize,
-    message_id: Option<&str>,
-    worker_peer_id: &str,
-) {
-    log_observability_event(
-        LogLevel::Info,
-        "result_published",
-        trace_task_id,
-        Some(trace_task_id),
-        Some(model_id),
-        None,
-        {
-            let mut fields = Map::new();
-            fields.insert("attempt_id".to_string(), attempt_id.into());
-            fields.insert("topic".to_string(), topic.into());
-            fields.insert("result_size".to_string(), (result_size as u64).into());
-            fields.insert("worker_peer_id".to_string(), worker_peer_id.into());
-            if let Some(message_id) = message_id {
-                fields.insert("message_id".to_string(), message_id.into());
-            }
-            fields
-        },
-    );
-}
-
-fn emit_result_received_event(
-    trace_task_id: &str,
-    attempt_id: &str,
-    model_id: Option<&str>,
-    from_peer: &str,
-    latency_ms: u64,
-) {
-    log_observability_event(
-        LogLevel::Info,
-        "result_received",
-        trace_task_id,
-        Some(trace_task_id),
-        model_id,
-        None,
-        {
-            let mut fields = Map::new();
-            fields.insert("attempt_id".to_string(), attempt_id.into());
-            fields.insert("from_peer".to_string(), from_peer.into());
-            fields.insert("worker_peer_id".to_string(), from_peer.into());
-            fields.insert("latency_ms".to_string(), latency_ms.into());
-            fields
-        },
-    );
-}
-
 fn emit_attempt_state_changed_event(
     trace_task_id: &str,
     attempt_id: &str,
@@ -1629,39 +1551,6 @@ fn emit_attempt_stalled_event(
             fields.insert("watchdog_reason".to_string(), "no_progress".into());
             fields.insert("error_kind".to_string(), "stall".into());
             fields.insert("recoverable".to_string(), true.into());
-            fields
-        },
-    );
-}
-
-fn emit_late_result_received_event(
-    trace_task_id: &str,
-    attempt_id: &str,
-    worker_peer_id: &str,
-    model_id: Option<&str>,
-    elapsed_ms: u64,
-    accepted: bool,
-    reason: &str,
-    prior_attempt_state: &str,
-) {
-    log_observability_event(
-        LogLevel::Info,
-        "late_result_received",
-        trace_task_id,
-        Some(trace_task_id),
-        model_id,
-        None,
-        {
-            let mut fields = Map::new();
-            fields.insert("attempt_id".to_string(), attempt_id.into());
-            fields.insert("worker_peer_id".to_string(), worker_peer_id.into());
-            fields.insert("elapsed_ms".to_string(), elapsed_ms.into());
-            fields.insert("accepted".to_string(), accepted.into());
-            fields.insert("reason".to_string(), reason.into());
-            fields.insert(
-                "prior_attempt_state".to_string(),
-                prior_attempt_state.into(),
-            );
             fields
         },
     );
@@ -2034,54 +1923,6 @@ fn emit_watchdog_reset_on_progress_event(
     );
 }
 
-fn emit_retry_result_accepted_event(
-    trace_task_id: &str,
-    attempt_id: &str,
-    model_id: Option<&str>,
-    worker_peer_id: &str,
-    accepted_after_current_moved: bool,
-) {
-    log_observability_event(
-        LogLevel::Info,
-        "retry_result_accepted",
-        trace_task_id,
-        Some(trace_task_id),
-        model_id,
-        None,
-        {
-            let mut fields = Map::new();
-            fields.insert("attempt_id".to_string(), attempt_id.into());
-            fields.insert("worker_peer_id".to_string(), worker_peer_id.into());
-            fields.insert(
-                "accepted_after_current_moved".to_string(),
-                accepted_after_current_moved.into(),
-            );
-            fields
-        },
-    );
-}
-
-fn emit_final_outcome_success_event(
-    trace_task_id: &str,
-    model_id: Option<&str>,
-    attempts: &[String],
-) {
-    log_observability_event(
-        LogLevel::Info,
-        "final_outcome_success",
-        trace_task_id,
-        Some(trace_task_id),
-        model_id,
-        None,
-        {
-            let mut fields = Map::new();
-            fields.insert("failed".to_string(), false.into());
-            fields.insert("attempts".to_string(), serde_json::json!(attempts));
-            fields
-        },
-    );
-}
-
 fn publish_worker_progress_message(
     swarm: &mut Swarm<IamineBehaviour>,
     task_id: &str,
@@ -2172,114 +2013,6 @@ fn publish_worker_progress_message(
         elapsed_ms,
         tokens_generated_count,
     );
-}
-
-fn publish_worker_result_payload(
-    swarm: &mut Swarm<IamineBehaviour>,
-    task_id: &str,
-    attempt_id: &str,
-    model_id: &str,
-    worker_peer_id: &str,
-    result_payload: &serde_json::Value,
-) -> Option<String> {
-    let mut first_message_id = None;
-    for topic in [RESULTS_TOPIC, TASK_TOPIC] {
-        match swarm.behaviour_mut().gossipsub.publish(
-            gossipsub::IdentTopic::new(topic),
-            serde_json::to_vec(result_payload).unwrap_or_default(),
-        ) {
-            Ok(message_id) => {
-                if first_message_id.is_none() {
-                    first_message_id = Some(message_id.to_string());
-                }
-            }
-            Err(error) => log_observability_event(
-                LogLevel::Error,
-                "result_publish_failed",
-                task_id,
-                Some(task_id),
-                Some(model_id),
-                Some(TASK_DISPATCH_UNCONFIRMED_001),
-                {
-                    let mut fields = Map::new();
-                    fields.insert("attempt_id".to_string(), attempt_id.into());
-                    fields.insert("worker_peer_id".to_string(), worker_peer_id.into());
-                    fields.insert("topic".to_string(), topic.into());
-                    fields.insert("error".to_string(), error.to_string().into());
-                    fields
-                },
-            ),
-        }
-    }
-    first_message_id
-}
-
-fn send_worker_result_direct_response(
-    swarm: &mut Swarm<IamineBehaviour>,
-    origin_peer_id: &str,
-    task_id: &str,
-    attempt_id: &str,
-    model_id: &str,
-    worker_peer_id: &str,
-    result: &InferenceTaskResult,
-) {
-    if origin_peer_id.trim().is_empty() || origin_peer_id == worker_peer_id {
-        return;
-    }
-
-    match PeerId::from_str(origin_peer_id) {
-        Ok(origin_peer) => {
-            let request = TaskResultRequest {
-                task_id: task_id.to_string(),
-                attempt_id: attempt_id.to_string(),
-                model_id: model_id.to_string(),
-                worker_id: worker_peer_id.to_string(),
-                success: result.success,
-                result: result.output.clone(),
-                tokens_generated: result.tokens_generated as u64,
-                execution_ms: result.execution_ms,
-                attempts: 1,
-            };
-            let request_id = swarm
-                .behaviour_mut()
-                .result_response
-                .send_request(&origin_peer, request);
-            log_observability_event(
-                LogLevel::Info,
-                "remote_result_direct_publish_attempt",
-                task_id,
-                Some(task_id),
-                Some(model_id),
-                None,
-                {
-                    let mut fields = Map::new();
-                    fields.insert("attempt_id".to_string(), attempt_id.into());
-                    fields.insert("worker_peer_id".to_string(), worker_peer_id.into());
-                    fields.insert("origin_peer_id".to_string(), origin_peer_id.into());
-                    fields.insert("request_id".to_string(), format!("{:?}", request_id).into());
-                    fields
-                },
-            );
-        }
-        Err(error) => {
-            log_observability_event(
-                LogLevel::Warn,
-                "remote_result_direct_publish_failed",
-                task_id,
-                Some(task_id),
-                Some(model_id),
-                Some(TASK_DISPATCH_UNCONFIRMED_001),
-                {
-                    let mut fields = Map::new();
-                    fields.insert("attempt_id".to_string(), attempt_id.into());
-                    fields.insert("worker_peer_id".to_string(), worker_peer_id.into());
-                    fields.insert("origin_peer_id".to_string(), origin_peer_id.into());
-                    fields.insert("error".to_string(), error.to_string().into());
-                    fields
-                },
-            );
-        }
-    }
 }
 
 fn clear_stream_state(
@@ -2429,122 +2162,6 @@ fn debug_network_log(flags: DebugFlags, message: impl AsRef<str>) {
     if flags.network {
         println!("[DebugNetwork] {}", message.as_ref());
     }
-}
-
-fn finalize_distributed_task_observability(
-    trace_task_id: &str,
-    started_at: Option<tokio::time::Instant>,
-    failed: bool,
-) -> (Option<TaskTrace>, DistributedTaskMetrics) {
-    if let Some(started_at) = started_at {
-        let latency_ms = started_at.elapsed().as_millis() as u64;
-        let _ = record_task_latency(trace_task_id, latency_ms);
-        let _ = record_distributed_task_latency(latency_ms);
-    }
-
-    if failed {
-        let _ = record_distributed_task_failed();
-    }
-
-    let metrics = distributed_task_metrics();
-    log_observability_event(
-        LogLevel::Info,
-        "metrics_snapshot",
-        trace_task_id,
-        Some(trace_task_id),
-        None,
-        None,
-        {
-            let mut fields = Map::new();
-            fields.insert("total_tasks".to_string(), metrics.total_tasks.into());
-            fields.insert("failed_tasks".to_string(), metrics.failed_tasks.into());
-            fields.insert("retries_count".to_string(), metrics.retries_count.into());
-            fields.insert("fallback_count".to_string(), metrics.fallback_count.into());
-            fields.insert(
-                "late_results_count".to_string(),
-                metrics.late_results_count.into(),
-            );
-            fields.insert("avg_latency_ms".to_string(), metrics.avg_latency_ms.into());
-            fields.insert("failed".to_string(), failed.into());
-            fields
-        },
-    );
-
-    (task_trace(trace_task_id), metrics)
-}
-
-fn print_human_final_task_summary(
-    infer_state: &DistributedInferState,
-    aggregate_metrics: &DistributedTaskMetrics,
-    failed: bool,
-) {
-    println!("\n🧾 Task Summary");
-    println!("task_id={}", infer_state.trace_task_id);
-    println!(
-        "counts: task_retry_count={} task_fallback_count={} global_retry_count={} global_fallback_count={} global_failed_tasks={}",
-        infer_state.task_retry_count,
-        infer_state.task_fallback_count,
-        aggregate_metrics.retries_count,
-        aggregate_metrics.fallback_count,
-        aggregate_metrics.failed_tasks
-    );
-    println!(
-        "final_outcome={}",
-        if failed { "failed" } else { "success" }
-    );
-    println!("attempts:");
-    for line in infer_state.attempt_summary_lines() {
-        println!("{}", line);
-    }
-}
-
-fn emit_final_trace_summary_event(
-    infer_state: &DistributedInferState,
-    aggregate_metrics: &DistributedTaskMetrics,
-    failed: bool,
-) {
-    let attempts = infer_state.attempt_summary_lines();
-    if !failed {
-        emit_final_outcome_success_event(
-            &infer_state.trace_task_id,
-            infer_state.current_model.as_deref(),
-            &attempts,
-        );
-    }
-    log_observability_event(
-        LogLevel::Info,
-        "final_trace_summary_constructed",
-        &infer_state.trace_task_id,
-        Some(&infer_state.trace_task_id),
-        infer_state.current_model.as_deref(),
-        None,
-        {
-            let mut fields = Map::new();
-            fields.insert("failed".to_string(), failed.into());
-            fields.insert(
-                "task_retry_count".to_string(),
-                infer_state.task_retry_count.into(),
-            );
-            fields.insert(
-                "task_fallback_count".to_string(),
-                infer_state.task_fallback_count.into(),
-            );
-            fields.insert(
-                "global_retry_count".to_string(),
-                aggregate_metrics.retries_count.into(),
-            );
-            fields.insert(
-                "global_fallback_count".to_string(),
-                aggregate_metrics.fallback_count.into(),
-            );
-            fields.insert(
-                "global_failed_tasks".to_string(),
-                aggregate_metrics.failed_tasks.into(),
-            );
-            fields.insert("attempts".to_string(), serde_json::json!(attempts));
-            fields
-        },
-    );
 }
 
 fn mock_real_inference_result(
@@ -5266,44 +4883,29 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 if message_topic != RESULTS_TOPIC {
                                     continue;
                                 }
-                                let task_id = msg["task_id"].as_str().unwrap_or("").to_string();
-                                let task_type = msg["task_type"].as_str().unwrap_or("").to_string();
-                                let worker_peer_id = msg["worker_peer_id"]
-                                    .as_str()
-                                    .or_else(|| msg["worker_id"].as_str())
-                                    .unwrap_or("")
-                                    .to_string();
-                                let success = msg["success"].as_bool().unwrap_or(false);
-                                let output = msg["output"].as_str().unwrap_or("").to_string();
-                                let origin_peer = msg["origin_peer"]
-                                    .as_str()
-                                    .or_else(|| msg["controller_peer_id"].as_str())
-                                    .map(str::to_string);
-                                let elapsed_ms = msg["elapsed_ms"]
-                                    .as_u64()
-                                    .or_else(|| msg["execution_ms"].as_u64())
-                                    .unwrap_or(0);
+                                let result_message =
+                                    BroadcastTaskResultMessage::from_pubsub_value(&msg);
                                 let assigned_worker = broadcast_offer_state
                                     .as_ref()
                                     .and_then(|state| state.assigned_worker.as_deref())
                                     .map(str::to_string);
                                 let acceptance = evaluate_broadcast_result_acceptance(
                                     broadcast_offer_state.as_ref(),
-                                    &task_id,
-                                    &worker_peer_id,
-                                    success,
+                                    &result_message.task_id,
+                                    &result_message.worker_peer_id,
+                                    result_message.success,
                                 );
                                 let accepted = acceptance.is_ok();
                                 let rejection_reason = acceptance.err();
                                 let received = BroadcastResultReceived {
-                                    task_id: &task_id,
-                                    task_type: &task_type,
-                                    worker_peer_id: &worker_peer_id,
+                                    task_id: &result_message.task_id,
+                                    task_type: &result_message.task_type,
+                                    worker_peer_id: &result_message.worker_peer_id,
                                     assigned_worker_peer_id: assigned_worker.as_deref(),
-                                    origin_peer: origin_peer.as_deref(),
-                                    success,
-                                    output: &output,
-                                    elapsed_ms,
+                                    origin_peer: result_message.origin_peer.as_deref(),
+                                    success: result_message.success,
+                                    output: &result_message.output,
+                                    elapsed_ms: result_message.elapsed_ms,
                                     transport: "pubsub",
                                     accepted,
                                     rejection_reason,
@@ -5316,22 +4918,30 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 }
 
                                 if let Some(state) = broadcast_offer_state.as_mut() {
-                                    if state.task_id == task_id {
+                                    if state.task_id == result_message.task_id {
                                         state.mark_result_accepted();
                                     }
                                 }
-                                scheduler.mark_completed(&task_id, &worker_peer_id).await;
-                                emit_broadcast_recovery_cancelled_event(&task_id, &worker_peer_id);
+                                scheduler
+                                    .mark_completed(
+                                        &result_message.task_id,
+                                        &result_message.worker_peer_id,
+                                    )
+                                    .await;
+                                emit_broadcast_recovery_cancelled_event(
+                                    &result_message.task_id,
+                                    &result_message.worker_peer_id,
+                                );
                                 emit_broadcast_final_outcome_success_event(
-                                    &task_id,
-                                    &worker_peer_id,
-                                    &output,
+                                    &result_message.task_id,
+                                    &result_message.worker_peer_id,
+                                    &result_message.output,
                                 );
                                 log_observability_event(
                                     LogLevel::Info,
                                     "task_completed",
-                                    &task_id,
-                                    Some(&task_id),
+                                    &result_message.task_id,
+                                    Some(&result_message.task_id),
                                     None,
                                     None,
                                     {
@@ -5339,19 +4949,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         fields.insert("success".to_string(), true.into());
                                         fields.insert(
                                             "worker_peer_id".to_string(),
-                                            worker_peer_id.clone().into(),
+                                            result_message.worker_peer_id.clone().into(),
                                         );
                                         fields.insert("transport".to_string(), "pubsub".into());
                                         fields.insert("source".to_string(), "broadcast_task_result".into());
                                         fields
                                     },
                                 );
-                                if should_print_result_output(&output) {
-                                    println!("{}", output);
+                                if should_print_result_output(&result_message.output) {
+                                    println!("{}", result_message.output);
                                 }
                                 println!(
                                     "✅ [Broadcast] Resultado aceptado: task_id={} worker={} success=true",
-                                    task_id, worker_peer_id
+                                    result_message.task_id, result_message.worker_peer_id
                                 );
                                 break;
                             }
