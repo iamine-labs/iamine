@@ -3,6 +3,7 @@ mod benchmark;
 mod broadcast_protocol;
 mod broadcast_runtime;
 mod broadcast_worker;
+mod capability_display;
 mod cli;
 mod code_quality;
 mod cpu_feature_guard;
@@ -11,6 +12,8 @@ mod executor;
 mod heartbeat;
 mod metrics;
 mod mode_dispatch;
+mod model_display_policy;
+mod model_executability;
 mod model_selector_cli;
 mod network;
 mod node_identity;
@@ -41,10 +44,9 @@ mod worker_pool;
 mod worker_startup_policy;
 
 use iamine_models::{
-    can_node_run_model, normalize_output, AutoProvisionProfile, DirectInferenceRequest,
-    HardwareAcceleration, InferenceTask, InferenceTaskResult, ModelAutoProvision, ModelInstaller,
-    ModelNodeCapabilities, ModelRegistry, ModelRequirements, ModelStorage, RealInferenceEngine,
-    RealInferenceRequest, RealInferenceResult, StorageConfig, StreamedToken,
+    normalize_output, DirectInferenceRequest, HardwareAcceleration, InferenceTask,
+    InferenceTaskResult, ModelRegistry, ModelStorage, RealInferenceEngine, RealInferenceRequest,
+    RealInferenceResult, StreamedToken,
 };
 
 use iamine_network::{
@@ -56,13 +58,10 @@ use iamine_network::{
     record_distributed_task_retry, record_distributed_task_started, record_model_metrics,
     record_task_attempt, record_task_latency, select_retry_target, set_global_node_id,
     set_global_runtime_context, task_trace, validate_result, validate_semantic_decision,
-    Complexity as PromptComplexityLevel, DeterministicLevel as PromptDeterministicLevel,
-    DistributedTaskMetrics, DistributedTaskResult, Domain as PromptDomain,
-    ExactSubtype as PromptExactSubtype, FailureKind, IntelligentScheduler,
-    Language as PromptLanguage, LogLevel, ModelMetrics, ModelPolicyEngine, NetworkTopology,
-    NodeCapability, NodeCapabilityHeartbeat, NodeHealth, NodeRegistry, OutputPolicyDecision,
-    OutputStyle as PromptOutputStyle, PromptProfile, ResultStatus, RetryPolicy, RetryState,
-    SemanticFeedbackEngine, SemanticRoutingDecision, SharedNetworkTopology, SharedNodeRegistry,
+    DistributedTaskMetrics, DistributedTaskResult, FailureKind, IntelligentScheduler, LogLevel,
+    ModelMetrics, ModelPolicyEngine, NetworkTopology, NodeCapability, NodeCapabilityHeartbeat,
+    NodeHealth, NodeRegistry, OutputPolicyDecision, PromptProfile, ResultStatus, RetryPolicy,
+    RetryState, SemanticFeedbackEngine, SharedNetworkTopology, SharedNodeRegistry,
     StructuredLogEntry, TaskClaim, TaskManager, TaskTrace, TaskType as PromptTaskType,
     ValidationResult as SemanticValidationResult, NET_PEER_DISCONNECTED_002, NODE_BLACKLISTED_001,
     NODE_UNHEALTHY_002, SCH_NO_NODE_001, TASK_DISPATCH_UNCONFIRMED_001, TASK_EMPTY_RESULT_003,
@@ -83,7 +82,6 @@ use rate_limiter::RateLimiter;
 use resource_policy::ResourcePolicy;
 use result_protocol::{TaskResultRequest, TaskResultResponse};
 use serde_json::{Map, Value};
-use setup_wizard::{DetectedHardware, NodeSetupConfig};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use task_cache::TaskCache;
@@ -119,9 +117,12 @@ use std::time::Duration;
 use broadcast_protocol::*;
 use broadcast_runtime::*;
 use broadcast_worker::*;
+use capability_display::*;
 use cli::{parse_args, parse_worker_port};
 use executor::TaskExecutor;
 use mode_dispatch::{handle_pre_network_mode, is_control_plane_mode};
+use model_display_policy::*;
+use model_executability::*;
 use node_modes::{mode_label, DebugFlags, InferenceControlFlags, NodeMode};
 use task_protocol::{TaskRequest, TaskResponse};
 use usage::print_usage;
@@ -242,143 +243,6 @@ impl HumanLogThrottle {
             self.last_values.insert(key.to_string(), value.to_string());
         }
         true
-    }
-}
-
-fn prompt_language_label(language: PromptLanguage) -> &'static str {
-    match language {
-        PromptLanguage::English => "English",
-        PromptLanguage::Spanish => "Spanish",
-        PromptLanguage::Unknown => "Unknown",
-    }
-}
-
-fn prompt_complexity_label(complexity: PromptComplexityLevel) -> &'static str {
-    match complexity {
-        PromptComplexityLevel::Low => "Low",
-        PromptComplexityLevel::Medium => "Medium",
-        PromptComplexityLevel::High => "High",
-    }
-}
-
-pub(crate) fn prompt_task_label(task_type: PromptTaskType) -> &'static str {
-    match task_type {
-        PromptTaskType::Math => "Math",
-        PromptTaskType::ExactMath => "ExactMath",
-        PromptTaskType::SymbolicMath => "SymbolicMath",
-        PromptTaskType::Generative => "Generative",
-        PromptTaskType::StructuredList => "StructuredList",
-        PromptTaskType::Deterministic => "Deterministic",
-        PromptTaskType::Code => "Code",
-        PromptTaskType::Conceptual => "Conceptual",
-        PromptTaskType::Reasoning => "Reasoning",
-        PromptTaskType::Summarization => "Summarization",
-        PromptTaskType::General => "General",
-    }
-}
-
-fn prompt_output_style_label(output_style: PromptOutputStyle) -> &'static str {
-    match output_style {
-        PromptOutputStyle::Exact => "Exact",
-        PromptOutputStyle::Explanatory => "Explanatory",
-        PromptOutputStyle::Structured => "Structured",
-        PromptOutputStyle::Generative => "Generative",
-        PromptOutputStyle::Hybrid => "Hybrid",
-    }
-}
-
-fn prompt_deterministic_level_label(level: PromptDeterministicLevel) -> &'static str {
-    match level {
-        PromptDeterministicLevel::High => "High",
-        PromptDeterministicLevel::Medium => "Medium",
-        PromptDeterministicLevel::Low => "Low",
-    }
-}
-
-fn prompt_domain_label(domain: Option<PromptDomain>) -> &'static str {
-    match domain {
-        Some(PromptDomain::Math) => "Math",
-        Some(PromptDomain::Physics) => "Physics",
-        Some(PromptDomain::Business) => "Business",
-        Some(PromptDomain::Philosophy) => "Philosophy",
-        Some(PromptDomain::Code) => "Code",
-        Some(PromptDomain::General) | None => "General",
-    }
-}
-
-fn exact_subtype_label(exact_subtype: PromptExactSubtype) -> &'static str {
-    match exact_subtype {
-        PromptExactSubtype::Integer => "Integer",
-        PromptExactSubtype::DecimalSequence => "DecimalSequence",
-        PromptExactSubtype::Sequence => "Sequence",
-    }
-}
-
-fn log_semantic_decision(decision: &SemanticRoutingDecision) {
-    let secondary = if decision.profile.semantic.secondary_tasks.is_empty() {
-        "[]".to_string()
-    } else {
-        format!(
-            "[{}]",
-            decision
-                .profile
-                .semantic
-                .secondary_tasks
-                .iter()
-                .map(|task| prompt_task_label(*task))
-                .collect::<Vec<_>>()
-                .join(", ")
-        )
-    };
-    println!(
-        "[Semantic] Primary: {}",
-        prompt_task_label(decision.profile.semantic.primary_task)
-    );
-    println!("[Semantic] Secondary: {}", secondary);
-    println!(
-        "[Semantic] Style: {}",
-        prompt_output_style_label(decision.profile.semantic.output_style)
-    );
-    println!(
-        "[Semantic] Context: {}",
-        decision.profile.semantic.requires_context
-    );
-    println!(
-        "[Semantic] Domain: {}",
-        prompt_domain_label(decision.profile.semantic.domain)
-    );
-    println!(
-        "[Semantic] Deterministic: {}",
-        prompt_deterministic_level_label(decision.profile.semantic.deterministic_level)
-    );
-    println!("[Semantic] Confidence: {:.2}", decision.profile.confidence);
-    println!("[Semantic] Fallback: {}", decision.fallback_applied);
-    if decision.fallback_applied {
-        println!(
-            "[Semantic] Original task: {}",
-            prompt_task_label(decision.original_task_type)
-        );
-    }
-}
-
-fn log_semantic_validation(validation: &SemanticValidationResult) {
-    println!(
-        "[SemanticValidator] Confidence: {:.2} -> {:.2}",
-        validation.confidence_before, validation.confidence_after
-    );
-    println!(
-        "[SemanticValidator] Model validation: {}",
-        validation.model_validation_used
-    );
-    println!(
-        "[SemanticValidator] Correction applied: {}",
-        validation.correction_applied
-    );
-    if !validation.conflicts.is_empty() {
-        println!(
-            "[SemanticValidator] Conflicts: {}",
-            validation.conflicts.join(", ")
-        );
     }
 }
 
@@ -2999,16 +2863,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             )
             .await?;
             record_semantic_feedback(prompt, &resolution.validation);
-            println!("\n\n✅ Inference completada");
-            println!("[Inference] tokens_generated: {}", result.tokens_generated);
-            println!("[Inference] truncated: {}", result.truncated);
-            println!(
-                "[Inference] continuation_steps: {}",
-                result.continuation_steps
-            );
-            if result.truncated {
-                println!("[Warning] Output truncated at token budget");
-            }
+            display_local_inference_completion(&result);
             return Ok(());
         }
 
@@ -3075,40 +2930,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 )
                 .await?;
                 record_semantic_feedback(prompt, &resolution.validation);
-                println!("\n\n✅ Inference completada");
-                println!("[Inference] tokens_generated: {}", result.tokens_generated);
-                println!("[Inference] truncated: {}", result.truncated);
-                println!(
-                    "[Inference] continuation_steps: {}",
-                    result.continuation_steps
-                );
-                if result.truncated {
-                    println!("[Warning] Output truncated at token budget");
-                }
+                display_local_inference_completion(&result);
                 return Ok(());
-            } else if control_flags.force_network {
-                println!(
-                    "🌐 Flag --force-network activo; omitiendo inferencia local para {}.",
-                    selected_model
-                );
-                println!("   Candidates: {}", candidate_models.join(", "));
-                println!("   Intentando ruta distribuida...\n");
-            } else if control_flags.no_local {
-                println!(
-                    "🚫 Flag --no-local activo; omitiendo inferencia local para {}.",
-                    selected_model
-                );
-                println!("   Candidates: {}", candidate_models.join(", "));
-                println!("   Intentando ruta distribuida...\n");
-            } else if model_id.is_some() {
-                println!(
-                    "⚠️  Override {} no esta instalado localmente, intentando ruta distribuida.",
-                    selected_model
-                );
             } else {
-                println!("🤖 Modelo local preferido no disponible.");
-                println!("   Candidates: {}", candidate_models.join(", "));
-                println!("   Intentando ruta distribuida...\n");
+                display_distributed_inference_route_notice(
+                    &control_flags,
+                    &selected_model,
+                    &candidate_models,
+                    model_id.is_some(),
+                );
             }
         }
 
@@ -3205,89 +3035,31 @@ async fn main() -> Result<(), Box<dyn Error>> {
             .unwrap_or(2)
     };
 
-    println!("\n═══════════════════════════════════");
-    println!("  Peer ID:      {}", peer_id);
-    println!("  Wallet:       {}", node_identity.wallet_address);
-    if let Some(ref b) = benchmark {
-        println!("  CPU Score:    {:.0}", b.cpu_score);
-        println!("  RAM:          {} GB", b.ram_available_gb);
-        println!(
-            "  GPU:          {}",
-            if b.gpu_available { "✅" } else { "❌" }
-        );
-    }
-    println!("  Worker Slots: {}", worker_slots);
-    if !matches!(mode, NodeMode::Topology) {
-        println!("  Modo:         {:?}", mode);
-    }
-    println!("  Balance:      {} $MIND", wallet.balance);
-    println!("  Tareas:       {}", wallet.tasks_completed);
-    println!("  Reputación:   {:.1}/100", wallet.reputation);
-    println!("═══════════════════════════════════\n");
+    display_node_startup_summary(
+        &peer_id.to_string(),
+        &node_identity.wallet_address,
+        benchmark.as_ref(),
+        worker_slots,
+        (!matches!(mode, NodeMode::Topology)).then(|| format!("{:?}", mode)),
+        wallet.balance,
+        wallet.tasks_completed,
+        wallet.reputation,
+    );
 
     // 6️⃣ MODEL INFRASTRUCTURE v0.6
-    let storage_config = StorageConfig::load();
-    let model_registry = ModelRegistry::new();
-    let model_storage = ModelStorage::new();
-
-    // v0.5.4: Detectar capabilities del nodo
-    let mut node_caps = ModelNodeCapabilities::detect(&peer_id.to_string());
-    let worker_startup_policy = if matches!(mode, NodeMode::Worker) {
-        let policy = WorkerStartupPolicy::from_env(&node_caps);
-        emit_inference_backend_selected_event(&policy);
-        if !policy.cpu_feature_compatible {
-            emit_backend_cpu_feature_incompatible_event(
-                &node_caps.cpu_features,
-                &node_caps.accelerator,
-                "continue_degraded_without_real_inference",
-            );
-        }
-        if let Some(reason) = policy.model_load_skip_reason {
-            emit_worker_model_load_skipped_event(reason);
-        }
-        Some(policy)
-    } else {
-        None
-    };
-    let inference_engine = if matches!(mode, NodeMode::Worker) {
-        worker_startup_policy
-            .as_ref()
-            .filter(|policy| policy.real_inference_available)
-            .map(|_| Arc::new(RealInferenceEngine::new(ModelStorage::new())))
-    } else {
-        Some(Arc::new(RealInferenceEngine::new(ModelStorage::new())))
-    };
-    let validated_advertised_models = if matches!(mode, NodeMode::Worker) {
-        let policy = worker_startup_policy
-            .as_ref()
-            .expect("worker startup policy must be present in worker mode");
-        validate_models_for_advertising(&model_registry, &model_storage, &node_caps, policy)
-    } else {
-        model_storage.list_local_models()
-    };
-    if matches!(mode, NodeMode::Worker) {
-        node_caps.supported_models = validated_advertised_models.clone();
-    }
-
-    let worker_setup = if matches!(mode, NodeMode::Worker) {
-        let detected = DetectedHardware {
-            cpu_cores: std::thread::available_parallelism()
-                .map(|n| n.get() as u32)
-                .unwrap_or(1),
-            ram_gb: benchmark
-                .as_ref()
-                .map(|b| b.ram_available_gb as u32)
-                .unwrap_or(node_caps.ram_gb),
-            gpu_available: benchmark
-                .as_ref()
-                .map(|b| b.gpu_available)
-                .unwrap_or(node_caps.gpu_type.is_some()),
-            disk_available_gb: node_caps.storage_available_gb,
-        };
-        Some(NodeSetupConfig::load_or_run(&detected)?)
-    } else {
-        None
-    };
+    let model_runtime = prepare_model_runtime_context(
+        matches!(mode, NodeMode::Worker),
+        &peer_id.to_string(),
+        benchmark.as_ref(),
+    )?;
+    let storage_config = model_runtime.storage_config;
+    let model_registry = model_runtime.registry;
+    let model_storage = model_runtime.storage;
+    let node_caps = model_runtime.node_caps;
+    let worker_startup_policy = model_runtime.worker_startup_policy;
+    let inference_engine = model_runtime.inference_engine;
+    let validated_advertised_models = model_runtime.validated_advertised_models;
+    let worker_setup = model_runtime.worker_setup;
 
     if let Some(cfg) = &worker_setup {
         cfg.display();
@@ -3298,91 +3070,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
 
     if matches!(mode, NodeMode::Worker) {
-        println!("💾 Storage limit: {} GB", storage_config.max_storage_gb);
-        println!("🤖 Modelos disponibles localmente:");
-        let local = model_storage.list_local_models();
-        if local.is_empty() {
-            println!("   (ninguno — usa --download-model <id>)");
-
-            let provision = ModelAutoProvision::new(ModelRegistry::new(), ModelStorage::new());
-            let profile = AutoProvisionProfile {
-                cpu_score: benchmark.as_ref().map(|b| b.cpu_score as u64).unwrap_or(0),
-                ram_gb: node_caps.ram_gb,
-                gpu_available: benchmark.as_ref().map(|b| b.gpu_available).unwrap_or(false),
-                storage_available_gb: worker_setup
-                    .as_ref()
-                    .map(|cfg| cfg.storage_limit_gb)
-                    .unwrap_or(node_caps.storage_available_gb),
-            };
-            let recommended = provision.startup_recommendations(&profile);
-
-            if !recommended.is_empty() {
-                println!("\n⚠ No models installed\n");
-                println!("Recommended:");
-                for model in &recommended {
-                    println!(
-                        "{} ({:.0}MB)",
-                        model.id,
-                        model.size_bytes as f64 / 1_048_576.0
-                    );
-                }
-
-                let auto_download_enabled = auto_model
-                    || worker_setup
-                        .as_ref()
-                        .map(|cfg| cfg.auto_download_enabled())
-                        .unwrap_or(false);
-
-                if auto_download_enabled {
-                    if let Some(model_id) = provision
-                        .auto_download_recommended(&profile, None, false)
-                        .await?
-                    {
-                        println!("\n⬇ Auto-downloaded: {}", model_id);
-                    }
-                } else {
-                    print!("\nDownload now? [Y/n] ");
-                    let _ = std::io::Write::flush(&mut std::io::stdout());
-                    let mut input = String::new();
-                    let _ = std::io::stdin().read_line(&mut input);
-
-                    if input.trim().is_empty() || matches!(input.trim(), "y" | "Y" | "yes" | "YES")
-                    {
-                        if let Some(model_id) = provision
-                            .auto_download_recommended(&profile, None, false)
-                            .await?
-                        {
-                            println!("✅ Modelo descargado: {}", model_id);
-                        }
-                    }
-                }
-            }
-        } else {
-            for m in &local {
-                // Verificar espacio antes de mostrar
-                let used = model_storage.total_size_bytes();
-                println!(
-                    "   ✅ {} (storage: {:.1}/{} GB)",
-                    m,
-                    used as f64 / 1_073_741_824.0,
-                    storage_config.max_storage_gb
-                );
-            }
-        }
-        println!("📋 Modelos en registry:");
-        for m in model_registry.list() {
-            let available = if model_storage.has_model(&m.id) {
-                "✅"
-            } else {
-                "⬜"
-            };
-            let fits = storage_config.has_space_for(m.size_bytes, model_storage.total_size_bytes());
-            let fits_str = if fits { "" } else { " ⚠️ sin espacio" };
-            println!(
-                "   {} {} v{} ({}GB RAM){}",
-                available, m.id, m.version, m.required_ram_gb, fits_str
-            );
-        }
+        display_worker_model_inventory_and_maybe_autoprovision(
+            &storage_config,
+            &model_registry,
+            &model_storage,
+            &node_caps,
+            worker_setup.as_ref(),
+            benchmark.as_ref(),
+            auto_model,
+        )
+        .await?;
     }
 
     // 7️⃣ Simulate workers — salida temprana
@@ -3503,6 +3200,33 @@ async fn main() -> Result<(), Box<dyn Error>> {
     if let Some(policy) = worker_startup_policy.as_ref() {
         apply_worker_startup_policy_to_capabilities(&mut capabilities, policy);
     }
+    let registry_models_for_display: Vec<RegistryModelDisplay> = model_registry
+        .list()
+        .into_iter()
+        .map(RegistryModelDisplay::from)
+        .collect();
+    let storage_models_for_display = model_storage.list_local_models();
+    let model_display_view = build_model_display_view(
+        &storage_models_for_display,
+        &registry_models_for_display,
+        &validated_advertised_models,
+        local_backend,
+        worker_startup_policy
+            .as_ref()
+            .map(|policy| policy.real_inference_available)
+            .unwrap_or(true),
+        capabilities.supported_tasks.clone(),
+        storage_config.max_storage_gb,
+        model_storage.total_size_bytes(),
+    );
+    let _capability_display_snapshot = build_capability_display_snapshot(
+        local_backend,
+        model_display_view.real_inference_available,
+        model_display_view.executable_models_count,
+        model_display_view.storage_models_count,
+        model_display_view.registry_models_count,
+        &capabilities.supported_tasks,
+    );
     let mut task_cache = TaskCache::new(1000);
     let mut peer_tracker = PeerTracker::new();
     let mut rate_limiter = RateLimiter::new(100); // ← 100 msgs/sec max
@@ -4140,20 +3864,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     }
 
                     if rate_limiter.allow("Heartbeat") {
-                        let hb = serde_json::json!({
-                            "type": "Heartbeat",
-                            "peer_id": peer_id.to_string(),
-                            "available_slots": available_slots,
-                            "reputation_score": rep.reputation_score,
-                            "uptime_secs": uptime,
-                            "avg_latency_ms": rep.avg_execution_ms,
-                            "capabilities": {
-                                "cpu_cores": capabilities.cpu_cores,
-                                "ram_gb": capabilities.ram_gb,
-                                "gpu_available": capabilities.gpu_available,
-                                "supported_tasks": capabilities.supported_tasks,
-                            }
-                        });
+                        let hb = build_worker_heartbeat_payload(
+                            &peer_id.to_string(),
+                            available_slots,
+                            rep.reputation_score,
+                            uptime,
+                            rep.avg_execution_ms,
+                            &capabilities,
+                        );
                         let hb_topic = gossipsub::IdentTopic::new("iamine-heartbeat");
                         let _ = swarm.behaviour_mut().gossipsub.publish(
                             hb_topic, serde_json::to_vec(&hb).unwrap(),
@@ -4161,18 +3879,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     }
 
                     // ─── Broadcast NodeModelsBroadcast
-                    let installer = ModelInstaller::new();
-                    let allowed_model_ids: HashSet<_> =
-                        validated_advertised_models.iter().cloned().collect();
-                    let mut nm = installer.build_node_models(&peer_id.to_string());
-                    nm.models
-                        .retain(|model| allowed_model_ids.contains(&model.id));
-                    if !nm.models.is_empty() {
-                        let payload = serde_json::json!({
-                            "type": "NodeModelsBroadcast",
-                            "node_id": peer_id.to_string(),
-                            "models": nm.models,
-                        });
+                    if let Some(payload) = build_node_models_broadcast_payload(
+                        &peer_id.to_string(),
+                        &validated_advertised_models,
+                    ) {
                         let _ = swarm.behaviour_mut().gossipsub.publish(
                             gossipsub::IdentTopic::new("iamine-heartbeat"),
                             serde_json::to_vec(&payload).unwrap(),
@@ -4180,18 +3890,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     }
 
                     // Broadcast capabilities
-                    let cap_hb = NodeCapabilityHeartbeat {
-                        peer_id: peer_id.to_string(),
-                        cpu_score: benchmark.as_ref().map(|b| b.cpu_score as u64).unwrap_or(0),
-                        ram_gb: benchmark.as_ref().map(|b| b.ram_available_gb as u32).unwrap_or(8),
-                        gpu_available: benchmark.as_ref().map(|b| b.gpu_available).unwrap_or(false),
-                        storage_available_gb: node_caps.storage_available_gb,
-                        accelerator: node_caps.accelerator.clone(),
-                        models: validated_advertised_models.clone(),
-                        worker_slots: worker_slots as u32,
-                        active_tasks: active_tasks as u32,
-                        latency_ms: peer_tracker.avg_latency().max(1.0) as u32,
-                    };
+                    let cap_hb = build_node_capability_heartbeat(
+                        &peer_id.to_string(),
+                        benchmark.as_ref(),
+                        &node_caps,
+                        &validated_advertised_models,
+                        worker_slots,
+                        active_tasks,
+                        peer_tracker.avg_latency(),
+                    );
                     let _ = swarm.behaviour_mut().gossipsub.publish(
                         gossipsub::IdentTopic::new(CAP_TOPIC),
                         serde_json::to_vec(&cap_hb).unwrap(),
@@ -5824,7 +5531,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 let requester_peer =
                                     msg["requester_peer"].as_str().unwrap_or("").to_string();
                                 let remote_attempt_started_at = tokio::time::Instant::now();
-                                let local_model_available = model_storage.has_model(&model_id);
+                                let model_execution_gate = evaluate_worker_model_execution_gate(
+                                    &model_id,
+                                    &model_storage,
+                                    &node_caps,
+                                    worker_startup_policy.as_ref(),
+                                );
+                                let local_model_available =
+                                    model_execution_gate.local_model_available;
                                 emit_worker_task_message_received_event(
                                     &task_id,
                                     &attempt_id,
@@ -5845,30 +5559,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 println!("🧠 [Worker] InferenceRequest: model={} prompt='{}'",
                                     model_id, &prompt[..prompt.len().min(40)]);
 
-                                let mock_backend_enabled = worker_startup_policy
-                                    .as_ref()
-                                    .map(|policy| policy.mock_backend())
-                                    .unwrap_or(false);
-                                let real_inference_available = worker_startup_policy
-                                    .as_ref()
-                                    .map(|policy| policy.real_inference_available)
-                                    .unwrap_or(true);
-
-                                // Check model installed unless the explicit mock backend handles it.
-                                if !local_model_available && !mock_backend_enabled {
-                                    println!("   ⚠️ Modelo {} no instalado — ignorando", model_id);
+                                if let Some(rejection) = model_execution_gate.rejection {
+                                    println!("{}", rejection.human_warning(&model_id));
                                     continue;
                                 }
-
-                                // v0.5.4: Validar requisitos de hardware
-                                if !mock_backend_enabled {
-                                    if let Some(req) = ModelRequirements::for_model(&model_id) {
-                                    if !can_node_run_model(&node_caps, &req) {
-                                        println!("   ⚠️ Hardware insuficiente para {} — ignorando", model_id);
-                                        continue;
-                                    }
-                                    }
-                                }
+                                let mock_backend_enabled = model_execution_gate.mock_backend_enabled;
+                                let real_inference_available =
+                                    model_execution_gate.real_inference_available;
                                 for stage in [
                                     "task_received",
                                     "task_message_received",
@@ -7006,7 +6703,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 let prompt = msg["prompt"].as_str().unwrap_or("").to_string();
                                 let max_tokens = msg["max_tokens"].as_u64().unwrap_or(200) as u32;
                                 let remote_attempt_started_at = tokio::time::Instant::now();
-                                let local_model_available = model_storage.has_model(&model_id);
+                                let model_execution_gate = evaluate_worker_model_execution_gate(
+                                    &model_id,
+                                    &model_storage,
+                                    &node_caps,
+                                    worker_startup_policy.as_ref(),
+                                );
+                                let local_model_available =
+                                    model_execution_gate.local_model_available;
                                 emit_worker_task_message_received_event(
                                     &task_id,
                                     &attempt_id,
@@ -7020,28 +6724,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 println!("🧠 [Worker] DirectInferenceRequest: model={} prompt='{}'",
                                     model_id, &prompt[..prompt.len().min(40)]);
 
-                                let mock_backend_enabled = worker_startup_policy
-                                    .as_ref()
-                                    .map(|policy| policy.mock_backend())
-                                    .unwrap_or(false);
-                                let real_inference_available = worker_startup_policy
-                                    .as_ref()
-                                    .map(|policy| policy.real_inference_available)
-                                    .unwrap_or(true);
-
-                                if !local_model_available && !mock_backend_enabled {
-                                    println!("   ⚠️ Modelo {} no instalado — ignorando", model_id);
+                                if let Some(rejection) = model_execution_gate.rejection {
+                                    println!("{}", rejection.human_warning(&model_id));
                                     continue;
                                 }
-
-                                if !mock_backend_enabled {
-                                    if let Some(req) = ModelRequirements::for_model(&model_id) {
-                                    if !can_node_run_model(&node_caps, &req) {
-                                        println!("   ⚠️ Hardware insuficiente para {} — ignorando", model_id);
-                                        continue;
-                                    }
-                                    }
-                                }
+                                let mock_backend_enabled = model_execution_gate.mock_backend_enabled;
+                                let real_inference_available =
+                                    model_execution_gate.real_inference_available;
                                 for stage in [
                                     "task_received",
                                     "task_message_received",
