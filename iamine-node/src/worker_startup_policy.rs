@@ -303,16 +303,6 @@ impl StartupMathError {
     }
 }
 
-pub(crate) fn checked_sub_u16(
-    operation: &'static str,
-    a: u16,
-    b: u16,
-    reason: &'static str,
-) -> Result<u16, StartupMathError> {
-    a.checked_sub(b)
-        .ok_or_else(|| StartupMathError::new(operation, a as u64, b as u64, reason))
-}
-
 pub(crate) fn checked_sub_usize(
     operation: &'static str,
     a: usize,
@@ -321,24 +311,6 @@ pub(crate) fn checked_sub_usize(
 ) -> Result<usize, StartupMathError> {
     a.checked_sub(b)
         .ok_or_else(|| StartupMathError::new(operation, a as u64, b as u64, reason))
-}
-
-pub(crate) fn compute_metrics_port(worker_port: u16) -> Result<u16, StartupMathError> {
-    let offset = checked_sub_u16(
-        "worker_port_minus_base",
-        worker_port,
-        9000,
-        "worker_port_below_metrics_base",
-    )?;
-
-    9090u16.checked_add(offset).ok_or_else(|| {
-        StartupMathError::new(
-            "metrics_port_plus_offset",
-            9090,
-            offset as u64,
-            "metrics_port_out_of_range",
-        )
-    })
 }
 
 pub(crate) fn compute_active_tasks(
@@ -641,7 +613,7 @@ mod tests {
 
     #[test]
     fn test_invalid_startup_resource_calculation_path() {
-        let error = compute_metrics_port(7001).unwrap_err();
+        let error = crate::metrics_policy::compute_metrics_port(7001).unwrap_err();
 
         assert_eq!(error.operation, "worker_port_minus_base");
         assert_eq!(error.operand_a, 7001);
@@ -707,7 +679,7 @@ mod tests {
     #[test]
     fn test_no_panic_for_invalid_startup_math_inputs() {
         let result = std::panic::catch_unwind(|| {
-            let _ = compute_metrics_port(7001);
+            let _ = crate::metrics_policy::compute_metrics_port(7001);
             let _ = compute_active_tasks(1, 2);
         });
 
