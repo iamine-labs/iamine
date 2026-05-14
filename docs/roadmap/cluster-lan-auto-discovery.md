@@ -4,32 +4,51 @@
 
 CLUSTER-LAN-AUTO-DISCOVERY-001
 
-## Baseline
+## Recommended Base
 
-Start from:
+Start from `develop` after CLOSEOUT-REFACTORING-GATE-001 is merged.
+
+Current technical base for the closeout gate:
 
 ```text
-branch: fix/proxmox-broadcast-taskresult-return-004
-commit: 4987d02
+branch: develop
+commit: 69c292a
+status: pre-cluster refactors merged
+decision: GO WITH CONDITIONS
 ```
 
-This baseline has field-validated LAN Proxmox Broadcast:
+## Why Cluster LAN Is Unblocked
+
+The pre-cluster refactor cycle reduced `iamine-node/src/main.rs` from 14150
+lines to 8931 lines and moved critical behavior into dedicated modules:
+
+- Broadcast protocol/runtime/worker helpers
+- worker startup and backend policy
+- CLI parsing and mode dispatch
+- PubSub readiness and topic tracking
+- model display and executability classification
+- result protocol and acceptance
+- metrics policy and metrics server fallback
+
+The validated Broadcast baseline remains:
 
 ```text
 TaskOffer -> TaskBid -> TaskAssign -> TaskResult -> final_outcome=success
 ```
 
-## Goal
+## Cluster LAN Goal
 
-Add Cluster LAN auto discovery on top of the validated LAN Broadcast baseline.
+Add LAN cluster auto discovery and status on top of the validated Broadcast and
+worker startup baseline.
 
 Expected direction:
 
 - discover LAN peers
-- classify controller/worker roles
+- classify controller and worker roles
 - expose cluster membership
 - expose cluster readiness/status
-- reuse safe worker startup
+- aggregate node capabilities
+- show backend, real inference availability, and metrics availability clearly
 - reuse PubSub readiness semantics
 - keep Broadcast baseline passing
 
@@ -38,9 +57,11 @@ Expected direction:
 - cluster peer discovery state
 - cluster readiness model
 - cluster status observability
-- cluster status CLI or equivalent, if requested in the cluster milestone
-- capability aggregation using existing worker safe startup policy
+- cluster status CLI or equivalent if requested by the milestone
+- capability aggregation using extracted worker startup and capability modules
+- metrics availability using extracted metrics policy
 - conservative PubSub readiness checks
+- regression-safe integration with Broadcast
 
 ## Out Of Scope
 
@@ -52,95 +73,36 @@ Expected direction:
 - dashboard/installer/autoupdate
 - major scheduler rewrite
 
-## Dependencies
+## Completed Dependencies
 
-Cluster LAN should depend on:
+- Broadcast runtime helpers extracted
+- worker startup policy extracted
+- backend policy extracted
+- CPU guard extracted
+- worker capability advertisement extracted
+- CLI parsing and mode dispatch extracted
+- PubSub topics/readiness/tracker/observability extracted
+- model display and executability extracted
+- result protocol and acceptance extracted
+- final outcome helpers extracted
+- metrics policy and server fallback extracted
 
-- worker safe startup policy
-- Broadcast PubSub topic readiness
-- controller/worker topic subscription events
-- worker capabilities with mock/degraded mode
-- existing heartbeat/capability events
-- final Broadcast smoke as regression baseline
+## Reuse Requirements
 
-## Code Quality Review Answers
+Cluster LAN should reuse:
 
-1. Has main.rs grown too large again?
-Yes. At closeout it is about 14k lines. This is manageable for a milestone baseline but high-risk for continued feature growth.
+- `pubsub_topic_tracker.rs` for observed peer subscriptions
+- `pubsub_readiness.rs` for real readiness decisions
+- `worker_startup_policy.rs` for degraded/mock startup state
+- `backend_policy.rs` and `cpu_feature_guard.rs` for backend availability
+- `worker_capability_advertisement.rs` for advertised capabilities
+- `model_display_policy.rs` and `model_executability.rs` for display semantics
+- `metrics_policy.rs` for metrics availability and fallback state
+- `result_acceptance.rs` if task/result status is surfaced
 
-2. Should Broadcast be extracted before cluster work?
-GO WITH CONDITIONS. A full extraction is not required before starting Cluster LAN, but Broadcast should be treated as a protected regression path. Any Cluster LAN work that touches Broadcast should first extract small pure helpers or add tests.
+Do not reintroduce connected_peers-only readiness.
 
-3. Is TaskOffer/TaskBid/TaskAssign/TaskResult protocol centralized enough?
-Partially. Builders exist as helpers, but they still live in main.rs. This is acceptable short term, but a broadcast_protocol module is recommended.
-
-4. Is PubSub topic tracking reusable for Cluster LAN?
-Yes, conceptually. It needs extraction for clean reuse. Do not reimplement connected_peers-only readiness.
-
-5. Is worker startup policy reusable for Cluster LAN?
-Yes. The mock/skip/degraded model is directly reusable for cluster status.
-
-6. Is capability advertisement correct enough for cluster status?
-Mostly, with one caveat. Machine-readable state correctly distinguishes backend=mock and real_inference_available=false, but human display still needs cleanup.
-
-7. Is there duplicated result handling between Broadcast and inference paths?
-Yes. Broadcast result handling and distributed inference result handling share concepts but use different payloads and acceptance paths. This is P1 technical debt.
-
-8. Is recovery/timer logic clean and isolated?
-No. Recovery remains embedded in the Broadcast runtime path and should be isolated before more timeout policies are added. It is not a P0 blocker because current Broadcast behavior is validated.
-
-9. Are NDJSON events consistent enough for QA and future dashboard?
-Good enough for QA. For dashboards, event field names should be normalized later, especially worker_id vs worker_peer_id and output vs output_preview.
-
-10. Is it safe to start CLUSTER-LAN-AUTO-DISCOVERY-001 from 4987d02?
-GO WITH CONDITIONS. The field baseline is strong and no P0 issue blocks Cluster LAN, but main.rs modularity should be watched closely.
-
-## Risks
-
-P1: main.rs density and mode branching can make Cluster LAN changes risky if added directly into the same select loop.
-
-P1: Broadcast recovery and result acceptance are coupled to runtime state and should become a small state machine.
-
-P1: Result handling is duplicated between Broadcast and distributed inference paths.
-
-P2: PubSub readiness helpers are reusable but not yet extracted into a module.
-
-P2: Human capability display in mock/skip mode can confuse operators.
-
-P2: NDJSON event schema is useful but not yet formally versioned.
-
-## Recommended Refactors
-
-P1: Extract broadcast_protocol.rs:
-TaskOffer, TaskBid, TaskAssign, TaskResult payload builders and acceptance helpers.
-
-P1: Extract broadcast_runtime.rs:
-Controller-side BroadcastOfferState, assignment, result acceptance, and recovery state.
-
-P1: Extract broadcast_worker.rs:
-Worker-side TaskOffer, TaskAssign execution, and TaskResult publication.
-
-P2: Extract pubsub_readiness.rs:
-topic tracker sync, subscriber counts, mesh counts, readiness snapshots.
-
-P2: Add an event schema reference for NDJSON fields used by QA and future dashboard work.
-
-P2: Clean up mock capability display before a user-facing cluster status UI.
-
-## Go/No-Go
-
-GO WITH CONDITIONS.
-
-Conditions:
-
-- Keep Broadcast smoke as a regression test for Cluster LAN.
-- Do not add Cluster LAN logic by expanding the Broadcast match arms significantly.
-- Reuse existing PubSub readiness semantics.
-- Keep worker mock/skip startup as the default safe Proxmox validation mode.
-- Treat real CPU inference as out of scope.
-- Prefer small module extraction if Cluster LAN needs to touch Broadcast internals.
-
-## Cluster Acceptance Baseline
+## Required Baseline Smoke
 
 Before and after Cluster LAN changes, run:
 
@@ -160,7 +122,46 @@ Expected:
 - exactly one worker executes
 - TaskResult published
 - TaskResult received
-- output == reverse_string(SMOKE_ID)
-- broadcast_recovery_cancelled
-- final_outcome=success
+- output equals reverse_string(SMOKE_ID)
+- `broadcast_recovery_cancelled`
+- `final_outcome=success`
 - no rebroadcast after success
+- no duplicate execution/result
+
+## Pending QA
+
+Proxmox/R5500 metrics field smoke is still pending for
+REFACTOR-METRICS-SERVER-008.
+
+This is not blocking for starting Cluster LAN, but it is a condition for closing
+Cluster LAN cleanly.
+
+If the Proxmox metrics smoke fails, open a bugfix on `develop` before closing or
+shipping Cluster LAN.
+
+## Follow-Ups
+
+- QA-CLI-UNKNOWN-MODE-EXIT-CODE-007: verify unknown mode exit code and fix if it
+  still exits 0.
+- Keep metrics unavailable/fallback visible in cluster status.
+- Existing Rust dead_code warnings are not blocking.
+- Cluster assignment log spam can be cleaned later.
+
+## Go/No-Go
+
+GO WITH CONDITIONS.
+
+Conditions:
+
+- Run Proxmox/R5500 metrics smoke when Dell is available.
+- Keep Broadcast smoke as a protected regression.
+- Do not add Cluster LAN state directly into `main.rs` when an extracted module
+  can own it.
+- Keep worker mock/skip startup as the Proxmox safety baseline.
+- Treat real CPU inference on Proxmox/R5500 as out of scope.
+
+Recommended next branch:
+
+```text
+feature/cluster-lan-auto-discovery-001
+```
