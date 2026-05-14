@@ -1,8 +1,11 @@
 use crate::broadcast_protocol::broadcast_payload_preview;
+use crate::result_acceptance::{
+    decide_broadcast_result_acceptance, BroadcastResultAcceptanceContext,
+};
 use crate::{
     log_observability_event, ASSIGN_TOPIC, BROADCAST_OFFER_MAX_ATTEMPTS,
     BROADCAST_OFFER_MAX_RETRY_DELAY_MS, BROADCAST_OFFER_RETRY_DELAY_MS,
-    BROADCAST_READINESS_TIMEOUT_MS, RESULTS_TOPIC, TASK_TOPIC,
+    BROADCAST_READINESS_TIMEOUT_MS, TASK_TOPIC,
 };
 use iamine_network::{LogLevel, TASK_DISPATCH_UNCONFIRMED_001};
 use serde_json::{Map, Value};
@@ -238,23 +241,15 @@ pub(crate) fn evaluate_broadcast_result_acceptance(
     worker_peer_id: &str,
     success: bool,
 ) -> Result<(), &'static str> {
-    let Some(state) = state else {
-        return Err("unknown_task_id");
-    };
-    if state.task_id != task_id {
-        return Err("unknown_task_id");
-    }
-    if state.result_accepted {
-        return Err("duplicate_result");
-    }
-    if !success {
-        return Err("success_false");
-    }
-    match state.assigned_worker.as_deref() {
-        Some(assigned_worker) if assigned_worker == worker_peer_id => Ok(()),
-        Some(_) => Err("wrong_worker"),
-        None => Err("task_not_assigned"),
-    }
+    decide_broadcast_result_acceptance(BroadcastResultAcceptanceContext {
+        expected_task_id: state.map(|state| state.task_id.as_str()),
+        assigned_worker_peer_id: state.and_then(|state| state.assigned_worker.as_deref()),
+        result_already_accepted: state.map(|state| state.result_accepted).unwrap_or(false),
+        result_task_id: task_id,
+        result_worker_peer_id: worker_peer_id,
+        success,
+    })
+    .into_result()
 }
 
 pub(crate) fn emit_broadcast_task_offer_prepared_event(
@@ -591,152 +586,14 @@ pub(crate) fn emit_broadcast_pubsub_ready_event(peer_id: &str, topics: &[&str]) 
     );
 }
 
-pub(crate) struct BroadcastResultReceived<'a> {
-    pub(crate) task_id: &'a str,
-    pub(crate) task_type: &'a str,
-    pub(crate) worker_peer_id: &'a str,
-    pub(crate) assigned_worker_peer_id: Option<&'a str>,
-    pub(crate) origin_peer: Option<&'a str>,
-    pub(crate) success: bool,
-    pub(crate) output: &'a str,
-    pub(crate) elapsed_ms: u64,
-    pub(crate) transport: &'a str,
-    pub(crate) accepted: bool,
-    pub(crate) rejection_reason: Option<&'a str>,
-}
-
-pub(crate) fn emit_broadcast_result_received_events(result: &BroadcastResultReceived<'_>) {
-    for event_name in [
-        "task_result_received",
-        "broadcast_result_received",
-        "result_received",
-    ] {
-        log_observability_event(
-            LogLevel::Info,
-            event_name,
-            result.task_id,
-            Some(result.task_id),
-            None,
-            None,
-            {
-                let mut fields = Map::new();
-                fields.insert("task_type".to_string(), result.task_type.into());
-                fields.insert("worker_peer_id".to_string(), result.worker_peer_id.into());
-                if let Some(assigned_worker_peer_id) = result.assigned_worker_peer_id {
-                    fields.insert(
-                        "assigned_worker_peer_id".to_string(),
-                        assigned_worker_peer_id.into(),
-                    );
-                }
-                if let Some(origin_peer) = result.origin_peer {
-                    fields.insert("origin_peer".to_string(), origin_peer.into());
-                    fields.insert("controller_peer_id".to_string(), origin_peer.into());
-                }
-                fields.insert("success".to_string(), result.success.into());
-                fields.insert("output".to_string(), result.output.into());
-                fields.insert(
-                    "output_preview".to_string(),
-                    broadcast_payload_preview(result.output).into(),
-                );
-                fields.insert("elapsed_ms".to_string(), result.elapsed_ms.into());
-                fields.insert("transport".to_string(), result.transport.into());
-                fields.insert("topic".to_string(), RESULTS_TOPIC.into());
-                fields.insert("accepted".to_string(), result.accepted.into());
-                if let Some(rejection_reason) = result.rejection_reason {
-                    fields.insert("rejection_reason".to_string(), rejection_reason.into());
-                }
-                fields
-            },
-        );
-    }
-}
-
-pub(crate) fn emit_broadcast_result_rejected_event(
-    result: &BroadcastResultReceived<'_>,
-    reason: &str,
-) {
-    log_observability_event(
-        LogLevel::Warn,
-        "broadcast_result_rejected",
-        result.task_id,
-        Some(result.task_id),
-        None,
-        Some(TASK_DISPATCH_UNCONFIRMED_001),
-        {
-            let mut fields = Map::new();
-            fields.insert("task_type".to_string(), result.task_type.into());
-            fields.insert("worker_peer_id".to_string(), result.worker_peer_id.into());
-            if let Some(assigned_worker_peer_id) = result.assigned_worker_peer_id {
-                fields.insert(
-                    "assigned_worker_peer_id".to_string(),
-                    assigned_worker_peer_id.into(),
-                );
-            }
-            if let Some(origin_peer) = result.origin_peer {
-                fields.insert("origin_peer".to_string(), origin_peer.into());
-                fields.insert("controller_peer_id".to_string(), origin_peer.into());
-            }
-            fields.insert("success".to_string(), result.success.into());
-            fields.insert("transport".to_string(), result.transport.into());
-            fields.insert("topic".to_string(), RESULTS_TOPIC.into());
-            fields.insert("accepted".to_string(), false.into());
-            fields.insert("rejection_reason".to_string(), reason.into());
-            fields
-        },
-    );
-}
-
-pub(crate) fn emit_broadcast_recovery_cancelled_event(task_id: &str, worker_peer_id: &str) {
-    log_observability_event(
-        LogLevel::Info,
-        "broadcast_recovery_cancelled",
-        task_id,
-        Some(task_id),
-        None,
-        None,
-        {
-            let mut fields = Map::new();
-            fields.insert("worker_peer_id".to_string(), worker_peer_id.into());
-            fields.insert("reason".to_string(), "result_accepted".into());
-            fields
-        },
-    );
-}
-
-pub(crate) fn emit_broadcast_final_outcome_success_event(
-    task_id: &str,
-    worker_peer_id: &str,
-    output: &str,
-) {
-    for event_name in ["final_outcome", "final_outcome_success"] {
-        log_observability_event(
-            LogLevel::Info,
-            event_name,
-            task_id,
-            Some(task_id),
-            None,
-            None,
-            {
-                let mut fields = Map::new();
-                fields.insert("outcome".to_string(), "success".into());
-                fields.insert("failed".to_string(), false.into());
-                fields.insert("worker_peer_id".to_string(), worker_peer_id.into());
-                fields.insert("output".to_string(), output.into());
-                fields.insert(
-                    "output_preview".to_string(),
-                    broadcast_payload_preview(output).into(),
-                );
-                fields
-            },
-        );
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::broadcast_worker::emit_worker_pubsub_ready_event;
     use crate::broadcast_worker::emit_worker_topic_subscribed_event;
+    use crate::result_observability::{
+        emit_broadcast_final_outcome_success_event, emit_broadcast_recovery_cancelled_event,
+    };
     use crate::{PubsubTopicTracker, BIDS_TOPIC, BROADCAST_PUBSUB_TOPICS};
     use libp2p::{gossipsub, PeerId};
     use std::collections::HashSet;
