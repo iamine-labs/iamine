@@ -12,6 +12,8 @@ mod executor;
 mod final_outcome;
 mod heartbeat;
 mod metrics;
+mod metrics_policy;
+mod metrics_server;
 mod mode_dispatch;
 mod model_display_policy;
 mod model_executability;
@@ -77,7 +79,8 @@ use iamine_network::DistributedTaskMetrics;
 use benchmark::NodeBenchmark;
 use daemon_runtime::{daemon_is_available, daemon_socket_path, infer_via_daemon, run_daemon};
 use heartbeat::HeartbeatService;
-use metrics::{start_metrics_server, NodeMetrics};
+use metrics::NodeMetrics;
+use metrics_server::*;
 use node_identity::NodeIdentity; // ← actualizado
 use peer_tracker::PeerTracker;
 use quality_gate::runtime_version_metadata;
@@ -1208,20 +1211,6 @@ impl ActiveAttempt {
         let previous = self.worker_peer_id.clone();
         self.worker_peer_id = worker_peer_id.to_string();
         Some(previous)
-    }
-}
-
-#[cfg(test)]
-fn apply_retry_fallback_metrics(
-    metrics: &mut DistributedTaskMetrics,
-    retry_taken: bool,
-    fallback_broadcast: bool,
-) {
-    if retry_taken {
-        metrics.retry_recorded();
-    }
-    if fallback_broadcast {
-        metrics.fallback_recorded();
     }
 }
 
@@ -2946,40 +2935,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
         return Err(error.into());
     }
 
-    let metrics_port = if matches!(mode, NodeMode::Worker) {
-        match compute_metrics_port(worker_port) {
-            Ok(port) => Some(port),
-            Err(error) => {
-                emit_worker_startup_overflow_event(
-                    "startup",
-                    &node_identity.node_id,
-                    &peer_id.to_string(),
-                    worker_port,
-                    &resource_policy,
-                    worker_slots,
-                    pool.max_concurrent,
-                    pool.available_slots(),
-                    &error,
-                    "continue_without_metrics_server",
-                );
-                println!(
-                    "⚠️  [Startup] Cálculo de metrics port inválido: {}. Continuando en modo degradado (metrics deshabilitado).",
-                    error.describe()
-                );
-                None
-            }
-        }
-    } else {
-        None
-    };
-
-    if let Some(metrics_port) = metrics_port {
-        let m = Arc::clone(&metrics);
-        let port = metrics_port;
-        println!("📊 Metrics en http://localhost:{}/metrics", metrics_port);
-        tokio::spawn(async move {
-            start_metrics_server(m, port).await;
-        });
+    if matches!(mode, NodeMode::Worker) {
+        start_worker_metrics_or_continue(
+            Arc::clone(&metrics),
+            MetricsStartupContext {
+                trace_id: "startup",
+                node_id: &node_identity.node_id,
+                peer_id: &peer_id.to_string(),
+                worker_port,
+                resource_policy: &resource_policy,
+                worker_slots,
+                max_concurrent: pool.max_concurrent,
+                available_slots: pool.available_slots(),
+            },
+        );
     }
 
     let mut heartbeat_rx = HeartbeatService::start(5);
@@ -4535,33 +4504,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                             continue;
                                         }
 
-                                        let (trace, aggregate_metrics) =
-                                            finalize_distributed_task_observability(
-                                                &trace_task_id,
-                                                infer_started_at,
-                                                true,
-                                            );
-                                        if let Some(trace) = trace {
-                                            println!(
-                                                "[Metrics] latency={} retries={} fallbacks={}",
-                                                trace.total_latency_ms, trace.retries, trace.fallbacks
-                                            );
-                                        }
-                                        println!(
-                                            "[Metrics] totals: tasks={} failed={} avg_latency_ms={:.1}",
-                                            aggregate_metrics.total_tasks,
-                                            aggregate_metrics.failed_tasks,
-                                            aggregate_metrics.avg_latency_ms
-                                        );
-                                        emit_final_trace_summary_event(
+                                        finalize_and_report_distributed_task_observability(
                                             infer_state,
-                                            &aggregate_metrics,
+                                            infer_started_at,
                                             true,
-                                        );
-                                        print_human_final_task_summary(
-                                            infer_state,
-                                            &aggregate_metrics,
-                                            true,
+                                            false,
                                         );
                                     }
                                     break;
@@ -5994,35 +5941,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                 continue;
                                             }
 
-                                            let (trace, aggregate_metrics) =
-                                                finalize_distributed_task_observability(
-                                                    &trace_task_id,
-                                                    infer_started_at,
-                                                    true,
-                                                );
-                                            if let Some(trace) = trace {
-                                                println!(
-                                                    "[Metrics] latency={} retries={} fallbacks={}",
-                                                    trace.total_latency_ms,
-                                                    trace.retries,
-                                                    trace.fallbacks
-                                                );
-                                            }
-                                            println!(
-                                                "[Metrics] totals: tasks={} failed={} avg_latency_ms={:.1}",
-                                                aggregate_metrics.total_tasks,
-                                                aggregate_metrics.failed_tasks,
-                                                aggregate_metrics.avg_latency_ms
-                                            );
-                                            emit_final_trace_summary_event(
+                                            finalize_and_report_distributed_task_observability(
                                                 infer_state,
-                                                &aggregate_metrics,
+                                                infer_started_at,
                                                 true,
-                                            );
-                                            print_human_final_task_summary(
-                                                infer_state,
-                                                &aggregate_metrics,
-                                                true,
+                                                false,
                                             );
                                         }
 
@@ -6152,37 +6075,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         &mut rendered_output,
                                     );
                                     if let Some(infer_state) = distributed_infer_state.as_ref() {
-                                        let (trace, aggregate_metrics) =
-                                            finalize_distributed_task_observability(
-                                                &infer_state.trace_task_id,
-                                                infer_started_at,
-                                                false,
-                                            );
-                                        if let Some(trace) = trace {
-                                            println!(
-                                                "[Trace] nodes={} models={}",
-                                                trace.node_history.join(" -> "),
-                                                trace.model_history.join(" -> ")
-                                            );
-                                            println!(
-                                                "[Metrics] latency={} retries={} fallbacks={}",
-                                                trace.total_latency_ms, trace.retries, trace.fallbacks
-                                            );
-                                        }
-                                        println!(
-                                            "[Metrics] totals: tasks={} failed={} avg_latency_ms={:.1}",
-                                            aggregate_metrics.total_tasks,
-                                            aggregate_metrics.failed_tasks,
-                                            aggregate_metrics.avg_latency_ms
-                                        );
-                                        emit_final_trace_summary_event(
+                                        finalize_and_report_distributed_task_observability(
                                             infer_state,
-                                            &aggregate_metrics,
+                                            infer_started_at,
                                             false,
-                                        );
-                                        print_human_final_task_summary(
-                                            infer_state,
-                                            &aggregate_metrics,
                                             false,
                                         );
                                     }
@@ -6869,30 +6765,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     fields
                                 },
                             );
-                            let (trace, aggregate_metrics) =
-                                finalize_distributed_task_observability(
-                                    &request.task_id,
-                                    infer_started_at,
-                                    false,
-                                );
-                            if let Some(trace) = trace {
-                                println!(
-                                    "[Metrics] latency={} retries={} fallbacks={}",
-                                    trace.total_latency_ms, trace.retries, trace.fallbacks
-                                );
-                            }
-                            if let Some(infer_state) = distributed_infer_state.as_ref() {
-                                emit_final_trace_summary_event(
-                                    infer_state,
-                                    &aggregate_metrics,
-                                    false,
-                                );
-                                print_human_final_task_summary(
-                                    infer_state,
-                                    &aggregate_metrics,
-                                    false,
-                                );
-                            }
+                            finalize_and_report_direct_result_observability(
+                                &request.task_id,
+                                infer_started_at,
+                                distributed_infer_state.as_ref(),
+                            );
                             break;
                         }
                     }
@@ -7806,33 +7683,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                             continue;
                                         }
 
-                                        let (trace, aggregate_metrics) =
-                                            finalize_distributed_task_observability(
-                                                &trace_task_id,
-                                                infer_started_at,
-                                                true,
-                                            );
-                                        if let Some(trace) = trace {
-                                            println!(
-                                                "[Metrics] latency={} retries={} fallbacks={}",
-                                                trace.total_latency_ms, trace.retries, trace.fallbacks
-                                            );
-                                        }
-                                        println!(
-                                            "[Metrics] totals: tasks={} failed={} avg_latency_ms={:.1}",
-                                            aggregate_metrics.total_tasks,
-                                            aggregate_metrics.failed_tasks,
-                                            aggregate_metrics.avg_latency_ms
-                                        );
-                                        emit_final_trace_summary_event(
+                                        finalize_and_report_distributed_task_observability(
                                             infer_state,
-                                            &aggregate_metrics,
+                                            infer_started_at,
                                             true,
-                                        );
-                                        print_human_final_task_summary(
-                                            infer_state,
-                                            &aggregate_metrics,
-                                            true,
+                                            false,
                                         );
                                     }
 
@@ -7942,37 +7797,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         .unwrap_or("-")
                                 );
                                 if let Some(infer_state) = distributed_infer_state.as_ref() {
-                                    let (trace, aggregate_metrics) =
-                                        finalize_distributed_task_observability(
-                                            &infer_state.trace_task_id,
-                                            infer_started_at,
-                                            false,
-                                        );
-                                    if let Some(trace) = trace {
-                                        println!(
-                                            "[Trace] nodes={} models={}",
-                                            trace.node_history.join(" -> "),
-                                            trace.model_history.join(" -> ")
-                                        );
-                                        println!(
-                                            "[Metrics] latency={} retries={} fallbacks={}",
-                                            trace.total_latency_ms, trace.retries, trace.fallbacks
-                                        );
-                                    }
-                                    println!(
-                                        "[Metrics] totals: tasks={} failed={} avg_latency_ms={:.1}",
-                                        aggregate_metrics.total_tasks,
-                                        aggregate_metrics.failed_tasks,
-                                        aggregate_metrics.avg_latency_ms
-                                    );
-                                    emit_final_trace_summary_event(
+                                    finalize_and_report_distributed_task_observability(
                                         infer_state,
-                                        &aggregate_metrics,
+                                        infer_started_at,
                                         false,
-                                    );
-                                    print_human_final_task_summary(
-                                        infer_state,
-                                        &aggregate_metrics,
                                         false,
                                     );
                                 }
@@ -8190,17 +8018,6 @@ mod tests {
                 .and_then(|value| value.as_u64()),
             Some(42)
         );
-    }
-
-    #[test]
-    fn test_metrics_increments_for_retry_and_fallback() {
-        let mut metrics = DistributedTaskMetrics::default();
-        apply_retry_fallback_metrics(&mut metrics, true, false);
-        apply_retry_fallback_metrics(&mut metrics, false, true);
-
-        assert_eq!(metrics.retries_count, 1);
-        assert_eq!(metrics.fallback_count, 1);
-        assert_eq!(metrics.failed_tasks, 0);
     }
 
     #[test]
@@ -8933,14 +8750,6 @@ mod tests {
     }
 
     #[test]
-    fn test_late_results_accounting_does_not_increment_failed_tasks() {
-        let mut metrics = DistributedTaskMetrics::default();
-        metrics.late_result_recorded();
-        assert_eq!(metrics.late_results_count, 1);
-        assert_eq!(metrics.failed_tasks, 0);
-    }
-
-    #[test]
     fn test_per_task_retry_and_fallback_counters_increment() {
         let mut state = DistributedInferState::new("2+2".to_string(), None, None);
         state.increment_task_retry_count();
@@ -8949,14 +8758,6 @@ mod tests {
 
         assert_eq!(state.task_retry_count, 2);
         assert_eq!(state.task_fallback_count, 1);
-    }
-
-    #[test]
-    fn test_final_failure_increments_failed_tasks_once() {
-        let mut metrics = DistributedTaskMetrics::default();
-        metrics.task_failed();
-
-        assert_eq!(metrics.failed_tasks, 1);
     }
 
     #[test]
@@ -9102,52 +8903,6 @@ mod tests {
         assert!(lines[1].contains("peer=TS140"));
         assert!(!lines[1].contains("peer=-"));
         assert!(lines[1].contains("outcome=success"));
-    }
-
-    #[test]
-    fn test_final_outcome_success_when_fallback_worker_completes_after_100s() {
-        let mut metrics = DistributedTaskMetrics::default();
-        apply_retry_fallback_metrics(&mut metrics, true, false);
-        apply_retry_fallback_metrics(&mut metrics, false, true);
-
-        let mut watchdog = AttemptWatchdog::new_fallback_broadcast(
-            "task-long-fallback".to_string(),
-            "attempt-2".to_string(),
-            "mistral-7b".to_string(),
-            AttemptTimeoutPolicy::from_model_and_node("mistral-7b", None),
-        );
-        let _ = watchdog.claim_worker("TS140", AttemptClaimSource::AttemptProgress);
-        assert!(watchdog.record_progress("tokens_generated_count", Some(340)));
-        watchdog.started_at = tokio::time::Instant::now() - Duration::from_secs(109);
-        watchdog.last_progress_at = tokio::time::Instant::now();
-
-        assert_ne!(watchdog.check(), WatchdogCheck::TimedOut);
-        assert_ne!(watchdog.check(), WatchdogCheck::Stalled);
-        assert!(watchdog.transition_state(AttemptLifecycleState::Completed));
-
-        metrics.total_tasks = 1;
-        assert_eq!(metrics.failed_tasks, 0);
-        assert_eq!(watchdog.worker_peer_id, "TS140");
-        assert_eq!(watchdog.state, AttemptLifecycleState::Completed);
-    }
-
-    #[test]
-    fn test_retry_success_metrics_and_health_credit_do_not_mark_failed() {
-        let mut metrics = DistributedTaskMetrics::default();
-        apply_retry_fallback_metrics(&mut metrics, true, false);
-        apply_retry_fallback_metrics(&mut metrics, false, true);
-
-        let mut failed_worker_health = NodeHealth::default();
-        failed_worker_health.record_timeout();
-        let mut retry_worker_health = NodeHealth::default();
-        retry_worker_health.record_success(250);
-
-        assert_eq!(metrics.retries_count, 1);
-        assert_eq!(metrics.fallback_count, 1);
-        assert_eq!(metrics.failed_tasks, 0);
-        assert_eq!(failed_worker_health.policy_state(), "degraded");
-        assert_eq!(retry_worker_health.failure_count, 0);
-        assert!(retry_worker_health.last_success_timestamp.is_some());
     }
 
     #[test]

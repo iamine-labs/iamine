@@ -121,3 +121,53 @@ pub(super) fn emit_final_trace_summary_event(
         },
     );
 }
+
+pub(super) fn finalize_and_report_distributed_task_observability(
+    infer_state: &DistributedInferState,
+    started_at: Option<tokio::time::Instant>,
+    failed: bool,
+    print_trace_history: bool,
+) {
+    let (trace, aggregate_metrics) =
+        finalize_distributed_task_observability(&infer_state.trace_task_id, started_at, failed);
+    if let Some(trace) = trace {
+        if print_trace_history {
+            println!(
+                "[Trace] nodes={} models={}",
+                trace.node_history.join(" -> "),
+                trace.model_history.join(" -> ")
+            );
+        }
+        println!(
+            "[Metrics] latency={} retries={} fallbacks={}",
+            trace.total_latency_ms, trace.retries, trace.fallbacks
+        );
+    }
+    println!(
+        "[Metrics] totals: tasks={} failed={} avg_latency_ms={:.1}",
+        aggregate_metrics.total_tasks,
+        aggregate_metrics.failed_tasks,
+        aggregate_metrics.avg_latency_ms
+    );
+    emit_final_trace_summary_event(infer_state, &aggregate_metrics, failed);
+    print_human_final_task_summary(infer_state, &aggregate_metrics, failed);
+}
+
+pub(super) fn finalize_and_report_direct_result_observability(
+    trace_task_id: &str,
+    started_at: Option<tokio::time::Instant>,
+    infer_state: Option<&DistributedInferState>,
+) {
+    let (trace, aggregate_metrics) =
+        finalize_distributed_task_observability(trace_task_id, started_at, false);
+    if let Some(trace) = trace {
+        println!(
+            "[Metrics] latency={} retries={} fallbacks={}",
+            trace.total_latency_ms, trace.retries, trace.fallbacks
+        );
+    }
+    if let Some(infer_state) = infer_state {
+        emit_final_trace_summary_event(infer_state, &aggregate_metrics, false);
+        print_human_final_task_summary(infer_state, &aggregate_metrics, false);
+    }
+}
