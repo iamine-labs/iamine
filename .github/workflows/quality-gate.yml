@@ -1,0 +1,116 @@
+name: Quality Gate
+
+on:
+  pull_request:
+    branches:
+      - develop
+      - main
+  push:
+    branches:
+      - develop
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  fmt:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all -- --check
+
+  test-node:
+    name: Test iamine-node
+    runs-on: ubuntu-latest
+    env:
+      RUST_TEST_THREADS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test -p iamine-node
+
+  test-network:
+    name: Test iamine-network
+    runs-on: ubuntu-latest
+    env:
+      RUST_TEST_THREADS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test -p iamine-network
+
+  build-node:
+    name: Build iamine-node
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo build -p iamine-node
+
+  diff-check:
+    name: Diff whitespace check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: git diff --check
+      - run: git diff --cached --check
+
+  clippy:
+    name: Clippy informational
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - run: cargo clippy --workspace --all-targets
+
+  audit:
+    name: Cargo audit informational
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo install cargo-audit --locked
+      - run: cargo audit
+
+  deny:
+    name: Cargo deny informational
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Run cargo deny when configured
+        run: |
+          if [ -f deny.toml ] || [ -f cargo-deny.toml ]; then
+            cargo install cargo-deny --locked
+            cargo deny check
+          else
+            echo "SKIPPED: no cargo-deny config found"
+          fi
+
+  secrets:
+    name: Secret scan informational
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Report secret scan status
+        run: |
+          if command -v gitleaks >/dev/null 2>&1; then
+            gitleaks detect --source . --no-git --redact
+          else
+            echo "SKIPPED: gitleaks is not installed on the runner"
+          fi
