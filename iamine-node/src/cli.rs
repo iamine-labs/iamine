@@ -145,6 +145,13 @@ pub(crate) fn parse_args_from(raw_args: Vec<String>) -> Result<NodeMode, String>
             _ => Err("Uso: iamine-node tasks [stats|trace <task_id>]".to_string()),
         },
 
+        Some("cluster") => match args.get(2).map(|s| s.as_str()) {
+            Some("status") => Ok(NodeMode::ClusterStatus {
+                json: args.iter().any(|arg| arg == "--json"),
+            }),
+            _ => Err("Uso: iamine-node cluster status [--json]".to_string()),
+        },
+
         Some("nodes") => Ok(NodeMode::Nodes),
 
         Some("topology") => Ok(NodeMode::Topology), // ← NEW
@@ -344,6 +351,10 @@ mod tests {
                 ..
             }
         ));
+        assert!(matches!(
+            parse_args_from(args(&["iamine-node", "cluster", "status"])).unwrap(),
+            NodeMode::ClusterStatus { json: false }
+        ));
     }
 
     #[test]
@@ -368,5 +379,29 @@ mod tests {
         let args = args(&["iamine-node", "--worker", "--port=bad"]);
 
         assert_eq!(parse_worker_port(&args), 9000);
+    }
+
+    #[test]
+    fn cli_detects_cluster_status_mode() {
+        let mode = parse_args_from(args(&["iamine-node", "cluster", "status"]))
+            .expect("cluster status should parse");
+
+        assert!(matches!(mode, NodeMode::ClusterStatus { json: false }));
+    }
+
+    #[test]
+    fn cli_detects_cluster_status_json_mode() {
+        let mode = parse_args_from(args(&["iamine-node", "cluster", "status", "--json"]))
+            .expect("cluster status json should parse");
+
+        assert!(matches!(mode, NodeMode::ClusterStatus { json: true }));
+    }
+
+    #[test]
+    fn cli_cluster_status_help_does_not_start_runtime() {
+        let mode = parse_args_from(args(&["iamine-node", "cluster", "status", "--help"]))
+            .expect("cluster status help should parse");
+
+        assert!(matches!(mode, NodeMode::Help));
     }
 }

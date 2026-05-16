@@ -459,6 +459,9 @@ mod tests {
         assert!(is_control_plane_mode(&NodeMode::TasksTrace {
             task_id: "task-1".to_string()
         }));
+        assert!(!is_control_plane_mode(&NodeMode::ClusterStatus {
+            json: false
+        }));
         assert!(!is_control_plane_mode(&NodeMode::Worker));
     }
 
@@ -472,6 +475,13 @@ mod tests {
         assert!(!is_control_plane_mode(&NodeMode::Broadcast {
             task_type: "reverse_string".to_string(),
             data: "abc".to_string(),
+        }));
+    }
+
+    #[test]
+    fn cluster_status_is_light_network_mode_not_pre_network_control_plane() {
+        assert!(!is_control_plane_mode(&NodeMode::ClusterStatus {
+            json: false
         }));
     }
 }

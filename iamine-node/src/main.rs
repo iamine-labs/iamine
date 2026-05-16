@@ -5,6 +5,10 @@ mod broadcast_runtime;
 mod broadcast_worker;
 mod capability_display;
 mod cli;
+mod cluster_cli;
+mod cluster_health;
+mod cluster_registry;
+mod cluster_status;
 mod code_quality;
 mod cpu_feature_guard;
 mod daemon_runtime;
@@ -128,6 +132,10 @@ use broadcast_runtime::*;
 use broadcast_worker::*;
 use capability_display::*;
 use cli::{parse_args, parse_worker_port};
+use cluster_cli::*;
+use cluster_health::*;
+use cluster_registry::*;
+use cluster_status::*;
 use executor::TaskExecutor;
 use final_outcome::*;
 use mode_dispatch::{handle_pre_network_mode, is_control_plane_mode};
@@ -2325,6 +2333,19 @@ fn record_health_policy_state_transition(
     health_state_tracker.insert(peer_id.to_string(), new_state);
 }
 
+fn emit_cluster_event(
+    event: &str,
+    cluster_id: &str,
+    peer_id: Option<&str>,
+    mut fields: Map<String, Value>,
+) {
+    fields.insert("cluster_id".to_string(), cluster_id.into());
+    if let Some(peer_id) = peer_id {
+        fields.insert("peer_id".to_string(), peer_id.into());
+    }
+    log_observability_event(LogLevel::Info, event, "cluster", None, None, None, fields);
+}
+
 fn cluster_label_for_latency(latency_ms: f64) -> &'static str {
     if latency_ms < 10.0 {
         "LOCAL"
@@ -2360,6 +2381,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
     let runtime_version = runtime_version_metadata();
     set_global_runtime_context(mode_label(&mode), &runtime_version);
+    let is_cluster_status_mode = matches!(mode, NodeMode::ClusterStatus { .. });
     let control_plane_only = is_control_plane_mode(&mode);
     let worker_port = parse_worker_port(&args);
 
@@ -2562,6 +2584,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
             // This mode needs to discover peers, so don't return early
         }
 
+        NodeMode::ClusterStatus { .. } => {
+            // Lightweight network discovery mode. It must not load models or run inference.
+        }
+
         _ => {} // continuar con startup normal
     }
 
@@ -2581,7 +2607,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // 1️⃣ Identidad de runtime (modo infer usa identidad efimera para evitar conflicto con worker local)
     let use_ephemeral_identity = matches!(mode, NodeMode::Infer { .. });
-    let node_identity = if use_ephemeral_identity {
+    let node_identity = if is_cluster_status_mode {
+        NodeIdentity::load_or_create_quiet()
+    } else if use_ephemeral_identity {
         NodeIdentity::ephemeral("infer_mode_peer_id_isolation")
     } else {
         NodeIdentity::load_or_create()
@@ -2617,7 +2645,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
 
     // 2️⃣ Wallet
-    let wallet = Wallet::load_or_create(&node_identity.wallet_address); // ← sin mut
+    let wallet = if is_cluster_status_mode {
+        Wallet {
+            address: node_identity.wallet_address.clone(),
+            balance: 0,
+            reputation: 100.0,
+            tasks_completed: 0,
+            tasks_failed: 0,
+            total_uptime_secs: 0,
+        }
+    } else {
+        Wallet::load_or_create(&node_identity.wallet_address)
+    };
 
     // 3️⃣ Benchmark (solo en modo worker)
     let benchmark = if matches!(mode, NodeMode::Worker) {
@@ -2641,23 +2680,30 @@ async fn main() -> Result<(), Box<dyn Error>> {
             .unwrap_or(2)
     };
 
-    display_node_startup_summary(
-        &peer_id.to_string(),
-        &node_identity.wallet_address,
-        benchmark.as_ref(),
-        worker_slots,
-        (!matches!(mode, NodeMode::Topology)).then(|| format!("{:?}", mode)),
-        wallet.balance,
-        wallet.tasks_completed,
-        wallet.reputation,
-    );
+    if !is_cluster_status_mode {
+        display_node_startup_summary(
+            &peer_id.to_string(),
+            &node_identity.wallet_address,
+            benchmark.as_ref(),
+            worker_slots,
+            (!matches!(mode, NodeMode::Topology)).then(|| format!("{:?}", mode)),
+            wallet.balance,
+            wallet.tasks_completed,
+            wallet.reputation,
+        );
+    }
 
     // 6️⃣ MODEL INFRASTRUCTURE v0.6
-    let model_runtime = prepare_model_runtime_context(
-        matches!(mode, NodeMode::Worker),
-        &peer_id.to_string(),
-        benchmark.as_ref(),
-    )?;
+    let model_runtime = if is_cluster_status_mode {
+        prepare_cluster_status_model_runtime_context(&peer_id.to_string())?
+    } else {
+        prepare_model_runtime_context(
+            matches!(mode, NodeMode::Worker),
+            &peer_id.to_string(),
+            benchmark.as_ref(),
+            true,
+        )?
+    };
     let storage_config = model_runtime.storage_config;
     let model_registry = model_runtime.registry;
     let model_storage = model_runtime.storage;
@@ -2758,6 +2804,53 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let kademlia =
         kad::Behaviour::with_config(peer_id, kad::store::MemoryStore::new(peer_id), kad_cfg);
 
+    let mut cluster_registry = ClusterRegistry::with_default_cluster_id();
+    let cluster_id = cluster_registry.cluster_id().to_string();
+    let cluster_status_wait_ms = cluster_status_wait_ms_from_env();
+    if is_cluster_status_mode {
+        emit_cluster_event("cluster_registry_created", &cluster_id, None, Map::new());
+        emit_cluster_event("cluster_status_requested", &cluster_id, None, {
+            let mut fields = Map::new();
+            fields.insert("wait_ms".to_string(), cluster_status_wait_ms.into());
+            fields
+        });
+    }
+
+    let mdns_behaviour = match mdns::tokio::Behaviour::new(mdns::Config::default(), peer_id) {
+        Ok(behaviour) => behaviour,
+        Err(error) if is_cluster_status_mode => {
+            let snapshot = build_cluster_status_snapshot(
+                &cluster_registry,
+                unix_now_ms(),
+                ClusterHealthThresholds::default(),
+            );
+            let render_json = matches!(mode, NodeMode::ClusterStatus { json: true });
+            let rendered = if render_json {
+                render_cluster_status_json(&snapshot)?
+            } else {
+                render_cluster_status_human(&snapshot)
+            };
+            println!("{}", rendered);
+            emit_cluster_event("cluster_status_rendered", &cluster_id, None, {
+                let mut fields = Map::new();
+                fields.insert("nodes_detected".to_string(), snapshot.nodes_detected.into());
+                fields.insert("healthy_nodes".to_string(), snapshot.healthy_nodes.into());
+                fields.insert("stale_nodes".to_string(), snapshot.stale_nodes.into());
+                fields.insert("degraded_nodes".to_string(), snapshot.degraded_nodes.into());
+                fields.insert("offline_nodes".to_string(), snapshot.offline_nodes.into());
+                fields.insert(
+                    "format".to_string(),
+                    if render_json { "json" } else { "human" }.into(),
+                );
+                fields.insert("discovery_status".to_string(), "mdns_unavailable".into());
+                fields.insert("reason".to_string(), error.to_string().into());
+                fields
+            });
+            return Ok(());
+        }
+        Err(error) => return Err(error.into()),
+    };
+
     let behaviour = IamineBehaviour {
         ping: ping::Behaviour::default(),
         identify: identify::Behaviour::new(identify::Config::new(
@@ -2780,7 +2873,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             request_response::Config::default(),
         ),
         kademlia,
-        mdns: mdns::tokio::Behaviour::new(mdns::Config::default(), peer_id)?,
+        mdns: mdns_behaviour,
         gossipsub: gossipsub_behaviour,
     };
 
@@ -2792,7 +2885,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
             .with_idle_connection_timeout(Duration::from_secs(60)),
     );
 
-    let pool = Arc::new(WorkerPool::with_slots(worker_slots));
+    let pool = if is_cluster_status_mode {
+        Arc::new(WorkerPool::with_slots_quiet(worker_slots))
+    } else {
+        Arc::new(WorkerPool::with_slots(worker_slots))
+    };
     let queue = Arc::new(TaskQueue::new(peer_id.to_string()));
     let scheduler = Arc::new(TaskScheduler::new());
     let task_manager = Arc::new(TaskManager::new());
@@ -2802,7 +2899,22 @@ async fn main() -> Result<(), Box<dyn Error>> {
         tokio::sync::mpsc::channel::<BroadcastResultToPublish>(64);
     let heartbeat = Arc::new(HeartbeatService::new());
     let metrics = Arc::new(RwLock::new(NodeMetrics::new()));
-    let mut capabilities = WorkerCapabilities::detect();
+    let mut capabilities = if is_cluster_status_mode {
+        WorkerCapabilities {
+            cpu_cores: worker_slots,
+            ram_gb: 0,
+            gpu_available: false,
+            disk_available_gb: 0,
+            supported_tasks: vec![
+                "reverse_string".to_string(),
+                "test".to_string(),
+                "echo".to_string(),
+            ],
+            avg_latency_ms: 0.0,
+        }
+    } else {
+        WorkerCapabilities::detect()
+    };
     if let Some(policy) = worker_startup_policy.as_ref() {
         apply_worker_startup_policy_to_capabilities(&mut capabilities, policy);
     }
@@ -2852,9 +2964,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
         println!("   Peer ID (compartir con otros nodos): {}", peer_id);
     }
 
-    println!("   Slots paralelos: {}", pool.max_concurrent);
-    println!("   Task queue: activa (max 3 reintentos)");
-    println!("   Scheduler: activo (bid window 1.5s)\n");
+    if !is_cluster_status_mode {
+        println!("   Slots paralelos: {}", pool.max_concurrent);
+        println!("   Task queue: activa (max 3 reintentos)");
+        println!("   Scheduler: activo (bid window 1.5s)\n");
+    }
 
     let args: Vec<String> = std::env::args().collect();
     for arg in &args {
@@ -2922,6 +3036,36 @@ async fn main() -> Result<(), Box<dyn Error>> {
         "/ip4/0.0.0.0/tcp/0".parse()?
     };
     if let Err(error) = swarm.listen_on(listen_addr) {
+        if is_cluster_status_mode {
+            let snapshot = build_cluster_status_snapshot(
+                &cluster_registry,
+                unix_now_ms(),
+                ClusterHealthThresholds::default(),
+            );
+            let render_json = matches!(mode, NodeMode::ClusterStatus { json: true });
+            let rendered = if render_json {
+                render_cluster_status_json(&snapshot)?
+            } else {
+                render_cluster_status_human(&snapshot)
+            };
+            println!("{}", rendered);
+            emit_cluster_event("cluster_status_rendered", &cluster_id, None, {
+                let mut fields = Map::new();
+                fields.insert("nodes_detected".to_string(), snapshot.nodes_detected.into());
+                fields.insert("healthy_nodes".to_string(), snapshot.healthy_nodes.into());
+                fields.insert("stale_nodes".to_string(), snapshot.stale_nodes.into());
+                fields.insert("degraded_nodes".to_string(), snapshot.degraded_nodes.into());
+                fields.insert("offline_nodes".to_string(), snapshot.offline_nodes.into());
+                fields.insert(
+                    "format".to_string(),
+                    if render_json { "json" } else { "human" }.into(),
+                );
+                fields.insert("discovery_status".to_string(), "listen_unavailable".into());
+                fields.insert("reason".to_string(), error.to_string().into());
+                fields
+            });
+            return Ok(());
+        }
         if matches!(mode, NodeMode::Worker) {
             let error_text = error.to_string();
             let hint = startup_listen_error_hint(&error_text, worker_port);
@@ -2954,6 +3098,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut heartbeat_rx = HeartbeatService::start(5);
     let mut nodes_tick = tokio::time::interval(Duration::from_secs(5)); // ← nuevo ticker dedicado
     let mut broadcast_tick = tokio::time::interval(Duration::from_millis(500));
+    let cluster_status_deadline = tokio::time::sleep(Duration::from_millis(cluster_status_wait_ms));
+    tokio::pin!(cluster_status_deadline);
 
     // Estado
     let mut pending_tasks: Vec<TaskRequest> = Vec::new();
@@ -3056,6 +3202,32 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     loop {
         tokio::select! {
+            _ = &mut cluster_status_deadline, if is_cluster_status_mode => {
+                let render_json = matches!(mode, NodeMode::ClusterStatus { json: true });
+                let snapshot = build_cluster_status_snapshot(
+                    &cluster_registry,
+                    unix_now_ms(),
+                    ClusterHealthThresholds::default(),
+                );
+                let rendered = if render_json {
+                    render_cluster_status_json(&snapshot)?
+                } else {
+                    render_cluster_status_human(&snapshot)
+                };
+                println!("{}", rendered);
+                emit_cluster_event("cluster_status_rendered", &cluster_id, None, {
+                    let mut fields = Map::new();
+                    fields.insert("nodes_detected".to_string(), snapshot.nodes_detected.into());
+                    fields.insert("healthy_nodes".to_string(), snapshot.healthy_nodes.into());
+                    fields.insert("stale_nodes".to_string(), snapshot.stale_nodes.into());
+                    fields.insert("degraded_nodes".to_string(), snapshot.degraded_nodes.into());
+                    fields.insert("offline_nodes".to_string(), snapshot.offline_nodes.into());
+                    fields.insert("format".to_string(), if render_json { "json" } else { "human" }.into());
+                    fields
+                });
+                return Ok(());
+            }
+
             // Ticker dedicado para mostrar nodos/capabilities/topology
             _ = nodes_tick.tick(), if matches!(mode, NodeMode::Nodes | NodeMode::Topology) => {
                 if matches!(mode, NodeMode::Nodes) {
@@ -3488,6 +3660,64 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     let _ = swarm.behaviour_mut().gossipsub.publish(
                         gossipsub::IdentTopic::new(CAP_TOPIC),
                         serde_json::to_vec(&cap_hb).unwrap(),
+                    );
+
+                    let real_inference_available = worker_startup_policy
+                        .as_ref()
+                        .map(|policy| policy.real_inference_available)
+                        .unwrap_or(false);
+                    let execution_mode = if worker_startup_policy
+                        .as_ref()
+                        .map(|policy| policy.mock_backend())
+                        .unwrap_or(false)
+                    {
+                        ClusterExecutionMode::Mock
+                    } else if real_inference_available {
+                        ClusterExecutionMode::Real
+                    } else {
+                        ClusterExecutionMode::Degraded
+                    };
+                    let cluster_backend = worker_startup_policy
+                        .as_ref()
+                        .map(|policy| {
+                            ClusterBackend::from_backend_and_accelerator(
+                                policy.backend.as_str(),
+                                Some(&node_caps.accelerator),
+                            )
+                        })
+                        .unwrap_or(ClusterBackend::Unknown);
+                    let metrics_status = match metrics_policy::metrics_startup_decision(worker_port)
+                    {
+                        metrics_policy::MetricsStartupDecision::StartMetrics { .. } => {
+                            ClusterMetricsStatus::Available
+                        }
+                        metrics_policy::MetricsStartupDecision::ContinueWithoutMetrics { .. } => {
+                            ClusterMetricsStatus::Fallback
+                        }
+                        metrics_policy::MetricsStartupDecision::Disabled { .. } => {
+                            ClusterMetricsStatus::Disabled
+                        }
+                    };
+                    let cluster_status_message = ClusterNodeStatusMessage::worker(
+                        cluster_id.clone(),
+                        peer_id.to_string(),
+                        local_hostname(),
+                        execution_mode,
+                        cluster_backend,
+                        real_inference_available,
+                        capabilities.supported_tasks.clone(),
+                        storage_models_for_display.clone(),
+                        registry_models_for_display
+                            .iter()
+                            .map(|model| model.id.clone())
+                            .collect(),
+                        validated_advertised_models.clone(),
+                        metrics_status,
+                        Some(peer_tracker.avg_latency().max(0.0).round() as u32),
+                    );
+                    let _ = swarm.behaviour_mut().gossipsub.publish(
+                        gossipsub::IdentTopic::new(HEARTBEAT_TOPIC),
+                        serde_json::to_vec(&cluster_status_message).unwrap(),
                     );
 
                     // Sync topology clusters to registry
@@ -4562,6 +4792,26 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 debug_flags,
                                 format!("mdns discovered peer_id={} addr={}", pid, addr),
                             );
+                            let inserted = cluster_registry.add_or_update_discovered_node(
+                                &pid.to_string(),
+                                Some(addr.to_string()),
+                                unix_now_ms(),
+                            );
+                            emit_cluster_event(
+                                if inserted {
+                                    "cluster_node_discovered"
+                                } else {
+                                    "cluster_node_updated"
+                                },
+                                &cluster_id,
+                                Some(&pid.to_string()),
+                                {
+                                    let mut fields = Map::new();
+                                    fields.insert("source".to_string(), "mdns".into());
+                                    fields.insert("address".to_string(), addr.to_string().into());
+                                    fields
+                                },
+                            );
                             swarm.behaviour_mut().kademlia.add_address(&pid, addr.clone());
                             swarm.behaviour_mut().gossipsub.add_explicit_peer(&pid);
                             known_workers.insert(pid);
@@ -4611,6 +4861,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         RESULTS_TOPIC
                     } else if message.topic == gossipsub::IdentTopic::new(CAP_TOPIC).hash() {
                         CAP_TOPIC
+                    } else if message.topic == gossipsub::IdentTopic::new(HEARTBEAT_TOPIC).hash() {
+                        HEARTBEAT_TOPIC
                     } else {
                         "unknown"
                     };
@@ -4618,7 +4870,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     // 1) Procesar capabilities por TOPIC (no por msg_type)
                     if message.topic == gossipsub::IdentTopic::new(CAP_TOPIC).hash() {
                         if let Ok(hb) = serde_json::from_slice::<NodeCapabilityHeartbeat>(&message.data) {
-                            let _ = registry.write().await.update_from_heartbeat(hb);
+                            let _ = registry.write().await.update_from_heartbeat(hb.clone());
+                            cluster_registry.update_from_capability_heartbeat(&hb, unix_now_ms());
+                            emit_cluster_event("cluster_capabilities_updated", &cluster_id, Some(&hb.peer_id), {
+                                let mut fields = Map::new();
+                                fields.insert("executable_models_count".to_string(), hb.models.len().into());
+                                fields.insert("latency_ms".to_string(), hb.latency_ms.into());
+                                fields
+                            });
                         }
                         continue;
                     }
@@ -4629,6 +4888,59 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         // ...existing rate limiter...
 
                         match msg_type {
+                            CLUSTER_NODE_STATUS_TYPE => {
+                                if let Ok(cluster_message) =
+                                    serde_json::from_value::<ClusterNodeStatusMessage>(msg.clone())
+                                {
+                                    let observed_peer = cluster_message.peer_id.clone();
+                                    let health_before = cluster_registry
+                                        .node_by_peer_id(&observed_peer)
+                                        .map(|node| {
+                                            node.health_at(
+                                                unix_now_ms(),
+                                                ClusterHealthThresholds::default(),
+                                            )
+                                        });
+                                    cluster_registry.update_from_cluster_status_message(
+                                        cluster_message,
+                                        unix_now_ms(),
+                                    );
+                                    let health_after = cluster_registry
+                                        .node_by_peer_id(&observed_peer)
+                                        .map(|node| {
+                                            node.health_at(
+                                                unix_now_ms(),
+                                                ClusterHealthThresholds::default(),
+                                            )
+                                        });
+                                    emit_cluster_event("cluster_node_updated", &cluster_id, Some(&observed_peer), {
+                                        let mut fields = Map::new();
+                                        fields.insert("source".to_string(), "cluster_node_status".into());
+                                        fields.insert("topic".to_string(), message_topic.into());
+                                        fields
+                                    });
+                                    if health_before != health_after {
+                                        emit_cluster_event("cluster_node_health_changed", &cluster_id, Some(&observed_peer), {
+                                            let mut fields = Map::new();
+                                            fields.insert(
+                                                "previous_health".to_string(),
+                                                health_before
+                                                    .map(|health| health.as_str())
+                                                    .unwrap_or("unknown")
+                                                    .into(),
+                                            );
+                                            fields.insert(
+                                                "health".to_string(),
+                                                health_after
+                                                    .map(|health| health.as_str())
+                                                    .unwrap_or("unknown")
+                                                    .into(),
+                                            );
+                                            fields
+                                        });
+                                    }
+                                }
+                            }
                             "TaskOffer" if matches!(mode, NodeMode::Worker) => {
                                 let task_id = msg["task_id"].as_str().unwrap_or("").to_string();
                                 let task_type = msg["task_type"].as_str().unwrap_or("").to_string();
@@ -5038,7 +5350,22 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             }
 
                             "Heartbeat" => {
+                                cluster_registry
+                                    .update_from_worker_heartbeat_value(&msg, unix_now_ms());
                                 let worker_id = msg["peer_id"].as_str().unwrap_or("");
+                                if !worker_id.is_empty() {
+                                    emit_cluster_event(
+                                        "cluster_node_updated",
+                                        &cluster_id,
+                                        Some(worker_id),
+                                        {
+                                            let mut fields = Map::new();
+                                            fields.insert("source".to_string(), "heartbeat".into());
+                                            fields.insert("topic".to_string(), message_topic.into());
+                                            fields
+                                        },
+                                    );
+                                }
                                 let slots = msg["available_slots"].as_u64().unwrap_or(0) as usize;
                                 let rep = msg["reputation_score"].as_u64().unwrap_or(0) as u32;
                                 let uptime = msg["uptime_secs"].as_u64().unwrap_or(0);
@@ -6183,7 +6510,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                             "NodeCapabilities" => {
                                 if let Ok(hb) = serde_json::from_value::<NodeCapabilityHeartbeat>(msg.clone()) {
-                                    let _ = registry.write().await.update_from_heartbeat(hb);
+                                    let _ = registry.write().await.update_from_heartbeat(hb.clone());
+                                    cluster_registry.update_from_capability_heartbeat(&hb, unix_now_ms());
+                                    emit_cluster_event("cluster_capabilities_updated", &cluster_id, Some(&hb.peer_id), {
+                                        let mut fields = Map::new();
+                                        fields.insert("source".to_string(), "node_capabilities".into());
+                                        fields.insert("executable_models_count".to_string(), hb.models.len().into());
+                                        fields
+                                    });
                                 }
                             }
 
@@ -6787,6 +7121,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 SwarmEvent::Behaviour(IaMineEvent::Gossipsub(gossipsub::Event::Subscribed { peer_id: pid, topic })) => {
                     println!("📢 Peer {} suscrito a: {}", pid, topic);
                     pubsub_topics.register_peer_subscription(&pid, &topic);
+                    cluster_registry.add_or_update_discovered_node(&pid.to_string(), None, unix_now_ms());
                     let tracked_topic_name = tracked_pubsub_topic_name(&topic);
                     let observer_mode = if matches!(mode, NodeMode::Broadcast { .. }) {
                         Some(("controller_observed_peer_subscription", "broadcast"))
@@ -6879,6 +7214,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             fields
                         },
                     );
+                    cluster_registry.add_or_update_discovered_node(
+                        &pid.to_string(),
+                        Some(endpoint.get_remote_address().to_string()),
+                        unix_now_ms(),
+                    );
+                    emit_cluster_event("cluster_node_updated", &cluster_id, Some(&pid.to_string()), {
+                        let mut fields = Map::new();
+                        fields.insert("source".to_string(), "peer_connected".into());
+                        fields.insert(
+                            "address".to_string(),
+                            endpoint.get_remote_address().to_string().into(),
+                        );
+                        fields
+                    });
                     connected_peer = Some(pid);
                     known_workers.insert(pid);
                     if is_client && !tasks_sent && !matches!(mode, NodeMode::Broadcast { .. }) {
@@ -6949,7 +7298,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     }
                     known_workers.remove(&pid);
                     pubsub_topics.unregister_peer(&pid);
-                    if is_client && !waiting_for_response && !matches!(mode, NodeMode::Broadcast { .. }) {
+                    if is_client
+                        && !waiting_for_response
+                        && !matches!(mode, NodeMode::Broadcast { .. } | NodeMode::ClusterStatus { .. })
+                    {
                         println!("\n📊 Completado: {}/{} tareas", completed, total_tasks);
                         break;
                     }
@@ -6973,6 +7325,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         }
                         peer_tracker.update_latency(&peer.to_string(), rtt_ms);
                         topology.write().await.update_latency(&peer.to_string(), rtt_ms);
+                        cluster_registry.update_latency(
+                            &peer.to_string(),
+                            rtt_ms.max(0.0).round() as u32,
+                            unix_now_ms(),
+                        );
                         log_observability_event(
                             LogLevel::Info,
                             "peer_latency",
@@ -6996,6 +7353,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                 SwarmEvent::Behaviour(IaMineEvent::Kademlia(kad::Event::RoutingUpdated { peer, .. })) => {
                     let peer_id = peer.to_string();
+                    cluster_registry.add_or_update_discovered_node(&peer_id, None, unix_now_ms());
+                    emit_cluster_event("cluster_node_updated", &cluster_id, Some(&peer_id), {
+                        let mut fields = Map::new();
+                        fields.insert("source".to_string(), "kademlia_routing_updated".into());
+                        fields
+                    });
                     if human_log_throttle.should_log(
                         &format!("kademlia:{}", peer_id),
                         30_000,

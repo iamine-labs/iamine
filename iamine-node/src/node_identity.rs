@@ -12,6 +12,14 @@ pub struct NodeIdentity {
 
 impl NodeIdentity {
     pub fn load_or_create() -> Self {
+        Self::load_or_create_with_announce(true)
+    }
+
+    pub fn load_or_create_quiet() -> Self {
+        Self::load_or_create_with_announce(false)
+    }
+
+    fn load_or_create_with_announce(announce: bool) -> Self {
         let dir = iamine_dir();
         fs::create_dir_all(&dir).expect("No se pudo crear ~/.iamine");
 
@@ -27,7 +35,9 @@ impl NodeIdentity {
                 .to_protobuf_encoding()
                 .expect("Error serializando keypair");
             fs::write(&key_path, &bytes).expect("Error guardando node_key");
-            println!("🆕 Identidad nueva generada → ~/.iamine/node_key");
+            if announce {
+                println!("🆕 Identidad nueva generada → ~/.iamine/node_key");
+            }
             kp
         };
 
@@ -35,9 +45,11 @@ impl NodeIdentity {
         let public_key = keypair.public().encode_protobuf();
         let wallet_address = format!("iamine1{}", &peer_id.to_string()[..16]);
 
-        println!("🔑 Identidad cargada:");
-        println!("   Peer ID: {}", peer_id);
-        println!("   Wallet:  {}", wallet_address);
+        if announce {
+            println!("🔑 Identidad cargada:");
+            println!("   Peer ID: {}", peer_id);
+            println!("   Wallet:  {}", wallet_address);
+        }
 
         Self {
             node_id: peer_id.to_string(),

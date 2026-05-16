@@ -77,6 +77,7 @@ pub(crate) fn prepare_model_runtime_context(
     is_worker: bool,
     peer_id: &str,
     benchmark: Option<&NodeBenchmark>,
+    enable_non_worker_inference_engine: bool,
 ) -> Result<ModelRuntimeContext, String> {
     let storage_config = StorageConfig::load();
     let registry = ModelRegistry::new();
@@ -106,8 +107,10 @@ pub(crate) fn prepare_model_runtime_context(
             .as_ref()
             .filter(|policy| policy.real_inference_available)
             .map(|_| Arc::new(RealInferenceEngine::new(ModelStorage::new())))
-    } else {
+    } else if enable_non_worker_inference_engine {
         Some(Arc::new(RealInferenceEngine::new(ModelStorage::new())))
+    } else {
+        None
     };
 
     let validated_advertised_models = if is_worker {
@@ -150,6 +153,41 @@ pub(crate) fn prepare_model_runtime_context(
         inference_engine,
         validated_advertised_models,
         worker_setup,
+    })
+}
+
+pub(crate) fn prepare_cluster_status_model_runtime_context(
+    peer_id: &str,
+) -> Result<ModelRuntimeContext, String> {
+    let storage_config = StorageConfig::load();
+    let registry = ModelRegistry::new();
+    let storage = ModelStorage::new();
+    let local_models = storage.list_local_models();
+    let used_gb = (storage.total_size_bytes() / 1_073_741_824) as u32;
+    let max_gb = storage_config.max_storage_gb as u32;
+
+    Ok(ModelRuntimeContext {
+        storage_config,
+        registry,
+        storage,
+        node_caps: ModelNodeCapabilities {
+            node_id: peer_id.to_string(),
+            cpu_cores: std::thread::available_parallelism()
+                .map(|n| n.get() as u32)
+                .unwrap_or(1),
+            ram_gb: 0,
+            gpu_type: None,
+            npu_type: None,
+            storage_available_gb: max_gb.saturating_sub(used_gb),
+            worker_slots: 0,
+            supported_models: local_models.clone(),
+            cpu_features: Vec::new(),
+            accelerator: "unknown".to_string(),
+        },
+        worker_startup_policy: None,
+        inference_engine: None,
+        validated_advertised_models: local_models,
+        worker_setup: None,
     })
 }
 
