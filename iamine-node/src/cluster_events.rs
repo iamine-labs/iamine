@@ -161,8 +161,10 @@ pub(crate) fn update_cluster_status_message_and_emit(
         fields.insert("source".to_string(), CLUSTER_NODE_STATUS_TYPE.into());
         fields.insert("topic".to_string(), topic.into());
         if let Some(node) = registry.node_by_peer_id(&observed_peer) {
-            let readiness =
-                node.readiness_at(now_ms, crate::cluster_health::ClusterHealthThresholds::default());
+            let readiness = node.readiness_at(
+                now_ms,
+                crate::cluster_health::ClusterHealthThresholds::default(),
+            );
             fields.insert(
                 "ready_for_tasks".to_string(),
                 readiness.ready_for_tasks.into(),

@@ -388,7 +388,7 @@ impl ClusterRegistry {
                     .iter()
                     .filter_map(Value::as_str)
                     .map(ToString::to_string)
-                .collect(),
+                    .collect(),
             );
         }
         node.refresh_readiness_at(now_ms);
