@@ -55,6 +55,9 @@ pub(crate) enum NodeMode {
     TasksTrace {
         task_id: String,
     },
+    ClusterStatus {
+        json: bool,
+    },
     Capabilities,
     Nodes,
     Topology, // ← NEW
@@ -130,6 +133,7 @@ pub(crate) fn mode_label(mode: &NodeMode) -> &'static str {
         NodeMode::ValidateRelease => "validate-release",
         NodeMode::TasksStats => "tasks-stats",
         NodeMode::TasksTrace { .. } => "tasks-trace",
+        NodeMode::ClusterStatus { .. } => "cluster-status",
         NodeMode::Capabilities => "capabilities",
         NodeMode::Nodes => "nodes",
         NodeMode::Topology => "topology",

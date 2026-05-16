@@ -25,19 +25,7 @@ pub struct WorkerPool {
 
 impl WorkerPool {
     pub fn new(max_concurrent: usize) -> Self {
-        let semaphore = Arc::new(Semaphore::new(max_concurrent));
-        let (task_tx, task_rx) = mpsc::channel::<PoolTask>(max_concurrent * 4);
-
-        let sem = Arc::clone(&semaphore);
-        tokio::spawn(Self::run_loop(task_rx, sem));
-
-        println!("⚡ WorkerPool iniciado: {} slots paralelos", max_concurrent);
-
-        Self {
-            semaphore,
-            task_tx,
-            max_concurrent,
-        }
+        Self::with_slots_internal(max_concurrent, true)
     }
 
     /// Detectar cores y crear pool automáticamente
@@ -49,13 +37,23 @@ impl WorkerPool {
     }
 
     pub fn with_slots(slots: usize) -> Self {
+        Self::with_slots_internal(slots, true)
+    }
+
+    pub fn with_slots_quiet(slots: usize) -> Self {
+        Self::with_slots_internal(slots, false)
+    }
+
+    fn with_slots_internal(slots: usize, announce: bool) -> Self {
         let semaphore = Arc::new(Semaphore::new(slots));
         let (task_tx, task_rx) = mpsc::channel::<PoolTask>(slots * 4);
 
         let sem = Arc::clone(&semaphore);
         tokio::spawn(Self::run_loop(task_rx, sem));
 
-        println!("⚡ WorkerPool iniciado: {} slots paralelos", slots);
+        if announce {
+            println!("⚡ WorkerPool iniciado: {} slots paralelos", slots);
+        }
 
         Self {
             semaphore,
