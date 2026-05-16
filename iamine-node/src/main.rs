@@ -8,6 +8,7 @@ mod cli;
 mod cluster_cli;
 mod cluster_events;
 mod cluster_health;
+mod cluster_readiness;
 mod cluster_registry;
 mod cluster_status;
 mod code_quality;
@@ -4792,6 +4793,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             let _ = registry.write().await.update_from_heartbeat(hb.clone());
                             cluster_registry.update_from_capability_heartbeat(&hb, unix_now_ms());
                             emit_cluster_capabilities_updated(
+                                &cluster_registry,
                                 &cluster_id,
                                 &hb.peer_id,
                                 CAP_TOPIC,
@@ -6382,6 +6384,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     let _ = registry.write().await.update_from_heartbeat(hb.clone());
                                     cluster_registry.update_from_capability_heartbeat(&hb, unix_now_ms());
                                     emit_cluster_capabilities_updated(
+                                        &cluster_registry,
                                         &cluster_id,
                                         &hb.peer_id,
                                         "node_capabilities",

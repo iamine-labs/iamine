@@ -53,6 +53,7 @@ pub(crate) fn render_and_emit_cluster_status(
         fields.insert("stale_nodes".to_string(), snapshot.stale_nodes.into());
         fields.insert("degraded_nodes".to_string(), snapshot.degraded_nodes.into());
         fields.insert("offline_nodes".to_string(), snapshot.offline_nodes.into());
+        fields.insert("ready_nodes".to_string(), snapshot.ready_nodes.into());
         fields.insert(
             "format".to_string(),
             if render_json { "json" } else { "human" }.into(),
@@ -96,6 +97,7 @@ pub(crate) fn emit_cluster_discovery_update(
 }
 
 pub(crate) fn emit_cluster_capabilities_updated(
+    registry: &ClusterRegistry,
     cluster_id: &str,
     peer_id: &str,
     source: &str,
@@ -111,6 +113,20 @@ pub(crate) fn emit_cluster_capabilities_updated(
         );
         if let Some(latency_ms) = latency_ms {
             fields.insert("latency_ms".to_string(), latency_ms.into());
+        }
+        if let Some(node) = registry.node_by_peer_id(peer_id) {
+            let readiness = node.readiness_at(
+                unix_now_ms(),
+                crate::cluster_health::ClusterHealthThresholds::default(),
+            );
+            fields.insert(
+                "ready_for_tasks".to_string(),
+                readiness.ready_for_tasks.into(),
+            );
+            fields.insert(
+                "readiness_reason".to_string(),
+                readiness.readiness_reason.as_str().into(),
+            );
         }
         fields
     });
@@ -144,6 +160,18 @@ pub(crate) fn update_cluster_status_message_and_emit(
         let mut fields = Map::new();
         fields.insert("source".to_string(), CLUSTER_NODE_STATUS_TYPE.into());
         fields.insert("topic".to_string(), topic.into());
+        if let Some(node) = registry.node_by_peer_id(&observed_peer) {
+            let readiness =
+                node.readiness_at(now_ms, crate::cluster_health::ClusterHealthThresholds::default());
+            fields.insert(
+                "ready_for_tasks".to_string(),
+                readiness.ready_for_tasks.into(),
+            );
+            fields.insert(
+                "readiness_reason".to_string(),
+                readiness.readiness_reason.as_str().into(),
+            );
+        }
         fields
     });
 

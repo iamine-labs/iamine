@@ -9,6 +9,7 @@ pub(crate) fn render_cluster_status_human(snapshot: &ClusterStatusSnapshot) -> S
     output.push_str(&format!("stale_nodes: {}\n", snapshot.stale_nodes));
     output.push_str(&format!("degraded_nodes: {}\n", snapshot.degraded_nodes));
     output.push_str(&format!("offline_nodes: {}\n", snapshot.offline_nodes));
+    output.push_str(&format!("ready_nodes: {}\n", snapshot.ready_nodes));
     output.push_str("\nNodes:\n");
 
     if snapshot.nodes.is_empty() {
@@ -55,13 +56,15 @@ fn render_node_row(node: &ClusterStatusNodeRow) -> String {
         .unwrap_or_else(|| "unknown".to_string());
 
     format!(
-        "- {:20} {:12} {}/{} {} backend={} last_seen={} latency={} real_inference_available={} tasks={} executable_models={} metrics={}",
+        "- {:20} {:12} {}/{} {} backend={} ready={} reason={} last_seen={} latency={} real_inference_available={} tasks={} executable_models={} metrics={}",
         node.hostname,
         node.peer_id_short,
         node.role.as_str(),
         node.execution_mode.as_str(),
         node.health.as_str(),
         node.backend.as_str(),
+        node.ready_for_tasks,
+        node.readiness_reason.as_str(),
         last_seen,
         latency,
         real_available,
@@ -75,6 +78,7 @@ fn render_node_row(node: &ClusterStatusNodeRow) -> String {
 mod tests {
     use super::*;
     use crate::cluster_health::ClusterHealth;
+    use crate::cluster_readiness::ClusterReadinessReason;
     use crate::cluster_registry::{
         ClusterBackend, ClusterExecutionMode, ClusterMetricsStatus, ClusterRole,
     };
@@ -87,6 +91,7 @@ mod tests {
             stale_nodes: 0,
             degraded_nodes: 0,
             offline_nodes: 0,
+            ready_nodes: 1,
             nodes: vec![ClusterStatusNodeRow {
                 peer_id: "12D3KooWTest".to_string(),
                 peer_id_short: "12D3KooWTest".to_string(),
@@ -100,6 +105,8 @@ mod tests {
                 age_ms: Some(25),
                 latency_ms: Some(12),
                 metrics_status: ClusterMetricsStatus::Fallback,
+                ready_for_tasks: true,
+                readiness_reason: ClusterReadinessReason::MockSimpleTasksReady,
                 real_inference_available: Some(false),
                 supported_task_types: vec![
                     "reverse_string".to_string(),
@@ -120,8 +127,11 @@ mod tests {
         assert!(rendered.contains("cluster_id: default-lan"));
         assert!(rendered.contains("nodes_detected: 1"));
         assert!(rendered.contains("healthy_nodes: 1"));
+        assert!(rendered.contains("ready_nodes: 1"));
         assert!(rendered.contains("wrk-01"));
         assert!(rendered.contains("backend=mock"));
+        assert!(rendered.contains("ready=true"));
+        assert!(rendered.contains("reason=mock_simple_tasks_ready"));
     }
 
     #[test]
@@ -133,10 +143,12 @@ mod tests {
             stale_nodes: 0,
             degraded_nodes: 0,
             offline_nodes: 0,
+            ready_nodes: 0,
             nodes: Vec::new(),
         });
 
         assert!(rendered.contains("nodes_detected: 0"));
+        assert!(rendered.contains("ready_nodes: 0"));
         assert!(rendered.contains("No LAN nodes discovered yet."));
     }
 
@@ -147,5 +159,11 @@ mod tests {
 
         assert_eq!(value["cluster_id"], "default-lan");
         assert_eq!(value["nodes_detected"], 1);
+        assert_eq!(value["ready_nodes"], 1);
+        assert_eq!(value["nodes"][0]["ready_for_tasks"], true);
+        assert_eq!(
+            value["nodes"][0]["readiness_reason"],
+            "mock_simple_tasks_ready"
+        );
     }
 }

@@ -1,4 +1,5 @@
 use crate::cluster_health::{ClusterHealth, ClusterHealthThresholds};
+use crate::cluster_readiness::ClusterReadinessReason;
 use crate::cluster_registry::{
     ClusterBackend, ClusterExecutionMode, ClusterMetricsStatus, ClusterRegistry, ClusterRole,
 };
@@ -12,6 +13,7 @@ pub(crate) struct ClusterStatusSnapshot {
     pub(crate) stale_nodes: usize,
     pub(crate) degraded_nodes: usize,
     pub(crate) offline_nodes: usize,
+    pub(crate) ready_nodes: usize,
     pub(crate) nodes: Vec<ClusterStatusNodeRow>,
 }
 
@@ -29,6 +31,8 @@ pub(crate) struct ClusterStatusNodeRow {
     pub(crate) age_ms: Option<u64>,
     pub(crate) latency_ms: Option<u32>,
     pub(crate) metrics_status: ClusterMetricsStatus,
+    pub(crate) ready_for_tasks: bool,
+    pub(crate) readiness_reason: ClusterReadinessReason,
     pub(crate) real_inference_available: Option<bool>,
     pub(crate) supported_task_types: Vec<String>,
     pub(crate) models_in_storage: Vec<String>,
@@ -46,6 +50,7 @@ pub(crate) fn build_cluster_status_snapshot(
         .into_iter()
         .map(|node| {
             let health = node.health_at(now_ms, thresholds);
+            let readiness = node.readiness_at(now_ms, thresholds);
             ClusterStatusNodeRow {
                 peer_id: node.peer_id,
                 peer_id_short: node.peer_id_short,
@@ -61,6 +66,8 @@ pub(crate) fn build_cluster_status_snapshot(
                     .map(|last_seen| now_ms.saturating_sub(last_seen)),
                 latency_ms: node.latency_ms,
                 metrics_status: node.metrics_status,
+                ready_for_tasks: readiness.ready_for_tasks,
+                readiness_reason: readiness.readiness_reason,
                 real_inference_available: node.capabilities.real_inference_available,
                 supported_task_types: node.capabilities.supported_task_types,
                 models_in_storage: node.capabilities.models_in_storage,
@@ -82,6 +89,7 @@ pub(crate) fn build_cluster_status_snapshot(
         stale_nodes: registry.stale_nodes(now_ms).len(),
         degraded_nodes: registry.degraded_nodes(now_ms).len(),
         offline_nodes: registry.offline_nodes(now_ms).len(),
+        ready_nodes: rows.iter().filter(|node| node.ready_for_tasks).count(),
         nodes: rows,
     }
 }
@@ -109,6 +117,7 @@ mod tests {
 
         assert_eq!(snapshot.cluster_id, "test-lan");
         assert_eq!(snapshot.nodes_detected, 0);
+        assert_eq!(snapshot.ready_nodes, 0);
         assert!(snapshot.nodes.is_empty());
     }
 
@@ -145,5 +154,6 @@ mod tests {
         assert_eq!(snapshot.nodes_detected, 2);
         assert_eq!(snapshot.healthy_nodes, 1);
         assert_eq!(snapshot.stale_nodes, 1);
+        assert_eq!(snapshot.ready_nodes, 1);
     }
 }

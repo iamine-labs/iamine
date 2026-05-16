@@ -1,4 +1,7 @@
 use crate::cluster_health::{classify_cluster_health, ClusterHealth, ClusterHealthThresholds};
+use crate::cluster_readiness::{
+    derive_cluster_readiness, ClusterReadiness, ClusterReadinessInput, ClusterReadinessReason,
+};
 use iamine_network::NodeCapabilityHeartbeat;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -142,6 +145,8 @@ pub(crate) struct ClusterNode {
     pub(crate) latency_ms: Option<u32>,
     pub(crate) capabilities: ClusterCapabilitySummary,
     pub(crate) metrics_status: ClusterMetricsStatus,
+    pub(crate) ready_for_tasks: bool,
+    pub(crate) readiness_reason: ClusterReadinessReason,
     pub(crate) degraded_reason: Option<String>,
 }
 
@@ -160,6 +165,8 @@ impl ClusterNode {
             latency_ms: None,
             capabilities: ClusterCapabilitySummary::default(),
             metrics_status: ClusterMetricsStatus::Unknown,
+            ready_for_tasks: false,
+            readiness_reason: ClusterReadinessReason::Unknown,
             degraded_reason: None,
         }
     }
@@ -176,6 +183,29 @@ impl ClusterNode {
                 || self.degraded_reason.is_some(),
             thresholds,
         )
+    }
+
+    pub(crate) fn readiness_at(
+        &self,
+        now_ms: u64,
+        thresholds: ClusterHealthThresholds,
+    ) -> ClusterReadiness {
+        derive_cluster_readiness(&ClusterReadinessInput {
+            role: self.role,
+            execution_mode: self.execution_mode,
+            backend: self.backend,
+            health: self.health_at(now_ms, thresholds),
+            metrics_status: self.metrics_status,
+            real_inference_available: self.capabilities.real_inference_available,
+            supported_task_types: &self.capabilities.supported_task_types,
+            executable_models: &self.capabilities.executable_models,
+        })
+    }
+
+    fn refresh_readiness_at(&mut self, now_ms: u64) {
+        let readiness = self.readiness_at(now_ms, ClusterHealthThresholds::default());
+        self.ready_for_tasks = readiness.ready_for_tasks;
+        self.readiness_reason = readiness.readiness_reason;
     }
 }
 
@@ -197,6 +227,10 @@ pub(crate) struct ClusterNodeStatusMessage {
     pub(crate) models_in_registry: Vec<String>,
     pub(crate) executable_models: Vec<String>,
     pub(crate) metrics_status: ClusterMetricsStatus,
+    #[serde(default)]
+    pub(crate) ready_for_tasks: bool,
+    #[serde(default)]
+    pub(crate) readiness_reason: ClusterReadinessReason,
     pub(crate) degraded_reason: Option<String>,
 }
 
@@ -215,6 +249,17 @@ impl ClusterNodeStatusMessage {
         metrics_status: ClusterMetricsStatus,
         latency_ms: Option<u32>,
     ) -> Self {
+        let readiness = derive_cluster_readiness(&ClusterReadinessInput {
+            role: ClusterRole::Worker,
+            execution_mode,
+            backend,
+            health: ClusterHealth::Healthy,
+            metrics_status,
+            real_inference_available: Some(real_inference_available),
+            supported_task_types: &supported_task_types,
+            executable_models: &executable_models,
+        });
+
         Self {
             message_type: CLUSTER_NODE_STATUS_TYPE.to_string(),
             cluster_id: cluster_id.into(),
@@ -231,6 +276,8 @@ impl ClusterNodeStatusMessage {
             models_in_registry,
             executable_models,
             metrics_status,
+            ready_for_tasks: readiness.ready_for_tasks,
+            readiness_reason: readiness.readiness_reason,
             degraded_reason: None,
         }
     }
@@ -280,6 +327,7 @@ impl ClusterRegistry {
         if let Some(address) = observed_address {
             push_unique_sorted(&mut node.observed_addresses, address);
         }
+        node.refresh_readiness_at(now_ms);
         is_new
     }
 
@@ -290,6 +338,7 @@ impl ClusterRegistry {
             .or_insert_with(|| ClusterNode::new(peer_id));
         node.latency_ms = Some(latency_ms);
         node.last_seen_ms = Some(now_ms);
+        node.refresh_readiness_at(now_ms);
     }
 
     pub(crate) fn update_from_capability_heartbeat(
@@ -313,6 +362,7 @@ impl ClusterRegistry {
         if node.execution_mode == ClusterExecutionMode::Unknown && !heartbeat.models.is_empty() {
             node.execution_mode = ClusterExecutionMode::Real;
         }
+        node.refresh_readiness_at(now_ms);
     }
 
     pub(crate) fn update_from_worker_heartbeat_value(&mut self, value: &Value, now_ms: u64) {
@@ -338,9 +388,10 @@ impl ClusterRegistry {
                     .iter()
                     .filter_map(Value::as_str)
                     .map(ToString::to_string)
-                    .collect(),
+                .collect(),
             );
         }
+        node.refresh_readiness_at(now_ms);
     }
 
     pub(crate) fn update_from_cluster_status_message(
@@ -359,6 +410,8 @@ impl ClusterRegistry {
         node.last_seen_ms = Some(now_ms);
         node.latency_ms = message.latency_ms;
         node.metrics_status = message.metrics_status;
+        node.ready_for_tasks = message.ready_for_tasks;
+        node.readiness_reason = message.readiness_reason;
         node.degraded_reason = message.degraded_reason;
         for address in message.observed_addresses {
             push_unique_sorted(&mut node.observed_addresses, address);
