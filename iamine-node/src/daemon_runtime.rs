@@ -446,28 +446,58 @@ async fn read_event(reader: &mut BufReader<UnixStream>) -> Result<Option<DaemonE
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::tempdir;
+    use std::fs;
+    use std::path::PathBuf;
+    use tempfile::{Builder, TempDir};
     use tokio::time::{timeout, Duration};
 
-    #[tokio::test]
-    async fn test_daemon_start_stop() {
-        let tmp = tempdir().unwrap();
-        let socket_path = tmp.path().join("iamine-daemon.sock");
-        let handle = tokio::spawn(run_daemon(socket_path.clone()));
+    const DAEMON_TEST_TIMEOUT: Duration = Duration::from_secs(10);
 
-        timeout(Duration::from_secs(2), async {
+    fn daemon_test_tempdir() -> TempDir {
+        let private_tmp = PathBuf::from("/private/tmp");
+        let base = if private_tmp.exists() {
+            private_tmp.join("iamine-qg")
+        } else {
+            std::env::temp_dir().join("iamine-qg")
+        };
+        fs::create_dir_all(&base).expect("daemon test temp parent should be writable");
+        Builder::new()
+            .prefix("d-")
+            .tempdir_in(base)
+            .expect("daemon test tempdir should be created")
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_daemon_start_stop() {
+        let tmp = daemon_test_tempdir();
+        let socket_path = tmp.path().join("iamine-daemon.sock");
+        let runtime = DaemonRuntime::new();
+        let mut handle = tokio::spawn(run_daemon_with_runtime(socket_path.clone(), runtime));
+
+        timeout(DAEMON_TEST_TIMEOUT, async {
             loop {
-                if daemon_is_available(&socket_path).await {
+                let is_available = timeout(
+                    Duration::from_millis(500),
+                    daemon_is_available(&socket_path),
+                )
+                .await
+                .unwrap_or(false);
+                if is_available {
                     break;
                 }
-                tokio::time::sleep(Duration::from_millis(50)).await;
+                tokio::select! {
+                    result = &mut handle => {
+                        panic!("daemon exited before becoming available: {:?}", result);
+                    }
+                    _ = tokio::time::sleep(Duration::from_millis(50)) => {}
+                }
             }
         })
         .await
         .unwrap();
 
         shutdown_daemon(&socket_path).await.unwrap();
-        timeout(Duration::from_secs(2), handle)
+        timeout(DAEMON_TEST_TIMEOUT, handle)
             .await
             .unwrap()
             .unwrap()

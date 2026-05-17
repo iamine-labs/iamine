@@ -407,14 +407,21 @@ mod tests {
     use std::fs;
     use std::io::{BufRead, BufReader};
     use std::path::PathBuf;
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    static TEMP_PATH_COUNTER: AtomicU64 = AtomicU64::new(0);
 
     fn temp_path() -> PathBuf {
         let suffix = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        std::env::temp_dir().join(format!("iamine-observability-{}.ndjson", suffix))
+        let counter = TEMP_PATH_COUNTER.fetch_add(1, Ordering::Relaxed);
+        std::env::temp_dir().join(format!(
+            "iamine-observability-{}-{}.ndjson",
+            suffix, counter
+        ))
     }
 
     #[test]
