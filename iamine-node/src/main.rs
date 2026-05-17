@@ -44,9 +44,13 @@ mod security_checks;
 mod setup_wizard;
 mod task_cache;
 mod task_codec;
+mod task_events;
+mod task_lifecycle;
 mod task_protocol;
 mod task_queue;
 mod task_scheduler;
+mod task_trace;
+mod tasks_cli;
 mod usage;
 mod wallet;
 mod worker_capabilities;
@@ -101,6 +105,8 @@ use serde_json::{Map, Value};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use task_cache::TaskCache;
+use task_events::*;
+use task_lifecycle::{TaskLifecycleErrorCode, TaskSelectionReason};
 use task_queue::TaskQueue;
 use task_scheduler::TaskScheduler;
 use tokio::sync::RwLock;
@@ -3211,6 +3217,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         data,
                         &peer_id.to_string(),
                     );
+                    emit_task_lifecycle_created(
+                        &state.task_id,
+                        task_type,
+                        data,
+                        &peer_id.to_string(),
+                    );
                 }
 
                 if state.published && !state.assignment_published {
@@ -3236,6 +3248,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     &winner,
                                     &message_id.to_string(),
                                     deadline_ms,
+                                );
+                                emit_task_lifecycle_assigned(
+                                    &state.task_id,
+                                    task_type,
+                                    &winner,
+                                    known_workers
+                                        .iter()
+                                        .map(|worker| worker.to_string())
+                                        .collect(),
+                                    TaskSelectionReason::CurrentBroadcastPolicy,
                                 );
                                 println!("🏆 Asignando worker={} task_id={}", winner, state.task_id);
                             }
@@ -3341,6 +3363,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         task_type,
                         &readiness_snapshot,
                         state.last_publish_failure_reason.as_deref(),
+                    );
+                    emit_task_lifecycle_failed(
+                        &state.task_id,
+                        task_type,
+                        TaskLifecycleErrorCode::TaskTimeout,
+                        reason,
                     );
                     eprintln!(
                         "❌ [Broadcast] PubSub no quedó listo: task_id={} peers={} subscribed_peers={} mesh_peers={} attempts={} reason={}",
@@ -3453,6 +3481,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 task_type,
                                 &failure_snapshot,
                                 state.last_publish_failure_reason.as_deref(),
+                            );
+                            emit_task_lifecycle_failed(
+                                &state.task_id,
+                                task_type,
+                                TaskLifecycleErrorCode::TaskTimeout,
+                                &error_text,
                             );
                             eprintln!(
                                 "❌ [Broadcast] No se pudo publicar TaskOffer tras {} intentos: {}",
@@ -4957,6 +4991,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                 &message_id.to_string(),
                                                 deadline_ms,
                                             );
+                                            emit_task_lifecycle_assigned(
+                                                &task_id,
+                                                task_type_value,
+                                                &winner,
+                                                known_workers
+                                                    .iter()
+                                                    .map(|worker| worker.to_string())
+                                                    .collect(),
+                                                TaskSelectionReason::BroadcastBidSelected,
+                                            );
                                         }
                                         Err(error) => log_observability_event(
                                             LogLevel::Error,
@@ -4996,6 +5040,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         // Si aún hay tareas asignadas (no completadas)
                                         if stats.1 > 0 {
                                             println!("⏱️ [Recovery] Tarea {} expiró — rebroadcasting...", rebroadcast_task_id);
+                                            emit_task_lifecycle_retrying(
+                                                &rebroadcast_task_id,
+                                                &task_type_clone,
+                                                1,
+                                                Some("broadcast_assignment_timeout".to_string()),
+                                            );
                                             let offer = serde_json::json!({
                                                 "type": "TaskOffer",
                                                 "task_id": format!("{}r", rebroadcast_task_id), // nueva ID
@@ -5057,6 +5107,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     continue;
                                 }
 
+                                emit_task_lifecycle_result_received(
+                                    &result_message.task_id,
+                                    &result_message.task_type,
+                                    &result_message.worker_peer_id,
+                                    result_message.success,
+                                    &result_message.output,
+                                    result_message.elapsed_ms,
+                                );
                                 if let Some(state) = broadcast_offer_state.as_mut() {
                                     if state.task_id == result_message.task_id {
                                         state.mark_result_accepted();
@@ -5075,6 +5133,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 emit_broadcast_final_outcome_success_event(
                                     &result_message.task_id,
                                     &result_message.worker_peer_id,
+                                    &result_message.output,
+                                );
+                                emit_task_lifecycle_completed(
+                                    &result_message.task_id,
+                                    &result_message.task_type,
+                                    &result_message.worker_peer_id,
+                                    &result_message.output,
+                                    result_message.elapsed_ms,
+                                );
+                                emit_task_lifecycle_finalized(
+                                    &result_message.task_id,
+                                    &result_message.task_type,
+                                    &result_message.worker_peer_id,
+                                    "success",
                                     &result_message.output,
                                 );
                                 log_observability_event(
@@ -5131,6 +5203,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 if will_execute {
                                     executed_broadcast_assignments.insert(task_id.clone());
                                     println!("🎯 [Worker] ¡Asignado! task_id={} (deadline: {}ms)", task_id, deadline_ms);
+                                    emit_task_lifecycle_started(
+                                        &task_id,
+                                        &task_type,
+                                        &local_peer_id,
+                                    );
 
                                     let _origin_pid = known_workers.iter()  // ← _ prefix
                                         .find(|p| p.to_string() == origin_peer_str)
@@ -5191,6 +5268,36 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                 } else {
                                                     Some("broadcast task execution failed".to_string())
                                                 };
+                                                if success {
+                                                    emit_task_lifecycle_completed(
+                                                        &outcome.task_id,
+                                                        &task_type_for_result,
+                                                        &worker_id_str,
+                                                        &output,
+                                                        elapsed_ms,
+                                                    );
+                                                    emit_task_lifecycle_finalized(
+                                                        &outcome.task_id,
+                                                        &task_type_for_result,
+                                                        &worker_id_str,
+                                                        "success",
+                                                        &output,
+                                                    );
+                                                } else {
+                                                    emit_task_lifecycle_failed(
+                                                        &outcome.task_id,
+                                                        &task_type_for_result,
+                                                        TaskLifecycleErrorCode::UnknownError,
+                                                        "broadcast task execution failed",
+                                                    );
+                                                    emit_task_lifecycle_finalized(
+                                                        &outcome.task_id,
+                                                        &task_type_for_result,
+                                                        &worker_id_str,
+                                                        "failed",
+                                                        &output,
+                                                    );
+                                                }
                                                 let broadcast_result = BroadcastResultToPublish {
                                                     task_id: outcome.task_id.clone(),
                                                     task_type: task_type_for_result,
@@ -5214,6 +5321,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                             Err(_) => {
                                                 eprintln!("⏱️ [Worker] Deadline expirado {}ms", deadline_ms);
                                                 metrics_ref.write().await.task_timed_out();
+                                                emit_task_lifecycle_failed(
+                                                    &task_id,
+                                                    &task_type_for_result,
+                                                    TaskLifecycleErrorCode::TaskTimeout,
+                                                    "broadcast task deadline expired",
+                                                );
                                             }
                                         }
                                     });

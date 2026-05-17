@@ -3,16 +3,13 @@ use crate::{
     benchmark::NodeBenchmark, code_quality::run_code_quality_checks,
     model_selector_cli::ModelSelectorCLI, node_identity::NodeIdentity, prompt_task_label,
     quality_gate::run_release_validation, regression_runner::run_default_regression_suite,
-    security_checks::run_security_checks,
+    security_checks::run_security_checks, tasks_cli,
 };
 use iamine_models::{
     AutoProvisionProfile, InstallResult, ModelAutoProvision, ModelInstaller, ModelNodeCapabilities,
     ModelRegistry, ModelRequirements, ModelStorage, StorageConfig,
 };
-use iamine_network::{
-    distributed_task_metrics, evaluate_default_dataset, ranked_models, task_trace,
-    DistributedTaskMetrics, ModelKarma, TaskTrace,
-};
+use iamine_network::{evaluate_default_dataset, ranked_models, ModelKarma};
 use std::error::Error;
 
 pub(crate) fn is_control_plane_mode(mode: &NodeMode) -> bool {
@@ -22,7 +19,7 @@ pub(crate) fn is_control_plane_mode(mode: &NodeMode) -> bool {
             | NodeMode::ModelsStats
             | NodeMode::ModelsDownload { .. }
             | NodeMode::ModelsRemove { .. }
-            | NodeMode::TasksStats
+            | NodeMode::TasksStats { .. }
             | NodeMode::TasksTrace { .. }
     )
 }
@@ -60,24 +57,20 @@ pub(crate) async fn handle_pre_network_mode(
             Ok(true)
         }
 
-        NodeMode::TasksStats => {
+        NodeMode::TasksStats { json } => {
             println!("╔══════════════════════════════════╗");
             println!("║   IaMine — Task Observability    ║");
             println!("╚══════════════════════════════════╝\n");
-            let metrics = distributed_task_metrics();
-            print_distributed_task_stats(&metrics);
+            tasks_cli::run_tasks_stats(*json)?;
             Ok(true)
         }
 
-        NodeMode::TasksTrace { task_id } => {
+        NodeMode::TasksTrace { task_id, json } => {
             println!("╔══════════════════════════════════╗");
             println!("║    IaMine — Task Trace           ║");
             println!("╚══════════════════════════════════╝\n");
-            if let Some(trace) = task_trace(task_id) {
-                print_task_trace_entry(&trace);
-                return Ok(true);
-            }
-            Err(format!("No existe trace para task_id={}", task_id).into())
+            tasks_cli::run_tasks_trace(task_id, *json)?;
+            Ok(true)
         }
 
         NodeMode::ModelsMenu => {
@@ -408,39 +401,6 @@ fn print_model_karma_stats() {
     }
 }
 
-fn print_distributed_task_stats(metrics: &DistributedTaskMetrics) {
-    println!("metric | value");
-    println!("total_tasks | {}", metrics.total_tasks);
-    println!("failed_tasks | {}", metrics.failed_tasks);
-    println!("retries_count | {}", metrics.retries_count);
-    println!("fallback_count | {}", metrics.fallback_count);
-    println!("late_results_count | {}", metrics.late_results_count);
-    println!("avg_latency_ms | {:.1}", metrics.avg_latency_ms);
-}
-
-fn print_task_trace_entry(trace: &TaskTrace) {
-    println!("task_id: {}", trace.task_id);
-    println!(
-        "node_history: {}",
-        if trace.node_history.is_empty() {
-            "-".to_string()
-        } else {
-            trace.node_history.join(" -> ")
-        }
-    );
-    println!(
-        "model_history: {}",
-        if trace.model_history.is_empty() {
-            "-".to_string()
-        } else {
-            trace.model_history.join(" -> ")
-        }
-    );
-    println!("retries: {}", trace.retries);
-    println!("fallbacks: {}", trace.fallbacks);
-    println!("total_latency_ms: {}", trace.total_latency_ms);
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -455,9 +415,10 @@ mod tests {
         assert!(is_control_plane_mode(&NodeMode::ModelsRemove {
             model_id: "llama3-3b".to_string()
         }));
-        assert!(is_control_plane_mode(&NodeMode::TasksStats));
+        assert!(is_control_plane_mode(&NodeMode::TasksStats { json: false }));
         assert!(is_control_plane_mode(&NodeMode::TasksTrace {
-            task_id: "task-1".to_string()
+            task_id: "task-1".to_string(),
+            json: false
         }));
         assert!(!is_control_plane_mode(&NodeMode::ClusterStatus {
             json: false

@@ -51,9 +51,12 @@ pub(crate) enum NodeMode {
     CheckCode,
     CheckSecurity,
     ValidateRelease,
-    TasksStats,
+    TasksStats {
+        json: bool,
+    },
     TasksTrace {
         task_id: String,
+        json: bool,
     },
     ClusterStatus {
         json: bool,
@@ -131,7 +134,7 @@ pub(crate) fn mode_label(mode: &NodeMode) -> &'static str {
         NodeMode::CheckCode => "check-code",
         NodeMode::CheckSecurity => "check-security",
         NodeMode::ValidateRelease => "validate-release",
-        NodeMode::TasksStats => "tasks-stats",
+        NodeMode::TasksStats { .. } => "tasks-stats",
         NodeMode::TasksTrace { .. } => "tasks-trace",
         NodeMode::ClusterStatus { .. } => "cluster-status",
         NodeMode::Capabilities => "capabilities",

@@ -137,12 +137,17 @@ pub(crate) fn parse_args_from(raw_args: Vec<String>) -> Result<NodeMode, String>
         Some("check-security") => Ok(NodeMode::CheckSecurity),
         Some("validate-release") => Ok(NodeMode::ValidateRelease),
         Some("tasks") => match args.get(2).map(|s| s.as_str()) {
-            Some("stats") => Ok(NodeMode::TasksStats),
+            Some("stats") => Ok(NodeMode::TasksStats {
+                json: args.iter().any(|arg| arg == "--json"),
+            }),
             Some("trace") => {
                 let task_id = args.get(3).ok_or("Falta <task_id>")?.clone();
-                Ok(NodeMode::TasksTrace { task_id })
+                Ok(NodeMode::TasksTrace {
+                    task_id,
+                    json: args.iter().any(|arg| arg == "--json"),
+                })
             }
-            _ => Err("Uso: iamine-node tasks [stats|trace <task_id>]".to_string()),
+            _ => Err("Uso: iamine-node tasks [stats [--json]|trace <task_id> [--json]]".to_string()),
         },
 
         Some("cluster") => match args.get(2).map(|s| s.as_str()) {
@@ -355,6 +360,45 @@ mod tests {
             parse_args_from(args(&["iamine-node", "cluster", "status"])).unwrap(),
             NodeMode::ClusterStatus { json: false }
         ));
+        assert!(matches!(
+            parse_args_from(args(&["iamine-node", "tasks", "trace", "task-1"])).unwrap(),
+            NodeMode::TasksTrace {
+                task_id,
+                json: false
+            } if task_id == "task-1"
+        ));
+        assert!(matches!(
+            parse_args_from(args(&["iamine-node", "tasks", "stats", "--json"])).unwrap(),
+            NodeMode::TasksStats { json: true }
+        ));
+    }
+
+    #[test]
+    fn cli_tasks_trace_json_mode() {
+        let mode = parse_args_from(args(&[
+            "iamine-node",
+            "tasks",
+            "trace",
+            "task-json",
+            "--json",
+        ]))
+        .expect("tasks trace json should parse");
+
+        match mode {
+            NodeMode::TasksTrace { task_id, json } => {
+                assert_eq!(task_id, "task-json");
+                assert!(json);
+            }
+            other => panic!("unexpected mode: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn tasks_trace_cli_help_does_not_start_runtime() {
+        let mode = parse_args_from(args(&["iamine-node", "tasks", "trace", "--help"]))
+            .expect("tasks trace help should parse");
+
+        assert!(matches!(mode, NodeMode::Help));
     }
 
     #[test]
