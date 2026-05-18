@@ -522,6 +522,9 @@ pub(crate) fn unix_now_ms() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    static CLUSTER_ID_ENV_LOCK: Mutex<()> = Mutex::new(());
 
     fn heartbeat(peer_id: &str) -> NodeCapabilityHeartbeat {
         NodeCapabilityHeartbeat {
@@ -540,6 +543,7 @@ mod tests {
 
     #[test]
     fn cluster_id_defaults_to_default_lan() {
+        let _guard = CLUSTER_ID_ENV_LOCK.lock().unwrap();
         let previous = std::env::var("IAMINE_CLUSTER_ID").ok();
         std::env::remove_var("IAMINE_CLUSTER_ID");
         assert_eq!(cluster_id_from_env(), DEFAULT_CLUSTER_ID);
@@ -550,6 +554,7 @@ mod tests {
 
     #[test]
     fn cluster_id_from_env_reads_env() {
+        let _guard = CLUSTER_ID_ENV_LOCK.lock().unwrap();
         let previous = std::env::var("IAMINE_CLUSTER_ID").ok();
         std::env::set_var("IAMINE_CLUSTER_ID", "lab-lan");
         assert_eq!(cluster_id_from_env(), "lab-lan");
