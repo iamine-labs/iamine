@@ -245,6 +245,30 @@ pub(crate) fn render_task_trace_human(
             .map(|reason| reason.as_str())
             .unwrap_or("unknown")
     ));
+    output.push_str(&format!(
+        "candidate_workers: {}\n",
+        if record.candidate_workers.is_empty() {
+            "-".to_string()
+        } else {
+            record.candidate_workers.join(",")
+        }
+    ));
+    output.push_str(&format!(
+        "rejected_candidates: {}\n",
+        if record.rejected_candidates.is_empty() {
+            "-".to_string()
+        } else {
+            record.rejected_candidates.join(",")
+        }
+    ));
+    output.push_str(&format!(
+        "rejected_reasons: {}\n",
+        if record.rejected_reasons.is_empty() {
+            "-".to_string()
+        } else {
+            record.rejected_reasons.join(",")
+        }
+    ));
     output.push_str(&format!("created_at_ms: {}\n", record.created_at_ms));
     output.push_str(&format!(
         "started_at_ms: {}\n",
@@ -402,6 +426,45 @@ mod tests {
         assert!(rendered.contains("task_id: task-render"));
         assert!(rendered.contains("status: pending"));
         assert!(rendered.contains("Events:"));
+    }
+
+    #[test]
+    fn tasks_trace_contains_scheduler_metadata() {
+        let mut store = TaskTraceStore::new();
+        store.append_event(created("task-scheduler")).unwrap();
+        store
+            .append_event(
+                TaskLifecycleEvent::new(
+                    "task_lifecycle_scheduler_decision",
+                    "task-scheduler",
+                    TaskLifecycleStatus::Assigned,
+                    120,
+                )
+                .with_assignment(
+                    "worker-a",
+                    vec!["worker-a".to_string(), "worker-b".to_string()],
+                    TaskSelectionReason::ReadyWorkerSupportsTask,
+                )
+                .with_scheduler_metadata(
+                    vec!["worker-b".to_string()],
+                    vec!["not_ready_for_tasks".to_string()],
+                ),
+            )
+            .unwrap();
+        let record = store.get_record("task-scheduler");
+        let events = store.events_for("task-scheduler");
+
+        let rendered = render_task_trace_human(
+            "task-scheduler",
+            record,
+            &events,
+            Path::new("/tmp/trace.json"),
+        );
+
+        assert!(rendered.contains("selected_worker: worker-a"));
+        assert!(rendered.contains("selection_reason: ready_worker_supports_task"));
+        assert!(rendered.contains("candidate_workers: worker-a,worker-b"));
+        assert!(rendered.contains("rejected_reasons: not_ready_for_tasks"));
     }
 
     #[test]

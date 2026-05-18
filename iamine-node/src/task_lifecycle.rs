@@ -64,9 +64,13 @@ pub(crate) enum TaskSelectionReason {
     FirstValidBid,
     HighestCapacityBid,
     LowestLatencyBid,
+    ReadyWorkerSupportsTask,
+    ReadyWorkerSupportsModel,
+    LowestLatencyReadyWorker,
     ManualAssignment,
     FallbackLocal,
     CurrentBroadcastPolicy,
+    OnlyCompatibleWorker,
     Unknown,
 }
 
@@ -77,9 +81,13 @@ impl TaskSelectionReason {
             Self::FirstValidBid => "first_valid_bid",
             Self::HighestCapacityBid => "highest_capacity_bid",
             Self::LowestLatencyBid => "lowest_latency_bid",
+            Self::ReadyWorkerSupportsTask => "ready_worker_supports_task",
+            Self::ReadyWorkerSupportsModel => "ready_worker_supports_model",
+            Self::LowestLatencyReadyWorker => "lowest_latency_ready_worker",
             Self::ManualAssignment => "manual_assignment",
             Self::FallbackLocal => "fallback_local",
             Self::CurrentBroadcastPolicy => "current_broadcast_policy",
+            Self::OnlyCompatibleWorker => "only_compatible_worker",
             Self::Unknown => "unknown",
         }
     }
@@ -148,6 +156,10 @@ pub(crate) struct TaskLifecycleRecord {
     pub(crate) assigned_node: Option<String>,
     pub(crate) selected_worker: Option<String>,
     pub(crate) candidate_workers: Vec<String>,
+    #[serde(default)]
+    pub(crate) rejected_candidates: Vec<String>,
+    #[serde(default)]
+    pub(crate) rejected_reasons: Vec<String>,
     pub(crate) selection_reason: Option<TaskSelectionReason>,
     pub(crate) required_capabilities: Vec<String>,
     pub(crate) declared_capabilities: Vec<String>,
@@ -185,6 +197,8 @@ impl TaskLifecycleRecord {
             assigned_node: None,
             selected_worker: None,
             candidate_workers: Vec::new(),
+            rejected_candidates: Vec::new(),
+            rejected_reasons: Vec::new(),
             selection_reason: None,
             required_capabilities: Vec::new(),
             declared_capabilities: Vec::new(),
@@ -274,6 +288,12 @@ impl TaskLifecycleRecord {
         if !event.candidate_workers.is_empty() {
             self.candidate_workers = event.candidate_workers.clone();
         }
+        if !event.rejected_candidates.is_empty() {
+            self.rejected_candidates = event.rejected_candidates.clone();
+        }
+        if !event.rejected_reasons.is_empty() {
+            self.rejected_reasons = event.rejected_reasons.clone();
+        }
         if let Some(selection_reason) = event.selection_reason {
             self.selection_reason = Some(selection_reason);
         }
@@ -327,6 +347,10 @@ pub(crate) struct TaskLifecycleEvent {
     pub(crate) assigned_worker_peer_id: Option<String>,
     pub(crate) selected_worker_peer_id: Option<String>,
     pub(crate) candidate_workers: Vec<String>,
+    #[serde(default)]
+    pub(crate) rejected_candidates: Vec<String>,
+    #[serde(default)]
+    pub(crate) rejected_reasons: Vec<String>,
     pub(crate) selection_reason: Option<TaskSelectionReason>,
     pub(crate) required_capabilities: Vec<String>,
     pub(crate) declared_capabilities: Vec<String>,
@@ -362,6 +386,8 @@ impl TaskLifecycleEvent {
             assigned_worker_peer_id: None,
             selected_worker_peer_id: None,
             candidate_workers: Vec::new(),
+            rejected_candidates: Vec::new(),
+            rejected_reasons: Vec::new(),
             selection_reason: None,
             required_capabilities: Vec::new(),
             declared_capabilities: Vec::new(),
@@ -412,6 +438,16 @@ impl TaskLifecycleEvent {
         self.selected_worker_peer_id = non_empty(assigned);
         self.candidate_workers = candidate_workers;
         self.selection_reason = Some(selection_reason);
+        self
+    }
+
+    pub(crate) fn with_scheduler_metadata(
+        mut self,
+        rejected_candidates: Vec<String>,
+        rejected_reasons: Vec<String>,
+    ) -> Self {
+        self.rejected_candidates = rejected_candidates;
+        self.rejected_reasons = rejected_reasons;
         self
     }
 
@@ -597,6 +633,10 @@ mod tests {
             "worker-a",
             vec!["worker-a".to_string(), "worker-b".to_string()],
             TaskSelectionReason::CurrentBroadcastPolicy,
+        )
+        .with_scheduler_metadata(
+            vec!["worker-c".to_string()],
+            vec!["not_ready_for_tasks".to_string()],
         );
         let mut record = record();
 
@@ -609,5 +649,10 @@ mod tests {
             Some(TaskSelectionReason::CurrentBroadcastPolicy)
         );
         assert_eq!(record.candidate_workers.len(), 2);
+        assert_eq!(record.rejected_candidates, vec!["worker-c".to_string()]);
+        assert_eq!(
+            record.rejected_reasons,
+            vec!["not_ready_for_tasks".to_string()]
+        );
     }
 }

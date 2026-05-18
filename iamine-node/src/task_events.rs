@@ -1,5 +1,6 @@
 use crate::broadcast_protocol::broadcast_payload_preview;
 use crate::log_observability_event;
+use crate::router_scheduler::SchedulerDecision;
 use crate::task_lifecycle::{
     now_ms, TaskLifecycleErrorCode, TaskLifecycleEvent, TaskLifecycleStatus, TaskSelectionReason,
 };
@@ -34,6 +35,29 @@ pub(crate) fn emit_task_lifecycle_assigned(
     .with_task_type(task_type)
     .with_assignment(assigned_worker_peer_id, candidate_workers, selection_reason);
     emit_task_lifecycle_event(event, Some(assigned_worker_peer_id));
+}
+
+pub(crate) fn emit_task_lifecycle_scheduler_decision(decision: &SchedulerDecision) {
+    let Some(selected_worker_peer_id) = decision.selected_worker_peer_id.as_deref() else {
+        return;
+    };
+    let event = TaskLifecycleEvent::new(
+        "task_lifecycle_scheduler_decision",
+        &decision.task_id,
+        TaskLifecycleStatus::Assigned,
+        now_ms(),
+    )
+    .with_task_type(&decision.task_type)
+    .with_assignment(
+        selected_worker_peer_id,
+        decision.candidate_worker_ids(),
+        decision.selection_reason.to_task_selection_reason(),
+    )
+    .with_scheduler_metadata(
+        decision.rejected_candidate_ids(),
+        decision.rejected_reason_strings(),
+    );
+    emit_task_lifecycle_event(event, Some(selected_worker_peer_id));
 }
 
 pub(crate) fn emit_task_lifecycle_started(task_id: &str, task_type: &str, worker_peer_id: &str) {
@@ -279,6 +303,32 @@ fn task_lifecycle_event_fields(event: &TaskLifecycleEvent) -> Map<String, Value>
         ),
     );
     fields.insert(
+        "rejected_candidates_count".to_string(),
+        (event.rejected_candidates.len() as u64).into(),
+    );
+    fields.insert(
+        "rejected_candidates".to_string(),
+        Value::Array(
+            event
+                .rejected_candidates
+                .iter()
+                .cloned()
+                .map(Value::String)
+                .collect(),
+        ),
+    );
+    fields.insert(
+        "rejected_reasons".to_string(),
+        Value::Array(
+            event
+                .rejected_reasons
+                .iter()
+                .cloned()
+                .map(Value::String)
+                .collect(),
+        ),
+    );
+    fields.insert(
         "required_capabilities".to_string(),
         Value::Array(
             event
@@ -375,6 +425,40 @@ mod tests {
                 .get("candidate_workers_count")
                 .and_then(|value| value.as_u64()),
             Some(2)
+        );
+    }
+
+    #[test]
+    fn task_lifecycle_records_scheduler_decision_metadata() {
+        let event = TaskLifecycleEvent::new(
+            "task_lifecycle_scheduler_decision",
+            "task-scheduler",
+            TaskLifecycleStatus::Assigned,
+            10,
+        )
+        .with_assignment(
+            "worker-a",
+            vec!["worker-a".to_string(), "worker-b".to_string()],
+            TaskSelectionReason::ReadyWorkerSupportsTask,
+        )
+        .with_scheduler_metadata(
+            vec!["worker-b".to_string()],
+            vec!["not_ready_for_tasks".to_string()],
+        );
+
+        let fields = task_lifecycle_event_fields(&event);
+
+        assert_eq!(
+            fields
+                .get("selection_reason")
+                .and_then(|value| value.as_str()),
+            Some("ready_worker_supports_task")
+        );
+        assert_eq!(
+            fields
+                .get("rejected_candidates_count")
+                .and_then(|value| value.as_u64()),
+            Some(1)
         );
     }
 

@@ -40,6 +40,9 @@ mod resource_policy;
 mod result_acceptance;
 mod result_observability;
 mod result_protocol;
+mod router_scheduler;
+mod scheduler_events;
+mod scheduler_policy;
 mod security_checks;
 mod setup_wizard;
 mod task_cache;
@@ -101,12 +104,14 @@ use result_protocol::{
     publish_worker_result_payload, send_worker_result_direct_response, BroadcastTaskResultMessage,
     TaskResultRequest, TaskResultResponse,
 };
+use router_scheduler::{SchedulerDecision, SelectionReason};
+use scheduler_events::emit_scheduler_decision_events;
 use serde_json::{Map, Value};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use task_cache::TaskCache;
 use task_events::*;
-use task_lifecycle::{TaskLifecycleErrorCode, TaskSelectionReason};
+use task_lifecycle::TaskLifecycleErrorCode;
 use task_queue::TaskQueue;
 use task_scheduler::TaskScheduler;
 use tokio::sync::RwLock;
@@ -3249,16 +3254,30 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     &message_id.to_string(),
                                     deadline_ms,
                                 );
+                                let candidate_workers: Vec<String> = known_workers
+                                    .iter()
+                                    .map(|worker| worker.to_string())
+                                    .collect();
+                                let scheduler_decision =
+                                    SchedulerDecision::from_current_broadcast_policy(
+                                        &state.task_id,
+                                        task_type,
+                                        &winner,
+                                        candidate_workers,
+                                        SelectionReason::CurrentBroadcastPolicy,
+                                        task_lifecycle::now_ms(),
+                                    );
+                                emit_scheduler_decision_events(&scheduler_decision);
                                 emit_task_lifecycle_assigned(
                                     &state.task_id,
                                     task_type,
                                     &winner,
-                                    known_workers
-                                        .iter()
-                                        .map(|worker| worker.to_string())
-                                        .collect(),
-                                    TaskSelectionReason::CurrentBroadcastPolicy,
+                                    scheduler_decision.candidate_worker_ids(),
+                                    scheduler_decision
+                                        .selection_reason
+                                        .to_task_selection_reason(),
                                 );
+                                emit_task_lifecycle_scheduler_decision(&scheduler_decision);
                                 println!("🏆 Asignando worker={} task_id={}", winner, state.task_id);
                             }
                             Err(error) => {
@@ -4991,15 +5010,31 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                 &message_id.to_string(),
                                                 deadline_ms,
                                             );
+                                            let candidate_workers: Vec<String> = known_workers
+                                                .iter()
+                                                .map(|worker| worker.to_string())
+                                                .collect();
+                                            let scheduler_decision =
+                                                SchedulerDecision::from_current_broadcast_policy(
+                                                    &task_id,
+                                                    task_type_value,
+                                                    &winner,
+                                                    candidate_workers,
+                                                    SelectionReason::BroadcastBidSelected,
+                                                    task_lifecycle::now_ms(),
+                                                );
+                                            emit_scheduler_decision_events(&scheduler_decision);
                                             emit_task_lifecycle_assigned(
                                                 &task_id,
                                                 task_type_value,
                                                 &winner,
-                                                known_workers
-                                                    .iter()
-                                                    .map(|worker| worker.to_string())
-                                                    .collect(),
-                                                TaskSelectionReason::BroadcastBidSelected,
+                                                scheduler_decision.candidate_worker_ids(),
+                                                scheduler_decision
+                                                    .selection_reason
+                                                    .to_task_selection_reason(),
+                                            );
+                                            emit_task_lifecycle_scheduler_decision(
+                                                &scheduler_decision,
                                             );
                                         }
                                         Err(error) => log_observability_event(
