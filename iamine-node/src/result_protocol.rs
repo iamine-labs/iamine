@@ -61,7 +61,7 @@ impl BroadcastTaskResultMessage {
     }
 }
 
-pub(super) fn publish_worker_result_payload(
+pub(crate) fn publish_worker_result_payload(
     swarm: &mut Swarm<IamineBehaviour>,
     task_id: &str,
     attempt_id: &str,
@@ -101,7 +101,7 @@ pub(super) fn publish_worker_result_payload(
     first_message_id
 }
 
-pub(super) fn send_worker_result_direct_response(
+pub(crate) fn send_worker_result_direct_response(
     swarm: &mut Swarm<IamineBehaviour>,
     origin_peer_id: &str,
     task_id: &str,

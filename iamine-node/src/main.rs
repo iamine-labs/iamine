@@ -60,14 +60,18 @@ mod task_trace;
 mod tasks_cli;
 mod usage;
 mod wallet;
+mod worker_assignment_runtime;
 mod worker_capabilities;
 mod worker_capability_advertisement;
 mod worker_pool;
+mod worker_pubsub_runtime;
+mod worker_result_runtime;
+mod worker_runtime;
 mod worker_startup_policy;
 
 use iamine_models::{
-    DirectInferenceRequest, HardwareAcceleration, InferenceTask, InferenceTaskResult,
-    ModelRegistry, ModelStorage, RealInferenceEngine, RealInferenceRequest, StreamedToken,
+    DirectInferenceRequest, HardwareAcceleration, InferenceTask, ModelRegistry, ModelStorage,
+    RealInferenceEngine, RealInferenceRequest,
 };
 
 use iamine_network::{
@@ -92,7 +96,7 @@ use iamine_network::DistributedTaskMetrics;
 use iamine_network::NodeCapability;
 
 use benchmark::NodeBenchmark;
-use daemon_runtime::{daemon_is_available, daemon_socket_path, infer_via_daemon, run_daemon};
+use daemon_runtime::{daemon_socket_path, run_daemon};
 use heartbeat::HeartbeatService;
 pub(crate) use infer_observability::*;
 pub(crate) use infer_retry::DistributedInferState;
@@ -106,10 +110,7 @@ use quality_gate::runtime_version_metadata;
 use rate_limiter::RateLimiter;
 use resource_policy::ResourcePolicy;
 use result_observability::*;
-use result_protocol::{
-    publish_worker_result_payload, send_worker_result_direct_response, BroadcastTaskResultMessage,
-    TaskResultRequest, TaskResultResponse,
-};
+use result_protocol::{BroadcastTaskResultMessage, TaskResultRequest, TaskResultResponse};
 use router_scheduler::{SchedulerDecision, SelectionReason};
 use scheduler_events::emit_scheduler_decision_events;
 use serde_json::{Map, Value};
@@ -157,11 +158,18 @@ use executor::TaskExecutor;
 use final_outcome::*;
 use mode_dispatch::{handle_pre_network_mode, is_control_plane_mode};
 use model_display_policy::*;
-use model_executability::*;
 use node_modes::{mode_label, DebugFlags, InferenceControlFlags, NodeMode};
 use task_protocol::{TaskRequest, TaskResponse};
 use usage::print_usage;
+use worker_assignment_runtime::{handle_worker_task_assignment, WorkerTaskAssignment};
 use worker_capability_advertisement::*;
+use worker_pubsub_runtime::{
+    handle_worker_task_offer, WorkerTaskOffer, WorkerTaskOfferRuntimeContext,
+};
+use worker_result_runtime::publish_worker_broadcast_task_result;
+use worker_runtime::{
+    handle_worker_inference_request, WorkerInferenceRuntimeContext, WorkerInferenceRuntimeRequest,
+};
 use worker_startup_policy::*;
 
 pub(crate) use pubsub_observability::*;
@@ -1610,35 +1618,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             }
 
             Some(broadcast_result) = broadcast_result_rx.recv() => {
-                let payload = build_broadcast_task_result_payload(&broadcast_result);
-                let payload_bytes = serde_json::to_vec(&payload).unwrap_or_default();
-                emit_broadcast_result_publish_attempt_event(
-                    &broadcast_result,
-                    payload_bytes.len(),
-                );
-                match swarm.behaviour_mut().gossipsub.publish(
-                    gossipsub::IdentTopic::new(RESULTS_TOPIC),
-                    payload_bytes,
-                ) {
-                    Ok(message_id) => {
-                        emit_broadcast_result_published_event(
-                            &broadcast_result,
-                            &message_id.to_string(),
-                            payload.to_string().len(),
-                        );
-                        println!(
-                            "📤 [Worker] TaskResult publicado: task_id={} success={}",
-                            broadcast_result.task_id, broadcast_result.success
-                        );
-                    }
-                    Err(error) => {
-                        emit_broadcast_result_publish_failed_event(
-                            &broadcast_result,
-                            &error.to_string(),
-                            true,
-                        );
-                    }
-                }
+                publish_worker_broadcast_task_result(&mut swarm, broadcast_result);
             }
 
             Some(completed_response) = task_response_rx.recv() => {
@@ -2968,68 +2948,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 }
                             }
                             "TaskOffer" if matches!(mode, NodeMode::Worker) => {
-                                let task_id = msg["task_id"].as_str().unwrap_or("").to_string();
-                                let task_type = msg["task_type"].as_str().unwrap_or("").to_string();
-                                let data = msg["data"].as_str().unwrap_or("").to_string();
-                                let origin_peer = msg["origin_peer"].as_str().unwrap_or("").to_string();
-                                emit_worker_task_offer_received_event(
-                                    &task_id,
-                                    &task_type,
-                                    &data,
-                                    &origin_peer,
-                                    &from_peer,
-                                );
-                                println!(
-                                    "📥 [Worker] TaskOffer recibido: task_id={} type={} data='{}'",
-                                    task_id, task_type, data
-                                );
-
-                                if task_cache.is_duplicate(&task_id) {
-                                    println!("⚡ [Cache] Tarea {} ya vista", &task_id[..8.min(task_id.len())]);
-                                } else if !capabilities.supports(&task_type) {
-                                    println!("🚫 [Worker] No soporta '{}'", task_type);
-                                } else {
-                                    let available = pool.available_slots();
-                                    if available > 0 {
-                                        println!("📋 [Worker] Bid para tarea {}", task_id);
-                                        let reputation_score = queue.reputation().await.reputation_score;
-                                        let worker_id = peer_id.to_string();
-                                        let bid = build_task_bid_payload(
-                                            &task_id,
-                                            &worker_id,
-                                            &origin_peer,
-                                            reputation_score,
-                                            available,
-                                            10,
-                                        );
-                                        match swarm.behaviour_mut().gossipsub.publish(
-                                            gossipsub::IdentTopic::new(BIDS_TOPIC),
-                                            serde_json::to_vec(&bid).unwrap_or_default(),
-                                        ) {
-                                            Ok(message_id) => emit_worker_task_bid_published_event(
-                                                &task_id,
-                                                &worker_id,
-                                                &message_id.to_string(),
-                                                available,
-                                            ),
-                                            Err(error) => log_observability_event(
-                                                LogLevel::Error,
-                                                "task_bid_publish_failed",
-                                                &task_id,
-                                                Some(&task_id),
-                                                None,
-                                                Some(TASK_DISPATCH_UNCONFIRMED_001),
-                                                {
-                                                    let mut fields = Map::new();
-                                                    fields.insert("worker_id".to_string(), worker_id.into());
-                                                    fields.insert("topic".to_string(), BIDS_TOPIC.into());
-                                                    fields.insert("error".to_string(), error.to_string().into());
-                                                    fields
-                                                },
-                                            ),
-                                        }
-                                    }
-                                }
+                                let offer = WorkerTaskOffer::from_value(&msg);
+                                handle_worker_task_offer(
+                                    &mut swarm,
+                                    offer,
+                                    WorkerTaskOfferRuntimeContext {
+                                        from_peer: &from_peer,
+                                        task_cache: &mut task_cache,
+                                        capabilities: &capabilities,
+                                        pool: &pool,
+                                        queue: &queue,
+                                        peer_id: &peer_id,
+                                    },
+                                )
+                                .await;
                             }
 
                             "TaskBid" if matches!(mode, NodeMode::Broadcast { .. }) => {
@@ -3306,162 +3238,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             }
 
                             "TaskAssign" if matches!(mode, NodeMode::Worker) => {
-                                let assigned = msg["assigned_worker"].as_str().unwrap_or("");
-                                let task_id = msg["task_id"].as_str().unwrap_or("").to_string();
-                                let task_type = msg["task_type"].as_str().unwrap_or("").to_string();
-                                let data = msg["data"].as_str().unwrap_or("").to_string();
-                                let origin_peer_str = msg["origin_peer"].as_str().unwrap_or("").to_string();
-                                let deadline_ms = msg["deadline_ms"].as_u64().unwrap_or(30_000);
-                                let local_peer_id = peer_id.to_string();
-                                let already_executed =
-                                    executed_broadcast_assignments.contains(&task_id);
-                                let will_execute = should_execute_task_assignment(
-                                    assigned,
-                                    &local_peer_id,
-                                    already_executed,
+                                handle_worker_task_assignment(
+                                    WorkerTaskAssignment::from_value(&msg),
+                                    peer_id.to_string(),
+                                    &mut executed_broadcast_assignments,
+                                    Arc::clone(&queue),
+                                    Arc::clone(&metrics),
+                                    broadcast_result_tx.clone(),
                                 );
-                                emit_worker_task_assign_received_event(
-                                    &task_id,
-                                    assigned,
-                                    &local_peer_id,
-                                    will_execute,
-                                );
-
-                                if will_execute {
-                                    executed_broadcast_assignments.insert(task_id.clone());
-                                    println!("🎯 [Worker] ¡Asignado! task_id={} (deadline: {}ms)", task_id, deadline_ms);
-                                    emit_task_lifecycle_started(
-                                        &task_id,
-                                        &task_type,
-                                        &local_peer_id,
-                                    );
-
-                                    let _origin_pid = known_workers.iter()  // ← _ prefix
-                                        .find(|p| p.to_string() == origin_peer_str)
-                                        .copied();
-
-                                    let queue_ref = Arc::clone(&queue);
-                                    let metrics_ref = Arc::clone(&metrics);
-                                    let worker_id_str = local_peer_id.clone();
-                                    let result_tx = broadcast_result_tx.clone();
-                                    let task_type_for_result = task_type.clone();
-                                    let origin_peer_for_result = origin_peer_str.clone();
-
-                                    tokio::spawn(async move {
-                                        let exec = async {
-                                            let _ = queue_ref.push(task_id.clone(), task_type.clone(), data).await;
-                                            queue_ref.outcome_rx.lock().await.recv().await
-                                        };
-
-                                        match tokio::time::timeout(Duration::from_millis(deadline_ms), exec).await {
-                                            Ok(Some(outcome)) => {
-                                                let success = matches!(outcome.status, task_queue::OutcomeStatus::Success);
-                                                {
-                                                    let mut m = metrics_ref.write().await;
-                                                    if success { m.task_success(0); } else { m.task_failed(); }
-                                                }
-                                                log_observability_event(
-                                                    LogLevel::Info,
-                                                    "task_completed",
-                                                    &outcome.task_id,
-                                                    Some(&outcome.task_id),
-                                                    None,
-                                                    None,
-                                                    {
-                                                        let mut fields = Map::new();
-                                                        fields.insert("success".to_string(), success.into());
-                                                        fields.insert("worker_peer_id".to_string(), worker_id_str.clone().into());
-                                                        fields.insert("attempts".to_string(), outcome.attempts.into());
-                                                        fields.insert("source".to_string(), "broadcast_task_assign".into());
-                                                        fields
-                                                    },
-                                                );
-                                                println!("✅ [Worker] Tarea {} completada (success={})", outcome.task_id, success);
-                                                let rep = queue_ref.reputation().await;
-                                                println!("⭐ Reputación: {}/100", rep.reputation_score);
-
-                                                let output = outcome
-                                                    .result
-                                                    .as_ref()
-                                                    .map(|result| result.output.clone())
-                                                    .unwrap_or_default();
-                                                let elapsed_ms = outcome
-                                                    .result
-                                                    .as_ref()
-                                                    .map(|result| result.execution_ms)
-                                                    .unwrap_or_default();
-                                                let error = if success {
-                                                    None
-                                                } else {
-                                                    Some("broadcast task execution failed".to_string())
-                                                };
-                                                if success {
-                                                    emit_task_lifecycle_completed(
-                                                        &outcome.task_id,
-                                                        &task_type_for_result,
-                                                        &worker_id_str,
-                                                        &output,
-                                                        elapsed_ms,
-                                                    );
-                                                    emit_task_lifecycle_finalized(
-                                                        &outcome.task_id,
-                                                        &task_type_for_result,
-                                                        &worker_id_str,
-                                                        "success",
-                                                        &output,
-                                                    );
-                                                } else {
-                                                    emit_task_lifecycle_failed(
-                                                        &outcome.task_id,
-                                                        &task_type_for_result,
-                                                        TaskLifecycleErrorCode::UnknownError,
-                                                        "broadcast task execution failed",
-                                                    );
-                                                    emit_task_lifecycle_finalized(
-                                                        &outcome.task_id,
-                                                        &task_type_for_result,
-                                                        &worker_id_str,
-                                                        "failed",
-                                                        &output,
-                                                    );
-                                                }
-                                                let broadcast_result = BroadcastResultToPublish {
-                                                    task_id: outcome.task_id.clone(),
-                                                    task_type: task_type_for_result,
-                                                    worker_peer_id: worker_id_str.clone(),
-                                                    origin_peer: origin_peer_for_result.clone(),
-                                                    success,
-                                                    output,
-                                                    elapsed_ms,
-                                                    error,
-                                                    attempts: outcome.attempts,
-                                                    source: "broadcast_task_assign",
-                                                };
-                                                emit_broadcast_result_prepare_event(&broadcast_result);
-                                                let _ = result_tx.send(broadcast_result).await;
-                                                println!(
-                                                    "📤 [Worker] Resultado listo → origin {}",
-                                                    &origin_peer_for_result[..origin_peer_for_result.len().min(8)]
-                                                );
-                                            }
-                                            Ok(None) => eprintln!("❌ [Worker] Canal cerrado"),
-                                            Err(_) => {
-                                                eprintln!("⏱️ [Worker] Deadline expirado {}ms", deadline_ms);
-                                                metrics_ref.write().await.task_timed_out();
-                                                emit_task_lifecycle_failed(
-                                                    &task_id,
-                                                    &task_type_for_result,
-                                                    TaskLifecycleErrorCode::TaskTimeout,
-                                                    "broadcast task deadline expired",
-                                                );
-                                            }
-                                        }
-                                    });
-                                } else if assigned == local_peer_id {
-                                    println!("⏭️  [Worker] TaskAssign duplicado ignorado: task_id={}", task_id);
-                                } else {
-                                    println!("⏭️  [Worker] Tarea {} → otro worker ganó", task_id);
-                                }
                             }
 
                             "TaskCancel" if matches!(mode, NodeMode::Worker) => {
@@ -3508,355 +3292,22 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             // ═══════════════════════════════════════════
 
                             "InferenceRequest" if matches!(mode, NodeMode::Worker) => {
-                                let request_id = msg["request_id"].as_str().unwrap_or("").to_string();
-                                let task_id = msg["task_id"]
-                                    .as_str()
-                                    .filter(|value| !value.trim().is_empty())
-                                    .unwrap_or(request_id.as_str())
-                                    .to_string();
-                                let attempt_id = msg["attempt_id"]
-                                    .as_str()
-                                    .filter(|value| !value.trim().is_empty())
-                                    .unwrap_or(request_id.as_str())
-                                    .to_string();
-                                let model_id = msg["model_id"].as_str().unwrap_or("").to_string();
-                                let prompt = msg["prompt"].as_str().unwrap_or("").to_string();
-                                let max_tokens = msg["max_tokens"].as_u64().unwrap_or(200) as u32;
-                                let temperature = msg["temperature"].as_f64().unwrap_or(0.7) as f32;
-                                let requester_peer =
-                                    msg["requester_peer"].as_str().unwrap_or("").to_string();
-                                let remote_attempt_started_at = tokio::time::Instant::now();
-                                let model_execution_gate = evaluate_worker_model_execution_gate(
-                                    &model_id,
-                                    &model_storage,
-                                    &node_caps,
-                                    worker_startup_policy.as_ref(),
-                                );
-                                let local_model_available =
-                                    model_execution_gate.local_model_available;
-                                emit_worker_task_message_received_event(
-                                    &task_id,
-                                    &attempt_id,
-                                    message_topic,
-                                    &from_peer,
-                                    "ok",
-                                    &model_id,
-                                    local_model_available,
-                                );
-                                emit_direct_inference_request_received_event(
-                                    &task_id,
-                                    &attempt_id,
-                                    &model_id,
-                                    &from_peer,
-                                    &peer_id.to_string(),
-                                    local_model_available,
-                                );
-                                println!("🧠 [Worker] InferenceRequest: model={} prompt='{}'",
-                                    model_id, &prompt[..prompt.len().min(40)]);
-
-                                if let Some(rejection) = model_execution_gate.rejection {
-                                    println!("{}", rejection.human_warning(&model_id));
-                                    continue;
-                                }
-                                let mock_backend_enabled = model_execution_gate.mock_backend_enabled;
-                                let real_inference_available =
-                                    model_execution_gate.real_inference_available;
-                                for stage in [
-                                    "task_received",
-                                    "task_message_received",
-                                    "worker_claimed",
-                                    "attempt_started",
-                                ] {
-                                    publish_worker_progress_message(
-                                        &mut swarm,
-                                        &task_id,
-                                        &attempt_id,
-                                        &request_id,
-                                        &model_id,
-                                        &peer_id.to_string(),
-                                        stage,
-                                        elapsed_ms_since(remote_attempt_started_at),
-                                        None,
-                                    );
-                                }
-
-                                let engine_ref = inference_engine.clone();
-                                let metrics_ref = Arc::clone(&metrics);
-                                let registry_clone = ModelRegistry::new();
-                                let peer_id_str = peer_id.to_string();
-                                let request_id_clone = request_id.clone();
-                                let model_id_for_inference = model_id.clone();
-                                let mock_backend_for_task = mock_backend_enabled;
-                                let real_inference_available_for_task = real_inference_available;
-
-                                let (token_tx, mut token_rx) = tokio::sync::mpsc::channel::<String>(100);
-                                let (worker_progress_tx, mut worker_progress_rx) =
-                                    tokio::sync::mpsc::channel::<&'static str>(32);
-
-                                // Spawn inference execution
-                                let inference_handle = tokio::spawn(async move {
-                                    let progress_tx = worker_progress_tx;
-                                    let req = RealInferenceRequest {
-                                        task_id: request_id_clone.clone(),
-                                        model_id: model_id_for_inference.clone(),
-                                        prompt,
-                                        max_tokens,
-                                        temperature,
-                                    };
-                                    let daemon_socket = daemon_socket_path();
-                                    let result = if mock_backend_for_task {
-                                        let _ = progress_tx.try_send("inference_started");
-                                        mock_real_inference_result(
-                                            request_id_clone.clone(),
-                                            model_id_for_inference.clone(),
-                                            req.prompt.clone(),
-                                            req.max_tokens,
-                                        )
-                                    } else if !real_inference_available_for_task {
-                                        return InferenceTaskResult::failure(
-                                            request_id_clone.clone(),
-                                            model_id_for_inference.clone(),
-                                            peer_id_str.clone(),
-                                            "real inference unavailable by worker startup policy".to_string(),
-                                        );
-                                    } else if daemon_is_available(&daemon_socket).await {
-                                        let _ = progress_tx.try_send("model_loading");
-                                        let _ = progress_tx.try_send("inference_warmup");
-                                        let _ = progress_tx.try_send("inference_started");
-                                        match infer_via_daemon(&daemon_socket, req, |token| {
-                                            let _ = token_tx.try_send(token);
-                                        }).await {
-                                            Ok(response) => response.result,
-                                            Err(e) => {
-                                                return InferenceTaskResult::failure(
-                                                    request_id_clone.clone(),
-                                                    model_id_for_inference.clone(),
-                                                    peer_id_str.clone(),
-                                                    e,
-                                                );
-                                            }
-                                        }
-                                    } else {
-                                        let Some(eng) = engine_ref.clone() else {
-                                            return InferenceTaskResult::failure(
-                                                request_id_clone.clone(),
-                                                model_id_for_inference.clone(),
-                                                peer_id_str.clone(),
-                                                "real inference engine unavailable".to_string(),
-                                            );
-                                        };
-                                        let hash = registry_clone.get(&model_id_for_inference)
-                                            .map(|m| m.hash.clone())
-                                            .unwrap_or_default();
-                                        let _ = progress_tx.try_send("model_loading");
-                                        if let Err(e) = eng.load_model(&model_id_for_inference, &hash) {
-                                            return InferenceTaskResult::failure(
-                                                request_id_clone.clone(),
-                                                model_id_for_inference.clone(),
-                                                peer_id_str.clone(),
-                                                e,
-                                            );
-                                        }
-                                        let _ = progress_tx.try_send("model_loaded");
-                                        let _ = progress_tx.try_send("inference_warmup");
-                                        let _ = progress_tx.try_send("inference_started");
-
-                                        eng.run_inference(req, Some(token_tx)).await
-                                    };
-
-                                    InferenceTaskResult::success(
-                                        request_id_clone,
-                                        model_id_for_inference,
-                                        result.output,
-                                        result.tokens_generated,
-                                        result.truncated,
-                                        result.continuation_steps,
-                                        result.execution_ms,
-                                        peer_id_str,
-                                        result.accelerator_used,
-                                    )
-                                });
-
-                                // Stream tokens via gossipsub while inference runs
-                                let mut token_idx = 0u32;
-                                let mut produced_tokens = 0u64;
-                                let mut first_token_emitted = false;
-                                let mut last_token_progress_published_at: Option<tokio::time::Instant> = None;
-                                while !inference_handle.is_finished()
-                                    || !token_rx.is_empty()
-                                    || !worker_progress_rx.is_empty()
-                                {
-                                    tokio::select! {
-                                        maybe_stage = worker_progress_rx.recv() => {
-                                            if let Some(stage) = maybe_stage {
-                                                publish_worker_progress_message(
-                                                    &mut swarm,
-                                                    &task_id,
-                                                    &attempt_id,
-                                                    &request_id,
-                                                    &model_id,
-                                                    &peer_id.to_string(),
-                                                    stage,
-                                                    elapsed_ms_since(remote_attempt_started_at),
-                                                    None,
-                                                );
-                                            }
-                                        }
-                                        maybe_token = token_rx.recv() => {
-                                            if let Some(token) = maybe_token {
-                                                let st = StreamedToken {
-                                                    request_id: request_id.clone(),
-                                                    token,
-                                                    index: token_idx,
-                                                    is_final: false,
-                                                };
-                                                let _ = swarm.behaviour_mut().gossipsub.publish(
-                                                    gossipsub::IdentTopic::new(RESULTS_TOPIC),
-                                                    serde_json::to_vec(&st.to_gossip_json()).unwrap(),
-                                                );
-                                                produced_tokens = produced_tokens.saturating_add(1);
-                                                let should_publish_token_count = produced_tokens % 16 == 0
-                                                    || last_token_progress_published_at
-                                                        .map(|last| last.elapsed() >= Duration::from_secs(5))
-                                                        .unwrap_or(true);
-                                                if !first_token_emitted {
-                                                    first_token_emitted = true;
-                                                    last_token_progress_published_at =
-                                                        Some(tokio::time::Instant::now());
-                                                    publish_worker_progress_message(
-                                                        &mut swarm,
-                                                        &task_id,
-                                                        &attempt_id,
-                                                        &request_id,
-                                                        &model_id,
-                                                        &peer_id.to_string(),
-                                                        "first_token_generated",
-                                                        elapsed_ms_since(remote_attempt_started_at),
-                                                        Some(produced_tokens),
-                                                    );
-                                                } else if should_publish_token_count {
-                                                    last_token_progress_published_at =
-                                                        Some(tokio::time::Instant::now());
-                                                    publish_worker_progress_message(
-                                                        &mut swarm,
-                                                        &task_id,
-                                                        &attempt_id,
-                                                        &request_id,
-                                                        &model_id,
-                                                        &peer_id.to_string(),
-                                                        "tokens_generated_count",
-                                                        elapsed_ms_since(remote_attempt_started_at),
-                                                        Some(produced_tokens),
-                                                    );
-                                                }
-                                                token_idx += 1;
-                                            }
-                                        }
-                                        _ = tokio::time::sleep(Duration::from_secs(5)), if !first_token_emitted => {
-                                            publish_worker_progress_message(
-                                            &mut swarm,
-                                            &task_id,
-                                            &attempt_id,
-                                            &request_id,
-                                            &model_id,
-                                            &peer_id.to_string(),
-                                            "still_running",
-                                            elapsed_ms_since(remote_attempt_started_at),
-                                            None,
-                                            );
-                                        }
-                                    }
-                                }
-
-                                if let Ok(result) = inference_handle.await {
-                                    {
-                                        let mut m = metrics_ref.write().await;
-                                        if result.success {
-                                            m.inference_success(result.execution_ms, result.tokens_generated as u64);
-                                        } else {
-                                            m.inference_failed();
-                                        }
-                                    }
-                                    publish_worker_progress_message(
-                                        &mut swarm,
-                                        &task_id,
-                                        &attempt_id,
-                                        &request_id,
-                                        &model_id,
-                                        &peer_id.to_string(),
-                                        "inference_finished",
-                                        elapsed_ms_since(remote_attempt_started_at),
-                                        Some(result.tokens_generated as u64),
-                                    );
-                                    let result_size = result.output.len();
-                                    emit_worker_task_completed_event(
-                                        &task_id,
-                                        &attempt_id,
-                                        &model_id,
-                                        result_size,
-                                        result.success,
-                                        &peer_id.to_string(),
-                                    );
-                                    let mut result_payload = result.to_gossip_json();
-                                    if let Some(map) = result_payload.as_object_mut() {
-                                        map.insert("task_id".to_string(), task_id.clone().into());
-                                        map.insert("attempt_id".to_string(), attempt_id.clone().into());
-                                        map.insert("worker_peer_id".to_string(), peer_id.to_string().into());
-                                    }
-                                    publish_worker_progress_message(
-                                        &mut swarm,
-                                        &task_id,
-                                        &attempt_id,
-                                        &request_id,
-                                        &model_id,
-                                        &peer_id.to_string(),
-                                        "result_serialized",
-                                        elapsed_ms_since(remote_attempt_started_at),
-                                        Some(result.tokens_generated as u64),
-                                    );
-                                    let payload_size = result_payload.to_string().len();
-                                    let message_id = publish_worker_result_payload(
-                                        &mut swarm,
-                                        &task_id,
-                                        &attempt_id,
-                                        &model_id,
-                                        &peer_id.to_string(),
-                                        &result_payload,
-                                    );
-                                    if message_id.is_some() {
-                                        publish_worker_progress_message(
-                                            &mut swarm,
-                                            &task_id,
-                                            &attempt_id,
-                                            &request_id,
-                                            &model_id,
-                                            &peer_id.to_string(),
-                                            "result_published",
-                                            elapsed_ms_since(remote_attempt_started_at),
-                                            Some(result.tokens_generated as u64),
-                                        );
-                                        emit_worker_result_published_event(
-                                            &task_id,
-                                            &attempt_id,
-                                            &model_id,
-                                            RESULTS_TOPIC,
-                                            payload_size,
-                                            message_id.as_deref(),
-                                            &peer_id.to_string(),
-                                        )
-                                    }
-                                    send_worker_result_direct_response(
-                                        &mut swarm,
-                                        &requester_peer,
-                                        &task_id,
-                                        &attempt_id,
-                                        &model_id,
-                                        &peer_id.to_string(),
-                                        &result,
-                                    );
-                                    println!("✅ [Worker] Inference completada: {} tokens en {}ms",
-                                        result.tokens_generated, result.execution_ms);
-                                }
+                                let request = WorkerInferenceRuntimeRequest::from_inference_request_value(&msg);
+                                handle_worker_inference_request(
+                                    &mut swarm,
+                                    request,
+                                    WorkerInferenceRuntimeContext {
+                                        peer_id: &peer_id,
+                                        message_topic,
+                                        from_peer: &from_peer,
+                                        model_storage: &model_storage,
+                                        node_caps: &node_caps,
+                                        worker_startup_policy: worker_startup_policy.as_ref(),
+                                        inference_engine: inference_engine.clone(),
+                                        metrics: Arc::clone(&metrics),
+                                    },
+                                )
+                                .await;
                             }
 
                             "InferenceProgress" if matches!(mode, NodeMode::Infer { .. }) => {
@@ -4635,351 +4086,31 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             }
 
                             "DirectInferenceRequest" if matches!(mode, NodeMode::Worker) => {
-                                let target = msg["target_peer"].as_str().unwrap_or("");
-                                if target != peer_id.to_string() {
-                                    continue;
-                                }
-                                let requester_peer = from_peer.clone();
-
-                                let request_id = msg["request_id"].as_str().unwrap_or("").to_string();
-                                let task_id = msg["task_id"]
-                                    .as_str()
-                                    .filter(|value| !value.trim().is_empty())
-                                    .unwrap_or(request_id.as_str())
-                                    .to_string();
-                                let attempt_id = msg["attempt_id"]
-                                    .as_str()
-                                    .filter(|value| !value.trim().is_empty())
-                                    .unwrap_or(request_id.as_str())
-                                    .to_string();
-                                let model_id = msg["model"].as_str().unwrap_or("tinyllama-1b").to_string();
-                                let prompt = msg["prompt"].as_str().unwrap_or("").to_string();
-                                let max_tokens = msg["max_tokens"].as_u64().unwrap_or(200) as u32;
-                                let remote_attempt_started_at = tokio::time::Instant::now();
-                                let model_execution_gate = evaluate_worker_model_execution_gate(
-                                    &model_id,
-                                    &model_storage,
-                                    &node_caps,
-                                    worker_startup_policy.as_ref(),
-                                );
-                                let local_model_available =
-                                    model_execution_gate.local_model_available;
-                                emit_worker_task_message_received_event(
-                                    &task_id,
-                                    &attempt_id,
-                                    message_topic,
-                                    &from_peer,
-                                    "ok",
-                                    &model_id,
-                                    local_model_available,
-                                );
-
-                                println!("🧠 [Worker] DirectInferenceRequest: model={} prompt='{}'",
-                                    model_id, &prompt[..prompt.len().min(40)]);
-
-                                if let Some(rejection) = model_execution_gate.rejection {
-                                    println!("{}", rejection.human_warning(&model_id));
-                                    continue;
-                                }
-                                let mock_backend_enabled = model_execution_gate.mock_backend_enabled;
-                                let real_inference_available =
-                                    model_execution_gate.real_inference_available;
-                                for stage in [
-                                    "task_received",
-                                    "task_message_received",
-                                    "worker_claimed",
-                                    "attempt_started",
-                                ] {
-                                    publish_worker_progress_message(
-                                        &mut swarm,
-                                        &task_id,
-                                        &attempt_id,
-                                        &request_id,
-                                        &model_id,
-                                        &peer_id.to_string(),
-                                        stage,
-                                        elapsed_ms_since(remote_attempt_started_at),
-                                        None,
-                                    );
-                                }
-
-                                let engine_ref = inference_engine.clone();
-                                let metrics_ref = Arc::clone(&metrics);
-                                let registry_clone = ModelRegistry::new();
-                                let peer_id_str = peer_id.to_string();
-                                let request_id_clone = request_id.clone();
-                                let model_id_for_inference = model_id.clone();
-                                let mock_backend_for_task = mock_backend_enabled;
-                                let real_inference_available_for_task = real_inference_available;
-
-                                let (token_tx, mut token_rx) = tokio::sync::mpsc::channel::<String>(100);
-                                let (worker_progress_tx, mut worker_progress_rx) =
-                                    tokio::sync::mpsc::channel::<&'static str>(32);
-
-                                let inference_handle = tokio::spawn(async move {
-                                    let progress_tx = worker_progress_tx;
-                                    let req = RealInferenceRequest {
-                                        task_id: request_id_clone.clone(),
-                                        model_id: model_id_for_inference.clone(),
-                                        prompt,
-                                        max_tokens,
-                                        temperature: 0.7,
-                                    };
-                                    let daemon_socket = daemon_socket_path();
-                                    let result = if mock_backend_for_task {
-                                        let _ = progress_tx.try_send("inference_started");
-                                        mock_real_inference_result(
-                                            request_id_clone.clone(),
-                                            model_id_for_inference.clone(),
-                                            req.prompt.clone(),
-                                            req.max_tokens,
-                                        )
-                                    } else if !real_inference_available_for_task {
-                                        return InferenceTaskResult::failure(
-                                            request_id_clone.clone(),
-                                            model_id_for_inference.clone(),
-                                            peer_id_str.clone(),
-                                            "real inference unavailable by worker startup policy".to_string(),
-                                        );
-                                    } else if daemon_is_available(&daemon_socket).await {
-                                        let _ = progress_tx.try_send("model_loading");
-                                        let _ = progress_tx.try_send("inference_warmup");
-                                        let _ = progress_tx.try_send("inference_started");
-                                        match infer_via_daemon(&daemon_socket, req, |token| {
-                                            let _ = token_tx.try_send(token);
-                                        }).await {
-                                            Ok(response) => response.result,
-                                            Err(e) => {
-                                                return InferenceTaskResult::failure(
-                                                    request_id_clone.clone(),
-                                                    model_id_for_inference.clone(),
-                                                    peer_id_str.clone(),
-                                                    e,
-                                                );
-                                            }
-                                        }
-                                    } else {
-                                        let Some(eng) = engine_ref.clone() else {
-                                            return InferenceTaskResult::failure(
-                                                request_id_clone.clone(),
-                                                model_id_for_inference.clone(),
-                                                peer_id_str.clone(),
-                                                "real inference engine unavailable".to_string(),
-                                            );
-                                        };
-                                        let hash = registry_clone.get(&model_id_for_inference)
-                                            .map(|m| m.hash.clone())
-                                            .unwrap_or_default();
-
-                                        let _ = progress_tx.try_send("model_loading");
-                                        if let Err(e) = eng.load_model(&model_id_for_inference, &hash) {
-                                            return InferenceTaskResult::failure(
-                                                request_id_clone.clone(),
-                                                model_id_for_inference.clone(),
-                                                peer_id_str.clone(),
-                                                e,
-                                            );
-                                        }
-                                        let _ = progress_tx.try_send("model_loaded");
-                                        let _ = progress_tx.try_send("inference_warmup");
-                                        let _ = progress_tx.try_send("inference_started");
-
-                                        eng.run_inference(req, Some(token_tx)).await
-                                    };
-
-                                    InferenceTaskResult::success(
-                                        request_id_clone,
-                                        model_id_for_inference,
-                                        result.output,
-                                        result.tokens_generated,
-                                        result.truncated,
-                                        result.continuation_steps,
-                                        result.execution_ms,
-                                        peer_id_str,
-                                        result.accelerator_used,
+                                let local_peer_id = peer_id.to_string();
+                                let Some(request) =
+                                    WorkerInferenceRuntimeRequest::from_direct_inference_request_value(
+                                        &msg,
+                                        &local_peer_id,
+                                        &from_peer,
                                     )
-                                });
-
-                                let mut token_idx = 0u32;
-                                let mut produced_tokens = 0u64;
-                                let mut first_token_emitted = false;
-                                let mut last_token_progress_published_at: Option<tokio::time::Instant> = None;
-                                while !inference_handle.is_finished()
-                                    || !token_rx.is_empty()
-                                    || !worker_progress_rx.is_empty()
-                                {
-                                    tokio::select! {
-                                        maybe_stage = worker_progress_rx.recv() => {
-                                            if let Some(stage) = maybe_stage {
-                                                publish_worker_progress_message(
-                                                    &mut swarm,
-                                                    &task_id,
-                                                    &attempt_id,
-                                                    &request_id,
-                                                    &model_id,
-                                                    &peer_id.to_string(),
-                                                    stage,
-                                                    elapsed_ms_since(remote_attempt_started_at),
-                                                    None,
-                                                );
-                                            }
-                                        }
-                                        maybe_token = token_rx.recv() => {
-                                            if let Some(token) = maybe_token {
-                                                let st = StreamedToken {
-                                                    request_id: request_id.clone(),
-                                                    token,
-                                                    index: token_idx,
-                                                    is_final: false,
-                                                };
-                                                let _ = swarm.behaviour_mut().gossipsub.publish(
-                                                    gossipsub::IdentTopic::new(RESULTS_TOPIC),
-                                                    serde_json::to_vec(&st.to_gossip_json()).unwrap(),
-                                                );
-                                                produced_tokens = produced_tokens.saturating_add(1);
-                                                let should_publish_token_count = produced_tokens % 16 == 0
-                                                    || last_token_progress_published_at
-                                                        .map(|last| last.elapsed() >= Duration::from_secs(5))
-                                                        .unwrap_or(true);
-                                                if !first_token_emitted {
-                                                    first_token_emitted = true;
-                                                    last_token_progress_published_at =
-                                                        Some(tokio::time::Instant::now());
-                                                    publish_worker_progress_message(
-                                                        &mut swarm,
-                                                        &task_id,
-                                                        &attempt_id,
-                                                        &request_id,
-                                                        &model_id,
-                                                        &peer_id.to_string(),
-                                                        "first_token_generated",
-                                                        elapsed_ms_since(remote_attempt_started_at),
-                                                        Some(produced_tokens),
-                                                    );
-                                                } else if should_publish_token_count {
-                                                    last_token_progress_published_at =
-                                                        Some(tokio::time::Instant::now());
-                                                    publish_worker_progress_message(
-                                                        &mut swarm,
-                                                        &task_id,
-                                                        &attempt_id,
-                                                        &request_id,
-                                                        &model_id,
-                                                        &peer_id.to_string(),
-                                                        "tokens_generated_count",
-                                                        elapsed_ms_since(remote_attempt_started_at),
-                                                        Some(produced_tokens),
-                                                    );
-                                                }
-                                                token_idx += 1;
-                                            }
-                                        }
-                                        _ = tokio::time::sleep(Duration::from_secs(5)), if !first_token_emitted => {
-                                            publish_worker_progress_message(
-                                            &mut swarm,
-                                            &task_id,
-                                            &attempt_id,
-                                            &request_id,
-                                            &model_id,
-                                            &peer_id.to_string(),
-                                            "still_running",
-                                            elapsed_ms_since(remote_attempt_started_at),
-                                            None,
-                                            );
-                                        }
-                                    }
-                                }
-
-                                if let Ok(result) = inference_handle.await {
-                                    {
-                                        let mut m = metrics_ref.write().await;
-                                        if result.success {
-                                            m.inference_success(result.execution_ms, result.tokens_generated as u64);
-                                        } else {
-                                            m.inference_failed();
-                                        }
-                                    }
-                                    publish_worker_progress_message(
-                                        &mut swarm,
-                                        &task_id,
-                                        &attempt_id,
-                                        &request_id,
-                                        &model_id,
-                                        &peer_id.to_string(),
-                                        "inference_finished",
-                                        elapsed_ms_since(remote_attempt_started_at),
-                                        Some(result.tokens_generated as u64),
-                                    );
-                                    let result_size = result.output.len();
-                                    emit_worker_task_completed_event(
-                                        &task_id,
-                                        &attempt_id,
-                                        &model_id,
-                                        result_size,
-                                        result.success,
-                                        &peer_id.to_string(),
-                                    );
-                                    let mut result_payload = result.to_gossip_json();
-                                    if let Some(map) = result_payload.as_object_mut() {
-                                        map.insert("task_id".to_string(), task_id.clone().into());
-                                        map.insert("attempt_id".to_string(), attempt_id.clone().into());
-                                        map.insert("worker_peer_id".to_string(), peer_id.to_string().into());
-                                    }
-                                    publish_worker_progress_message(
-                                        &mut swarm,
-                                        &task_id,
-                                        &attempt_id,
-                                        &request_id,
-                                        &model_id,
-                                        &peer_id.to_string(),
-                                        "result_serialized",
-                                        elapsed_ms_since(remote_attempt_started_at),
-                                        Some(result.tokens_generated as u64),
-                                    );
-                                    let payload_size = result_payload.to_string().len();
-                                    let message_id = publish_worker_result_payload(
-                                        &mut swarm,
-                                        &task_id,
-                                        &attempt_id,
-                                        &model_id,
-                                        &peer_id.to_string(),
-                                        &result_payload,
-                                    );
-                                    if message_id.is_some() {
-                                        publish_worker_progress_message(
-                                            &mut swarm,
-                                            &task_id,
-                                            &attempt_id,
-                                            &request_id,
-                                            &model_id,
-                                            &peer_id.to_string(),
-                                            "result_published",
-                                            elapsed_ms_since(remote_attempt_started_at),
-                                            Some(result.tokens_generated as u64),
-                                        );
-                                        emit_worker_result_published_event(
-                                            &task_id,
-                                            &attempt_id,
-                                            &model_id,
-                                            RESULTS_TOPIC,
-                                            payload_size,
-                                            message_id.as_deref(),
-                                            &peer_id.to_string(),
-                                        )
-                                    }
-                                    send_worker_result_direct_response(
-                                        &mut swarm,
-                                        &requester_peer,
-                                        &task_id,
-                                        &attempt_id,
-                                        &model_id,
-                                        &peer_id.to_string(),
-                                        &result,
-                                    );
-
-                                    println!("✅ [Worker] Direct inference completada: {} tokens en {}ms",
-                                        result.tokens_generated, result.execution_ms);
-                                }
+                                else {
+                                    continue;
+                                };
+                                handle_worker_inference_request(
+                                    &mut swarm,
+                                    request,
+                                    WorkerInferenceRuntimeContext {
+                                        peer_id: &peer_id,
+                                        message_topic,
+                                        from_peer: &from_peer,
+                                        model_storage: &model_storage,
+                                        node_caps: &node_caps,
+                                        worker_startup_policy: worker_startup_policy.as_ref(),
+                                        inference_engine: inference_engine.clone(),
+                                        metrics: Arc::clone(&metrics),
+                                    },
+                                )
+                                .await;
                             }
 
                             _ => {}
