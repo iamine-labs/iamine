@@ -12,6 +12,9 @@ mod cluster_readiness;
 mod cluster_registry;
 mod cluster_status;
 mod code_quality;
+mod controller_broadcast_runtime;
+mod controller_cluster_runtime;
+mod controller_result_runtime;
 mod cpu_feature_guard;
 mod daemon_runtime;
 mod executor;
@@ -110,15 +113,11 @@ use quality_gate::runtime_version_metadata;
 use rate_limiter::RateLimiter;
 use resource_policy::ResourcePolicy;
 use result_observability::*;
-use result_protocol::{BroadcastTaskResultMessage, TaskResultRequest, TaskResultResponse};
-use router_scheduler::{SchedulerDecision, SelectionReason};
-use scheduler_events::emit_scheduler_decision_events;
+use result_protocol::{TaskResultRequest, TaskResultResponse};
 use serde_json::{Map, Value};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use task_cache::TaskCache;
-use task_events::*;
-use task_lifecycle::TaskLifecycleErrorCode;
 use task_queue::TaskQueue;
 use task_scheduler::TaskScheduler;
 use tokio::sync::RwLock;
@@ -154,6 +153,15 @@ use cli::{parse_args, parse_worker_port};
 use cluster_events::*;
 use cluster_registry::*;
 use cluster_status::*;
+use controller_broadcast_runtime::{
+    emit_controller_pubsub_ready, handle_controller_broadcast_tick, handle_controller_task_bid,
+    ControllerBroadcastTickContext, ControllerTaskBidContext,
+};
+use controller_cluster_runtime::{
+    emit_controller_cluster_status_requested, handle_controller_cluster_status_message,
+    render_controller_cluster_status,
+};
+use controller_result_runtime::handle_controller_task_result;
 use executor::TaskExecutor;
 use final_outcome::*;
 use mode_dispatch::{handle_pre_network_mode, is_control_plane_mode};
@@ -895,7 +903,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             &BROADCAST_PUBSUB_TOPICS,
         );
     } else if matches!(mode, NodeMode::Broadcast { .. }) {
-        emit_broadcast_pubsub_ready_event(&peer_id.to_string(), &BROADCAST_PUBSUB_TOPICS);
+        emit_controller_pubsub_ready(&peer_id, &BROADCAST_PUBSUB_TOPICS);
     }
 
     let mut kad_cfg = kad::Config::default();
@@ -907,13 +915,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let cluster_id = cluster_registry.cluster_id().to_string();
     let cluster_status_wait_ms = cluster_status_wait_ms_from_env();
     if is_cluster_status_mode {
-        emit_cluster_status_requested(&cluster_id, cluster_status_wait_ms);
+        emit_controller_cluster_status_requested(&cluster_id, cluster_status_wait_ms);
     }
 
     let mdns_behaviour = match mdns::tokio::Behaviour::new(mdns::Config::default(), peer_id) {
         Ok(behaviour) => behaviour,
         Err(error) if is_cluster_status_mode => {
-            render_and_emit_cluster_status(
+            render_controller_cluster_status(
                 &cluster_registry,
                 &cluster_id,
                 matches!(mode, NodeMode::ClusterStatus { json: true }),
@@ -1111,7 +1119,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     };
     if let Err(error) = swarm.listen_on(listen_addr) {
         if is_cluster_status_mode {
-            render_and_emit_cluster_status(
+            render_controller_cluster_status(
                 &cluster_registry,
                 &cluster_id,
                 matches!(mode, NodeMode::ClusterStatus { json: true }),
@@ -1257,7 +1265,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     loop {
         tokio::select! {
             _ = &mut cluster_status_deadline, if is_cluster_status_mode => {
-                render_and_emit_cluster_status(
+                render_controller_cluster_status(
                     &cluster_registry,
                     &cluster_id,
                     matches!(mode, NodeMode::ClusterStatus { json: true }),
@@ -1314,306 +1322,23 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     continue;
                 };
 
-                if !state.prepared {
-                    state.prepared = true;
-                    emit_broadcast_task_offer_prepared_event(
-                        &state.task_id,
+                let outcome = handle_controller_broadcast_tick(
+                    &mut swarm,
+                    state,
+                    ControllerBroadcastTickContext {
                         task_type,
                         data,
-                        &peer_id.to_string(),
-                    );
-                    emit_task_lifecycle_created(
-                        &state.task_id,
-                        task_type,
-                        data,
-                        &peer_id.to_string(),
-                    );
-                }
-
-                if state.published && !state.assignment_published {
-                    if let Some(winner) = scheduler.try_assign(&state.task_id).await {
-                        let deadline_ms = 30_000u64;
-                        let assign = build_broadcast_task_assign_payload(
-                            &state.task_id,
-                            &winner,
-                            &peer_id.to_string(),
-                            deadline_ms,
-                            task_type,
-                            data,
-                        );
-                        match swarm.behaviour_mut().gossipsub.publish(
-                            gossipsub::IdentTopic::new(ASSIGN_TOPIC),
-                            serde_json::to_vec(&assign).unwrap_or_default(),
-                        ) {
-                            Ok(message_id) => {
-                                state.assignment_published = true;
-                                state.assigned_worker = Some(winner.clone());
-                                emit_broadcast_task_assign_published_event(
-                                    &state.task_id,
-                                    &winner,
-                                    &message_id.to_string(),
-                                    deadline_ms,
-                                );
-                                let candidate_workers: Vec<String> = known_workers
-                                    .iter()
-                                    .map(|worker| worker.to_string())
-                                    .collect();
-                                let scheduler_decision =
-                                    SchedulerDecision::from_current_broadcast_policy(
-                                        &state.task_id,
-                                        task_type,
-                                        &winner,
-                                        candidate_workers,
-                                        SelectionReason::CurrentBroadcastPolicy,
-                                        task_lifecycle::now_ms(),
-                                    );
-                                emit_scheduler_decision_events(&scheduler_decision);
-                                emit_task_lifecycle_assigned(
-                                    &state.task_id,
-                                    task_type,
-                                    &winner,
-                                    scheduler_decision.candidate_worker_ids(),
-                                    scheduler_decision
-                                        .selection_reason
-                                        .to_task_selection_reason(),
-                                );
-                                emit_task_lifecycle_scheduler_decision(&scheduler_decision);
-                                println!("🏆 Asignando worker={} task_id={}", winner, state.task_id);
-                            }
-                            Err(error) => {
-                                log_observability_event(
-                                    LogLevel::Error,
-                                    "broadcast_task_assign_publish_failed",
-                                    &state.task_id,
-                                    Some(&state.task_id),
-                                    None,
-                                    Some(TASK_DISPATCH_UNCONFIRMED_001),
-                                    {
-                                        let mut fields = Map::new();
-                                        fields.insert("assigned_worker".to_string(), winner.into());
-                                        fields.insert("topic".to_string(), ASSIGN_TOPIC.into());
-                                        fields.insert("error".to_string(), error.to_string().into());
-                                        fields
-                                    },
-                                );
-                            }
-                        }
-                    }
-                    continue;
-                }
-
-                if state.published || state.failed {
-                    continue;
-                }
-
-                let connected_peers = swarm.connected_peers().count();
-                let newly_observed_subscriptions = sync_pubsub_tracker_from_gossipsub(
-                    &mut pubsub_topics,
-                    &swarm.behaviour().gossipsub,
-                );
-                let mesh_peer_ids =
-                    gossipsub_mesh_peer_ids(&swarm.behaviour().gossipsub, TASK_TOPIC);
-                let mesh_peers = mesh_peer_ids.len();
-                let subscribed_peers = pubsub_topics.topic_peer_count(TASK_TOPIC).max(
-                    gossipsub_topic_peer_count(&swarm.behaviour().gossipsub, TASK_TOPIC),
-                );
-                for (observed_peer_id, topic_name) in newly_observed_subscriptions {
-                    emit_observed_peer_subscription_event(
-                        "controller_observed_peer_subscription",
-                        &peer_id.to_string(),
-                        &observed_peer_id,
-                        topic_name,
-                        "broadcast",
-                        "gossipsub_all_peers",
-                    );
-                    if topic_name == TASK_TOPIC {
-                        state.mark_subscription_seen();
-                        emit_broadcast_topic_subscriber_seen_event(
-                            TASK_TOPIC,
-                            &observed_peer_id,
-                            connected_peers,
-                            subscribed_peers,
-                            mesh_peers,
-                            "gossipsub_all_peers",
-                        );
-                    }
-                }
-                let all_peers_per_topic =
-                    gossipsub_all_peers_per_topic_value(&swarm.behaviour().gossipsub);
-                let elapsed_ms = state.elapsed_ms();
-                let readiness_snapshot = BroadcastReadinessSnapshot::new(
-                    connected_peers,
-                    subscribed_peers,
-                    mesh_peers,
-                    elapsed_ms,
-                    state.attempts,
+                        controller_peer_id: &peer_id,
+                        scheduler: &scheduler,
+                        known_workers: &known_workers,
+                        pubsub_topics: &mut pubsub_topics,
+                        waiting_for_response: &mut waiting_for_response,
+                        tasks_sent: &mut tasks_sent,
+                    },
                 )
-                .with_gossipsub_details(
-                    all_peers_per_topic,
-                    mesh_peer_ids.clone(),
-                    state.last_publish_failure_reason.as_deref(),
-                );
-                if state.should_log_readiness_wait() {
-                    emit_broadcast_readiness_state_event(&state.task_id, &readiness_snapshot);
-                    if !readiness_snapshot.ready {
-                        emit_broadcast_readiness_waiting_event(&state.task_id, &readiness_snapshot);
-                    }
-                }
-
-                if elapsed_ms >= BROADCAST_READINESS_TIMEOUT_MS
-                    || state.attempts >= BROADCAST_OFFER_MAX_ATTEMPTS
-                {
-                    state.failed = true;
-                    let reason = if elapsed_ms >= BROADCAST_READINESS_TIMEOUT_MS {
-                        "pubsub_readiness_timeout"
-                    } else {
-                        "publish_attempts_exhausted"
-                    };
-                    emit_broadcast_task_offer_publish_failed_event(
-                        &state.task_id,
-                        task_type,
-                        reason,
-                        state.attempts.saturating_add(1),
-                        false,
-                        &readiness_snapshot,
-                    );
-                    emit_broadcast_task_offer_readiness_timeout_event(
-                        &state.task_id,
-                        task_type,
-                        &readiness_snapshot,
-                        state.last_publish_failure_reason.as_deref(),
-                    );
-                    emit_task_lifecycle_failed(
-                        &state.task_id,
-                        task_type,
-                        TaskLifecycleErrorCode::TaskTimeout,
-                        reason,
-                    );
-                    eprintln!(
-                        "❌ [Broadcast] PubSub no quedó listo: task_id={} peers={} subscribed_peers={} mesh_peers={} attempts={} reason={}",
-                        state.task_id,
-                        connected_peers,
-                        subscribed_peers,
-                        mesh_peers,
-                        state.attempts,
-                        reason
-                    );
+                .await?;
+                if outcome.should_break() {
                     break;
-                }
-
-                if !broadcast_offer_ready(subscribed_peers, mesh_peers, connected_peers, elapsed_ms) {
-                    continue;
-                }
-
-                if !state.can_attempt_publish() {
-                    continue;
-                }
-
-                if !state.scheduler_registered {
-                    scheduler
-                        .register_task(state.task_id.clone(), task_type.clone())
-                        .await;
-                    state.scheduler_registered = true;
-                }
-
-                let offer = build_broadcast_task_offer_payload(
-                    &state.task_id,
-                    task_type,
-                    data,
-                    &peer_id.to_string(),
-                );
-                let payload = serde_json::to_vec(&offer)
-                    .map_err(|error| format!("Broadcast TaskOffer payload error: {}", error))?;
-                let attempt_number = state.attempts.saturating_add(1);
-                emit_broadcast_task_offer_publish_attempt_event(
-                    &state.task_id,
-                    task_type,
-                    data,
-                    payload.len(),
-                    attempt_number,
-                    &readiness_snapshot,
-                );
-
-                match swarm.behaviour_mut().gossipsub.publish(
-                    gossipsub::IdentTopic::new(TASK_TOPIC),
-                    payload,
-                ) {
-                    Ok(message_id) => {
-                        state.record_publish_result(true, None);
-                        let published_snapshot = BroadcastReadinessSnapshot::new(
-                            connected_peers,
-                            subscribed_peers,
-                            mesh_peers,
-                            state.elapsed_ms(),
-                            state.attempts,
-                        )
-                        .with_gossipsub_details(
-                            gossipsub_all_peers_per_topic_value(&swarm.behaviour().gossipsub),
-                            mesh_peer_ids.clone(),
-                            state.last_publish_failure_reason.as_deref(),
-                        );
-                        let message_id = message_id.to_string();
-                        emit_broadcast_task_offer_published_event(
-                            &state.task_id,
-                            task_type,
-                            data,
-                            &message_id,
-                            attempt_number,
-                            &published_snapshot,
-                        );
-                        waiting_for_response = true;
-                        tasks_sent = true;
-                        println!(
-                            "📣 [Broadcast] TaskOffer publicado: task_id={} type={} data='{}'",
-                            state.task_id, task_type, data
-                        );
-                    }
-                    Err(error) => {
-                        let error_text = error.to_string();
-                        state.record_publish_result(false, Some(&error_text));
-                        let failure_snapshot = BroadcastReadinessSnapshot::new(
-                            connected_peers,
-                            subscribed_peers,
-                            mesh_peers,
-                            state.elapsed_ms(),
-                            state.attempts,
-                        )
-                        .with_gossipsub_details(
-                            gossipsub_all_peers_per_topic_value(&swarm.behaviour().gossipsub),
-                            mesh_peer_ids.clone(),
-                            state.last_publish_failure_reason.as_deref(),
-                        );
-                        let still_recoverable = state.elapsed_ms() < BROADCAST_READINESS_TIMEOUT_MS
-                            && state.attempts < BROADCAST_OFFER_MAX_ATTEMPTS;
-                        emit_broadcast_task_offer_publish_failed_event(
-                            &state.task_id,
-                            task_type,
-                            &error_text,
-                            attempt_number,
-                            still_recoverable,
-                            &failure_snapshot,
-                        );
-                        if !still_recoverable {
-                            state.failed = true;
-                            emit_broadcast_task_offer_readiness_timeout_event(
-                                &state.task_id,
-                                task_type,
-                                &failure_snapshot,
-                                state.last_publish_failure_reason.as_deref(),
-                            );
-                            emit_task_lifecycle_failed(
-                                &state.task_id,
-                                task_type,
-                                TaskLifecycleErrorCode::TaskTimeout,
-                                &error_text,
-                            );
-                            eprintln!(
-                                "❌ [Broadcast] No se pudo publicar TaskOffer tras {} intentos: {}",
-                                state.attempts, error_text
-                            );
-                            break;
-                        }
-                    }
                 }
             }
 
@@ -2936,16 +2661,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                         match msg_type {
                             CLUSTER_NODE_STATUS_TYPE => {
-                                if let Ok(cluster_message) =
-                                    serde_json::from_value::<ClusterNodeStatusMessage>(msg.clone())
-                                {
-                                    update_cluster_status_message_and_emit(
-                                        &mut cluster_registry,
-                                        &cluster_id,
-                                        cluster_message,
-                                        message_topic,
-                                    );
-                                }
+                                handle_controller_cluster_status_message(
+                                    &mut cluster_registry,
+                                    &cluster_id,
+                                    &msg,
+                                    message_topic,
+                                );
                             }
                             "TaskOffer" if matches!(mode, NodeMode::Worker) => {
                                 let offer = WorkerTaskOffer::from_value(&msg);
@@ -2965,276 +2686,40 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             }
 
                             "TaskBid" if matches!(mode, NodeMode::Broadcast { .. }) => {
-                                let task_id = msg["task_id"].as_str().unwrap_or("").to_string();
-                                let worker_id = msg["worker_id"].as_str().unwrap_or("").to_string();
-                                let rep = msg["reputation_score"].as_u64().unwrap_or(0) as u32;
-                                let slots = msg["available_slots"].as_u64().unwrap_or(0) as usize;
-                                let est_ms = msg["estimated_ms"].as_u64().unwrap_or(1000);
-                                let latency = peer_tracker.get_latency(&worker_id);
-
-                                emit_broadcast_bid_received_event(
-                                    &task_id,
-                                    &worker_id,
-                                    rep,
-                                    slots,
-                                    latency,
-                                );
-                                println!(
-                                    "📨 [Scheduler] Bid: worker={} task_id={} rep={} slots={} latency={:.1}ms",
-                                    worker_id, task_id, rep, slots, latency
-                                );
-
-                                if let Some(winner) = scheduler.receive_bid(&task_id, worker_id.clone(), rep, slots, est_ms).await {
-                                    if broadcast_offer_state
-                                        .as_ref()
-                                        .map(|state| state.task_id == task_id && state.assignment_published)
-                                        .unwrap_or(false)
-                                    {
-                                        continue;
-                                    }
-                                    println!("🏆 Asignando worker={} task_id={}", winner, task_id);
-
-                                    let deadline_ms = 30_000u64;
-
-                                    // ← Guardar peer_id del winner para direct result routing
-                                    if let Some(winner_peer) = known_workers.iter()
-                                        .find(|p| p.to_string().starts_with(&winner[..8.min(winner.len())]))
-                                        .copied()
-                                    {
-                                        origin_peer_map.insert(task_id.clone(), winner_peer);
-                                    }
-
-                                    let (task_type_value, data_value) =
-                                        if let NodeMode::Broadcast { task_type, data } = &mode {
-                                            (task_type.as_str(), data.as_str())
-                                        } else {
-                                            ("", "")
-                                        };
-                                    let assign = build_broadcast_task_assign_payload(
-                                        &task_id,
-                                        &winner,
-                                        &peer_id.to_string(),
-                                        deadline_ms,
-                                        task_type_value,
-                                        data_value,
-                                    );
-                                    match swarm.behaviour_mut().gossipsub.publish(
-                                        gossipsub::IdentTopic::new(ASSIGN_TOPIC),
-                                        serde_json::to_vec(&assign).unwrap_or_default(),
-                                    ) {
-                                        Ok(message_id) => {
-                                            if let Some(state) = broadcast_offer_state.as_mut() {
-                                                if state.task_id == task_id {
-                                                    state.mark_assigned(&winner);
-                                                }
-                                            }
-                                            emit_broadcast_task_assign_published_event(
-                                                &task_id,
-                                                &winner,
-                                                &message_id.to_string(),
-                                                deadline_ms,
-                                            );
-                                            let candidate_workers: Vec<String> = known_workers
-                                                .iter()
-                                                .map(|worker| worker.to_string())
-                                                .collect();
-                                            let scheduler_decision =
-                                                SchedulerDecision::from_current_broadcast_policy(
-                                                    &task_id,
-                                                    task_type_value,
-                                                    &winner,
-                                                    candidate_workers,
-                                                    SelectionReason::BroadcastBidSelected,
-                                                    task_lifecycle::now_ms(),
-                                                );
-                                            emit_scheduler_decision_events(&scheduler_decision);
-                                            emit_task_lifecycle_assigned(
-                                                &task_id,
-                                                task_type_value,
-                                                &winner,
-                                                scheduler_decision.candidate_worker_ids(),
-                                                scheduler_decision
-                                                    .selection_reason
-                                                    .to_task_selection_reason(),
-                                            );
-                                            emit_task_lifecycle_scheduler_decision(
-                                                &scheduler_decision,
-                                            );
-                                        }
-                                        Err(error) => log_observability_event(
-                                            LogLevel::Error,
-                                            "broadcast_task_assign_publish_failed",
-                                            &task_id,
-                                            Some(&task_id),
-                                            None,
-                                            Some(TASK_DISPATCH_UNCONFIRMED_001),
-                                            {
-                                                let mut fields = Map::new();
-                                                fields.insert("assigned_worker".to_string(), winner.clone().into());
-                                                fields.insert("topic".to_string(), ASSIGN_TOPIC.into());
-                                                fields.insert("error".to_string(), error.to_string().into());
-                                                fields
-                                            },
-                                        ),
-                                    }
-
-                                    // ← Timeout recovery COMPLETO: rebroadcast si expira
-                                    let rebroadcast_task_id = task_id.clone();
-                                    let scheduler_ref = Arc::clone(&scheduler);
-                                    let task_type_clone = if let NodeMode::Broadcast { task_type, .. } = &mode {
-                                        task_type.clone()
-                                    } else { String::new() };
-                                    let data_clone = if let NodeMode::Broadcast { data, .. } = &mode {
-                                        data.clone()
-                                    } else { String::new() };
-                                    let origin_str = peer_id.to_string();
-
-                                    // Clonar el gossipsub handle para el spawn
-                                    // Usamos un canal para señalizar rebroadcast
-                                    let (rebroadcast_tx, mut rebroadcast_rx) = tokio::sync::mpsc::channel::<serde_json::Value>(1);
-
-                                    tokio::spawn(async move {
-                                        tokio::time::sleep(Duration::from_millis(deadline_ms)).await;
-                                        let stats = scheduler_ref.stats().await;
-                                        // Si aún hay tareas asignadas (no completadas)
-                                        if stats.1 > 0 {
-                                            println!("⏱️ [Recovery] Tarea {} expiró — rebroadcasting...", rebroadcast_task_id);
-                                            emit_task_lifecycle_retrying(
-                                                &rebroadcast_task_id,
-                                                &task_type_clone,
-                                                1,
-                                                Some("broadcast_assignment_timeout".to_string()),
-                                            );
-                                            let offer = serde_json::json!({
-                                                "type": "TaskOffer",
-                                                "task_id": format!("{}r", rebroadcast_task_id), // nueva ID
-                                                "task_type": task_type_clone,
-                                                "data": data_clone,
-                                                "requester_id": origin_str,
-                                                "origin_peer": origin_str,
-                                                "is_retry": true,
-                                            });
-                                            let _ = rebroadcast_tx.send(offer).await;
-                                        }
-                                    });
-
-                                    // Procesar rebroadcast en el loop principal
-                                    if let Ok(offer) = rebroadcast_rx.try_recv() {
-                                        let _ = swarm.behaviour_mut().gossipsub.publish(
-                                            gossipsub::IdentTopic::new(TASK_TOPIC),
-                                            serde_json::to_vec(&offer).unwrap(),
-                                        );
-                                    }
-                                }
+                                let (task_type_value, data_value) =
+                                    if let NodeMode::Broadcast { task_type, data } = &mode {
+                                        (task_type.as_str(), data.as_str())
+                                    } else {
+                                        ("", "")
+                                    };
+                                handle_controller_task_bid(
+                                    &mut swarm,
+                                    &msg,
+                                    ControllerTaskBidContext {
+                                        task_type: task_type_value,
+                                        data: data_value,
+                                        controller_peer_id: &peer_id,
+                                        scheduler: &scheduler,
+                                        broadcast_offer_state: &mut broadcast_offer_state,
+                                        known_workers: &known_workers,
+                                        origin_peer_map: &mut origin_peer_map,
+                                        peer_tracker: &peer_tracker,
+                                    },
+                                )
+                                .await;
                             }
 
                             "TaskResult" if matches!(mode, NodeMode::Broadcast { .. }) => {
-                                if message_topic != RESULTS_TOPIC {
-                                    continue;
+                                if handle_controller_task_result(
+                                    &msg,
+                                    message_topic,
+                                    &scheduler,
+                                    &mut broadcast_offer_state,
+                                )
+                                .await
+                                {
+                                    break;
                                 }
-                                let result_message =
-                                    BroadcastTaskResultMessage::from_pubsub_value(&msg);
-                                let assigned_worker = broadcast_offer_state
-                                    .as_ref()
-                                    .and_then(|state| state.assigned_worker.as_deref())
-                                    .map(str::to_string);
-                                let acceptance = evaluate_broadcast_result_acceptance(
-                                    broadcast_offer_state.as_ref(),
-                                    &result_message.task_id,
-                                    &result_message.worker_peer_id,
-                                    result_message.success,
-                                );
-                                let accepted = acceptance.is_ok();
-                                let rejection_reason = acceptance.err();
-                                let received = BroadcastResultReceived {
-                                    task_id: &result_message.task_id,
-                                    task_type: &result_message.task_type,
-                                    worker_peer_id: &result_message.worker_peer_id,
-                                    assigned_worker_peer_id: assigned_worker.as_deref(),
-                                    origin_peer: result_message.origin_peer.as_deref(),
-                                    success: result_message.success,
-                                    output: &result_message.output,
-                                    elapsed_ms: result_message.elapsed_ms,
-                                    transport: "pubsub",
-                                    accepted,
-                                    rejection_reason,
-                                };
-                                emit_broadcast_result_received_events(&received);
-
-                                if let Some(reason) = rejection_reason {
-                                    emit_broadcast_result_rejected_event(&received, reason);
-                                    continue;
-                                }
-
-                                emit_task_lifecycle_result_received(
-                                    &result_message.task_id,
-                                    &result_message.task_type,
-                                    &result_message.worker_peer_id,
-                                    result_message.success,
-                                    &result_message.output,
-                                    result_message.elapsed_ms,
-                                );
-                                if let Some(state) = broadcast_offer_state.as_mut() {
-                                    if state.task_id == result_message.task_id {
-                                        state.mark_result_accepted();
-                                    }
-                                }
-                                scheduler
-                                    .mark_completed(
-                                        &result_message.task_id,
-                                        &result_message.worker_peer_id,
-                                    )
-                                    .await;
-                                emit_broadcast_recovery_cancelled_event(
-                                    &result_message.task_id,
-                                    &result_message.worker_peer_id,
-                                );
-                                emit_broadcast_final_outcome_success_event(
-                                    &result_message.task_id,
-                                    &result_message.worker_peer_id,
-                                    &result_message.output,
-                                );
-                                emit_task_lifecycle_completed(
-                                    &result_message.task_id,
-                                    &result_message.task_type,
-                                    &result_message.worker_peer_id,
-                                    &result_message.output,
-                                    result_message.elapsed_ms,
-                                );
-                                emit_task_lifecycle_finalized(
-                                    &result_message.task_id,
-                                    &result_message.task_type,
-                                    &result_message.worker_peer_id,
-                                    "success",
-                                    &result_message.output,
-                                );
-                                log_observability_event(
-                                    LogLevel::Info,
-                                    "task_completed",
-                                    &result_message.task_id,
-                                    Some(&result_message.task_id),
-                                    None,
-                                    None,
-                                    {
-                                        let mut fields = Map::new();
-                                        fields.insert("success".to_string(), true.into());
-                                        fields.insert(
-                                            "worker_peer_id".to_string(),
-                                            result_message.worker_peer_id.clone().into(),
-                                        );
-                                        fields.insert("transport".to_string(), "pubsub".into());
-                                        fields.insert("source".to_string(), "broadcast_task_result".into());
-                                        fields
-                                    },
-                                );
-                                if should_print_result_output(&result_message.output) {
-                                    println!("{}", result_message.output);
-                                }
-                                println!(
-                                    "✅ [Broadcast] Resultado aceptado: task_id={} worker={} success=true",
-                                    result_message.task_id, result_message.worker_peer_id
-                                );
-                                break;
                             }
 
                             "TaskAssign" if matches!(mode, NodeMode::Worker) => {
