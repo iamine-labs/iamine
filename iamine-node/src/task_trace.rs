@@ -160,23 +160,7 @@ pub(crate) fn record_task_lifecycle_event(event: TaskLifecycleEvent) -> Option<(
 }
 
 pub(crate) fn default_task_lifecycle_trace_path() -> PathBuf {
-    if let Some(path) = std::env::var_os("IAMINE_TASK_LIFECYCLE_PATH") {
-        return PathBuf::from(path);
-    }
-
-    #[cfg(test)]
-    {
-        std::env::temp_dir().join("iamine-task-lifecycle-tests.json")
-    }
-
-    #[cfg(not(test))]
-    {
-        std::env::var_os("HOME")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join(".iamine")
-            .join("task_lifecycle_traces.json")
-    }
+    crate::path_config::default_task_lifecycle_trace_path()
 }
 
 pub(crate) fn load_task_trace_store_from_path(path: &Path) -> io::Result<TaskTraceStore> {

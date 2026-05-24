@@ -2,6 +2,7 @@ use crate::node_modes::{InferenceControlFlags, NodeMode};
 use libp2p::Multiaddr;
 use std::str::FromStr;
 
+#[allow(dead_code)]
 pub(crate) fn parse_args() -> Result<NodeMode, String> {
     parse_args_from(std::env::args().collect())
 }

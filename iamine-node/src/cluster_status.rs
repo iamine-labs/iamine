@@ -94,12 +94,9 @@ pub(crate) fn build_cluster_status_snapshot(
     }
 }
 
+#[allow(dead_code)]
 pub(crate) fn cluster_status_wait_ms_from_env() -> u64 {
-    std::env::var("IAMINE_CLUSTER_STATUS_WAIT_MS")
-        .ok()
-        .and_then(|raw| raw.parse::<u64>().ok())
-        .map(|value| value.clamp(250, 30_000))
-        .unwrap_or(6_500)
+    crate::network_config::cluster_status_wait_ms_from_env()
 }
 
 #[cfg(test)]

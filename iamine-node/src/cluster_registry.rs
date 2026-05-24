@@ -478,17 +478,15 @@ impl ClusterRegistry {
 }
 
 pub(crate) fn cluster_id_from_env() -> String {
-    std::env::var("IAMINE_CLUSTER_ID")
-        .ok()
+    crate::env_config::env_string(crate::env_config::IAMINE_CLUSTER_ID)
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
         .unwrap_or_else(|| DEFAULT_CLUSTER_ID.to_string())
 }
 
 pub(crate) fn local_hostname() -> String {
-    std::env::var("HOSTNAME")
-        .or_else(|_| std::env::var("COMPUTERNAME"))
-        .ok()
+    crate::env_config::env_string(crate::env_config::HOSTNAME)
+        .or_else(|| crate::env_config::env_string(crate::env_config::COMPUTERNAME))
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
         .unwrap_or_else(|| "local".to_string())
@@ -522,9 +520,7 @@ pub(crate) fn unix_now_ms() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Mutex;
-
-    static CLUSTER_ID_ENV_LOCK: Mutex<()> = Mutex::new(());
+    use crate::config_test_utils::with_env_var;
 
     fn heartbeat(peer_id: &str) -> NodeCapabilityHeartbeat {
         NodeCapabilityHeartbeat {
@@ -543,26 +539,20 @@ mod tests {
 
     #[test]
     fn cluster_id_defaults_to_default_lan() {
-        let _guard = CLUSTER_ID_ENV_LOCK.lock().unwrap();
-        let previous = std::env::var("IAMINE_CLUSTER_ID").ok();
-        std::env::remove_var("IAMINE_CLUSTER_ID");
-        assert_eq!(cluster_id_from_env(), DEFAULT_CLUSTER_ID);
-        if let Some(previous) = previous {
-            std::env::set_var("IAMINE_CLUSTER_ID", previous);
-        }
+        with_env_var(crate::env_config::IAMINE_CLUSTER_ID, None, || {
+            assert_eq!(cluster_id_from_env(), DEFAULT_CLUSTER_ID);
+        });
     }
 
     #[test]
     fn cluster_id_from_env_reads_env() {
-        let _guard = CLUSTER_ID_ENV_LOCK.lock().unwrap();
-        let previous = std::env::var("IAMINE_CLUSTER_ID").ok();
-        std::env::set_var("IAMINE_CLUSTER_ID", "lab-lan");
-        assert_eq!(cluster_id_from_env(), "lab-lan");
-        if let Some(previous) = previous {
-            std::env::set_var("IAMINE_CLUSTER_ID", previous);
-        } else {
-            std::env::remove_var("IAMINE_CLUSTER_ID");
-        }
+        with_env_var(
+            crate::env_config::IAMINE_CLUSTER_ID,
+            Some("lab-lan"),
+            || {
+                assert_eq!(cluster_id_from_env(), "lab-lan");
+            },
+        );
     }
 
     #[test]

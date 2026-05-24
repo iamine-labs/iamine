@@ -1,9 +1,24 @@
 use crate::infer_watchdog::{is_unclaimed_worker_peer_id, AttemptClaimSource, AttemptDispatchType};
 use crate::pubsub_topics::{RESULTS_TOPIC, TASK_TOPIC};
 use crate::{log_observability_event, IamineBehaviour};
-use iamine_network::{LogLevel, TASK_DISPATCH_UNCONFIRMED_001, TASK_TIMEOUT_001};
+use iamine_network::{
+    default_semantic_log_path, LogLevel, SemanticFeedbackEngine,
+    ValidationResult as SemanticValidationResult, TASK_DISPATCH_UNCONFIRMED_001, TASK_TIMEOUT_001,
+};
 use libp2p::{gossipsub, swarm::Swarm};
 use serde_json::{Map, Value};
+
+pub(crate) fn record_semantic_feedback(prompt: &str, validation: &SemanticValidationResult) {
+    let engine = SemanticFeedbackEngine::default();
+    if let Err(error) = engine.append_from_validation(prompt, validation) {
+        eprintln!("[Feedback] Logging failed: {}", error);
+    } else {
+        println!(
+            "[Feedback] Logged: {}",
+            default_semantic_log_path().display()
+        );
+    }
+}
 
 pub(crate) fn emit_worker_task_message_received_event(
     trace_task_id: &str,
