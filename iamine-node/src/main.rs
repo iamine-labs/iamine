@@ -17,8 +17,10 @@ mod controller_cluster_runtime;
 mod controller_result_runtime;
 mod cpu_feature_guard;
 mod daemon_runtime;
+mod discovery_runtime;
 mod executor;
 mod final_outcome;
+mod gossipsub_message_runtime;
 mod heartbeat;
 mod infer_observability;
 mod infer_retry;
@@ -32,6 +34,7 @@ mod model_display_policy;
 mod model_executability;
 mod model_selector_cli;
 mod network;
+mod network_event_observability;
 mod node_identity;
 mod node_modes;
 mod peer_tracker;
@@ -83,12 +86,11 @@ use iamine_network::{
     record_distributed_task_retry, record_distributed_task_started, record_task_attempt,
     select_retry_target, set_global_node_id, set_global_runtime_context, validate_result,
     DistributedTaskResult, FailureKind, IntelligentScheduler, LogLevel, NetworkTopology,
-    NodeCapabilityHeartbeat, NodeHealth, NodeRegistry, ResultStatus, SemanticFeedbackEngine,
-    SharedNetworkTopology, SharedNodeRegistry, StructuredLogEntry, TaskClaim, TaskManager,
-    TaskType as PromptTaskType, ValidationResult as SemanticValidationResult,
-    NET_PEER_DISCONNECTED_002, NODE_BLACKLISTED_001, NODE_UNHEALTHY_002, SCH_NO_NODE_001,
-    TASK_DISPATCH_UNCONFIRMED_001, TASK_EMPTY_RESULT_003, TASK_FAILED_002, TASK_TIMEOUT_001,
-    WORKER_STARTUP_OVERFLOW_001,
+    NodeHealth, NodeRegistry, ResultStatus, SemanticFeedbackEngine, SharedNetworkTopology,
+    SharedNodeRegistry, StructuredLogEntry, TaskClaim, TaskManager, TaskType as PromptTaskType,
+    ValidationResult as SemanticValidationResult, NET_PEER_DISCONNECTED_002, NODE_BLACKLISTED_001,
+    NODE_UNHEALTHY_002, SCH_NO_NODE_001, TASK_DISPATCH_UNCONFIRMED_001, TASK_EMPTY_RESULT_003,
+    TASK_FAILED_002, TASK_TIMEOUT_001, WORKER_STARTUP_OVERFLOW_001,
 };
 
 #[cfg(test)]
@@ -107,6 +109,7 @@ pub(crate) use infer_runtime::*;
 pub(crate) use infer_watchdog::*;
 use metrics::NodeMetrics;
 use metrics_server::*;
+use network_event_observability::HumanLogThrottle;
 use node_identity::NodeIdentity; // ← actualizado
 use peer_tracker::PeerTracker;
 use quality_gate::runtime_version_metadata;
@@ -150,7 +153,6 @@ use broadcast_runtime::*;
 use broadcast_worker::*;
 use capability_display::*;
 use cli::{parse_args, parse_worker_port};
-use cluster_events::*;
 use cluster_registry::*;
 use cluster_status::*;
 use controller_broadcast_runtime::{
@@ -162,8 +164,19 @@ use controller_cluster_runtime::{
     render_controller_cluster_status,
 };
 use controller_result_runtime::handle_controller_task_result;
+use discovery_runtime::{
+    handle_connection_closed, handle_connection_established, handle_gossipsub_subscribed,
+    handle_gossipsub_unsubscribed, handle_kademlia_routing_updated, handle_mdns_discovered,
+    handle_mdns_expired, handle_new_listen_addr, handle_ping_event,
+};
 use executor::TaskExecutor;
 use final_outcome::*;
+use gossipsub_message_runtime::{
+    broadcast_mode_task_payload, direct_inference_request_for_local_worker,
+    handle_capability_topic_message, handle_heartbeat_message, handle_inference_progress_message,
+    handle_inference_token_message, handle_node_capabilities_message, handle_task_cancel_message,
+    log_invalid_worker_task_message, message_topic_name,
+};
 use mode_dispatch::{handle_pre_network_mode, is_control_plane_mode};
 use model_display_policy::*;
 use node_modes::{mode_label, DebugFlags, InferenceControlFlags, NodeMode};
@@ -261,39 +274,6 @@ impl From<mdns::Event> for IaMineEvent {
 impl From<gossipsub::Event> for IaMineEvent {
     fn from(e: gossipsub::Event) -> Self {
         IaMineEvent::Gossipsub(e)
-    }
-}
-
-#[derive(Default)]
-struct HumanLogThrottle {
-    last_log_ms: HashMap<String, u64>,
-    last_values: HashMap<String, String>,
-}
-
-impl HumanLogThrottle {
-    fn now_ms() -> u64 {
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis() as u64
-    }
-
-    fn should_log(&mut self, key: &str, interval_ms: u64, value: Option<&str>) -> bool {
-        let now_ms = Self::now_ms();
-        let previous_ms = self.last_log_ms.get(key).copied().unwrap_or(0);
-        let unchanged = value
-            .and_then(|val| self.last_values.get(key).map(|previous| previous == val))
-            .unwrap_or(false);
-
-        if unchanged && now_ms.saturating_sub(previous_ms) < interval_ms {
-            return false;
-        }
-
-        self.last_log_ms.insert(key.to_string(), now_ms);
-        if let Some(value) = value {
-            self.last_values.insert(key.to_string(), value.to_string());
-        }
-        true
     }
 }
 
@@ -451,16 +431,6 @@ fn record_health_policy_state_transition(
         );
     }
     health_state_tracker.insert(peer_id.to_string(), new_state);
-}
-
-fn cluster_label_for_latency(latency_ms: f64) -> &'static str {
-    if latency_ms < 10.0 {
-        "LOCAL"
-    } else if latency_ms < 50.0 {
-        "NEARBY"
-    } else {
-        "REMOTE"
-    }
 }
 
 #[tokio::main]
@@ -2530,87 +2500,39 @@ async fn main() -> Result<(), Box<dyn Error>> {
             event = swarm.select_next_some() => match event {
 
                 SwarmEvent::NewListenAddr { address, .. } => {
-                    println!("🌐 Escuchando en: {}", address);
-                    swarm
-                        .behaviour_mut()
-                        .kademlia
-                        .add_address(&peer_id, address.clone());
-                    if matches!(mode, NodeMode::Worker) && !worker_startup_ready_emitted {
-                        emit_worker_listening_event(&peer_id.to_string(), worker_port, &address);
-                        if let Some(policy) = worker_startup_policy.as_ref() {
-                            emit_worker_startup_ready_event(
-                                &peer_id.to_string(),
-                                worker_port,
-                                policy,
-                            );
-                        }
-                        worker_startup_ready_emitted = true;
-                    }
+                    handle_new_listen_addr(
+                        &mut swarm,
+                        peer_id,
+                        &address,
+                        &mode,
+                        &mut worker_startup_ready_emitted,
+                        worker_port,
+                        worker_startup_policy.as_ref(),
+                    );
                 }
 
                 SwarmEvent::Behaviour(IaMineEvent::Mdns(mdns::Event::Discovered(peers))) => {
-                    for (pid, addr) in peers {
-                        if pid != peer_id {
-                            println!("🔍 mDNS descubrió: {} @ {}", pid, addr);
-                            log_observability_event(
-                                LogLevel::Info,
-                                "peer_discovered",
-                                "network",
-                                None,
-                                None,
-                                None,
-                                {
-                                    let mut fields = Map::new();
-                                    fields.insert("peer_id".to_string(), pid.to_string().into());
-                                    fields.insert("address".to_string(), addr.to_string().into());
-                                    fields
-                                },
-                            );
-                            debug_network_log(
-                                debug_flags,
-                                format!("mdns discovered peer_id={} addr={}", pid, addr),
-                            );
-                            let inserted = cluster_registry.add_or_update_discovered_node(
-                                &pid.to_string(),
-                                Some(addr.to_string()),
-                                unix_now_ms(),
-                            );
-                            emit_cluster_discovery_update(
-                                inserted,
-                                &cluster_id,
-                                &pid.to_string(),
-                                "mdns",
-                                Some(addr.to_string()),
-                            );
-                            swarm.behaviour_mut().kademlia.add_address(&pid, addr.clone());
-                            swarm.behaviour_mut().gossipsub.add_explicit_peer(&pid);
-                            known_workers.insert(pid);
-                            if is_client && connected_peer.is_none() && !tasks_sent {
-                                let _ = swarm.dial(addr);
-                            }
-                        }
-                    }
+                    handle_mdns_discovered(
+                        &mut swarm,
+                        peers,
+                        peer_id,
+                        debug_flags,
+                        &mut cluster_registry,
+                        &cluster_id,
+                        &mut known_workers,
+                        is_client,
+                        connected_peer,
+                        tasks_sent,
+                    );
                 }
 
                 SwarmEvent::Behaviour(IaMineEvent::Mdns(mdns::Event::Expired(peers))) => {
-                    for (pid, _) in peers {
-                        log_observability_event(
-                            LogLevel::Warn,
-                            "peer_disconnected",
-                            "network",
-                            None,
-                            None,
-                            Some(NET_PEER_DISCONNECTED_002),
-                            {
-                                let mut fields = Map::new();
-                                fields.insert("peer_id".to_string(), pid.to_string().into());
-                                fields
-                            },
-                        );
-                        known_workers.remove(&pid);
-                        pubsub_topics.unregister_peer(&pid);
-                        swarm.behaviour_mut().gossipsub.remove_explicit_peer(&pid);
-                    }
+                    handle_mdns_expired(
+                        &mut swarm,
+                        peers,
+                        &mut known_workers,
+                        &mut pubsub_topics,
+                    );
                 }
 
                 SwarmEvent::Behaviour(IaMineEvent::Gossipsub(gossipsub::Event::Message {
@@ -2619,38 +2541,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     ..
                 })) => {
                     let from_peer = propagation_source.to_string();
-                    let message_topic = if message.topic == gossipsub::IdentTopic::new(TASK_TOPIC).hash() {
-                        TASK_TOPIC
-                    } else if message.topic == gossipsub::IdentTopic::new(BIDS_TOPIC).hash() {
-                        BIDS_TOPIC
-                    } else if message.topic == gossipsub::IdentTopic::new(ASSIGN_TOPIC).hash() {
-                        ASSIGN_TOPIC
-                    } else if message.topic == gossipsub::IdentTopic::new(DIRECT_INF_TOPIC).hash() {
-                        DIRECT_INF_TOPIC
-                    } else if message.topic == gossipsub::IdentTopic::new(RESULTS_TOPIC).hash() {
-                        RESULTS_TOPIC
-                    } else if message.topic == gossipsub::IdentTopic::new(CAP_TOPIC).hash() {
-                        CAP_TOPIC
-                    } else if message.topic == gossipsub::IdentTopic::new(HEARTBEAT_TOPIC).hash() {
-                        HEARTBEAT_TOPIC
-                    } else {
-                        "unknown"
-                    };
+                    let message_topic = message_topic_name(&message.topic);
 
-                    // 1) Procesar capabilities por TOPIC (no por msg_type)
                     if message.topic == gossipsub::IdentTopic::new(CAP_TOPIC).hash() {
-                        if let Ok(hb) = serde_json::from_slice::<NodeCapabilityHeartbeat>(&message.data) {
-                            let _ = registry.write().await.update_from_heartbeat(hb.clone());
-                            cluster_registry.update_from_capability_heartbeat(&hb, unix_now_ms());
-                            emit_cluster_capabilities_updated(
-                                &cluster_registry,
-                                &cluster_id,
-                                &hb.peer_id,
-                                CAP_TOPIC,
-                                hb.models.len(),
-                                Some(hb.latency_ms),
-                            );
-                        }
+                        handle_capability_topic_message(
+                            &message.data,
+                            &registry,
+                            &mut cluster_registry,
+                            &cluster_id,
+                        )
+                        .await;
                         continue;
                     }
 
@@ -2687,11 +2587,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                             "TaskBid" if matches!(mode, NodeMode::Broadcast { .. }) => {
                                 let (task_type_value, data_value) =
-                                    if let NodeMode::Broadcast { task_type, data } = &mode {
-                                        (task_type.as_str(), data.as_str())
-                                    } else {
-                                        ("", "")
-                                    };
+                                    broadcast_mode_task_payload(&mode);
                                 handle_controller_task_bid(
                                     &mut swarm,
                                     &msg,
@@ -2734,42 +2630,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             }
 
                             "TaskCancel" if matches!(mode, NodeMode::Worker) => {
-                                let task_id = msg["task_id"].as_str().unwrap_or("");
-                                let reason = msg["reason"].as_str().unwrap_or("sin razón");
-                                println!("🚫 [Worker] Tarea {} cancelada: {}", task_id, reason);
+                                handle_task_cancel_message(&msg);
                             }
 
                             "Heartbeat" => {
-                                cluster_registry
-                                    .update_from_worker_heartbeat_value(&msg, unix_now_ms());
-                                let worker_id = msg["peer_id"].as_str().unwrap_or("");
-                                if !worker_id.is_empty() {
-                                    emit_cluster_node_updated(&cluster_id, worker_id, "heartbeat");
-                                }
-                                let slots = msg["available_slots"].as_u64().unwrap_or(0) as usize;
-                                let rep = msg["reputation_score"].as_u64().unwrap_or(0) as u32;
-                                let uptime = msg["uptime_secs"].as_u64().unwrap_or(0);
-                                peer_tracker.update_heartbeat(worker_id, slots, rep);
-                                let peer_count = peer_tracker.peer_count();
-                                let heartbeat_value =
-                                    format!("slots={} rep={} peers={}", slots, rep, peer_count);
-                                if human_log_throttle.should_log(
-                                    &format!("heartbeat:{}", worker_id),
-                                    15_000,
-                                    Some(&heartbeat_value),
-                                ) {
-                                    println!(
-                                        "💓 Heartbeat {}... slots={} rep={} uptime={}s peers={}",
-                                        &worker_id[..8.min(worker_id.len())],
-                                        slots,
-                                        rep,
-                                        uptime,
-                                        peer_count
-                                    );
-                                }
-                                let mut m = metrics.write().await;
-                                m.network_peers = peer_count;
-                                m.mesh_peers = peer_count;
+                                handle_heartbeat_message(
+                                    &msg,
+                                    &mut peer_tracker,
+                                    Arc::clone(&metrics),
+                                    &mut cluster_registry,
+                                    &cluster_id,
+                                    &mut human_log_throttle,
+                                )
+                                .await;
                             }
 
                             // ═══════════════════════════════════════════
@@ -2796,196 +2669,23 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             }
 
                             "InferenceProgress" if matches!(mode, NodeMode::Infer { .. }) => {
-                                if !is_remote_delivery_topic(message_topic) {
-                                    continue;
-                                }
-                                let task_id = msg["task_id"].as_str().unwrap_or("").to_string();
-                                let attempt_id = msg["attempt_id"].as_str().unwrap_or("").to_string();
-                                let attempt_key = AttemptKey::new(task_id.clone(), attempt_id.clone());
-                                let stage = msg["stage"].as_str().unwrap_or("unknown");
-                                let worker_peer = msg["worker_peer_id"]
-                                    .as_str()
-                                    .or_else(|| msg["worker_peer"].as_str())
-                                    .unwrap_or("unknown");
-                                let model_id = msg["model_id"].as_str().unwrap_or("").to_string();
-                                let elapsed_ms = msg["elapsed_ms"].as_u64().unwrap_or_else(|| {
-                                    attempt_watchdogs
-                                        .get(&attempt_id)
-                                        .map(|watchdog| watchdog.elapsed_ms())
-                                        .unwrap_or_default()
-                                });
-                                let tokens_generated_count =
-                                    msg["tokens_generated_count"].as_u64();
-                                let expected_task_id = distributed_infer_state
-                                    .as_ref()
-                                    .map(|state| state.trace_task_id.as_str());
-                                if expected_task_id != Some(task_id.as_str()) {
-                                    continue;
-                                }
-
-                                let model_for_received_event = if model_id.is_empty() {
-                                    active_attempts
-                                        .get(&attempt_key)
-                                        .map(|attempt| attempt.model_id.as_str())
-                                } else {
-                                    Some(model_id.as_str())
-                                };
-                                emit_remote_progress_client_received_event(
-                                    &task_id,
-                                    &attempt_id,
-                                    model_for_received_event,
-                                    worker_peer,
-                                    stage,
+                                handle_inference_progress_message(
+                                    &msg,
                                     message_topic,
-                                    elapsed_ms,
-                                    tokens_generated_count,
+                                    &mut distributed_infer_state,
+                                    &mut attempt_watchdogs,
+                                    &mut active_attempts,
                                 );
-
-                                if let Some(active_attempt) = active_attempts.get(&attempt_key) {
-                                    if !active_attempt.accepts_worker(worker_peer) {
-                                        continue;
-                                    }
-                                }
-
-                                    if let Some(watchdog) = attempt_watchdogs.get_mut(&attempt_id) {
-                                        if !watchdog.accepts_worker(worker_peer) {
-                                            continue;
-                                        }
-
-                                        let model_for_event = if model_id.is_empty() {
-                                            watchdog.model_id.clone()
-                                        } else {
-                                            model_id.clone()
-                                        };
-                                        let claim_source = claim_source_from_progress_stage(stage);
-                                        if let Some(previous_worker_peer_id) =
-                                            watchdog.claim_worker(worker_peer, claim_source)
-                                        {
-                                            if let Some(active_attempt) =
-                                                active_attempts.get_mut(&attempt_key)
-                                            {
-                                                let _ = active_attempt.claim_worker(worker_peer);
-                                            }
-                                            emit_fallback_attempt_claimed_event(
-                                                &task_id,
-                                                &attempt_id,
-                                                Some(&model_for_event),
-                                                worker_peer,
-                                                &previous_worker_peer_id,
-                                                claim_source,
-                                            );
-                                            if let Some(infer_state) = distributed_infer_state.as_mut() {
-                                                let _ = infer_state.claim_attempt_record(&attempt_id, worker_peer);
-                                            }
-                                            let _ = claim_task_attempt_peer(&task_id, worker_peer);
-                                        }
-
-                                        let previous_state = watchdog.state;
-                                        let should_emit_recovered =
-                                            watchdog.no_progress_warning_emitted
-                                                || matches!(
-                                                    previous_state,
-                                                    AttemptLifecycleState::Stalled
-                                                        | AttemptLifecycleState::TimedOut
-                                                );
-                                        let deadline_before =
-                                            watchdog.deadline_at.duration_since(watchdog.started_at).as_millis() as u64;
-                                        let meaningful = watchdog.record_progress(
-                                            stage,
-                                            tokens_generated_count,
-                                        );
-                                        if meaningful {
-                                            watchdog.no_progress_warning_emitted = false;
-                                            if let Some(infer_state) = distributed_infer_state.as_mut() {
-                                                let mapped_state =
-                                                    lifecycle_state_from_progress_stage(stage)
-                                                        .map(|state| state.as_str())
-                                                        .unwrap_or(stage);
-                                                infer_state.update_attempt_state(
-                                                    &attempt_id,
-                                                    mapped_state,
-                                                    Some("in_progress"),
-                                                    None,
-                                                );
-                                            }
-                                            let worker_peer_id = watchdog.worker_peer_id.clone();
-                                            if watchdog.state != previous_state {
-                                                emit_attempt_state_changed_event(
-                                                    &task_id,
-                                                    &attempt_id,
-                                                    Some(&model_for_event),
-                                                    Some(&worker_peer_id),
-                                                    previous_state.as_str(),
-                                                    watchdog.state.as_str(),
-                                                );
-                                            }
-                                            let deadline_after =
-                                                watchdog.deadline_at.duration_since(watchdog.started_at).as_millis() as u64;
-                                            if deadline_after > deadline_before {
-                                                emit_attempt_timeout_extended_event(
-                                                    &task_id,
-                                                    &attempt_id,
-                                                    Some(&model_for_event),
-                                                    Some(&worker_peer_id),
-                                                    deadline_after,
-                                                    "real_progress",
-                                                );
-                                            }
-                                            emit_watchdog_reset_on_progress_event(
-                                                &task_id,
-                                                &attempt_id,
-                                                Some(&model_for_event),
-                                                &worker_peer_id,
-                                                stage,
-                                                deadline_after,
-                                            );
-                                            if should_emit_recovered {
-                                                emit_attempt_progress_recovered_event(
-                                                    &task_id,
-                                                    &attempt_id,
-                                                    Some(&model_for_event),
-                                                    &worker_peer_id,
-                                                );
-                                            }
-                                            println!(
-                                                "{}",
-                                                format_remote_progress_line(
-                                                    &worker_peer_id,
-                                                    &attempt_id,
-                                                    stage,
-                                                    elapsed_ms,
-                                                    tokens_generated_count,
-                                                )
-                                            );
-                                            emit_attempt_progress_received_event(
-                                                &task_id,
-                                                &attempt_id,
-                                                Some(&model_for_event),
-                                                &worker_peer_id,
-                                                stage,
-                                                elapsed_ms,
-                                                tokens_generated_count,
-                                            );
-                                        }
-                                    }
-                                }
+                            }
 
                             "InferenceToken" if matches!(mode, NodeMode::Infer { .. }) => {
-                                let rid = msg["request_id"].as_str().unwrap_or("");
-                                if infer_request_id.as_deref() == Some(rid) {
-                                    let idx = msg["index"].as_u64().unwrap_or(0) as u32;
-                                    let token = msg["token"].as_str().unwrap_or("").to_string();
-
-                                    token_buffer.insert(idx, token);
-
-                                    // flush en orden
-                                    while let Some(next) = token_buffer.remove(&next_token_idx) {
-                                        print!("{}", next);
-                                        rendered_output.push_str(&next); // <- nuevo
-                                        let _ = std::io::Write::flush(&mut std::io::stdout());
-                                        next_token_idx += 1;
-                                    }
-                                }
+                                handle_inference_token_message(
+                                    &msg,
+                                    infer_request_id.as_ref(),
+                                    &mut token_buffer,
+                                    &mut next_token_idx,
+                                    &mut rendered_output,
+                                );
                             }
 
                                 "InferenceResult" if matches!(mode, NodeMode::Infer { .. }) => {
@@ -3556,46 +3256,38 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             }
 
                             "NodeCapabilities" => {
-                                if let Ok(hb) = serde_json::from_value::<NodeCapabilityHeartbeat>(msg.clone()) {
-                                    let _ = registry.write().await.update_from_heartbeat(hb.clone());
-                                    cluster_registry.update_from_capability_heartbeat(&hb, unix_now_ms());
-                                    emit_cluster_capabilities_updated(
-                                        &cluster_registry,
-                                        &cluster_id,
-                                        &hb.peer_id,
-                                        "node_capabilities",
-                                        hb.models.len(),
-                                        None,
-                                    );
-                                }
+                                handle_node_capabilities_message(
+                                    &msg,
+                                    &registry,
+                                    &mut cluster_registry,
+                                    &cluster_id,
+                                )
+                                .await;
                             }
 
                             "DirectInferenceRequest" if matches!(mode, NodeMode::Worker) => {
                                 let local_peer_id = peer_id.to_string();
-                                let Some(request) =
-                                    WorkerInferenceRuntimeRequest::from_direct_inference_request_value(
-                                        &msg,
-                                        &local_peer_id,
-                                        &from_peer,
+                                if let Some(request) = direct_inference_request_for_local_worker(
+                                    &msg,
+                                    &local_peer_id,
+                                    &from_peer,
+                                ) {
+                                    handle_worker_inference_request(
+                                        &mut swarm,
+                                        request,
+                                        WorkerInferenceRuntimeContext {
+                                            peer_id: &peer_id,
+                                            message_topic,
+                                            from_peer: &from_peer,
+                                            model_storage: &model_storage,
+                                            node_caps: &node_caps,
+                                            worker_startup_policy: worker_startup_policy.as_ref(),
+                                            inference_engine: inference_engine.clone(),
+                                            metrics: Arc::clone(&metrics),
+                                        },
                                     )
-                                else {
-                                    continue;
-                                };
-                                handle_worker_inference_request(
-                                    &mut swarm,
-                                    request,
-                                    WorkerInferenceRuntimeContext {
-                                        peer_id: &peer_id,
-                                        message_topic,
-                                        from_peer: &from_peer,
-                                        model_storage: &model_storage,
-                                        node_caps: &node_caps,
-                                        worker_startup_policy: worker_startup_policy.as_ref(),
-                                        inference_engine: inference_engine.clone(),
-                                        metrics: Arc::clone(&metrics),
-                                    },
-                                )
-                                .await;
+                                    .await;
+                                }
                             }
 
                             _ => {}
@@ -3603,24 +3295,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     } else if matches!(mode, NodeMode::Worker)
                         && (message_topic == TASK_TOPIC || message_topic == DIRECT_INF_TOPIC)
                     {
-                        log_observability_event(
-                            LogLevel::Warn,
-                            "task_message_received",
-                            "dispatch",
-                            None,
-                            None,
-                            Some(TASK_DISPATCH_UNCONFIRMED_001),
-                            {
-                                let mut fields = Map::new();
-                                fields.insert("topic".to_string(), message_topic.into());
-                                fields.insert("from_peer".to_string(), from_peer.into());
-                                fields.insert("payload_parse_result".to_string(), "invalid_json".into());
-                                fields.insert(
-                                    "payload_size".to_string(),
-                                    (message.data.len() as u64).into(),
-                                );
-                                fields
-                            },
+                        log_invalid_worker_task_message(
+                            message_topic,
+                            &from_peer,
+                            message.data.len(),
                         );
                     }
                 }
@@ -3848,250 +3526,78 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 }
 
                 SwarmEvent::Behaviour(IaMineEvent::Gossipsub(gossipsub::Event::Subscribed { peer_id: pid, topic })) => {
-                    println!("📢 Peer {} suscrito a: {}", pid, topic);
-                    pubsub_topics.register_peer_subscription(&pid, &topic);
-                    cluster_registry.add_or_update_discovered_node(&pid.to_string(), None, unix_now_ms());
-                    let tracked_topic_name = tracked_pubsub_topic_name(&topic);
-                    let observer_mode = if matches!(mode, NodeMode::Broadcast { .. }) {
-                        Some(("controller_observed_peer_subscription", "broadcast"))
-                    } else if matches!(mode, NodeMode::Worker) {
-                        Some(("worker_observed_peer_subscription", "worker"))
-                    } else {
-                        None
-                    };
-                    if let (Some((event_name, mode_name)), Some(topic_name)) =
-                        (observer_mode, tracked_topic_name)
-                    {
-                        emit_observed_peer_subscription_event(
-                            event_name,
-                            &peer_id.to_string(),
-                            &pid.to_string(),
-                            topic_name,
-                            mode_name,
-                            "gossipsub_subscription",
-                        );
-                    }
-                    if matches!(mode, NodeMode::Broadcast { .. })
-                        && tracked_topic_name == Some(TASK_TOPIC)
-                    {
-                        if let Some(state) = broadcast_offer_state.as_mut() {
-                            state.mark_subscription_seen();
-                        }
-                        let connected_peers = swarm.connected_peers().count();
-                        let subscribed_peers = pubsub_topics.topic_peer_count(TASK_TOPIC).max(
-                            gossipsub_topic_peer_count(&swarm.behaviour().gossipsub, TASK_TOPIC),
-                        );
-                        let mesh_peers =
-                            gossipsub_mesh_peer_ids(&swarm.behaviour().gossipsub, TASK_TOPIC)
-                                .len();
-                        emit_broadcast_topic_subscriber_seen_event(
-                            TASK_TOPIC,
-                            &pid.to_string(),
-                            connected_peers,
-                            subscribed_peers,
-                            mesh_peers,
-                            "gossipsub_subscription",
-                        );
-                    }
-                    log_observability_event(
-                        LogLevel::Info,
-                        "pubsub_topic_joined",
-                        "network",
-                        None,
-                        None,
-                        None,
-                        {
-                            let mut fields = Map::new();
-                            fields.insert("peer_id".to_string(), pid.to_string().into());
-                            fields.insert("topic".to_string(), topic.to_string().into());
-                            fields.insert("scope".to_string(), "remote".into());
-                            fields
-                        },
+                    handle_gossipsub_subscribed(
+                        &swarm,
+                        pid,
+                        topic,
+                        peer_id,
+                        &mode,
+                        &mut pubsub_topics,
+                        &mut cluster_registry,
+                        &mut broadcast_offer_state,
                     );
-
-                    // Desactivar ruta vieja: no enviar InferenceRequest broadcast aquí.
-                    // (Se envía por smart routing en heartbeat tick cuando registry tenga candidatos)
-
-                    // ...existing code...
                 }
 
                 SwarmEvent::Behaviour(IaMineEvent::Gossipsub(gossipsub::Event::Unsubscribed { peer_id: pid, topic })) => {
-                    println!("🔕 Peer {} desuscrito de: {}", pid, topic);
-                    pubsub_topics.unregister_peer_subscription(&pid, &topic);
+                    handle_gossipsub_unsubscribed(pid, topic, &mut pubsub_topics);
                 }
 
                 SwarmEvent::ConnectionEstablished { peer_id: pid, endpoint, .. } => {
-                    println!("✅ Conectado a: {} ({})", pid, endpoint.get_remote_address());
-                    if let Some(state) = broadcast_offer_state.as_mut() {
-                        state.mark_peer_connected();
-                    }
-                    swarm.behaviour_mut().gossipsub.add_explicit_peer(&pid);
-                    log_observability_event(
-                        LogLevel::Info,
-                        "peer_connected",
-                        "network",
-                        None,
-                        None,
-                        None,
-                        {
-                            let mut fields = Map::new();
-                            fields.insert("peer_id".to_string(), pid.to_string().into());
-                            fields.insert(
-                                "address".to_string(),
-                                endpoint.get_remote_address().to_string().into(),
-                            );
-                            fields
-                        },
-                    );
-                    cluster_registry.add_or_update_discovered_node(
-                        &pid.to_string(),
-                        Some(endpoint.get_remote_address().to_string()),
-                        unix_now_ms(),
-                    );
-                    emit_cluster_discovery_update(
-                        false,
+                    handle_connection_established(
+                        &mut swarm,
+                        pid,
+                        &endpoint,
+                        &mode,
+                        &mut cluster_registry,
                         &cluster_id,
-                        &pid.to_string(),
-                        "peer_connected",
-                        Some(endpoint.get_remote_address().to_string()),
+                        &mut broadcast_offer_state,
+                        &mut connected_peer,
+                        &mut known_workers,
+                        is_client,
+                        &mut tasks_sent,
+                        &pending_tasks,
+                        total_tasks,
+                        &mut waiting_for_response,
                     );
-                    connected_peer = Some(pid);
-                    known_workers.insert(pid);
-                    if is_client && !tasks_sent && !matches!(mode, NodeMode::Broadcast { .. }) {
-                        if let Some(task) = pending_tasks.first().cloned() {
-                            println!("📤 [{}/{}] Enviando: {} → '{}'",
-                                1, total_tasks, task.task_type, task.data);
-                            swarm.behaviour_mut().request_response.send_request(&pid, task);
-                            waiting_for_response = true;
-                            tasks_sent = true;
-                        }
-                    }
                 }
 
                 SwarmEvent::ConnectionClosed { peer_id: pid, .. } => {
-                    log_observability_event(
-                        LogLevel::Warn,
-                        "peer_disconnected",
-                        "network",
-                        None,
-                        None,
-                        Some(NET_PEER_DISCONNECTED_002),
-                        {
-                            let mut fields = Map::new();
-                            fields.insert("peer_id".to_string(), pid.to_string().into());
-                            fields
-                        },
-                    );
-                    if matches!(mode, NodeMode::Infer { .. }) {
-                        let disconnected_peer = pid.to_string();
-                        let active_peer = distributed_infer_state
-                            .as_ref()
-                            .and_then(|state| state.current_peer.as_deref())
-                            == Some(disconnected_peer.as_str());
-                        let inflight = infer_request_id
-                            .as_ref()
-                            .map(|attempt_id| pending_inference.contains_key(attempt_id))
-                            .unwrap_or(false);
-                        if active_peer && inflight {
-                            log_observability_event(
-                                LogLevel::Warn,
-                                "node_disconnect_during_active_task",
-                                distributed_infer_state
-                                    .as_ref()
-                                    .map(|state| state.trace_task_id.as_str())
-                                    .unwrap_or("network"),
-                                distributed_infer_state
-                                    .as_ref()
-                                    .map(|state| state.trace_task_id.as_str()),
-                                distributed_infer_state
-                                    .as_ref()
-                                    .and_then(|state| state.current_model.as_deref()),
-                                Some(NET_PEER_DISCONNECTED_002),
-                                {
-                                    let mut fields = Map::new();
-                                    fields.insert("peer_id".to_string(), disconnected_peer.into());
-                                    fields.insert(
-                                        "policy".to_string(),
-                                        "degraded_first_blacklist_after_threshold".into(),
-                                    );
-                                    fields.insert(
-                                        "action".to_string(),
-                                        "wait_for_watchdog_timeout_before_retry".into(),
-                                    );
-                                    fields
-                                },
-                            );
-                        }
-                    }
-                    known_workers.remove(&pid);
-                    pubsub_topics.unregister_peer(&pid);
-                    if is_client
-                        && !waiting_for_response
-                        && !matches!(mode, NodeMode::Broadcast { .. } | NodeMode::ClusterStatus { .. })
-                    {
-                        println!("\n📊 Completado: {}/{} tareas", completed, total_tasks);
+                    if handle_connection_closed(
+                        pid,
+                        &mode,
+                        distributed_infer_state.as_ref(),
+                        infer_request_id.as_ref(),
+                        &pending_inference,
+                        &mut known_workers,
+                        &mut pubsub_topics,
+                        is_client,
+                        waiting_for_response,
+                        completed,
+                        total_tasks,
+                    ) {
                         break;
                     }
                 }
 
                 SwarmEvent::Behaviour(IaMineEvent::Ping(ping::Event { peer, result, .. })) => {
-                    if let Ok(rtt) = result {
-                        let rtt_ms = rtt.as_micros() as f64 / 1000.0;
-                        let peer_id = peer.to_string();
-                        let latency_bucket = format!("{:.0}", (rtt_ms / 5.0).round());
-                        if human_log_throttle.should_log(
-                            &format!("latency:{}", peer_id),
-                            20_000,
-                            Some(&latency_bucket),
-                        ) {
-                            println!(
-                                "[Latency] RTT to peer {} = {:.1} ms",
-                                &peer_id[..12.min(peer_id.len())],
-                                rtt_ms
-                            );
-                        }
-                        peer_tracker.update_latency(&peer.to_string(), rtt_ms);
-                        topology.write().await.update_latency(&peer.to_string(), rtt_ms);
-                        cluster_registry.update_latency(
-                            &peer.to_string(),
-                            rtt_ms.max(0.0).round() as u32,
-                            unix_now_ms(),
-                        );
-                        log_observability_event(
-                            LogLevel::Info,
-                            "peer_latency",
-                            "network",
-                            None,
-                            None,
-                            None,
-                            {
-                                let mut fields = Map::new();
-                                fields.insert("peer_id".to_string(), peer.to_string().into());
-                                fields.insert("latency_ms".to_string(), rtt_ms.into());
-                                fields.insert(
-                                    "cluster".to_string(),
-                                    cluster_label_for_latency(rtt_ms).into(),
-                                );
-                                fields
-                            },
-                        );
-                    }
+                    handle_ping_event(
+                        peer,
+                        result,
+                        &mut peer_tracker,
+                        &topology,
+                        &mut cluster_registry,
+                        &mut human_log_throttle,
+                    )
+                    .await;
                 }
 
                 SwarmEvent::Behaviour(IaMineEvent::Kademlia(kad::Event::RoutingUpdated { peer, .. })) => {
-                    let peer_id = peer.to_string();
-                    cluster_registry.add_or_update_discovered_node(&peer_id, None, unix_now_ms());
-                    emit_cluster_node_updated(&cluster_id, &peer_id, "kademlia_routing_updated");
-                    if human_log_throttle.should_log(
-                        &format!("kademlia:{}", peer_id),
-                        30_000,
-                        Some("routing_updated"),
-                    ) {
-                        println!("📡 Kademlia: nodo añadido {}", peer);
-                    }
-                    debug_network_log(
+                    handle_kademlia_routing_updated(
+                        peer,
+                        &mut cluster_registry,
+                        &cluster_id,
+                        &mut human_log_throttle,
                         debug_flags,
-                        format!("kademlia routing updated peer_id={}", peer),
                     );
                 }
 
@@ -5996,14 +5502,6 @@ mod tests {
         let version = runtime_version_metadata();
         assert!(version.starts_with("v0.6.35"));
         assert!(!version.contains("v0.6.24"));
-    }
-
-    #[test]
-    fn test_human_log_throttle_deduplicates_repetitive_values() {
-        let mut throttle = HumanLogThrottle::default();
-        assert!(throttle.should_log("heartbeat:peer-a", 60_000, Some("slots=4 rep=100 peers=2")));
-        assert!(!throttle.should_log("heartbeat:peer-a", 60_000, Some("slots=4 rep=100 peers=2")));
-        assert!(throttle.should_log("heartbeat:peer-a", 60_000, Some("slots=3 rep=100 peers=2")));
     }
 
     #[test]
