@@ -34,6 +34,7 @@ mod metrics;
 mod metrics_policy;
 mod metrics_server;
 mod mode_dispatch;
+mod model_capability_consistency;
 mod model_display_policy;
 mod model_executability;
 mod model_selector_cli;
