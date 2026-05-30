@@ -42,6 +42,20 @@ fn render_node_row(node: &ClusterStatusNodeRow) -> String {
     } else {
         node.executable_models.join(",")
     };
+    let metadata_only_models = if node.metadata_only_models.is_empty() {
+        "-".to_string()
+    } else {
+        node.metadata_only_models.join(",")
+    };
+    let unavailable_models = if node.unavailable_models.is_empty() {
+        "-".to_string()
+    } else {
+        node.unavailable_models
+            .iter()
+            .map(|model| format!("{}({})", model.model_id, model.reason))
+            .collect::<Vec<_>>()
+            .join(",")
+    };
     let last_seen = node
         .age_ms
         .map(|age_ms| format!("{}ms ago", age_ms))
@@ -56,7 +70,7 @@ fn render_node_row(node: &ClusterStatusNodeRow) -> String {
         .unwrap_or_else(|| "unknown".to_string());
 
     format!(
-        "- {:20} {:12} {}/{} {} backend={} ready={} reason={} last_seen={} latency={} real_inference_available={} tasks={} executable_models={} metrics={}",
+        "- {:20} {:12} {}/{} {} backend={} ready={} reason={} last_seen={} latency={} real_inference_available={} tasks={} models_in_registry={} models_in_storage={} executable_models={} metadata_only_models={} unavailable_models={} metrics={}",
         node.hostname,
         node.peer_id_short,
         node.role.as_str(),
@@ -69,9 +83,21 @@ fn render_node_row(node: &ClusterStatusNodeRow) -> String {
         latency,
         real_available,
         tasks,
+        list_or_dash(&node.models_in_registry),
+        list_or_dash(&node.models_in_storage),
         executable_models,
+        metadata_only_models,
+        unavailable_models,
         node.metrics_status.as_str()
     )
+}
+
+fn list_or_dash(values: &[String]) -> String {
+    if values.is_empty() {
+        "-".to_string()
+    } else {
+        values.join(",")
+    }
 }
 
 #[cfg(test)]
@@ -82,6 +108,7 @@ mod tests {
     use crate::cluster_registry::{
         ClusterBackend, ClusterExecutionMode, ClusterMetricsStatus, ClusterRole,
     };
+    use crate::model_capability_consistency::{ModelCapabilityStatus, ModelExecutionStatus};
 
     fn snapshot_with_node() -> ClusterStatusSnapshot {
         ClusterStatusSnapshot {
@@ -116,6 +143,15 @@ mod tests {
                 models_in_storage: vec!["tinyllama-1b".to_string()],
                 models_in_registry: vec!["tinyllama-1b".to_string()],
                 executable_models: Vec::new(),
+                metadata_only_models: vec!["tinyllama-1b".to_string()],
+                unavailable_models: vec![ModelCapabilityStatus {
+                    model_id: "tinyllama-1b".to_string(),
+                    known_by_registry: true,
+                    present_in_storage: true,
+                    executable: false,
+                    execution_status: ModelExecutionStatus::DisabledByMock,
+                    reason: "disabled_by_mock".to_string(),
+                }],
             }],
         }
     }
@@ -132,6 +168,11 @@ mod tests {
         assert!(rendered.contains("backend=mock"));
         assert!(rendered.contains("ready=true"));
         assert!(rendered.contains("reason=mock_simple_tasks_ready"));
+        assert!(rendered.contains("models_in_registry=tinyllama-1b"));
+        assert!(rendered.contains("models_in_storage=tinyllama-1b"));
+        assert!(rendered.contains("executable_models=-"));
+        assert!(rendered.contains("metadata_only_models=tinyllama-1b"));
+        assert!(rendered.contains("unavailable_models=tinyllama-1b(disabled_by_mock)"));
     }
 
     #[test]
@@ -164,6 +205,17 @@ mod tests {
         assert_eq!(
             value["nodes"][0]["readiness_reason"],
             "mock_simple_tasks_ready"
+        );
+        assert_eq!(value["nodes"][0]["models_in_registry"][0], "tinyllama-1b");
+        assert_eq!(value["nodes"][0]["models_in_storage"][0], "tinyllama-1b");
+        assert_eq!(
+            value["nodes"][0]["executable_models"],
+            serde_json::json!([])
+        );
+        assert_eq!(value["nodes"][0]["metadata_only_models"][0], "tinyllama-1b");
+        assert_eq!(
+            value["nodes"][0]["unavailable_models"][0]["execution_status"],
+            "disabled_by_mock"
         );
     }
 }

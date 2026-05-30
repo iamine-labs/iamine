@@ -3,6 +3,7 @@ use crate::cluster_readiness::ClusterReadinessReason;
 use crate::cluster_registry::{
     ClusterBackend, ClusterExecutionMode, ClusterMetricsStatus, ClusterRegistry, ClusterRole,
 };
+use crate::model_capability_consistency::ModelCapabilityStatus;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -38,6 +39,8 @@ pub(crate) struct ClusterStatusNodeRow {
     pub(crate) models_in_storage: Vec<String>,
     pub(crate) models_in_registry: Vec<String>,
     pub(crate) executable_models: Vec<String>,
+    pub(crate) metadata_only_models: Vec<String>,
+    pub(crate) unavailable_models: Vec<ModelCapabilityStatus>,
 }
 
 pub(crate) fn build_cluster_status_snapshot(
@@ -73,6 +76,8 @@ pub(crate) fn build_cluster_status_snapshot(
                 models_in_storage: node.capabilities.models_in_storage,
                 models_in_registry: node.capabilities.models_in_registry,
                 executable_models: node.capabilities.executable_models,
+                metadata_only_models: node.capabilities.metadata_only_models,
+                unavailable_models: node.capabilities.unavailable_models,
             }
         })
         .collect();

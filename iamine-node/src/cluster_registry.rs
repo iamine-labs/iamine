@@ -2,6 +2,9 @@ use crate::cluster_health::{classify_cluster_health, ClusterHealth, ClusterHealt
 use crate::cluster_readiness::{
     derive_cluster_readiness, ClusterReadiness, ClusterReadinessInput, ClusterReadinessReason,
 };
+use crate::model_capability_consistency::{
+    normalize_model_capabilities, ModelCapabilityConsistencyInput, ModelCapabilityStatus,
+};
 use iamine_network::NodeCapabilityHeartbeat;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -116,6 +119,8 @@ pub(crate) struct ClusterCapabilitySummary {
     pub(crate) models_in_storage: Vec<String>,
     pub(crate) models_in_registry: Vec<String>,
     pub(crate) executable_models: Vec<String>,
+    pub(crate) metadata_only_models: Vec<String>,
+    pub(crate) unavailable_models: Vec<ModelCapabilityStatus>,
     pub(crate) supported_task_types: Vec<String>,
     pub(crate) real_inference_available: Option<bool>,
 }
@@ -126,6 +131,8 @@ impl Default for ClusterCapabilitySummary {
             models_in_storage: Vec::new(),
             models_in_registry: Vec::new(),
             executable_models: Vec::new(),
+            metadata_only_models: Vec::new(),
+            unavailable_models: Vec::new(),
             supported_task_types: Vec::new(),
             real_inference_available: None,
         }
@@ -226,6 +233,10 @@ pub(crate) struct ClusterNodeStatusMessage {
     pub(crate) models_in_storage: Vec<String>,
     pub(crate) models_in_registry: Vec<String>,
     pub(crate) executable_models: Vec<String>,
+    #[serde(default)]
+    pub(crate) metadata_only_models: Vec<String>,
+    #[serde(default)]
+    pub(crate) unavailable_models: Vec<ModelCapabilityStatus>,
     pub(crate) metrics_status: ClusterMetricsStatus,
     #[serde(default)]
     pub(crate) ready_for_tasks: bool,
@@ -249,6 +260,14 @@ impl ClusterNodeStatusMessage {
         metrics_status: ClusterMetricsStatus,
         latency_ms: Option<u32>,
     ) -> Self {
+        let capabilities = normalize_model_capabilities(&ModelCapabilityConsistencyInput {
+            models_in_registry: &models_in_registry,
+            models_in_storage: &models_in_storage,
+            advertised_executable_models: &executable_models,
+            backend_is_mock: matches!(backend, ClusterBackend::Mock)
+                || matches!(execution_mode, ClusterExecutionMode::Mock),
+            real_inference_available,
+        });
         let readiness = derive_cluster_readiness(&ClusterReadinessInput {
             role: ClusterRole::Worker,
             execution_mode,
@@ -257,7 +276,7 @@ impl ClusterNodeStatusMessage {
             metrics_status,
             real_inference_available: Some(real_inference_available),
             supported_task_types: &supported_task_types,
-            executable_models: &executable_models,
+            executable_models: &capabilities.executable_models,
         });
 
         Self {
@@ -272,9 +291,11 @@ impl ClusterNodeStatusMessage {
             latency_ms,
             real_inference_available: Some(real_inference_available),
             supported_task_types,
-            models_in_storage,
-            models_in_registry,
-            executable_models,
+            models_in_storage: capabilities.models_in_storage,
+            models_in_registry: capabilities.models_in_registry,
+            executable_models: capabilities.executable_models,
+            metadata_only_models: capabilities.metadata_only_models,
+            unavailable_models: capabilities.unavailable_models,
             metrics_status,
             ready_for_tasks: readiness.ready_for_tasks,
             readiness_reason: readiness.readiness_reason,
@@ -353,6 +374,10 @@ impl ClusterRegistry {
         node.role = ClusterRole::Worker;
         node.last_seen_ms = Some(now_ms);
         node.latency_ms = Some(heartbeat.latency_ms);
+        node.capabilities.models_in_storage =
+            merge_sorted_unique(&node.capabilities.models_in_storage, &heartbeat.models);
+        node.capabilities.models_in_registry =
+            merge_sorted_unique(&node.capabilities.models_in_registry, &heartbeat.models);
         node.capabilities.executable_models = sorted_unique(heartbeat.models.clone());
         node.capabilities.real_inference_available = Some(!heartbeat.models.is_empty());
         if node.backend == ClusterBackend::Unknown {
@@ -362,6 +387,7 @@ impl ClusterRegistry {
         if node.execution_mode == ClusterExecutionMode::Unknown && !heartbeat.models.is_empty() {
             node.execution_mode = ClusterExecutionMode::Real;
         }
+        normalize_cluster_capabilities(node);
         node.refresh_readiness_at(now_ms);
     }
 
@@ -421,6 +447,7 @@ impl ClusterRegistry {
         node.capabilities.models_in_storage = sorted_unique(message.models_in_storage);
         node.capabilities.models_in_registry = sorted_unique(message.models_in_registry);
         node.capabilities.executable_models = sorted_unique(message.executable_models);
+        normalize_cluster_capabilities(node);
     }
 
     #[allow(dead_code)]
@@ -501,6 +528,26 @@ pub(crate) fn sorted_unique(mut values: Vec<String>) -> Vec<String> {
     values.sort();
     values.dedup();
     values
+}
+
+fn merge_sorted_unique(left: &[String], right: &[String]) -> Vec<String> {
+    sorted_unique(left.iter().chain(right).cloned().collect())
+}
+
+fn normalize_cluster_capabilities(node: &mut ClusterNode) {
+    let normalized = normalize_model_capabilities(&ModelCapabilityConsistencyInput {
+        models_in_registry: &node.capabilities.models_in_registry,
+        models_in_storage: &node.capabilities.models_in_storage,
+        advertised_executable_models: &node.capabilities.executable_models,
+        backend_is_mock: matches!(node.backend, ClusterBackend::Mock)
+            || matches!(node.execution_mode, ClusterExecutionMode::Mock),
+        real_inference_available: node.capabilities.real_inference_available == Some(true),
+    });
+    node.capabilities.models_in_storage = normalized.models_in_storage;
+    node.capabilities.models_in_registry = normalized.models_in_registry;
+    node.capabilities.executable_models = normalized.executable_models;
+    node.capabilities.metadata_only_models = normalized.metadata_only_models;
+    node.capabilities.unavailable_models = normalized.unavailable_models;
 }
 
 fn push_unique_sorted(values: &mut Vec<String>, value: String) {
@@ -678,19 +725,59 @@ mod tests {
             ],
             vec!["tinyllama-1b".to_string()],
             vec!["tinyllama-1b".to_string()],
-            Vec::new(),
+            vec!["tinyllama-1b".to_string()],
             ClusterMetricsStatus::Fallback,
             None,
         );
         let mut registry = ClusterRegistry::new("test-lan");
         registry.update_from_cluster_status_message(message, 100);
 
-        assert!(registry
-            .node_by_peer_id("peer-a")
-            .unwrap()
-            .capabilities
-            .executable_models
-            .is_empty());
+        let node = registry.node_by_peer_id("peer-a");
+        assert!(node.is_some(), "expected peer-a capability snapshot");
+        if let Some(node) = node {
+            assert!(node.capabilities.executable_models.is_empty());
+            assert_eq!(
+                node.capabilities.metadata_only_models,
+                vec!["tinyllama-1b".to_string()]
+            );
+            assert_eq!(
+                node.capabilities.unavailable_models[0].reason,
+                "disabled_by_mock"
+            );
+        }
+    }
+
+    #[test]
+    fn cluster_status_message_additive_capability_fields_are_backward_compatible() {
+        let message = serde_json::from_value::<ClusterNodeStatusMessage>(serde_json::json!({
+            "type": "ClusterNodeStatus",
+            "cluster_id": "test-lan",
+            "peer_id": "peer-old",
+            "hostname": "wrk-old",
+            "role": "worker",
+            "execution_mode": "mock",
+            "backend": "mock",
+            "observed_addresses": [],
+            "latency_ms": 10,
+            "real_inference_available": false,
+            "supported_task_types": ["reverse_string"],
+            "models_in_storage": ["tinyllama-1b"],
+            "models_in_registry": ["tinyllama-1b"],
+            "executable_models": [],
+            "metrics_status": "fallback",
+            "ready_for_tasks": true,
+            "readiness_reason": "mock_simple_tasks_ready",
+            "degraded_reason": null
+        }));
+
+        assert!(
+            message.is_ok(),
+            "older cluster status payload must remain compatible"
+        );
+        if let Ok(message) = message {
+            assert!(message.metadata_only_models.is_empty());
+            assert!(message.unavailable_models.is_empty());
+        }
     }
 
     #[test]
