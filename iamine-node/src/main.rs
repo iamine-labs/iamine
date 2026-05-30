@@ -58,6 +58,7 @@ mod result_observability;
 mod result_protocol;
 mod router_scheduler;
 mod runtime_config;
+mod runtime_observability;
 mod scheduler_events;
 mod scheduler_policy;
 mod security_checks;
@@ -92,10 +93,9 @@ use iamine_network::{
     record_distributed_task_fallback, record_distributed_task_late_result,
     record_distributed_task_retry, record_distributed_task_started, record_task_attempt,
     select_retry_target, set_global_node_id, set_global_runtime_context, validate_result,
-    DistributedTaskResult, FailureKind, IntelligentScheduler, LogLevel, NetworkTopology,
-    NodeHealth, NodeRegistry, ResultStatus, SharedNetworkTopology, SharedNodeRegistry,
-    StructuredLogEntry, TaskClaim, TaskManager, TaskType as PromptTaskType,
-    NET_PEER_DISCONNECTED_002, NODE_BLACKLISTED_001, NODE_UNHEALTHY_002, SCH_NO_NODE_001,
+    DistributedTaskResult, FailureKind, IntelligentScheduler, NetworkTopology, NodeRegistry,
+    ResultStatus, SharedNetworkTopology, SharedNodeRegistry, TaskClaim, TaskManager,
+    TaskType as PromptTaskType, NET_PEER_DISCONNECTED_002, NODE_UNHEALTHY_002, SCH_NO_NODE_001,
     TASK_DISPATCH_UNCONFIRMED_001, TASK_EMPTY_RESULT_003, TASK_FAILED_002, TASK_TIMEOUT_001,
     WORKER_STARTUP_OVERFLOW_001,
 };
@@ -106,6 +106,8 @@ use iamine_network::analyze_prompt;
 use iamine_network::DistributedTaskMetrics;
 #[cfg(test)]
 use iamine_network::NodeCapability;
+#[cfg(test)]
+use iamine_network::NodeHealth;
 
 use daemon_runtime::{daemon_socket_path, run_daemon};
 use heartbeat::HeartbeatService;
@@ -126,7 +128,6 @@ use runtime_config::{
     load_runtime_args, maybe_print_debug_flags, prepare_runtime_startup_config, simulate_workers,
     RuntimeModeConfig, INFER_FALLBACK_AFTER_MS, INFER_TIMEOUT_MS, UNCLAIMED_WORKER_PEER_ID,
 };
-use serde_json::{Map, Value};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use task_cache::TaskCache;
@@ -208,154 +209,11 @@ pub(crate) use pubsub_readiness::*;
 pub(crate) use pubsub_topic_tracker::*;
 pub(crate) use pubsub_topics::*;
 pub(crate) use runtime_config::uuid_simple;
+pub(crate) use runtime_observability::*;
 
 struct PendingTaskResponse {
     channel: request_response::ResponseChannel<TaskResponse>,
     response: TaskResponse,
-}
-
-pub(crate) fn log_observability_event(
-    level: LogLevel,
-    event: &str,
-    trace_id: &str,
-    task_id: Option<&str>,
-    model_id: Option<&str>,
-    error_code: Option<&str>,
-    fields: Map<String, Value>,
-) {
-    let mut entry = StructuredLogEntry::new(level, event, trace_id, "-");
-    if let Some(task_id) = task_id {
-        entry = entry.with_task_id(task_id.to_string());
-    }
-    if let Some(model_id) = model_id {
-        entry = entry.with_model_id(model_id.to_string());
-    }
-    if let Some(error_code) = error_code {
-        entry = entry.with_error_code(error_code.to_string());
-    }
-    entry.fields = fields;
-    let _ = log_structured(entry);
-}
-
-fn health_fields(peer_id: &str, health: &NodeHealth) -> Map<String, Value> {
-    let mut fields = Map::new();
-    fields.insert("peer_id".to_string(), peer_id.into());
-    fields.insert(
-        "success_rate".to_string(),
-        (health.success_rate as f64).into(),
-    );
-    fields.insert(
-        "avg_latency_ms".to_string(),
-        (health.avg_latency_ms as f64).into(),
-    );
-    fields.insert("failure_count".to_string(), health.failure_count.into());
-    fields.insert("timeout_count".to_string(), health.timeout_count.into());
-    fields.insert("blacklisted".to_string(), health.is_blacklisted().into());
-    if let Some(last_success) = health.last_success_timestamp {
-        fields.insert("last_success_timestamp".to_string(), last_success.into());
-    }
-    fields
-}
-
-fn log_health_update(
-    trace_id: &str,
-    peer_id: &str,
-    model_id: Option<&str>,
-    health: &NodeHealth,
-    error_code: Option<&str>,
-) {
-    log_observability_event(
-        LogLevel::Info,
-        "health_update",
-        trace_id,
-        None,
-        model_id,
-        error_code,
-        health_fields(peer_id, health),
-    );
-
-    if health.is_blacklisted() {
-        log_observability_event(
-            LogLevel::Warn,
-            "node_blacklisted",
-            trace_id,
-            None,
-            model_id,
-            Some(NODE_BLACKLISTED_001),
-            health_fields(peer_id, health),
-        );
-    } else if health.last_success_timestamp.is_some() {
-        log_observability_event(
-            LogLevel::Info,
-            "node_recovered",
-            trace_id,
-            None,
-            model_id,
-            None,
-            health_fields(peer_id, health),
-        );
-    }
-}
-
-fn emit_health_policy_decision_event(
-    trace_id: &str,
-    peer_id: &str,
-    model_id: Option<&str>,
-    trigger: &str,
-    previous_state: &str,
-    health: &NodeHealth,
-) {
-    let state = health.policy_state();
-    let event = match state {
-        "blacklisted" => "node_blacklisted",
-        "degraded" => "node_degraded",
-        "healthy" => "node_recovered",
-        _ => "node_health_policy_decision",
-    };
-    log_observability_event(LogLevel::Info, event, trace_id, None, model_id, None, {
-        let mut fields = Map::new();
-        fields.insert("peer_id".to_string(), peer_id.into());
-        fields.insert("trigger".to_string(), trigger.into());
-        fields.insert("previous_state".to_string(), previous_state.into());
-        fields.insert("state".to_string(), state.into());
-        fields.insert(
-            "success_rate".to_string(),
-            (health.success_rate as f64).into(),
-        );
-        fields.insert("timeout_count".to_string(), health.timeout_count.into());
-        fields.insert("failure_count".to_string(), health.failure_count.into());
-        fields.insert("total_runs".to_string(), health.total_runs.into());
-        if let Some(until) = health.blacklisted_until {
-            fields.insert("blacklisted_until".to_string(), until.into());
-        }
-        fields
-    });
-}
-
-fn record_health_policy_state_transition(
-    health_state_tracker: &mut HashMap<String, String>,
-    trace_id: &str,
-    peer_id: &str,
-    model_id: Option<&str>,
-    trigger: &str,
-    health: &NodeHealth,
-) {
-    let new_state = health.policy_state().to_string();
-    let previous_state = health_state_tracker
-        .get(peer_id)
-        .cloned()
-        .unwrap_or_else(|| "unknown".to_string());
-    if previous_state != new_state {
-        emit_health_policy_decision_event(
-            trace_id,
-            peer_id,
-            model_id,
-            trigger,
-            &previous_state,
-            health,
-        );
-    }
-    health_state_tracker.insert(peer_id.to_string(), new_state);
 }
 
 #[tokio::main]
@@ -403,26 +261,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
             let node_identity = NodeIdentity::load_or_create();
             set_global_node_id(&node_identity.peer_id.to_string());
             let socket = daemon_socket_path();
-            log_observability_event(
-                LogLevel::Info,
-                "daemon_started",
-                "startup",
-                None,
-                None,
-                None,
-                {
-                    let mut fields = Map::new();
-                    fields.insert(
-                        "peer_id".to_string(),
-                        node_identity.peer_id.to_string().into(),
-                    );
-                    fields.insert(
-                        "socket_path".to_string(),
-                        socket.display().to_string().into(),
-                    );
-                    fields.insert("mode".to_string(), "daemon".into());
-                    fields
-                },
+            emit_daemon_started_event(
+                &node_identity.peer_id.to_string(),
+                &socket.display().to_string(),
             );
             run_daemon(socket).await?;
             return Ok(());
@@ -814,48 +655,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     if matches!(mode, NodeMode::Worker) {
         let (timeout_blacklist_threshold, failure_blacklist_threshold) = health_policy_thresholds();
-        log_observability_event(
-            LogLevel::Info,
-            "worker_started",
-            "startup",
-            None,
-            None,
-            None,
-            {
-                let mut fields = Map::new();
-                fields.insert("peer_id".to_string(), peer_id.to_string().into());
-                fields.insert("port".to_string(), (worker_port as u64).into());
-                fields.insert("worker_slots".to_string(), (worker_slots as u64).into());
-                fields.insert(
-                    "resource_policy".to_string(),
-                    resource_policy_value(&resource_policy),
-                );
-                fields
-            },
+        emit_worker_started_event(
+            &peer_id.to_string(),
+            worker_port,
+            worker_slots,
+            resource_policy_value(&resource_policy),
         );
-        log_observability_event(
-            LogLevel::Info,
-            "health_policy_configured",
-            "startup",
-            None,
-            None,
-            None,
-            {
-                let mut fields = Map::new();
-                fields.insert(
-                    "timeout_blacklist_threshold".to_string(),
-                    timeout_blacklist_threshold.into(),
-                );
-                fields.insert(
-                    "failure_blacklist_threshold".to_string(),
-                    failure_blacklist_threshold.into(),
-                );
-                fields.insert(
-                    "policy".to_string(),
-                    "degraded_first_blacklist_after_threshold".into(),
-                );
-                fields
-            },
+        emit_health_policy_configured_event(
+            timeout_blacklist_threshold,
+            failure_blacklist_threshold,
         );
     }
 
@@ -1338,24 +1146,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     && is_meaningfully_in_flight(watchdog.state)
                             });
                             if duplicate_inflight {
-                                log_observability_event(
-                                    LogLevel::Info,
-                                    "dispatch_deduplicated_inflight",
+                                emit_dispatch_deduplicated_inflight_event(
                                     &trace_task_id,
-                                    Some(&trace_task_id),
-                                    Some(&routed_model),
-                                    None,
-                                    {
-                                        let mut fields = Map::new();
-                                        fields.insert("attempt_id".to_string(), rid.clone().into());
-                                        fields.insert("selected_peer_id".to_string(), best_peer.clone().into());
-                                        fields.insert("selected_model".to_string(), routed_model.clone().into());
-                                        fields.insert(
-                                            "reason".to_string(),
-                                            "inflight_attempt_same_worker_model".into(),
-                                        );
-                                        fields
-                                    },
+                                    &rid,
+                                    &best_peer,
+                                    &routed_model,
                                 );
                                 continue;
                             }
@@ -1390,37 +1185,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 selected_cluster_id.as_deref().unwrap_or("-"),
                                 routed_model
                             );
-                            log_observability_event(
-                                LogLevel::Info,
-                                "scheduler_node_selected",
+                            emit_scheduler_node_selected_event(
                                 &trace_task_id,
-                                Some(&trace_task_id),
-                                Some(&routed_model),
-                                None,
-                                {
-                                    let mut fields = Map::new();
-                                    fields.insert(
-                                        "selected_peer_id".to_string(),
-                                        best_peer.clone().into(),
-                                    );
-                                    fields.insert(
-                                        "cluster_id".to_string(),
-                                        selected_cluster_id
-                                            .clone()
-                                            .unwrap_or_else(|| "-".to_string())
-                                            .into(),
-                                    );
-                                    fields.insert("score".to_string(), node_score.into());
-                                    fields.insert(
-                                        "reason".to_string(),
-                                        "high_success_low_latency".into(),
-                                    );
-                                    fields.insert(
-                                        "candidate_models".to_string(),
-                                        serde_json::json!(candidates),
-                                    );
-                                    fields
-                                },
+                                &routed_model,
+                                &best_peer,
+                                selected_cluster_id.as_deref(),
+                                node_score,
+                                &candidates,
                             );
                             debug_scheduler_log(
                                 debug_flags,
@@ -1583,58 +1354,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         &routed_model,
                                         selected_capability.as_ref(),
                                     );
-                                    log_observability_event(
-                                        LogLevel::Info,
-                                        "attempt_timeout_policy",
+                                    emit_attempt_timeout_policy_event(
                                         &trace_task_id,
-                                        Some(&trace_task_id),
-                                        Some(&routed_model),
+                                        &rid,
+                                        &routed_model,
+                                        Some(&best_peer),
                                         None,
-                                        {
-                                            let mut fields = Map::new();
-                                            fields.insert("attempt_id".to_string(), rid.clone().into());
-                                            fields.insert(
-                                                "worker_peer_id".to_string(),
-                                                best_peer.clone().into(),
-                                            );
-                                            fields.insert(
-                                                "timeout_ms".to_string(),
-                                                timeout_policy.timeout_ms.into(),
-                                            );
-                                            fields.insert(
-                                                "claim_timeout_ms".to_string(),
-                                                timeout_policy.claim_timeout_ms.into(),
-                                            );
-                                            fields.insert(
-                                                "first_progress_timeout_ms".to_string(),
-                                                timeout_policy.first_progress_timeout_ms.into(),
-                                            );
-                                            fields.insert(
-                                                "model_load_timeout_ms".to_string(),
-                                                timeout_policy.model_load_timeout_ms.into(),
-                                            );
-                                            fields.insert(
-                                                "first_token_timeout_ms".to_string(),
-                                                timeout_policy.first_token_timeout_ms.into(),
-                                            );
-                                            fields.insert(
-                                                "stall_timeout_ms".to_string(),
-                                                timeout_policy.stall_timeout_ms.into(),
-                                            );
-                                            fields.insert(
-                                                "max_wait_ms".to_string(),
-                                                timeout_policy.max_wait_ms.into(),
-                                            );
-                                            fields.insert(
-                                                "max_execution_timeout_ms".to_string(),
-                                                timeout_policy.max_execution_timeout_ms.into(),
-                                            );
-                                            fields.insert(
-                                                "latency_class".to_string(),
-                                                timeout_policy.latency_class.into(),
-                                            );
-                                            fields
-                                        },
+                                        None,
+                                        &timeout_policy,
                                     );
                                     let mut watchdog = AttemptWatchdog::new(
                                         trace_task_id.clone(),
@@ -1713,23 +1440,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         } else if total_nodes > 0
                             && candidates.iter().all(|m| !available_models.contains(m))
                         {
-                            log_observability_event(
-                                LogLevel::Error,
-                                "node_rejected",
+                            emit_node_rejected_no_compatible_model_event(
                                 &infer_state.trace_task_id,
-                                Some(&infer_state.trace_task_id),
-                                None,
-                                Some(SCH_NO_NODE_001),
-                                {
-                                    let mut fields = Map::new();
-                                    fields.insert("reason".to_string(), "no_compatible_model".into());
-                                    fields.insert("known_nodes".to_string(), (total_nodes as u64).into());
-                                    fields.insert(
-                                        "candidate_models".to_string(),
-                                        serde_json::json!(candidates),
-                                    );
-                                    fields
-                                },
+                                total_nodes,
+                                &candidates,
+                                SCH_NO_NODE_001,
                             );
                             eprintln!("❌ Ningún nodo en la red tiene un modelo compatible instalado.");
                             eprintln!("   Nodos conocidos: {}", total_nodes);
@@ -1847,60 +1562,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                             &selected_model,
                                             None,
                                         );
-                                    log_observability_event(
-                                        LogLevel::Info,
-                                        "attempt_timeout_policy",
+                                    emit_attempt_timeout_policy_event(
                                         &trace_task_id,
-                                        Some(&trace_task_id),
-                                        Some(&selected_model),
+                                        &rid,
+                                        &selected_model,
                                         None,
-                                        {
-                                            let mut fields = Map::new();
-                                            fields.insert("attempt_id".to_string(), rid.clone().into());
-                                            fields.insert("worker_peer_id".to_string(), Value::Null);
-                                            fields.insert(
-                                                "attempt_type".to_string(),
-                                                AttemptDispatchType::FallbackBroadcast.as_str().into(),
-                                            );
-                                            fields.insert("claimable".to_string(), true.into());
-                                            fields.insert(
-                                                "timeout_ms".to_string(),
-                                                timeout_policy.timeout_ms.into(),
-                                            );
-                                            fields.insert(
-                                                "claim_timeout_ms".to_string(),
-                                                timeout_policy.claim_timeout_ms.into(),
-                                            );
-                                            fields.insert(
-                                                "first_progress_timeout_ms".to_string(),
-                                                timeout_policy.first_progress_timeout_ms.into(),
-                                            );
-                                            fields.insert(
-                                                "model_load_timeout_ms".to_string(),
-                                                timeout_policy.model_load_timeout_ms.into(),
-                                            );
-                                            fields.insert(
-                                                "first_token_timeout_ms".to_string(),
-                                                timeout_policy.first_token_timeout_ms.into(),
-                                            );
-                                            fields.insert(
-                                                "stall_timeout_ms".to_string(),
-                                                timeout_policy.stall_timeout_ms.into(),
-                                            );
-                                            fields.insert(
-                                                "max_wait_ms".to_string(),
-                                                timeout_policy.max_wait_ms.into(),
-                                            );
-                                            fields.insert(
-                                                "max_execution_timeout_ms".to_string(),
-                                                timeout_policy.max_execution_timeout_ms.into(),
-                                            );
-                                            fields.insert(
-                                                "latency_class".to_string(),
-                                                timeout_policy.latency_class.into(),
-                                            );
-                                            fields
-                                        },
+                                        Some(AttemptDispatchType::FallbackBroadcast),
+                                        Some(true),
+                                        &timeout_policy,
                                     );
                                     let mut watchdog = AttemptWatchdog::new_fallback_broadcast(
                                         trace_task_id.clone(),
@@ -2148,35 +1817,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                 );
                                             }
                                         }
-                                        log_observability_event(
-                                            LogLevel::Error,
-                                            "task_timeout",
-                                            &trace_task_id,
-                                            Some(&trace_task_id),
-                                            Some(&model_id),
-                                            Some(TASK_TIMEOUT_001),
-                                            {
-                                                let mut fields = Map::new();
-                                                fields.insert("attempt_id".to_string(), attempt_id.clone().into());
-                                                fields.insert("latency_ms".to_string(), elapsed_ms.into());
-                                                fields.insert(
-                                                    "elapsed_since_last_progress_ms".to_string(),
-                                                    elapsed_since_progress_ms.into(),
-                                                );
-                                                fields.insert(
-                                                    "adaptive_timeout_ms".to_string(),
-                                                    adaptive_timeout_ms.into(),
-                                                );
-                                                fields.insert("max_wait_ms".to_string(), max_wait_ms.into());
-                                                fields.insert("retry".to_string(), true.into());
-                                                fields.insert("error_kind".to_string(), "timeout".into());
-                                                fields.insert("recoverable".to_string(), true.into());
-                                                fields.insert("watchdog_reason".to_string(), "no_progress".into());
-                                                if worker_peer_id != "-" {
-                                                    fields.insert("peer_id".to_string(), worker_peer_id.clone().into());
-                                                }
-                                                fields
+                                        emit_task_timeout_event(
+                                            &TaskTimeoutEvent {
+                                                trace_task_id: &trace_task_id,
+                                                attempt_id: &attempt_id,
+                                                model_id: &model_id,
+                                                worker_peer_id: (worker_peer_id != "-")
+                                                    .then_some(worker_peer_id.as_str()),
+                                                latency_ms: elapsed_ms,
+                                                elapsed_since_last_progress_ms:
+                                                    elapsed_since_progress_ms,
+                                                adaptive_timeout_ms,
+                                                max_wait_ms,
                                             },
+                                            TASK_TIMEOUT_001,
                                         );
                                         infer_state.update_attempt_state(
                                             &attempt_id,
@@ -2678,36 +2332,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         } else {
                                             TASK_FAILED_002
                                         };
-                                        log_observability_event(
-                                            LogLevel::Error,
-                                            "task_failed",
+                                        emit_distributed_task_failed_event(
                                             distributed_infer_state
                                                 .as_ref()
                                                 .map(|state| state.trace_task_id.as_str())
                                                 .unwrap_or("-"),
-                                            distributed_infer_state
-                                                .as_ref()
-                                                .map(|state| state.trace_task_id.as_str()),
+                                            &attempt_id,
                                             distributed_infer_state
                                                 .as_ref()
                                                 .and_then(|state| state.current_model.as_deref()),
-                                            Some(error_code),
-                                            {
-                                                let mut fields = Map::new();
-                                                fields.insert(
-                                                    "worker_peer_id".to_string(),
-                                                    worker.to_string().into(),
-                                                );
-                                                fields.insert("attempt_id".to_string(), attempt_id.clone().into());
-                                                fields.insert("reason".to_string(), reason.clone().into());
-                                                fields.insert("retry".to_string(), true.into());
-                                                fields.insert(
-                                                    "error_kind".to_string(),
-                                                    "validation_failure".into(),
-                                                );
-                                                fields.insert("recoverable".to_string(), true.into());
-                                                fields
-                                            },
+                                            worker,
+                                            &reason,
+                                            "validation_failure",
+                                            error_code,
                                         );
                                         println!(
                                             "\n[Fault] task_id={} attempt_id={} peer_id={} model_id={} reason={}",
@@ -2864,26 +2501,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                             None,
                                         );
                                     }
-                                    log_observability_event(
-                                        LogLevel::Info,
-                                        "task_completed",
+                                    emit_distributed_task_completed_event(
                                         &task_id,
-                                        Some(&task_id),
+                                        &attempt_id,
                                         distributed_infer_state
                                             .as_ref()
                                             .and_then(|state| state.current_model.as_deref()),
-                                        None,
-                                        {
-                                            let mut fields = Map::new();
-                                            fields.insert(
-                                                "worker_peer_id".to_string(),
-                                                worker.to_string().into(),
-                                            );
-                                            fields.insert("attempt_id".to_string(), attempt_id.clone().into());
-                                            fields.insert("latency_ms".to_string(), latency_ms.into());
-                                            fields.insert("success".to_string(), true.into());
-                                            fields
-                                        },
+                                        worker,
+                                        latency_ms,
                                     );
                                     println!("\n\n═══════════════════════════════════");
                                     if success && should_print_result_output(&full_output) {
@@ -3263,22 +2888,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     None,
                                 );
                             }
-                            log_observability_event(
-                                LogLevel::Info,
-                                "task_completed",
+                            emit_direct_task_completed_event(
                                 &request.task_id,
-                                Some(&request.task_id),
-                                Some(&request.model_id),
-                                None,
-                                {
-                                    let mut fields = Map::new();
-                                    fields.insert("attempt_id".to_string(), request.attempt_id.clone().into());
-                                    fields.insert("success".to_string(), true.into());
-                                    fields.insert("worker_peer_id".to_string(), worker_peer_id.clone().into());
-                                    fields.insert("tokens_generated".to_string(), request.tokens_generated.into());
-                                    fields.insert("transport".to_string(), "request_response".into());
-                                    fields
-                                },
+                                &request.attempt_id,
+                                &request.model_id,
+                                &worker_peer_id,
+                                request.tokens_generated,
                             );
                             finalize_and_report_direct_result_observability(
                                 &request.task_id,
@@ -3400,26 +3015,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     &task.model,
                                     model_storage.has_model(&task.model),
                                 );
-                                log_observability_event(
-                                    LogLevel::Info,
-                                    "task_received",
+                                emit_worker_task_received_event(
                                     &task.id,
-                                    Some(&task.id),
-                                    Some(&task.model),
-                                    None,
-                                    {
-                                        let mut fields = Map::new();
-                                        fields.insert("peer_id".to_string(), peer.to_string().into());
-                                        fields.insert("attempt_id".to_string(), task.attempt_id.clone().into());
-                                        fields.insert(
-                                            "cluster_id".to_string(),
-                                            local_cluster_id
-                                                .clone()
-                                                .unwrap_or_else(|| "-".to_string())
-                                                .into(),
-                                        );
-                                        fields
-                                    },
+                                    &task.attempt_id,
+                                    &task.model,
+                                    &peer.to_string(),
+                                    local_cluster_id.as_deref(),
                                 );
                                 debug_network_log(
                                     debug_flags,
@@ -3946,31 +3547,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     } else {
                                         TASK_FAILED_002
                                     };
-                                    log_observability_event(
-                                        LogLevel::Error,
-                                        "task_failed",
+                                    emit_distributed_task_failed_event(
                                         &distributed_result.task_id,
-                                        Some(&distributed_result.task_id),
+                                        &distributed_result.attempt_id,
                                         distributed_infer_state
                                             .as_ref()
                                             .and_then(|state| state.current_model.as_deref()),
-                                        Some(error_code),
-                                        {
-                                            let mut fields = Map::new();
-                                            fields.insert(
-                                                "worker_peer_id".to_string(),
-                                                peer_id.clone().into(),
-                                            );
-                                            fields.insert(
-                                                "attempt_id".to_string(),
-                                                distributed_result.attempt_id.clone().into(),
-                                            );
-                                            fields.insert("reason".to_string(), reason.clone().into());
-                                            fields.insert("retry".to_string(), true.into());
-                                            fields.insert("error_kind".to_string(), "task_failure".into());
-                                            fields.insert("recoverable".to_string(), true.into());
-                                            fields
-                                        },
+                                        &peer_id,
+                                        &reason,
+                                        "task_failure",
+                                        error_code,
                                     );
                                     let retry_target =
                                         if let Some(infer_state) = distributed_infer_state.as_ref() {
@@ -4124,29 +3710,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         None,
                                     );
                                 }
-                                log_observability_event(
-                                    LogLevel::Info,
-                                    "task_completed",
+                                emit_distributed_task_completed_event(
                                     &distributed_result.task_id,
-                                    Some(&distributed_result.task_id),
+                                    &distributed_result.attempt_id,
                                     distributed_infer_state
                                         .as_ref()
                                         .and_then(|state| state.current_model.as_deref()),
-                                    None,
-                                    {
-                                        let mut fields = Map::new();
-                                        fields.insert(
-                                            "worker_peer_id".to_string(),
-                                            peer_id.clone().into(),
-                                        );
-                                        fields.insert(
-                                            "attempt_id".to_string(),
-                                            distributed_result.attempt_id.clone().into(),
-                                        );
-                                        fields.insert("latency_ms".to_string(), latency_ms.into());
-                                        fields.insert("success".to_string(), true.into());
-                                        fields
-                                    },
+                                    &peer_id,
+                                    latency_ms,
                                 );
                                 task_manager.complete(distributed_result.clone()).await;
                                 if should_print_result_output(&distributed_result.output) {
