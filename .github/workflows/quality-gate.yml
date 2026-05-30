@@ -26,6 +26,16 @@ jobs:
           components: rustfmt
       - run: cargo fmt --all -- --check
 
+  test-models:
+    name: Test iamine-models
+    runs-on: ubuntu-latest
+    env:
+      RUST_TEST_THREADS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test -p iamine-models
+
   test-node:
     name: Test iamine-node
     runs-on: ubuntu-latest
@@ -54,6 +64,16 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo build -p iamine-node
 
+  test-workspace:
+    name: Test workspace
+    runs-on: ubuntu-latest
+    env:
+      RUST_TEST_THREADS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test --workspace
+
   diff-check:
     name: Diff whitespace check
     runs-on: ubuntu-latest
@@ -63,6 +83,28 @@ jobs:
           fetch-depth: 0
       - run: git diff --check
       - run: git diff --cached --check
+      - name: Check pushed or pull request diff
+        run: |
+          if [ -n "${{ github.base_ref }}" ]; then
+            git diff --check "origin/${{ github.base_ref }}...HEAD"
+          else
+            git diff --check HEAD^..HEAD
+          fi
+
+  quality-gate-script:
+    name: Quality gate script
+    runs-on: ubuntu-latest
+    env:
+      QUALITY_GATE_BASE_REF: origin/develop
+      RUST_TEST_THREADS: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy rustfmt
+      - run: ./scripts/quality-gate.sh
 
   clippy:
     name: Clippy informational
@@ -102,15 +144,12 @@ jobs:
           fi
 
   secrets:
-    name: Secret scan informational
+    name: Secret scan
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
-      - name: Report secret scan status
-        run: |
-          if command -v gitleaks >/dev/null 2>&1; then
-            gitleaks detect --source . --no-git --redact
-          else
-            echo "SKIPPED: gitleaks is not installed on the runner"
-          fi
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

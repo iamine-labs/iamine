@@ -2,9 +2,9 @@
 
 ## Purpose
 
-`QUALITY-GATE-CODE-001` defines the first formal local and CI quality gate for IAMINE. It protects `develop` before scheduler, task lifecycle, model registry safety, and future milestones continue.
-
-The gate is intentionally focused on infrastructure and code health. It does not change runtime behavior.
+`QUALITY-GATE-STRICTNESS-002` hardens the local and CI quality gate without turning
+historical debt or missing optional tools into immediate merge blockers. It protects
+`develop` while architecture cleanup continues and does not change runtime behavior.
 
 ## Local Command
 
@@ -14,9 +14,23 @@ Run:
 ./scripts/quality-gate.sh
 ```
 
-The script exits non-zero when required checks fail. Optional checks are reported as `PASS`, `WARN`, or `SKIPPED`.
+The script prints required checks, optional checks, architecture guards, repository
+guards, counters, and one final result:
 
-The local script and CI test jobs run package tests with `RUST_TEST_THREADS=1` by default. This keeps the gate deterministic while existing tests still share process-wide environment variables and temporary log locations.
+- `PASS`: all required checks and guards pass, with no warnings or skips.
+- `PASS WITH WARNINGS`: required checks pass, but optional tools are missing or
+  informational warnings remain. Exit code is `0`.
+- `FAIL`: a required check or blocking guard fails. Exit code is non-zero.
+
+Package and workspace tests run with `RUST_TEST_THREADS=1` by default. This keeps the
+gate deterministic while existing tests still share process-wide environment
+variables and temporary paths.
+
+For fast, non-destructive guard validation without builds or tests:
+
+```bash
+QUALITY_GATE_GUARDS_ONLY=1 ./scripts/quality-gate.sh
+```
 
 ## Required Blocking Checks
 
@@ -24,16 +38,21 @@ These checks block merge when they fail:
 
 ```bash
 cargo fmt --all -- --check
-cargo test -p iamine-node
+cargo test -p iamine-models
 cargo test -p iamine-network
+cargo test -p iamine-node
 cargo build -p iamine-node
+cargo test --workspace
 git diff --check
 git diff --cached --check
 ```
 
-## Informational Checks
+`cargo test --workspace` is required because it completes in an acceptable time on
+the current repository and catches cross-crate regressions.
 
-These checks are useful but non-blocking in the first iteration:
+## Optional Checks
+
+These tools are valuable but remain optional while their baselines mature:
 
 ```bash
 cargo clippy --workspace --all-targets
@@ -42,66 +61,150 @@ cargo deny check
 gitleaks detect --source . --no-git --redact
 ```
 
-If a tool is not installed locally, the script reports `SKIPPED` and prints the install hint.
+When an optional tool is absent locally, the script reports `SKIPPED`, increments the
+skip count, prints an install hint, and keeps the gate non-blocking.
+
+When installed:
+
+- Clippy failures are warnings until historical lint debt is classified.
+- `cargo audit` and `cargo deny` failures are warnings until dependency-policy
+  baselines are classified.
+- A GitLeaks finding is blocking. Missing GitLeaks remains a local skip.
+
+Install optional tools with:
+
+```bash
+rustup component add clippy
+cargo install cargo-audit
+cargo install cargo-deny
+# Install GitLeaks from https://github.com/gitleaks/gitleaks
+```
+
+## Architecture Guards
+
+### main.rs
+
+Current baseline:
+
+- `iamine-node/src/main.rs`: `4830` lines
+- warn above `5000` lines
+- fail above `5500` lines
+- fail when a branch grows `main.rs` by more than `150` lines relative to its
+  merge-base
+
+The merge-base reference defaults to `origin/develop`. Override it when needed:
+
+```bash
+QUALITY_GATE_BASE_REF=origin/main ./scripts/quality-gate.sh
+```
+
+### Rust File Size
+
+For tracked Rust files other than `main.rs`:
+
+- warn above `900` lines
+- fail above `1500` lines
+
+The gate also reports focused regression checks for:
+
+- `iamine-node/src/broadcast_runtime.rs`
+- `iamine-network/src/prompt_analyzer.rs`
+
+At this checkpoint no non-main Rust file exceeds `900` lines. The largest current
+files are expected to remain below that threshold.
+
+### New Debt Markers
+
+The gate inspects added Rust lines relative to merge-base and warns when they add:
+
+- `TODO`
+- `FIXME`
+- `.unwrap()`
+- `.expect()`
+- `panic!()`
+
+This guard is intentionally warning-only while historical debt is addressed.
+
+## Repository Guards
+
+Repository guards inspect tracked files only. Existing untracked local logs and
+artifacts do not produce false positives.
+
+The gate fails when tracked files include generated artifacts or local model binaries:
+
+- `target/`
+- `iamine-logs/`
+- `.DS_Store`
+- `*.log`
+- `*.ndjson`
+- `*.gguf`
+- `*.safetensors`
+
+The gate also fails when tracked files include sensitive material:
+
+- `.env` files, except documented `.env.example`, `.env.sample`, or `.env.template`
+- `*.pem`
+- `*.key`
+- `id_rsa`
+- `id_ed25519`
+- `secrets.*`
+- wallet or private-key material paths
+
+GitLeaks provides an additional secret scan when installed locally and runs as a
+blocking GitHub Actions job.
 
 ## CI Expectations
 
-GitHub Actions runs required jobs on pull requests to `develop` and `main`, and on pushes to `develop`:
+GitHub Actions runs required jobs on pull requests to `develop` and `main`, and on
+pushes to `develop`:
 
 - format
-- iamine-node tests
+- iamine-models tests
 - iamine-network tests
+- iamine-node tests
 - iamine-node build
-- diff whitespace check
+- workspace tests
+- diff whitespace checks
+- complete quality-gate script
 
 Informational CI jobs may warn without blocking:
 
-- clippy
+- Clippy
 - cargo audit
 - cargo deny, when configured
-- secret scan status
 
-## Architecture Guard
+The GitLeaks job blocks when it detects a secret.
 
-The quality gate records `iamine-node/src/main.rs` line count and compares it to `QUALITY_GATE_BASE_REF`, defaulting to `origin/develop` when available.
+## Failure Handling
 
-Current policy:
+When a required check fails:
 
-- warn if `main.rs` grows by more than 250 lines relative to the base ref
-- warn if any non-main Rust file exceeds 1000 lines
-- keep new feature logic in cohesive modules
-- keep runtime side effects at module boundaries
+1. Read the failing command in the summary.
+2. Re-run that command directly.
+3. Fix the underlying issue instead of weakening the gate.
+4. Re-run `./scripts/quality-gate.sh`.
 
-These checks are warnings in the first gate iteration. They are intended to guide review without destabilizing active development.
-
-## Merge Blocking Policy
-
-Block merge when:
-
-- formatting fails
-- required tests fail
-- iamine-node build fails
-- diff whitespace checks fail
-- the quality gate script cannot run required checks
-
-Do not block merge solely because:
-
-- optional tools are missing
-- informational clippy/audit/deny/secret checks warn
-- known baseline warnings are unchanged
+When an optional tool is absent, install it when practical or record the skip in the
+checkpoint. Absence alone does not block the branch.
 
 ## Known Non-Blockers
 
-These are documented as non-blocking unless they regress:
+These remain documented as non-blocking unless they regress:
 
 - existing Rust `dead_code` warnings
-- `worker_startup_invalid_math` for worker ports below the metrics base
-- metrics fallback for ports below the metrics base
-- `backend_cpu_feature_incompatible` on legacy Proxmox CPU without AVX2
-- cluster assignment log spam
-- Proxmox/R5500 field smoke pending due Dell availability
-- `QA-CLI-UNKNOWN-MODE-EXIT-CODE-007`
-- `QA-MODEL-REGISTRY-SAFETY-METADATA-001`
+- existing Clippy warnings
+- metrics fallback for worker ports below the metrics base
+- optional cargo-audit and cargo-deny baselines not yet classified
+- optional local GitLeaks installation
+
+## Future Strictness
+
+Tighten the gate incrementally after debt is measured:
+
+1. Classify Clippy warnings and block new lint debt.
+2. Add and classify cargo-deny policy.
+3. Classify dependency advisories from cargo-audit.
+4. Reduce file-size thresholds when architecture cleanup makes that practical.
 
 ## Branch Policy
 
