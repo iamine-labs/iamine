@@ -1,5 +1,6 @@
 use crate::infer_watchdog::{is_unclaimed_worker_peer_id, is_valid_claiming_worker};
-use crate::{uuid_simple, INFER_TIMEOUT_MS, MAX_DISTRIBUTED_RETRIES};
+use crate::runtime_config::{INFER_TIMEOUT_MS, MAX_DISTRIBUTED_RETRIES};
+use crate::uuid_simple;
 use iamine_network::{RetryPolicy, RetryState, TaskType as PromptTaskType};
 use std::collections::HashMap;
 

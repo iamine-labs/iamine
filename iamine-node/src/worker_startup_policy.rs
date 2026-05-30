@@ -1,3 +1,7 @@
+use crate::backend_config::{
+    inference_backend_env, skip_model_load_enabled_from_value, skip_model_load_env,
+    worker_backend_from_env_value,
+};
 use crate::backend_policy::WorkerInferenceBackend;
 use crate::cpu_feature_guard::cpu_features_are_compatible_for_real_backend;
 use crate::log_observability_event;
@@ -20,8 +24,8 @@ pub(crate) struct WorkerStartupPolicy {
 
 impl WorkerStartupPolicy {
     pub(crate) fn from_env(node_caps: &ModelNodeCapabilities) -> Self {
-        let backend_env = std::env::var("IAMINE_INFERENCE_BACKEND").ok();
-        let skip_env = std::env::var("IAMINE_SKIP_MODEL_LOAD_ON_STARTUP").ok();
+        let backend_env = inference_backend_env();
+        let skip_env = skip_model_load_env();
         Self::from_values(
             backend_env.as_deref(),
             skip_env.as_deref(),
@@ -38,8 +42,8 @@ impl WorkerStartupPolicy {
         accelerator: &str,
         target_arch: &str,
     ) -> Self {
-        let backend = WorkerInferenceBackend::from_env_value(backend_env);
-        let skip_model_load_on_startup = env_truthy_option(skip_env);
+        let backend = worker_backend_from_env_value(backend_env);
+        let skip_model_load_on_startup = skip_model_load_enabled_from_value(skip_env);
         let cpu_feature_compatible =
             cpu_features_are_compatible_for_real_backend(cpu_features, accelerator, target_arch);
         let model_load_skip_reason = if backend.is_mock() {
@@ -66,17 +70,6 @@ impl WorkerStartupPolicy {
     pub(crate) fn mock_backend(&self) -> bool {
         self.backend.is_mock()
     }
-}
-
-pub(crate) fn env_truthy(value: &str) -> bool {
-    matches!(
-        value.trim().to_ascii_lowercase().as_str(),
-        "1" | "true" | "yes" | "on"
-    )
-}
-
-fn env_truthy_option(value: Option<&str>) -> bool {
-    value.map(env_truthy).unwrap_or(false)
 }
 
 pub(crate) fn emit_worker_startup_started_event(peer_id: &str, port: u16) {
