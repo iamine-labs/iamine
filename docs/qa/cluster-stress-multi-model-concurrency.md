@@ -61,6 +61,7 @@ The summary reports:
 - total, observed, completed, failed, and timed-out requests
 - retries and fallback usage
 - duplicate accepted results and duplicate executions
+- duplicate request IDs and duplicate task IDs across concurrent children
 - incompatible assignments
 - min, max, p50, p95, and p99 latency
 - lifecycle validation failures
@@ -110,6 +111,8 @@ Required result:
 - `timed_out=0`
 - `duplicate_results=0`
 - `duplicate_executions=0`
+- `duplicate_request_ids=0`
+- `duplicate_task_ids=0`
 - `incompatible_assignments=0`
 - p95 and p99 present
 - TS140 remains `backend=cpu`, `execution_mode=real`
@@ -144,6 +147,8 @@ Required result:
 - `timed_out=0`
 - `duplicate_results=0`
 - `duplicate_executions=0`
+- `duplicate_request_ids=0`
+- `duplicate_task_ids=0`
 - `incompatible_assignments=0`
 - p95 and p99 present
 - workers remain `backend=mock`, `execution_mode=mock`

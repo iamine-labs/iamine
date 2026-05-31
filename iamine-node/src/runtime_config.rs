@@ -1,7 +1,7 @@
 use crate::benchmark::NodeBenchmark;
 use crate::cli::{parse_args_from, parse_worker_port};
-use crate::cluster_stress::IAMINE_STRESS_CHILD;
-use crate::env_config::env_bool_or_default;
+use crate::cluster_stress::{IAMINE_STRESS_CHILD, IAMINE_STRESS_TASK_ID};
+use crate::env_config::{env_bool_or_default, env_string};
 use crate::log_observability_event;
 use crate::mode_dispatch::is_control_plane_mode;
 use crate::network_config;
@@ -95,6 +95,21 @@ pub(crate) fn maybe_print_debug_flags(debug_flags: DebugFlags) {
 pub(crate) fn uuid_simple() -> String {
     let t = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
     format!("{}{}", t.as_secs(), t.subsec_nanos())
+}
+
+pub(crate) fn broadcast_task_id() -> String {
+    stress_child_broadcast_task_id(
+        env_bool_or_default(IAMINE_STRESS_CHILD, false),
+        env_string(IAMINE_STRESS_TASK_ID),
+    )
+    .unwrap_or_else(uuid_simple)
+}
+
+fn stress_child_broadcast_task_id(stress_child: bool, task_id: Option<String>) -> Option<String> {
+    stress_child
+        .then_some(task_id)
+        .flatten()
+        .filter(|task_id| !task_id.trim().is_empty())
 }
 
 pub(crate) fn prepare_runtime_startup_config(
@@ -256,5 +271,21 @@ mod tests {
         assert_eq!(MIN_REMOTE_EXECUTION_TIMEOUT_MS, 120_000);
         assert_eq!(MAX_REMOTE_EXECUTION_TIMEOUT_MS, 900_000);
         assert_eq!(UNCLAIMED_WORKER_PEER_ID, "-");
+    }
+
+    #[test]
+    fn cluster_stress_child_uses_parent_correlated_broadcast_task_id() {
+        assert_eq!(
+            stress_child_broadcast_task_id(true, Some("stress-request-0001".to_string())),
+            Some("stress-request-0001".to_string())
+        );
+        assert_eq!(
+            stress_child_broadcast_task_id(false, Some("stress-request-0001".to_string())),
+            None
+        );
+        assert_eq!(
+            stress_child_broadcast_task_id(true, Some(" ".to_string())),
+            None
+        );
     }
 }

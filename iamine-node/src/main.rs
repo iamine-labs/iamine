@@ -131,8 +131,9 @@ use rate_limiter::RateLimiter;
 use result_observability::*;
 use result_protocol::TaskResultResponse;
 use runtime_config::{
-    load_runtime_args, maybe_print_debug_flags, prepare_runtime_startup_config, simulate_workers,
-    RuntimeModeConfig, INFER_FALLBACK_AFTER_MS, INFER_TIMEOUT_MS, UNCLAIMED_WORKER_PEER_ID,
+    broadcast_task_id, load_runtime_args, maybe_print_debug_flags, prepare_runtime_startup_config,
+    simulate_workers, RuntimeModeConfig, INFER_FALLBACK_AFTER_MS, INFER_TIMEOUT_MS,
+    UNCLAIMED_WORKER_PEER_ID,
 };
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -733,7 +734,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         std::collections::HashMap::new();
     let mut tasks_sent = false;
     let mut broadcast_offer_state = match &mode {
-        NodeMode::Broadcast { .. } => Some(BroadcastOfferState::new(uuid_simple())),
+        NodeMode::Broadcast { .. } => Some(BroadcastOfferState::new(broadcast_task_id())),
         _ => None,
     };
     let mut executed_broadcast_assignments: HashSet<String> = HashSet::new();

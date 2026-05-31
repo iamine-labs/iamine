@@ -15,6 +15,7 @@ use tokio::process::Command;
 use tokio::time::timeout;
 
 pub(crate) const IAMINE_STRESS_CHILD: &str = "IAMINE_STRESS_CHILD";
+pub(crate) const IAMINE_STRESS_TASK_ID: &str = "IAMINE_STRESS_TASK_ID";
 const DEFAULT_REQUEST_COUNT: usize = 10;
 const DEFAULT_CONCURRENCY: usize = 2;
 const DEFAULT_TIMEOUT_SECS: u64 = 75;
@@ -253,6 +254,7 @@ async fn run_single_stress_request(
         .arg(&config.task_type)
         .arg(&payload)
         .env(IAMINE_STRESS_CHILD, "1")
+        .env(IAMINE_STRESS_TASK_ID, &request_id)
         .env(IAMINE_TASK_LIFECYCLE_PATH, &trace_path)
         .env(IAMINE_LOG_FORMAT, "ndjson")
         .env(IAMINE_LOG_PATH, &ndjson_path)

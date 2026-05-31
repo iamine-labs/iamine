@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
 
 pub const REQUIRED_SUCCESS_LIFECYCLE_EVENTS: &[&str] = &[
     "task_lifecycle_created",
@@ -60,6 +61,12 @@ impl StressTaskObservation {
 pub enum StressValidationIssue {
     DuplicateResults,
     DuplicateExecutions,
+    DuplicateRequestId(String),
+    DuplicateTaskId(String),
+    TaskIdCorrelationCollision {
+        task_id: String,
+        request_ids: Vec<String>,
+    },
     IncompatibleAssignment,
     CapabilityFilterMissing,
     MissingFinalOutcome,
@@ -111,7 +118,7 @@ pub fn validate_observation(observation: &StressTaskObservation) -> Vec<StressVa
 pub fn validate_observations(
     observations: &[StressTaskObservation],
 ) -> Vec<StressValidationFailure> {
-    observations
+    let mut failures = observations
         .iter()
         .flat_map(|observation| {
             validate_observation(observation)
@@ -121,7 +128,77 @@ pub fn validate_observations(
                     issue,
                 })
         })
-        .collect()
+        .collect::<Vec<_>>();
+    let mut request_id_counts = HashMap::new();
+    let mut task_id_requests = HashMap::<String, Vec<String>>::new();
+
+    for observation in observations {
+        *request_id_counts
+            .entry(observation.request_id.clone())
+            .or_insert(0usize) += 1;
+        if let Some(task_id) = &observation.task_id {
+            task_id_requests
+                .entry(task_id.clone())
+                .or_default()
+                .push(observation.request_id.clone());
+        }
+    }
+
+    for (request_id, count) in request_id_counts {
+        if count > 1 {
+            failures.push(StressValidationFailure {
+                request_id: request_id.clone(),
+                issue: StressValidationIssue::DuplicateRequestId(request_id),
+            });
+        }
+    }
+    for (task_id, request_ids) in task_id_requests {
+        if request_ids.len() > 1 {
+            for request_id in &request_ids {
+                failures.push(StressValidationFailure {
+                    request_id: request_id.clone(),
+                    issue: StressValidationIssue::DuplicateTaskId(task_id.clone()),
+                });
+            }
+            failures.push(StressValidationFailure {
+                request_id: request_ids.join(","),
+                issue: StressValidationIssue::TaskIdCorrelationCollision {
+                    task_id,
+                    request_ids,
+                },
+            });
+        }
+    }
+
+    failures
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct StressIdentityDuplicateCounts {
+    pub duplicate_request_ids: usize,
+    pub duplicate_task_ids: usize,
+}
+
+pub fn identity_duplicate_counts(
+    observations: &[StressTaskObservation],
+) -> StressIdentityDuplicateCounts {
+    StressIdentityDuplicateCounts {
+        duplicate_request_ids: duplicate_count(
+            observations
+                .iter()
+                .map(|observation| observation.request_id.as_str()),
+        ),
+        duplicate_task_ids: duplicate_count(
+            observations
+                .iter()
+                .filter_map(|observation| observation.task_id.as_deref()),
+        ),
+    }
+}
+
+fn duplicate_count<'a>(values: impl Iterator<Item = &'a str>) -> usize {
+    let mut seen = HashSet::new();
+    values.filter(|value| !seen.insert(*value)).count()
 }
 
 #[cfg(test)]
@@ -191,5 +268,56 @@ mod tests {
         assert!(validate_observation(&observation)
             .iter()
             .any(|issue| { matches!(issue, StressValidationIssue::MissingLifecycleEvent(_)) }));
+    }
+
+    #[test]
+    fn stress_validation_detects_duplicate_task_ids_across_requests() {
+        let mut first = complete_observation();
+        first.task_id = Some("task-collision".to_string());
+        let mut second = complete_observation();
+        second.request_id = "request-002".to_string();
+        second.task_id = Some("task-collision".to_string());
+
+        let failures = validate_observations(&[first, second]);
+
+        assert!(failures.iter().any(|failure| {
+            matches!(
+                &failure.issue,
+                StressValidationIssue::TaskIdCorrelationCollision { task_id, request_ids }
+                    if task_id == "task-collision" && request_ids.len() == 2
+            )
+        }));
+        assert_eq!(
+            identity_duplicate_counts(&[
+                StressTaskObservation {
+                    request_id: "request-001".to_string(),
+                    task_id: Some("task-collision".to_string()),
+                    ..StressTaskObservation::default()
+                },
+                StressTaskObservation {
+                    request_id: "request-002".to_string(),
+                    task_id: Some("task-collision".to_string()),
+                    ..StressTaskObservation::default()
+                },
+            ])
+            .duplicate_task_ids,
+            1
+        );
+    }
+
+    #[test]
+    fn stress_validation_detects_duplicate_request_ids() {
+        let first = complete_observation();
+        let second = complete_observation();
+
+        let failures = validate_observations(&[first, second]);
+
+        assert!(failures.iter().any(|failure| {
+            matches!(
+                &failure.issue,
+                StressValidationIssue::DuplicateRequestId(request_id)
+                    if request_id == "request-001"
+            )
+        }));
     }
 }

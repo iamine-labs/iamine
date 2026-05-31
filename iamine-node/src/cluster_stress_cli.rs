@@ -40,6 +40,8 @@ pub(crate) fn render_cluster_stress_human(summary: &ClusterStressSummary) -> Str
          fallback_used: {}\n\
          duplicate_results: {}\n\
          duplicate_executions: {}\n\
+         duplicate_request_ids: {}\n\
+         duplicate_task_ids: {}\n\
          incompatible_assignments: {}\n\
          p50_latency_ms: {}\n\
          p95_latency_ms: {}\n\
@@ -57,6 +59,8 @@ pub(crate) fn render_cluster_stress_human(summary: &ClusterStressSummary) -> Str
         metrics.fallback_used,
         metrics.duplicate_results,
         metrics.duplicate_executions,
+        metrics.duplicate_request_ids,
+        metrics.duplicate_task_ids,
         metrics.incompatible_assignments,
         optional_ms(metrics.p50_latency_ms),
         optional_ms(metrics.p95_latency_ms),
@@ -110,6 +114,8 @@ mod tests {
 
         assert!(rendered.contains("duplicate_results: 0"));
         assert!(rendered.contains("duplicate_executions: 0"));
+        assert!(rendered.contains("duplicate_request_ids: 0"));
+        assert!(rendered.contains("duplicate_task_ids: 0"));
         assert!(rendered.contains("incompatible_assignments: 0"));
         assert!(rendered.contains("p95_latency_ms: -"));
         assert!(rendered.contains("p99_latency_ms: -"));

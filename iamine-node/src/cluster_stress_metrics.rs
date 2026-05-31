@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::cluster_stress_validation::StressTaskObservation;
+use crate::cluster_stress_validation::{identity_duplicate_counts, StressTaskObservation};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ClusterStressMetrics {
@@ -14,6 +14,8 @@ pub struct ClusterStressMetrics {
     pub fallback_used: usize,
     pub duplicate_results: usize,
     pub duplicate_executions: usize,
+    pub duplicate_request_ids: usize,
+    pub duplicate_task_ids: usize,
     pub incompatible_assignments: usize,
     pub min_latency_ms: Option<u64>,
     pub max_latency_ms: Option<u64>,
@@ -32,6 +34,7 @@ impl ClusterStressMetrics {
             .map(|observation| observation.latency_ms)
             .collect::<Vec<_>>();
         let percentiles = latency_percentiles(&latencies);
+        let identity_duplicates = identity_duplicate_counts(observations);
 
         Self {
             total_requests,
@@ -65,6 +68,8 @@ impl ClusterStressMetrics {
                 .iter()
                 .map(StressTaskObservation::duplicate_execution_count)
                 .sum(),
+            duplicate_request_ids: identity_duplicates.duplicate_request_ids,
+            duplicate_task_ids: identity_duplicates.duplicate_task_ids,
             incompatible_assignments: observations
                 .iter()
                 .filter(|observation| observation.has_incompatible_assignment())
@@ -153,5 +158,26 @@ mod tests {
         assert_eq!(metrics.timed_out, 1);
         assert_eq!(metrics.min_latency_ms, Some(8));
         assert_eq!(metrics.max_latency_ms, Some(20));
+    }
+
+    #[test]
+    fn stress_summary_counts_duplicate_task_id_correlations() {
+        let observations = vec![
+            StressTaskObservation {
+                request_id: "request-001".to_string(),
+                task_id: Some("task-collision".to_string()),
+                ..StressTaskObservation::default()
+            },
+            StressTaskObservation {
+                request_id: "request-002".to_string(),
+                task_id: Some("task-collision".to_string()),
+                ..StressTaskObservation::default()
+            },
+        ];
+
+        let metrics = ClusterStressMetrics::from_observations(2, &observations);
+
+        assert_eq!(metrics.duplicate_request_ids, 0);
+        assert_eq!(metrics.duplicate_task_ids, 1);
     }
 }
