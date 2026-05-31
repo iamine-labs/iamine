@@ -477,7 +477,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn scheduler_filtered_bid_rejects_mock_real_inference() {
+    async fn scheduler_filtered_bid_rejects_mock_real_inference() -> Result<(), String> {
         let scheduler = TaskScheduler::new();
         scheduler
             .register_task("task-infer".to_string(), "inference".to_string())
@@ -492,10 +492,9 @@ mod tests {
             None
         );
         let tasks = scheduler.tasks.lock().await;
-        let Some(task) = tasks.get("task-infer") else {
-            assert!(false, "registered task should remain visible");
-            return;
-        };
+        let task = tasks
+            .get("task-infer")
+            .ok_or_else(|| "registered task should remain visible".to_string())?;
 
         assert!(task.bids.is_empty());
         assert_eq!(task.rejected_candidates.len(), 1);
@@ -505,10 +504,11 @@ mod tests {
         assert!(task.rejected_candidates[0]
             .reasons
             .contains(&SchedulerRejectionReason::RealInferenceUnavailable));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn scheduler_no_compatible_worker_decision_is_controlled() {
+    async fn scheduler_no_compatible_worker_decision_is_controlled() -> Result<(), String> {
         let scheduler = TaskScheduler::new();
         scheduler
             .register_task("task-no-compatible".to_string(), "inference".to_string())
@@ -531,18 +531,15 @@ mod tests {
         let decision = scheduler
             .no_compatible_worker_decision("task-no-compatible", 200)
             .await;
-        let Some(decision) = decision else {
-            assert!(
-                false,
-                "failed filtered task should expose a controlled decision"
-            );
-            return;
-        };
+        let decision = decision.ok_or_else(|| {
+            "failed filtered task should expose a controlled decision".to_string()
+        })?;
 
         assert_eq!(decision.selected_worker_peer_id, None);
         assert_eq!(decision.compatible_candidates_count, 0);
         assert!(decision.capability_filter_applied);
         assert_eq!(decision.rejected_candidate_ids(), vec!["peer-mock"]);
+        Ok(())
     }
 
     #[tokio::test]
