@@ -1,12 +1,13 @@
 #![allow(dead_code)]
 
 use crate::cluster_health::ClusterHealth;
-use crate::cluster_registry::{ClusterBackend, ClusterExecutionMode, ClusterMetricsStatus};
+use crate::cluster_registry::ClusterMetricsStatus;
 use crate::router_scheduler::{SchedulerCandidate, SchedulerRejectionReason, SchedulerTaskRequest};
+use crate::scheduler_capability_matching::{
+    scheduler_capability_rejection_reasons, SchedulerCapabilityRejectReason,
+    SchedulerTaskRequirements, SchedulerWorkerCapabilityView,
+};
 use std::cmp::Ordering;
-
-const SIMPLE_TASK_TYPES: &[&str] = &["reverse_string", "test", "echo"];
-const INFERENCE_TASK_TYPES: &[&str] = &["inference", "infer", "llm", "generate"];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum SchedulerCandidateClassification {
@@ -20,47 +21,37 @@ pub(crate) fn classify_scheduler_candidate(
 ) -> SchedulerCandidateClassification {
     let mut reasons = Vec::new();
 
-    match candidate.health {
-        ClusterHealth::Offline => reasons.push(SchedulerRejectionReason::HealthOffline),
-        ClusterHealth::Stale => reasons.push(SchedulerRejectionReason::HealthStale),
-        ClusterHealth::Unknown => reasons.push(SchedulerRejectionReason::MissingCapabilities),
-        ClusterHealth::Healthy | ClusterHealth::Degraded => {}
+    if candidate.capability_snapshot_available {
+        match candidate.health {
+            ClusterHealth::Offline => reasons.push(SchedulerRejectionReason::HealthOffline),
+            ClusterHealth::Stale => reasons.push(SchedulerRejectionReason::HealthStale),
+            ClusterHealth::Unknown => reasons.push(SchedulerRejectionReason::MissingCapabilities),
+            ClusterHealth::Healthy | ClusterHealth::Degraded => {}
+        }
     }
 
-    if !candidate.ready_for_tasks {
-        reasons.push(SchedulerRejectionReason::NotReadyForTasks);
-    }
-
-    if candidate.supported_task_types.is_empty() {
-        reasons.push(SchedulerRejectionReason::MissingCapabilities);
-    } else if !supports_task(candidate, &request.task_type)
-        && request.required_model_id.is_none()
-        && !is_inference_task(&request.task_type)
-    {
-        reasons.push(SchedulerRejectionReason::UnsupportedTaskType);
-    }
-
-    if request.required_model_id.is_some() || is_inference_task(&request.task_type) {
-        if !is_real_backend(candidate) {
-            reasons.push(SchedulerRejectionReason::BackendIncompatible);
-        }
-        if candidate.real_inference_available != Some(true) {
-            reasons.push(SchedulerRejectionReason::RealInferenceUnavailable);
-        }
-        if let Some(model_id) = request.required_model_id.as_deref() {
-            if !candidate
-                .executable_models
-                .iter()
-                .any(|model| model == model_id)
-            {
-                reasons.push(SchedulerRejectionReason::ModelNotExecutable);
-            }
-        } else if candidate.executable_models.is_empty() {
-            reasons.push(SchedulerRejectionReason::ModelNotExecutable);
-        }
-    } else if is_simple_task(&request.task_type) && !supports_task(candidate, &request.task_type) {
-        reasons.push(SchedulerRejectionReason::UnsupportedTaskType);
-    }
+    reasons.extend(
+        scheduler_capability_rejection_reasons(
+            &SchedulerTaskRequirements {
+                required_task_type: &request.task_type,
+                required_model_id: request.required_model_id.as_deref(),
+            },
+            &SchedulerWorkerCapabilityView {
+                capability_snapshot_available: candidate.capability_snapshot_available,
+                ready_for_tasks: candidate.ready_for_tasks,
+                readiness_reason: candidate.readiness_reason,
+                backend: candidate.backend,
+                execution_mode: candidate.execution_mode,
+                real_inference_available: candidate.real_inference_available,
+                supported_task_types: &candidate.supported_task_types,
+                executable_models: &candidate.executable_models,
+                metadata_only_models: &candidate.metadata_only_models,
+                unavailable_models: &candidate.unavailable_models,
+            },
+        )
+        .into_iter()
+        .map(map_capability_rejection_reason),
+    );
 
     // Metrics fallback is intentionally non-blocking. A hard unavailable metrics state is recorded
     // only as a reason when the node is already missing readiness/capability evidence.
@@ -89,26 +80,35 @@ pub(crate) fn compare_scheduler_candidates(
         .then_with(|| left.peer_id.cmp(&right.peer_id))
 }
 
-pub(crate) fn is_simple_task(task_type: &str) -> bool {
-    SIMPLE_TASK_TYPES.contains(&task_type)
-}
-
-pub(crate) fn is_inference_task(task_type: &str) -> bool {
-    INFERENCE_TASK_TYPES.contains(&task_type)
-}
-
-fn supports_task(candidate: &SchedulerCandidate, task_type: &str) -> bool {
-    candidate
-        .supported_task_types
-        .iter()
-        .any(|supported| supported == task_type)
-}
-
-fn is_real_backend(candidate: &SchedulerCandidate) -> bool {
-    matches!(
-        candidate.backend,
-        ClusterBackend::Cpu | ClusterBackend::Metal | ClusterBackend::Cuda | ClusterBackend::Real
-    ) || matches!(candidate.execution_mode, ClusterExecutionMode::Real)
+fn map_capability_rejection_reason(
+    reason: SchedulerCapabilityRejectReason,
+) -> SchedulerRejectionReason {
+    match reason {
+        SchedulerCapabilityRejectReason::NotReadyForTasks => {
+            SchedulerRejectionReason::NotReadyForTasks
+        }
+        SchedulerCapabilityRejectReason::UnsupportedTaskType => {
+            SchedulerRejectionReason::UnsupportedTaskType
+        }
+        SchedulerCapabilityRejectReason::BackendIncompatible => {
+            SchedulerRejectionReason::BackendIncompatible
+        }
+        SchedulerCapabilityRejectReason::RealInferenceUnavailable => {
+            SchedulerRejectionReason::RealInferenceUnavailable
+        }
+        SchedulerCapabilityRejectReason::ModelMetadataOnly => {
+            SchedulerRejectionReason::ModelMetadataOnly
+        }
+        SchedulerCapabilityRejectReason::ModelMissingFromStorage => {
+            SchedulerRejectionReason::ModelMissingFromStorage
+        }
+        SchedulerCapabilityRejectReason::ModelNotExecutable => {
+            SchedulerRejectionReason::ModelNotExecutable
+        }
+        SchedulerCapabilityRejectReason::MissingCapabilities => {
+            SchedulerRejectionReason::MissingCapabilities
+        }
+    }
 }
 
 fn health_rank(health: ClusterHealth) -> u8 {
@@ -137,7 +137,9 @@ fn latency_rank(latency_ms: Option<u32>) -> u32 {
 mod tests {
     use super::*;
     use crate::cluster_readiness::ClusterReadinessReason;
-    use crate::cluster_registry::{ClusterMetricsStatus, ClusterRole};
+    use crate::cluster_registry::{
+        ClusterBackend, ClusterExecutionMode, ClusterMetricsStatus, ClusterRole,
+    };
 
     fn mock_candidate(peer_id: &str) -> SchedulerCandidate {
         SchedulerCandidate {
@@ -154,6 +156,9 @@ mod tests {
             models_in_storage: vec!["tinyllama-1b".to_string()],
             models_in_registry: vec!["tinyllama-1b".to_string()],
             executable_models: Vec::new(),
+            metadata_only_models: Vec::new(),
+            unavailable_models: Vec::new(),
+            capability_snapshot_available: true,
             latency_ms: Some(10),
             metrics_status: ClusterMetricsStatus::Fallback,
             last_seen_ms: Some(100),

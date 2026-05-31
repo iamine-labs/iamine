@@ -38,26 +38,36 @@ pub(crate) fn emit_task_lifecycle_assigned(
 }
 
 pub(crate) fn emit_task_lifecycle_scheduler_decision(decision: &SchedulerDecision) {
-    let Some(selected_worker_peer_id) = decision.selected_worker_peer_id.as_deref() else {
-        return;
-    };
-    let event = TaskLifecycleEvent::new(
+    let selected_worker_peer_id = decision.selected_worker_peer_id.as_deref();
+    let mut event = TaskLifecycleEvent::new(
         "task_lifecycle_scheduler_decision",
         &decision.task_id,
-        TaskLifecycleStatus::Assigned,
+        if selected_worker_peer_id.is_some() {
+            TaskLifecycleStatus::Assigned
+        } else {
+            TaskLifecycleStatus::Failed
+        },
         now_ms(),
     )
     .with_task_type(&decision.task_type)
-    .with_assignment(
-        selected_worker_peer_id,
-        decision.candidate_worker_ids(),
-        decision.selection_reason.to_task_selection_reason(),
-    )
     .with_scheduler_metadata(
         decision.rejected_candidate_ids(),
         decision.rejected_reason_strings(),
+    )
+    .with_scheduler_capability_metadata(
+        decision.compatible_candidates_count,
+        decision.capability_filter_applied,
     );
-    emit_task_lifecycle_event(event, Some(selected_worker_peer_id));
+    if let Some(selected_worker_peer_id) = selected_worker_peer_id {
+        event = event.with_assignment(
+            selected_worker_peer_id,
+            decision.candidate_worker_ids(),
+            decision.selection_reason.to_task_selection_reason(),
+        );
+    } else {
+        event.candidate_workers = decision.candidate_worker_ids();
+    }
+    emit_task_lifecycle_event(event, selected_worker_peer_id);
 }
 
 pub(crate) fn emit_task_lifecycle_started(task_id: &str, task_type: &str, worker_peer_id: &str) {
@@ -327,6 +337,14 @@ fn task_lifecycle_event_fields(event: &TaskLifecycleEvent) -> Map<String, Value>
                 .map(Value::String)
                 .collect(),
         ),
+    );
+    fields.insert(
+        "compatible_candidates_count".to_string(),
+        (event.compatible_candidates_count as u64).into(),
+    );
+    fields.insert(
+        "capability_filter_applied".to_string(),
+        event.capability_filter_applied.into(),
     );
     fields.insert(
         "required_capabilities".to_string(),

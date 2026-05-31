@@ -160,6 +160,10 @@ pub(crate) struct TaskLifecycleRecord {
     pub(crate) rejected_candidates: Vec<String>,
     #[serde(default)]
     pub(crate) rejected_reasons: Vec<String>,
+    #[serde(default)]
+    pub(crate) compatible_candidates_count: usize,
+    #[serde(default)]
+    pub(crate) capability_filter_applied: bool,
     pub(crate) selection_reason: Option<TaskSelectionReason>,
     pub(crate) required_capabilities: Vec<String>,
     pub(crate) declared_capabilities: Vec<String>,
@@ -199,6 +203,8 @@ impl TaskLifecycleRecord {
             candidate_workers: Vec::new(),
             rejected_candidates: Vec::new(),
             rejected_reasons: Vec::new(),
+            compatible_candidates_count: 0,
+            capability_filter_applied: false,
             selection_reason: None,
             required_capabilities: Vec::new(),
             declared_capabilities: Vec::new(),
@@ -294,6 +300,10 @@ impl TaskLifecycleRecord {
         if !event.rejected_reasons.is_empty() {
             self.rejected_reasons = event.rejected_reasons.clone();
         }
+        if event.capability_filter_applied || event.compatible_candidates_count > 0 {
+            self.compatible_candidates_count = event.compatible_candidates_count;
+            self.capability_filter_applied = event.capability_filter_applied;
+        }
         if let Some(selection_reason) = event.selection_reason {
             self.selection_reason = Some(selection_reason);
         }
@@ -351,6 +361,10 @@ pub(crate) struct TaskLifecycleEvent {
     pub(crate) rejected_candidates: Vec<String>,
     #[serde(default)]
     pub(crate) rejected_reasons: Vec<String>,
+    #[serde(default)]
+    pub(crate) compatible_candidates_count: usize,
+    #[serde(default)]
+    pub(crate) capability_filter_applied: bool,
     pub(crate) selection_reason: Option<TaskSelectionReason>,
     pub(crate) required_capabilities: Vec<String>,
     pub(crate) declared_capabilities: Vec<String>,
@@ -388,6 +402,8 @@ impl TaskLifecycleEvent {
             candidate_workers: Vec::new(),
             rejected_candidates: Vec::new(),
             rejected_reasons: Vec::new(),
+            compatible_candidates_count: 0,
+            capability_filter_applied: false,
             selection_reason: None,
             required_capabilities: Vec::new(),
             declared_capabilities: Vec::new(),
@@ -448,6 +464,16 @@ impl TaskLifecycleEvent {
     ) -> Self {
         self.rejected_candidates = rejected_candidates;
         self.rejected_reasons = rejected_reasons;
+        self
+    }
+
+    pub(crate) fn with_scheduler_capability_metadata(
+        mut self,
+        compatible_candidates_count: usize,
+        capability_filter_applied: bool,
+    ) -> Self {
+        self.compatible_candidates_count = compatible_candidates_count;
+        self.capability_filter_applied = capability_filter_applied;
         self
     }
 

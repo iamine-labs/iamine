@@ -5,6 +5,7 @@ use crate::cluster_readiness::ClusterReadinessReason;
 use crate::cluster_registry::{
     ClusterBackend, ClusterExecutionMode, ClusterMetricsStatus, ClusterNode, ClusterRole,
 };
+use crate::model_capability_consistency::ModelCapabilityStatus;
 use crate::scheduler_policy::{
     classify_scheduler_candidate, compare_scheduler_candidates, SchedulerCandidateClassification,
 };
@@ -57,6 +58,9 @@ pub(crate) struct SchedulerCandidate {
     pub(crate) models_in_storage: Vec<String>,
     pub(crate) models_in_registry: Vec<String>,
     pub(crate) executable_models: Vec<String>,
+    pub(crate) metadata_only_models: Vec<String>,
+    pub(crate) unavailable_models: Vec<ModelCapabilityStatus>,
+    pub(crate) capability_snapshot_available: bool,
     pub(crate) latency_ms: Option<u32>,
     pub(crate) metrics_status: ClusterMetricsStatus,
     pub(crate) last_seen_ms: Option<u64>,
@@ -84,6 +88,9 @@ impl SchedulerCandidate {
             models_in_storage: node.capabilities.models_in_storage.clone(),
             models_in_registry: node.capabilities.models_in_registry.clone(),
             executable_models: node.capabilities.executable_models.clone(),
+            metadata_only_models: node.capabilities.metadata_only_models.clone(),
+            unavailable_models: node.capabilities.unavailable_models.clone(),
+            capability_snapshot_available: !node.capabilities.supported_task_types.is_empty(),
             latency_ms: node.latency_ms,
             metrics_status: node.metrics_status,
             last_seen_ms: node.last_seen_ms,
@@ -106,10 +113,29 @@ impl SchedulerCandidate {
             models_in_storage: Vec::new(),
             models_in_registry: Vec::new(),
             executable_models: Vec::new(),
+            metadata_only_models: Vec::new(),
+            unavailable_models: Vec::new(),
+            capability_snapshot_available: false,
             latency_ms: None,
             metrics_status: ClusterMetricsStatus::Unknown,
             last_seen_ms: None,
         }
+    }
+
+    pub(crate) fn for_broadcast_bid(
+        node: Option<&ClusterNode>,
+        peer_id: &str,
+        now_ms: u64,
+        thresholds: ClusterHealthThresholds,
+        latency_ms: Option<u32>,
+    ) -> Self {
+        let mut candidate = node
+            .map(|node| Self::from_cluster_node(node, now_ms, thresholds))
+            .unwrap_or_else(|| Self::broadcast_peer(peer_id));
+        if latency_ms.is_some() {
+            candidate.latency_ms = latency_ms;
+        }
+        candidate
     }
 }
 
@@ -122,6 +148,8 @@ pub(crate) enum SchedulerRejectionReason {
     UnsupportedTaskType,
     BackendIncompatible,
     RealInferenceUnavailable,
+    ModelMetadataOnly,
+    ModelMissingFromStorage,
     ModelNotExecutable,
     MissingCapabilities,
     MetricsUnavailable,
@@ -137,6 +165,8 @@ impl SchedulerRejectionReason {
             Self::UnsupportedTaskType => "unsupported_task_type",
             Self::BackendIncompatible => "backend_incompatible",
             Self::RealInferenceUnavailable => "real_inference_unavailable",
+            Self::ModelMetadataOnly => "model_metadata_only",
+            Self::ModelMissingFromStorage => "model_missing_from_storage",
             Self::ModelNotExecutable => "model_not_executable",
             Self::MissingCapabilities => "missing_capabilities",
             Self::MetricsUnavailable => "metrics_unavailable",
@@ -194,7 +224,7 @@ pub(crate) struct SchedulerRejectedCandidate {
 }
 
 impl SchedulerRejectedCandidate {
-    fn from_candidate(
+    pub(crate) fn from_candidate(
         candidate: &SchedulerCandidate,
         reasons: Vec<SchedulerRejectionReason>,
     ) -> Self {
@@ -218,6 +248,8 @@ pub(crate) struct SchedulerDecision {
     pub(crate) candidate_workers: Vec<SchedulerCandidate>,
     pub(crate) rejected_candidates: Vec<SchedulerRejectedCandidate>,
     pub(crate) rejected_reasons: Vec<SchedulerRejectionReason>,
+    pub(crate) compatible_candidates_count: usize,
+    pub(crate) capability_filter_applied: bool,
     pub(crate) fallback_used: bool,
     pub(crate) retry_count: u32,
     pub(crate) decision_timestamp_ms: u64,
@@ -242,6 +274,8 @@ impl SchedulerDecision {
             candidate_workers,
             rejected_candidates,
             rejected_reasons,
+            compatible_candidates_count: 0,
+            capability_filter_applied: true,
             fallback_used: request.fallback_used,
             retry_count: request.retry_count,
             decision_timestamp_ms,
@@ -267,6 +301,7 @@ impl SchedulerDecision {
             candidate_workers.push(SchedulerCandidate::broadcast_peer(selected_worker_peer_id));
         }
         candidate_workers.sort_by(|left, right| left.peer_id.cmp(&right.peer_id));
+        let compatible_candidates_count = candidate_workers.len();
         Self {
             task_id: task_id.to_string(),
             task_type: task_type.to_string(),
@@ -278,8 +313,56 @@ impl SchedulerDecision {
             candidate_workers,
             rejected_candidates: Vec::new(),
             rejected_reasons: Vec::new(),
+            compatible_candidates_count,
+            capability_filter_applied: false,
             fallback_used: false,
             retry_count: 0,
+            decision_timestamp_ms,
+        }
+    }
+
+    pub(crate) fn from_capability_filtered_broadcast_policy(
+        request: &SchedulerTaskRequest,
+        selected_worker_peer_id: &str,
+        mut candidate_workers: Vec<SchedulerCandidate>,
+        rejected_candidates: Vec<SchedulerRejectedCandidate>,
+        selection_reason: SelectionReason,
+        decision_timestamp_ms: u64,
+    ) -> Self {
+        if !candidate_workers
+            .iter()
+            .any(|candidate| candidate.peer_id == selected_worker_peer_id)
+        {
+            candidate_workers.push(SchedulerCandidate::broadcast_peer(selected_worker_peer_id));
+        }
+        candidate_workers.sort_by(|left, right| left.peer_id.cmp(&right.peer_id));
+        let rejected_reasons = unique_rejection_reasons(&rejected_candidates);
+        let compatible_candidates_count = candidate_workers
+            .iter()
+            .filter(|candidate| {
+                !rejected_candidates
+                    .iter()
+                    .any(|rejected| rejected.peer_id == candidate.peer_id)
+            })
+            .count();
+        Self {
+            task_id: request.task_id.clone(),
+            task_type: request.task_type.clone(),
+            required_model_id: request.required_model_id.clone(),
+            required_capabilities: request.required_capabilities.clone(),
+            selected_worker_peer_id: Some(selected_worker_peer_id.to_string()),
+            selected_worker_hostname: candidate_workers
+                .iter()
+                .find(|candidate| candidate.peer_id == selected_worker_peer_id)
+                .map(|candidate| candidate.hostname.clone()),
+            selection_reason,
+            candidate_workers,
+            rejected_candidates,
+            rejected_reasons,
+            compatible_candidates_count,
+            capability_filter_applied: true,
+            fallback_used: request.fallback_used,
+            retry_count: request.retry_count,
             decision_timestamp_ms,
         }
     }
@@ -361,6 +444,8 @@ pub(crate) fn select_worker_for_task(
         candidate_workers: candidates,
         rejected_reasons: unique_rejection_reasons(&rejected),
         rejected_candidates: rejected,
+        compatible_candidates_count: accepted.len(),
+        capability_filter_applied: true,
         fallback_used: request.fallback_used,
         retry_count: request.retry_count,
         decision_timestamp_ms,
@@ -420,6 +505,9 @@ mod tests {
             models_in_storage: Vec::new(),
             models_in_registry: Vec::new(),
             executable_models: Vec::new(),
+            metadata_only_models: Vec::new(),
+            unavailable_models: Vec::new(),
+            capability_snapshot_available: true,
             latency_ms: Some(20),
             metrics_status: ClusterMetricsStatus::Fallback,
             last_seen_ms: Some(100),
@@ -454,6 +542,7 @@ mod tests {
         assert_eq!(
             decision.rejected_reasons,
             vec![
+                SchedulerRejectionReason::UnsupportedTaskType,
                 SchedulerRejectionReason::BackendIncompatible,
                 SchedulerRejectionReason::RealInferenceUnavailable,
                 SchedulerRejectionReason::ModelNotExecutable,
@@ -493,6 +582,47 @@ mod tests {
                 SchedulerRejectionReason::NotReadyForTasks
             ]
         );
+    }
+
+    #[test]
+    fn scheduler_discovered_peer_without_snapshot_keeps_simple_broadcast_compatible() {
+        let node = ClusterNode::new("peer-discovered");
+        let candidate = SchedulerCandidate::for_broadcast_bid(
+            Some(&node),
+            "peer-discovered",
+            100,
+            ClusterHealthThresholds::default(),
+            Some(10),
+        );
+
+        assert!(!candidate.capability_snapshot_available);
+        assert_eq!(
+            classify_scheduler_candidate(&request(), &candidate),
+            SchedulerCandidateClassification::Accepted
+        );
+        let inference = SchedulerTaskRequest::new("task-infer", "inference");
+        assert_eq!(
+            classify_scheduler_candidate(&inference, &candidate),
+            SchedulerCandidateClassification::Rejected(vec![
+                SchedulerRejectionReason::MissingCapabilities
+            ])
+        );
+    }
+
+    #[test]
+    fn scheduler_no_compatible_worker_is_controlled() {
+        let request = SchedulerTaskRequest::new("task-infer", "inference")
+            .with_required_model("tinyllama-1b");
+
+        let decision = select_worker_for_task(&request, vec![candidate("peer-mock")], 200);
+
+        assert_eq!(decision.selected_worker_peer_id, None);
+        assert_eq!(decision.compatible_candidates_count, 0);
+        assert!(decision.capability_filter_applied);
+        assert_eq!(decision.rejected_candidates.len(), 1);
+        assert!(decision
+            .rejected_reasons
+            .contains(&SchedulerRejectionReason::BackendIncompatible));
     }
 
     #[test]

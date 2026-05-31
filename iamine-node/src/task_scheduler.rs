@@ -1,3 +1,8 @@
+use crate::router_scheduler::{
+    SchedulerCandidate, SchedulerDecision, SchedulerRejectedCandidate, SchedulerTaskRequest,
+    SelectionReason,
+};
+use crate::scheduler_policy::{classify_scheduler_candidate, SchedulerCandidateClassification};
 use iamine_core::node::NodeCapabilities;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -38,6 +43,9 @@ pub struct SchedulerTask {
     pub task_id: String,
     pub task_type: String,
     pub bids: Vec<WorkerBid>,
+    capability_candidates: Vec<SchedulerCandidate>,
+    rejected_candidates: Vec<SchedulerRejectedCandidate>,
+    capability_filter_applied: bool,
     pub status: SchedulerTaskStatus,
 }
 
@@ -84,6 +92,9 @@ impl TaskScheduler {
                 task_id,
                 task_type,
                 bids: Vec::new(),
+                capability_candidates: Vec::new(),
+                rejected_candidates: Vec::new(),
+                capability_filter_applied: false,
                 status: SchedulerTaskStatus::CollectingBids { deadline },
             },
         );
@@ -100,7 +111,58 @@ impl TaskScheduler {
     ) -> Option<String> {
         let mut tasks = self.tasks.lock().await;
         let task = tasks.get_mut(task_id)?;
+        Self::receive_bid_for_task(
+            task,
+            worker_id,
+            reputation_score,
+            available_slots,
+            estimated_ms,
+        )
+    }
 
+    pub async fn receive_capability_filtered_bid(
+        &self,
+        task_id: &str,
+        candidate: SchedulerCandidate,
+        reputation_score: u32,
+        available_slots: usize,
+        estimated_ms: u64,
+    ) -> Option<String> {
+        let mut tasks = self.tasks.lock().await;
+        let task = tasks.get_mut(task_id)?;
+        task.capability_filter_applied = true;
+        Self::upsert_capability_candidate(task, candidate.clone());
+
+        let request = SchedulerTaskRequest::new(&task.task_id, &task.task_type);
+        match classify_scheduler_candidate(&request, &candidate) {
+            SchedulerCandidateClassification::Accepted => {
+                task.rejected_candidates
+                    .retain(|rejected| rejected.peer_id != candidate.peer_id);
+                Self::receive_bid_for_task(
+                    task,
+                    candidate.peer_id,
+                    reputation_score,
+                    available_slots,
+                    estimated_ms,
+                )
+            }
+            SchedulerCandidateClassification::Rejected(reasons) => {
+                Self::upsert_rejected_candidate(
+                    task,
+                    SchedulerRejectedCandidate::from_candidate(&candidate, reasons),
+                );
+                None
+            }
+        }
+    }
+
+    fn receive_bid_for_task(
+        task: &mut SchedulerTask,
+        worker_id: String,
+        reputation_score: u32,
+        available_slots: usize,
+        estimated_ms: u64,
+    ) -> Option<String> {
         match &task.status {
             SchedulerTaskStatus::CollectingBids { deadline } => {
                 let deadline = *deadline;
@@ -115,28 +177,118 @@ impl TaskScheduler {
                 let bid_count = task.bids.len();
                 println!(
                     "📊 [Scheduler] {} bid(s) recibidos para tarea {}",
-                    bid_count, task_id
+                    bid_count, task.task_id
                 );
 
                 // Asignar si: expiró el deadline O tenemos al menos 2 bids
                 if Instant::now() >= deadline || bid_count >= 2 {
                     println!(
                         "⏱️ [Scheduler] Cerrando bids para {} ({} bids)",
-                        task_id, bid_count
+                        task.task_id, bid_count
                     );
-                    return self.select_winner_internal(task);
+                    return Self::select_winner_internal(task);
                 }
                 None
             }
             SchedulerTaskStatus::Assigned { worker_id, .. } => {
                 println!(
                     "⚠️ [Scheduler] Tarea {} ya asignada a {}",
-                    task_id,
+                    task.task_id,
                     &worker_id[..8.min(worker_id.len())]
                 );
                 None
             }
             _ => None,
+        }
+    }
+
+    pub async fn decision_for_assignment(
+        &self,
+        task_id: &str,
+        task_type: &str,
+        selected_worker_peer_id: &str,
+        fallback_candidate_ids: Vec<String>,
+        selection_reason: SelectionReason,
+        decision_timestamp_ms: u64,
+    ) -> SchedulerDecision {
+        let tasks = self.tasks.lock().await;
+        let Some(task) = tasks.get(task_id) else {
+            return SchedulerDecision::from_current_broadcast_policy(
+                task_id,
+                task_type,
+                selected_worker_peer_id,
+                fallback_candidate_ids,
+                selection_reason,
+                decision_timestamp_ms,
+            );
+        };
+        if !task.capability_filter_applied {
+            return SchedulerDecision::from_current_broadcast_policy(
+                task_id,
+                task_type,
+                selected_worker_peer_id,
+                fallback_candidate_ids,
+                selection_reason,
+                decision_timestamp_ms,
+            );
+        }
+
+        SchedulerDecision::from_capability_filtered_broadcast_policy(
+            &SchedulerTaskRequest::new(task_id, task_type),
+            selected_worker_peer_id,
+            task.capability_candidates.clone(),
+            task.rejected_candidates.clone(),
+            selection_reason,
+            decision_timestamp_ms,
+        )
+    }
+
+    pub async fn no_compatible_worker_decision(
+        &self,
+        task_id: &str,
+        decision_timestamp_ms: u64,
+    ) -> Option<SchedulerDecision> {
+        let tasks = self.tasks.lock().await;
+        let task = tasks.get(task_id)?;
+        if !matches!(task.status, SchedulerTaskStatus::Failed)
+            || !task.capability_filter_applied
+            || task.rejected_candidates.is_empty()
+        {
+            return None;
+        }
+
+        Some(SchedulerDecision::no_compatible_worker(
+            &SchedulerTaskRequest::new(&task.task_id, &task.task_type),
+            task.capability_candidates.clone(),
+            task.rejected_candidates.clone(),
+            decision_timestamp_ms,
+        ))
+    }
+
+    fn upsert_capability_candidate(task: &mut SchedulerTask, candidate: SchedulerCandidate) {
+        if let Some(existing) = task
+            .capability_candidates
+            .iter_mut()
+            .find(|existing| existing.peer_id == candidate.peer_id)
+        {
+            *existing = candidate;
+        } else {
+            task.capability_candidates.push(candidate);
+        }
+    }
+
+    fn upsert_rejected_candidate(
+        task: &mut SchedulerTask,
+        rejected_candidate: SchedulerRejectedCandidate,
+    ) {
+        if let Some(existing) = task
+            .rejected_candidates
+            .iter_mut()
+            .find(|existing| existing.peer_id == rejected_candidate.peer_id)
+        {
+            *existing = rejected_candidate;
+        } else {
+            task.rejected_candidates.push(rejected_candidate);
         }
     }
 
@@ -148,7 +300,7 @@ impl TaskScheduler {
         match &task.status {
             SchedulerTaskStatus::CollectingBids { deadline } => {
                 if Instant::now() >= *deadline || !task.bids.is_empty() {
-                    self.select_winner_internal(task)
+                    Self::select_winner_internal(task)
                 } else {
                     None
                 }
@@ -200,7 +352,7 @@ impl TaskScheduler {
     }
 
     /// Seleccionar mejor worker según: reputación > slots disponibles > velocidad estimada
-    fn select_winner_internal(&self, task: &mut SchedulerTask) -> Option<String> {
+    fn select_winner_internal(task: &mut SchedulerTask) -> Option<String> {
         if task.bids.is_empty() {
             task.status = SchedulerTaskStatus::Failed;
             println!("💀 [Scheduler] Tarea {} sin bids — fallida", task.task_id);
@@ -244,5 +396,203 @@ impl TaskScheduler {
             SchedulerTaskStatus::Completed { .. } | SchedulerTaskStatus::Failed => false,
             _ => true,
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cluster_health::ClusterHealth;
+    use crate::cluster_readiness::ClusterReadinessReason;
+    use crate::cluster_registry::{
+        ClusterBackend, ClusterExecutionMode, ClusterMetricsStatus, ClusterRole,
+    };
+    use crate::router_scheduler::SchedulerRejectionReason;
+
+    fn mock_candidate(peer_id: &str) -> SchedulerCandidate {
+        SchedulerCandidate {
+            peer_id: peer_id.to_string(),
+            hostname: peer_id.to_string(),
+            role: ClusterRole::Worker,
+            health: ClusterHealth::Healthy,
+            ready_for_tasks: true,
+            readiness_reason: ClusterReadinessReason::MockSimpleTasksReady,
+            backend: ClusterBackend::Mock,
+            execution_mode: ClusterExecutionMode::Mock,
+            real_inference_available: Some(false),
+            supported_task_types: vec![
+                "reverse_string".to_string(),
+                "test".to_string(),
+                "echo".to_string(),
+            ],
+            models_in_storage: Vec::new(),
+            models_in_registry: Vec::new(),
+            executable_models: Vec::new(),
+            metadata_only_models: Vec::new(),
+            unavailable_models: Vec::new(),
+            capability_snapshot_available: true,
+            latency_ms: Some(10),
+            metrics_status: ClusterMetricsStatus::Fallback,
+            last_seen_ms: Some(100),
+        }
+    }
+
+    #[tokio::test]
+    async fn scheduler_filtered_bid_preserves_mock_simple_selection() {
+        let scheduler = TaskScheduler::new();
+        scheduler
+            .register_task("task-simple".to_string(), "reverse_string".to_string())
+            .await;
+
+        assert_eq!(
+            scheduler
+                .receive_capability_filtered_bid(
+                    "task-simple",
+                    mock_candidate("peer-mock"),
+                    90,
+                    1,
+                    10,
+                )
+                .await,
+            None
+        );
+        assert_eq!(
+            scheduler.try_assign("task-simple").await.as_deref(),
+            Some("peer-mock")
+        );
+        let decision = scheduler
+            .decision_for_assignment(
+                "task-simple",
+                "reverse_string",
+                "peer-mock",
+                Vec::new(),
+                SelectionReason::BroadcastBidSelected,
+                200,
+            )
+            .await;
+
+        assert!(decision.capability_filter_applied);
+        assert_eq!(decision.compatible_candidates_count, 1);
+        assert!(decision.rejected_candidates.is_empty());
+    }
+
+    #[tokio::test]
+    async fn scheduler_filtered_bid_rejects_mock_real_inference() {
+        let scheduler = TaskScheduler::new();
+        scheduler
+            .register_task("task-infer".to_string(), "inference".to_string())
+            .await;
+        let mut candidate = mock_candidate("peer-mock");
+        candidate.supported_task_types.push("inference".to_string());
+
+        assert_eq!(
+            scheduler
+                .receive_capability_filtered_bid("task-infer", candidate, 90, 1, 10)
+                .await,
+            None
+        );
+        let tasks = scheduler.tasks.lock().await;
+        let Some(task) = tasks.get("task-infer") else {
+            assert!(false, "registered task should remain visible");
+            return;
+        };
+
+        assert!(task.bids.is_empty());
+        assert_eq!(task.rejected_candidates.len(), 1);
+        assert!(task.rejected_candidates[0]
+            .reasons
+            .contains(&SchedulerRejectionReason::BackendIncompatible));
+        assert!(task.rejected_candidates[0]
+            .reasons
+            .contains(&SchedulerRejectionReason::RealInferenceUnavailable));
+    }
+
+    #[tokio::test]
+    async fn scheduler_no_compatible_worker_decision_is_controlled() {
+        let scheduler = TaskScheduler::new();
+        scheduler
+            .register_task("task-no-compatible".to_string(), "inference".to_string())
+            .await;
+        let mut candidate = mock_candidate("peer-mock");
+        candidate.supported_task_types.push("inference".to_string());
+        assert_eq!(
+            scheduler
+                .receive_capability_filtered_bid("task-no-compatible", candidate, 90, 1, 10)
+                .await,
+            None
+        );
+        {
+            let mut tasks = scheduler.tasks.lock().await;
+            if let Some(task) = tasks.get_mut("task-no-compatible") {
+                task.status = SchedulerTaskStatus::Failed;
+            }
+        }
+
+        let decision = scheduler
+            .no_compatible_worker_decision("task-no-compatible", 200)
+            .await;
+        let Some(decision) = decision else {
+            assert!(
+                false,
+                "failed filtered task should expose a controlled decision"
+            );
+            return;
+        };
+
+        assert_eq!(decision.selected_worker_peer_id, None);
+        assert_eq!(decision.compatible_candidates_count, 0);
+        assert!(decision.capability_filter_applied);
+        assert_eq!(decision.rejected_candidate_ids(), vec!["peer-mock"]);
+    }
+
+    #[tokio::test]
+    async fn scheduler_filtered_bid_records_rejected_candidates_and_compatible_count() {
+        let scheduler = TaskScheduler::new();
+        scheduler
+            .register_task("task-mixed".to_string(), "reverse_string".to_string())
+            .await;
+        let mut rejected = mock_candidate("peer-not-ready");
+        rejected.ready_for_tasks = false;
+        rejected.readiness_reason = ClusterReadinessReason::StartupIncomplete;
+
+        assert_eq!(
+            scheduler
+                .receive_capability_filtered_bid("task-mixed", rejected, 99, 1, 10)
+                .await,
+            None
+        );
+        assert_eq!(
+            scheduler
+                .receive_capability_filtered_bid(
+                    "task-mixed",
+                    mock_candidate("peer-ready"),
+                    90,
+                    1,
+                    10,
+                )
+                .await,
+            None
+        );
+        assert_eq!(
+            scheduler.try_assign("task-mixed").await.as_deref(),
+            Some("peer-ready")
+        );
+        let decision = scheduler
+            .decision_for_assignment(
+                "task-mixed",
+                "reverse_string",
+                "peer-ready",
+                Vec::new(),
+                SelectionReason::BroadcastBidSelected,
+                200,
+            )
+            .await;
+
+        assert_eq!(decision.compatible_candidates_count, 1);
+        assert_eq!(decision.rejected_candidate_ids(), vec!["peer-not-ready"]);
+        assert_eq!(
+            decision.rejected_reason_strings(),
+            vec!["not_ready_for_tasks"]
+        );
     }
 }

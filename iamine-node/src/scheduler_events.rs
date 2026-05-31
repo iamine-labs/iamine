@@ -110,6 +110,18 @@ fn base_fields(decision: &SchedulerDecision) -> Map<String, Value> {
         (decision.candidate_workers.len() as u64).into(),
     );
     fields.insert(
+        "compatible_candidates_count".to_string(),
+        (decision.compatible_candidates_count as u64).into(),
+    );
+    fields.insert(
+        "capability_filter_applied".to_string(),
+        decision.capability_filter_applied.into(),
+    );
+    fields.insert(
+        "required_task_type".to_string(),
+        decision.task_type.clone().into(),
+    );
+    fields.insert(
         "rejected_candidates_count".to_string(),
         (decision.rejected_candidates.len() as u64).into(),
     );
@@ -162,6 +174,7 @@ fn base_fields(decision: &SchedulerDecision) -> Map<String, Value> {
     );
     if let Some(model_id) = decision.required_model_id.as_deref() {
         fields.insert("required_model_id".to_string(), model_id.into());
+        fields.insert("required_model".to_string(), model_id.into());
     }
     if let Some(peer_id) = decision.selected_worker_peer_id.as_deref() {
         fields.insert("selected_worker_peer_id".to_string(), peer_id.into());
@@ -205,6 +218,18 @@ mod tests {
         assert_eq!(
             fields.get("selection_reason").and_then(Value::as_str),
             Some("current_broadcast_policy")
+        );
+        assert_eq!(
+            fields
+                .get("compatible_candidates_count")
+                .and_then(Value::as_u64),
+            Some(2)
+        );
+        assert_eq!(
+            fields
+                .get("capability_filter_applied")
+                .and_then(Value::as_bool),
+            Some(false)
         );
     }
 }

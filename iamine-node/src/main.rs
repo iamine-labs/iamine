@@ -60,6 +60,7 @@ mod result_protocol;
 mod router_scheduler;
 mod runtime_config;
 mod runtime_observability;
+mod scheduler_capability_matching;
 mod scheduler_events;
 mod scheduler_policy;
 mod security_checks;
@@ -2029,6 +2030,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         known_workers: &known_workers,
                                         origin_peer_map: &mut origin_peer_map,
                                         peer_tracker: &peer_tracker,
+                                        cluster_registry: &cluster_registry,
                                     },
                                 )
                                 .await;
