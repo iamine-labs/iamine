@@ -12,6 +12,10 @@ mod cluster_health;
 mod cluster_readiness;
 mod cluster_registry;
 mod cluster_status;
+mod cluster_stress;
+mod cluster_stress_cli;
+mod cluster_stress_metrics;
+mod cluster_stress_validation;
 mod code_quality;
 #[cfg(test)]
 mod config_test_utils;

@@ -1,9 +1,10 @@
 use crate::node_modes::NodeMode;
 use crate::{
-    benchmark::NodeBenchmark, code_quality::run_code_quality_checks,
-    model_selector_cli::ModelSelectorCLI, node_identity::NodeIdentity, prompt_task_label,
-    quality_gate::run_release_validation, regression_runner::run_default_regression_suite,
-    security_checks::run_security_checks, tasks_cli,
+    benchmark::NodeBenchmark, cluster_stress_cli::run_cluster_stress_cli,
+    code_quality::run_code_quality_checks, model_selector_cli::ModelSelectorCLI,
+    node_identity::NodeIdentity, prompt_task_label, quality_gate::run_release_validation,
+    regression_runner::run_default_regression_suite, security_checks::run_security_checks,
+    tasks_cli,
 };
 use iamine_models::{
     AutoProvisionProfile, InstallResult, ModelAutoProvision, ModelInstaller, ModelNodeCapabilities,
@@ -21,6 +22,7 @@ pub(crate) fn is_control_plane_mode(mode: &NodeMode) -> bool {
             | NodeMode::ModelsRemove { .. }
             | NodeMode::TasksStats { .. }
             | NodeMode::TasksTrace { .. }
+            | NodeMode::ClusterStress { .. }
     )
 }
 
@@ -70,6 +72,11 @@ pub(crate) async fn handle_pre_network_mode(
             println!("║    IaMine — Task Trace           ║");
             println!("╚══════════════════════════════════╝\n");
             tasks_cli::run_tasks_trace(task_id, *json)?;
+            Ok(true)
+        }
+
+        NodeMode::ClusterStress { config } => {
+            run_cluster_stress_cli(config).await?;
             Ok(true)
         }
 

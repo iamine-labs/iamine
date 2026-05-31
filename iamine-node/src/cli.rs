@@ -1,3 +1,4 @@
+use crate::cluster_stress::ClusterStressConfig;
 use crate::node_modes::{InferenceControlFlags, NodeMode};
 use libp2p::Multiaddr;
 use std::str::FromStr;
@@ -155,7 +156,13 @@ pub(crate) fn parse_args_from(raw_args: Vec<String>) -> Result<NodeMode, String>
             Some("status") => Ok(NodeMode::ClusterStatus {
                 json: args.iter().any(|arg| arg == "--json"),
             }),
-            _ => Err("Uso: iamine-node cluster status [--json]".to_string()),
+            Some("stress") => Ok(NodeMode::ClusterStress {
+                config: ClusterStressConfig::from_args(&args[3..])?,
+            }),
+            _ => Err(
+                "Uso: iamine-node cluster [status [--json]|stress [--requests N] [--concurrency N] [--task TYPE] [--prefix TEXT] [--timeout-secs N] [--output-dir PATH] [--stop-on-first-failure] [--json]]"
+                    .to_string(),
+            ),
         },
 
         Some("nodes") => Ok(NodeMode::Nodes),
@@ -448,5 +455,30 @@ mod tests {
             .expect("cluster status help should parse");
 
         assert!(matches!(mode, NodeMode::Help));
+    }
+
+    #[test]
+    fn cluster_stress_cli_help_has_no_runtime_side_effect() {
+        let mode = parse_args_from(args(&["iamine-node", "cluster", "stress", "--help"]));
+
+        assert!(matches!(mode, Ok(NodeMode::Help)));
+    }
+
+    #[test]
+    fn cli_detects_cluster_stress_safe_validation_mode() {
+        let mode = parse_args_from(args(&[
+            "iamine-node",
+            "cluster",
+            "stress",
+            "--requests",
+            "0",
+            "--json",
+        ]));
+
+        assert!(matches!(
+            mode,
+            Ok(NodeMode::ClusterStress { config })
+                if config.request_count == 0 && config.json
+        ));
     }
 }
