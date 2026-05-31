@@ -253,6 +253,14 @@ pub(crate) fn render_task_trace_human(
             record.rejected_reasons.join(",")
         }
     ));
+    output.push_str(&format!(
+        "compatible_candidates_count: {}\n",
+        record.compatible_candidates_count
+    ));
+    output.push_str(&format!(
+        "capability_filter_applied: {}\n",
+        record.capability_filter_applied
+    ));
     output.push_str(&format!("created_at_ms: {}\n", record.created_at_ms));
     output.push_str(&format!(
         "started_at_ms: {}\n",
@@ -432,7 +440,8 @@ mod tests {
                 .with_scheduler_metadata(
                     vec!["worker-b".to_string()],
                     vec!["not_ready_for_tasks".to_string()],
-                ),
+                )
+                .with_scheduler_capability_metadata(1, true),
             )
             .unwrap();
         let record = store.get_record("task-scheduler");
@@ -449,6 +458,8 @@ mod tests {
         assert!(rendered.contains("selection_reason: ready_worker_supports_task"));
         assert!(rendered.contains("candidate_workers: worker-a,worker-b"));
         assert!(rendered.contains("rejected_reasons: not_ready_for_tasks"));
+        assert!(rendered.contains("compatible_candidates_count: 1"));
+        assert!(rendered.contains("capability_filter_applied: true"));
     }
 
     #[test]

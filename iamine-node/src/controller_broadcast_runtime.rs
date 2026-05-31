@@ -10,12 +10,14 @@ use crate::broadcast_runtime::{
     emit_broadcast_task_offer_readiness_timeout_event, emit_broadcast_topic_subscriber_seen_event,
     BroadcastOfferState, BroadcastReadinessSnapshot,
 };
+use crate::cluster_health::ClusterHealthThresholds;
+use crate::cluster_registry::{unix_now_ms, ClusterRegistry};
 use crate::peer_tracker::PeerTracker;
 use crate::pubsub_topic_tracker::{
     gossipsub_all_peers_per_topic_value, gossipsub_mesh_peer_ids, gossipsub_topic_peer_count,
     sync_pubsub_tracker_from_gossipsub, PubsubTopicTracker,
 };
-use crate::router_scheduler::{SchedulerDecision, SelectionReason};
+use crate::router_scheduler::{SchedulerCandidate, SchedulerDecision, SelectionReason};
 use crate::scheduler_events::emit_scheduler_decision_events;
 use crate::task_events::{
     emit_task_lifecycle_assigned, emit_task_lifecycle_created, emit_task_lifecycle_failed,
@@ -66,6 +68,7 @@ pub(crate) struct ControllerTaskBidContext<'a> {
     pub(crate) known_workers: &'a HashSet<PeerId>,
     pub(crate) origin_peer_map: &'a mut HashMap<String, PeerId>,
     pub(crate) peer_tracker: &'a PeerTracker,
+    pub(crate) cluster_registry: &'a ClusterRegistry,
 }
 
 pub(crate) async fn handle_controller_broadcast_tick(
@@ -92,6 +95,17 @@ pub(crate) async fn handle_controller_broadcast_tick(
     if state.published && !state.assignment_published {
         if let Some(winner) = context.scheduler.try_assign(&state.task_id).await {
             let task_id = state.task_id.clone();
+            let scheduler_decision = context
+                .scheduler
+                .decision_for_assignment(
+                    &task_id,
+                    context.task_type,
+                    &winner,
+                    known_worker_ids(context.known_workers),
+                    SelectionReason::CurrentBroadcastPolicy,
+                    task_lifecycle::now_ms(),
+                )
+                .await;
             publish_controller_task_assign(
                 swarm,
                 ControllerTaskAssignPublishContext {
@@ -100,12 +114,31 @@ pub(crate) async fn handle_controller_broadcast_tick(
                     data: context.data,
                     winner: &winner,
                     controller_peer_id: context.controller_peer_id,
-                    known_workers: context.known_workers,
-                    selection_reason: SelectionReason::CurrentBroadcastPolicy,
+                    scheduler_decision,
                     mark_state: Some(state),
                 },
             );
             println!("🏆 Asignando worker={} task_id={}", winner, task_id);
+        }
+        if let Some(scheduler_decision) = context
+            .scheduler
+            .no_compatible_worker_decision(&state.task_id, task_lifecycle::now_ms())
+            .await
+        {
+            state.failed = true;
+            emit_scheduler_decision_events(&scheduler_decision);
+            emit_task_lifecycle_scheduler_decision(&scheduler_decision);
+            emit_task_lifecycle_failed(
+                &state.task_id,
+                context.task_type,
+                TaskLifecycleErrorCode::InsufficientCapabilities,
+                "scheduler_no_compatible_worker",
+            );
+            eprintln!(
+                "❌ [Scheduler] No hay workers compatibles: task_id={} type={}",
+                state.task_id, context.task_type
+            );
+            return Ok(ControllerBroadcastRuntimeOutcome::BreakLoop);
         }
         return Ok(ControllerBroadcastRuntimeOutcome::Continue);
     }
@@ -336,6 +369,13 @@ pub(crate) async fn handle_controller_task_bid(
     let slots = msg["available_slots"].as_u64().unwrap_or(0) as usize;
     let est_ms = msg["estimated_ms"].as_u64().unwrap_or(1000);
     let latency = context.peer_tracker.get_latency(&worker_id);
+    let scheduler_candidate = SchedulerCandidate::for_broadcast_bid(
+        context.cluster_registry.node_by_peer_id(&worker_id),
+        &worker_id,
+        unix_now_ms(),
+        ClusterHealthThresholds::default(),
+        Some(latency.max(0.0).round() as u32),
+    );
 
     emit_broadcast_bid_received_event(&task_id, &worker_id, rep, slots, latency);
     println!(
@@ -345,7 +385,7 @@ pub(crate) async fn handle_controller_task_bid(
 
     if let Some(winner) = context
         .scheduler
-        .receive_bid(&task_id, worker_id.clone(), rep, slots, est_ms)
+        .receive_capability_filtered_bid(&task_id, scheduler_candidate, rep, slots, est_ms)
         .await
     {
         if context
@@ -366,6 +406,17 @@ pub(crate) async fn handle_controller_task_bid(
         {
             context.origin_peer_map.insert(task_id.clone(), winner_peer);
         }
+        let scheduler_decision = context
+            .scheduler
+            .decision_for_assignment(
+                &task_id,
+                context.task_type,
+                &winner,
+                known_worker_ids(context.known_workers),
+                SelectionReason::BroadcastBidSelected,
+                task_lifecycle::now_ms(),
+            )
+            .await;
 
         publish_controller_task_assign(
             swarm,
@@ -375,8 +426,7 @@ pub(crate) async fn handle_controller_task_bid(
                 data: context.data,
                 winner: &winner,
                 controller_peer_id: context.controller_peer_id,
-                known_workers: context.known_workers,
-                selection_reason: SelectionReason::BroadcastBidSelected,
+                scheduler_decision,
                 mark_state: context.broadcast_offer_state.as_mut().and_then(|state| {
                     if state.task_id == task_id {
                         Some(state)
@@ -449,8 +499,7 @@ struct ControllerTaskAssignPublishContext<'a> {
     data: &'a str,
     winner: &'a str,
     controller_peer_id: &'a PeerId,
-    known_workers: &'a HashSet<PeerId>,
-    selection_reason: SelectionReason,
+    scheduler_decision: SchedulerDecision,
     mark_state: Option<&'a mut BroadcastOfferState>,
 }
 
@@ -481,14 +530,7 @@ fn publish_controller_task_assign(
                 &message_id.to_string(),
                 deadline_ms,
             );
-            let scheduler_decision = SchedulerDecision::from_current_broadcast_policy(
-                context.task_id,
-                context.task_type,
-                context.winner,
-                known_worker_ids(context.known_workers),
-                context.selection_reason,
-                task_lifecycle::now_ms(),
-            );
+            let scheduler_decision = context.scheduler_decision;
             emit_scheduler_decision_events(&scheduler_decision);
             emit_task_lifecycle_assigned(
                 context.task_id,
