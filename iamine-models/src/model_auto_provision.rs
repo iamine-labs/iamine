@@ -1,4 +1,7 @@
-use crate::{DownloadProgress, ModelDescriptor, ModelDownloader, ModelRegistry, ModelStorage};
+use crate::{
+    DownloadProgress, LicenseOperation, ModelDescriptor, ModelDownloader, ModelLicensePolicy,
+    ModelRegistry, ModelStorage,
+};
 
 #[derive(Debug, Clone)]
 pub struct AutoProvisionProfile {
@@ -67,6 +70,21 @@ impl ModelAutoProvision {
         let Some(model) = recommended.first() else {
             return Ok(None);
         };
+
+        let installed = self.downloader.storage.has_model(&model.id);
+        let operation = if installed {
+            LicenseOperation::ExistingExecution
+        } else {
+            LicenseOperation::Download
+        };
+        let license_decision = ModelLicensePolicy.evaluate_descriptor(model, operation, installed);
+        if !license_decision.permits_operation {
+            return Err(format!(
+                "model license policy {}: {}",
+                license_decision.status.as_str(),
+                license_decision.reason.as_str()
+            ));
+        }
 
         if mock {
             self.downloader.download_model_mock(model).await?;

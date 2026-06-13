@@ -1,4 +1,5 @@
 use crate::download_policy::ModelDownloadPolicy;
+use crate::license_policy::{LicenseOperation, ModelLicensePolicy};
 use crate::model_registry::ModelDescriptor;
 use crate::model_storage::ModelStorage;
 use crate::model_verifier::ModelVerifier;
@@ -53,6 +54,7 @@ impl ModelDownloader {
         model: &ModelDescriptor,
         progress_tx: Option<tokio::sync::mpsc::Sender<DownloadProgress>>,
     ) -> Result<(), String> {
+        let installed = self.storage.has_model(&model.id);
         let policy_decision = ModelDownloadPolicy::default().evaluate_descriptor(model);
         if !policy_decision.permits_download() {
             return Err(format!(
@@ -67,7 +69,27 @@ impl ModelDownloader {
             policy_decision.policy_reason()
         );
 
-        if self.storage.has_model(&model.id) {
+        let license_operation = if installed {
+            LicenseOperation::ExistingExecution
+        } else {
+            LicenseOperation::Download
+        };
+        let license_decision =
+            ModelLicensePolicy.evaluate_descriptor(model, license_operation, installed);
+        if !license_decision.permits_operation {
+            return Err(format!(
+                "model license policy {}: {}",
+                license_decision.status.as_str(),
+                license_decision.reason.as_str()
+            ));
+        }
+        println!(
+            "   License policy: {} ({})",
+            license_decision.status.as_str(),
+            license_decision.reason.as_str()
+        );
+
+        if installed {
             println!("✅ Modelo {} ya existe localmente", model.id);
             return Ok(());
         }
@@ -274,7 +296,32 @@ impl ModelDownloader {
 
     /// Mock for tests (no real network)
     pub async fn download_model_mock(&self, model: &ModelDescriptor) -> Result<(), String> {
-        if self.storage.has_model(&model.id) {
+        let installed = self.storage.has_model(&model.id);
+        let policy_decision = ModelDownloadPolicy::default().evaluate_descriptor(model);
+        if !policy_decision.permits_download() {
+            return Err(format!(
+                "model download policy {}: {}",
+                policy_decision.status.as_str(),
+                policy_decision.policy_reason()
+            ));
+        }
+
+        let license_operation = if installed {
+            LicenseOperation::ExistingExecution
+        } else {
+            LicenseOperation::Download
+        };
+        let license_decision =
+            ModelLicensePolicy.evaluate_descriptor(model, license_operation, installed);
+        if !license_decision.permits_operation {
+            return Err(format!(
+                "model license policy {}: {}",
+                license_decision.status.as_str(),
+                license_decision.reason.as_str()
+            ));
+        }
+
+        if installed {
             return Ok(());
         }
         let model_dir = self.storage.model_path(&model.id);

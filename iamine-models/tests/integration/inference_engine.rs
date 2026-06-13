@@ -305,13 +305,16 @@ async fn test_token_streaming() {
 }
 
 #[tokio::test]
-async fn test_invalid_existing_mock_is_reinstalled() {
+async fn test_invalid_existing_mock_is_reinstalled() -> Result<(), Box<dyn std::error::Error>> {
     use iamine_models::model_downloader::ModelDownloader;
     use iamine_models::ModelRegistry;
 
     let (_tmp_dir, storage) = temp_storage();
     let registry = ModelRegistry::new();
-    let model = registry.get("tinyllama-1b").unwrap();
+    let Some(model) = registry.get("tinyllama-1b") else {
+        return Err("tinyllama-1b test model should exist".into());
+    };
+    let model = with_allowed_test_license(model);
     let model_path = storage.gguf_path("tinyllama-1b");
 
     std::fs::create_dir_all(storage.model_path("tinyllama-1b")).unwrap();
@@ -326,6 +329,7 @@ async fn test_invalid_existing_mock_is_reinstalled() {
     assert!(bytes.len() >= 2048);
     assert_eq!(&bytes[..4], b"GGUF");
     assert!(storage.has_model("tinyllama-1b"));
+    Ok(())
 }
 
 #[test]

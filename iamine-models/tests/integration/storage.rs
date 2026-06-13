@@ -89,22 +89,26 @@ async fn test_installer_storage_limit() {
 }
 
 #[tokio::test]
-async fn test_installer_mock_download() {
+async fn test_installer_mock_download() -> Result<(), Box<dyn std::error::Error>> {
     use iamine_models::model_downloader::ModelDownloader;
     let (_tmp_dir, storage) = temp_storage();
     let downloader = ModelDownloader::new(storage.clone_for_test());
     let registry = iamine_models::ModelRegistry::new();
-    let model = registry.get("tinyllama-1b").unwrap();
+    let Some(model) = registry.get("tinyllama-1b") else {
+        return Err("tinyllama-1b test model should exist".into());
+    };
+    let model = with_allowed_test_license(model);
 
     // Solo verificar que mock no falla si ya existe
     if storage.has_model("tinyllama-1b") {
         println!("tinyllama-1b ya existe — skip mock download");
-        return;
+        return Ok(());
     }
 
     let result = downloader.download_model_mock(&model).await;
     // En CI puede fallar el path, solo verificar que no panics
     println!("Mock download result: {:?}", result);
+    Ok(())
 }
 
 #[test]

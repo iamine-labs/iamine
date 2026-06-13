@@ -10,3 +10,15 @@ fn temp_storage() -> (TempDir, ModelStorage) {
     let storage = ModelStorage::new_in(dir.path().to_path_buf());
     (dir, storage)
 }
+
+fn with_allowed_test_license(model: &ModelDescriptor) -> ModelDescriptor {
+    let mut model = model.clone();
+    model.license = LicenseMetadata {
+        license_id: Some("MIT".to_string()),
+        license_url: Some("https://opensource.org/license/mit".to_string()),
+        policy_class: Some(LicenseClass::Allowed),
+        requires_acceptance: false,
+        revision: Some("test-fixture".to_string()),
+    };
+    model
+}
