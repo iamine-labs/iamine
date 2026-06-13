@@ -1,3 +1,4 @@
+use crate::download_policy::ModelDownloadPolicy;
 use crate::model_registry::ModelDescriptor;
 use crate::model_storage::ModelStorage;
 use crate::model_verifier::ModelVerifier;
@@ -52,6 +53,20 @@ impl ModelDownloader {
         model: &ModelDescriptor,
         progress_tx: Option<tokio::sync::mpsc::Sender<DownloadProgress>>,
     ) -> Result<(), String> {
+        let policy_decision = ModelDownloadPolicy::default().evaluate_descriptor(model);
+        if !policy_decision.permits_download() {
+            return Err(format!(
+                "model download policy {}: {}",
+                policy_decision.status.as_str(),
+                policy_decision.policy_reason()
+            ));
+        }
+        println!(
+            "   Download policy: {} ({})",
+            policy_decision.status.as_str(),
+            policy_decision.policy_reason()
+        );
+
         if self.storage.has_model(&model.id) {
             println!("✅ Modelo {} ya existe localmente", model.id);
             return Ok(());
