@@ -71,6 +71,16 @@ impl ModelRegistry {
         registry
     }
 
+    #[cfg(test)]
+    pub(crate) fn from_models_for_test(models: Vec<ModelDescriptor>) -> Self {
+        Self {
+            models: models
+                .into_iter()
+                .map(|model| (model.id.clone(), model))
+                .collect(),
+        }
+    }
+
     fn register_defaults(&mut self) {
         // TinyLlama 1.1B — Q4_K_M (~669 MB)
         self.models.insert("tinyllama-1b".to_string(), ModelDescriptor {
