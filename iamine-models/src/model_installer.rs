@@ -1,3 +1,4 @@
+use crate::download_policy::ModelDownloadPolicy;
 use crate::model_downloader::{DownloadProgress, ModelDownloader};
 use crate::model_registry::ModelRegistry;
 use crate::model_storage::ModelStorage;
@@ -130,6 +131,7 @@ impl ModelInstaller {
                 } else {
                     None
                 };
+                let policy_decision = ModelDownloadPolicy::default().evaluate_descriptor(m);
                 ModelStatus {
                     id: m.id.clone(),
                     version: m.version.clone(),
@@ -138,6 +140,8 @@ impl ModelInstaller {
                     size_gb: m.size_gb(),
                     installed,
                     size_on_disk_mb: size_on_disk.map(|s| s / 1_048_576),
+                    download_policy_status: policy_decision.status.as_str().to_string(),
+                    download_policy_reason: policy_decision.policy_reason(),
                 }
             })
             .collect()
@@ -169,6 +173,8 @@ pub struct ModelStatus {
     pub size_gb: f64,
     pub installed: bool,
     pub size_on_disk_mb: Option<u64>,
+    pub download_policy_status: String,
+    pub download_policy_reason: String,
 }
 
 impl ModelStatus {
@@ -179,8 +185,15 @@ impl ModelStatus {
             .map(|s| format!(" ({} MB en disco)", s))
             .unwrap_or_default();
         println!(
-            "  {} {} v{} | {:.1} GB | {}GB RAM{}",
-            status, self.id, self.version, self.size_gb, self.required_ram_gb, disk
+            "  {} {} v{} | {:.1} GB | {}GB RAM{} | policy={} ({})",
+            status,
+            self.id,
+            self.version,
+            self.size_gb,
+            self.required_ram_gb,
+            disk,
+            self.download_policy_status,
+            self.download_policy_reason
         );
     }
 }

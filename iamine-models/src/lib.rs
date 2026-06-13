@@ -1,5 +1,6 @@
 pub mod continuation_manager;
 pub mod distributed_inference;
+pub mod download_policy;
 pub mod hardware_acceleration;
 pub mod huggingface_search;
 pub mod inference;
@@ -29,6 +30,11 @@ pub mod storage_config; // ← NUEVO
 pub use continuation_manager::ContinuationManager;
 pub use distributed_inference::{
     DirectInferenceRequest, InferenceTask, InferenceTaskResult, StreamedToken,
+};
+pub use download_policy::{
+    AllowedModelFormat, AllowedModelSource, ModelChecksumStatus, ModelDownloadDecision,
+    ModelDownloadPolicy, ModelDownloadPolicyStatus, ModelDownloadRejectReason,
+    ModelDownloadRequest,
 };
 pub use hardware_acceleration::{AcceleratorType, HardwareAcceleration};
 pub use huggingface_search::HuggingFaceSearch;
