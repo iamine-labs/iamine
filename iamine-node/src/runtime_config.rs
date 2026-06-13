@@ -1,5 +1,7 @@
 use crate::benchmark::NodeBenchmark;
 use crate::cli::{parse_args_from, parse_worker_port};
+use crate::cluster_stress::{IAMINE_STRESS_CHILD, IAMINE_STRESS_TASK_ID};
+use crate::env_config::{env_bool_or_default, env_string};
 use crate::log_observability_event;
 use crate::mode_dispatch::is_control_plane_mode;
 use crate::network_config;
@@ -95,6 +97,21 @@ pub(crate) fn uuid_simple() -> String {
     format!("{}{}", t.as_secs(), t.subsec_nanos())
 }
 
+pub(crate) fn broadcast_task_id() -> String {
+    stress_child_broadcast_task_id(
+        env_bool_or_default(IAMINE_STRESS_CHILD, false),
+        env_string(IAMINE_STRESS_TASK_ID),
+    )
+    .unwrap_or_else(uuid_simple)
+}
+
+fn stress_child_broadcast_task_id(stress_child: bool, task_id: Option<String>) -> Option<String> {
+    stress_child
+        .then_some(task_id)
+        .flatten()
+        .filter(|task_id| !task_id.trim().is_empty())
+}
+
 pub(crate) fn prepare_runtime_startup_config(
     mode: &NodeMode,
     args: &[String],
@@ -109,11 +126,22 @@ pub(crate) fn prepare_runtime_startup_config(
         println!("🏷️  Version: {}", runtime_version);
     }
 
-    let use_ephemeral_identity = matches!(mode, NodeMode::Infer { .. });
+    let ephemeral_identity = if matches!(mode, NodeMode::Infer { .. }) {
+        Some(("infer", "avoid_peer_id_conflict_with_local_worker"))
+    } else if matches!(mode, NodeMode::Broadcast { .. })
+        && env_bool_or_default(IAMINE_STRESS_CHILD, false)
+    {
+        Some((
+            "cluster_stress_child",
+            "avoid_peer_id_conflict_between_concurrent_stress_controllers",
+        ))
+    } else {
+        None
+    };
     let node_identity = if is_cluster_status_mode {
         NodeIdentity::load_or_create_quiet()
-    } else if use_ephemeral_identity {
-        NodeIdentity::ephemeral("infer_mode_peer_id_isolation")
+    } else if let Some((mode, _)) = ephemeral_identity {
+        NodeIdentity::ephemeral(mode)
     } else {
         NodeIdentity::load_or_create()
     };
@@ -125,7 +153,7 @@ pub(crate) fn prepare_runtime_startup_config(
         emit_worker_startup_started_event(&peer_id.to_string(), worker_port);
     }
 
-    if use_ephemeral_identity {
+    if let Some((mode, reason)) = ephemeral_identity {
         log_observability_event(
             LogLevel::Info,
             "identity_mode_selected",
@@ -135,12 +163,9 @@ pub(crate) fn prepare_runtime_startup_config(
             None,
             {
                 let mut fields = Map::new();
-                fields.insert("mode".to_string(), "infer".into());
+                fields.insert("mode".to_string(), mode.into());
                 fields.insert("identity_kind".to_string(), "ephemeral".into());
-                fields.insert(
-                    "reason".to_string(),
-                    "avoid_peer_id_conflict_with_local_worker".into(),
-                );
+                fields.insert("reason".to_string(), reason.into());
                 fields.insert("peer_id".to_string(), peer_id.to_string().into());
                 fields
             },
@@ -246,5 +271,21 @@ mod tests {
         assert_eq!(MIN_REMOTE_EXECUTION_TIMEOUT_MS, 120_000);
         assert_eq!(MAX_REMOTE_EXECUTION_TIMEOUT_MS, 900_000);
         assert_eq!(UNCLAIMED_WORKER_PEER_ID, "-");
+    }
+
+    #[test]
+    fn cluster_stress_child_uses_parent_correlated_broadcast_task_id() {
+        assert_eq!(
+            stress_child_broadcast_task_id(true, Some("stress-request-0001".to_string())),
+            Some("stress-request-0001".to_string())
+        );
+        assert_eq!(
+            stress_child_broadcast_task_id(false, Some("stress-request-0001".to_string())),
+            None
+        );
+        assert_eq!(
+            stress_child_broadcast_task_id(true, Some(" ".to_string())),
+            None
+        );
     }
 }
