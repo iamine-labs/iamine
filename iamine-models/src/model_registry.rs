@@ -1,3 +1,4 @@
+use crate::license_policy::LicenseMetadata;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -13,6 +14,8 @@ pub struct ModelDescriptor {
     pub hash: String, // SHA256 — empty string = skip verification
     pub download_url: String,
     pub quantization: String,
+    #[serde(default)]
+    pub license: LicenseMetadata,
 }
 
 impl ModelDescriptor {
@@ -68,6 +71,16 @@ impl ModelRegistry {
         registry
     }
 
+    #[cfg(test)]
+    pub(crate) fn from_models_for_test(models: Vec<ModelDescriptor>) -> Self {
+        Self {
+            models: models
+                .into_iter()
+                .map(|model| (model.id.clone(), model))
+                .collect(),
+        }
+    }
+
     fn register_defaults(&mut self) {
         // TinyLlama 1.1B — Q4_K_M (~669 MB)
         self.models.insert("tinyllama-1b".to_string(), ModelDescriptor {
@@ -81,6 +94,7 @@ impl ModelRegistry {
             hash: String::new(), // Will be computed on first download and cached
             download_url: "https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf".to_string(),
             quantization: "q4_k_m".to_string(),
+            license: LicenseMetadata::missing(),
         });
 
         // Llama 3.2 3B — Q4_K_M (~2.02 GB)
@@ -95,6 +109,7 @@ impl ModelRegistry {
             hash: String::new(),
             download_url: "https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF/resolve/main/Llama-3.2-3B-Instruct-Q4_K_M.gguf".to_string(),
             quantization: "q4_k_m".to_string(),
+            license: LicenseMetadata::missing(),
         });
 
         // Mistral 7B — Q4_K_M (~4.37 GB)
@@ -109,6 +124,7 @@ impl ModelRegistry {
             hash: String::new(),
             download_url: "https://huggingface.co/TheBloke/Mistral-7B-Instruct-v0.2-GGUF/resolve/main/mistral-7b-instruct-v0.2.Q4_K_M.gguf".to_string(),
             quantization: "q4_k_m".to_string(),
+            license: LicenseMetadata::missing(),
         });
     }
 

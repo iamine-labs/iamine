@@ -1,4 +1,5 @@
 use crate::download_policy::ModelDownloadPolicy;
+use crate::license_policy::{LicenseOperation, ModelLicensePolicy};
 use crate::model_downloader::{DownloadProgress, ModelDownloader};
 use crate::model_registry::ModelRegistry;
 use crate::model_storage::ModelStorage;
@@ -61,7 +62,27 @@ impl ModelInstaller {
             return InstallResult::AlreadyExists(model_id.to_string());
         }
 
-        // 3️⃣ Check storage space
+        // 3️⃣ Admission gates before storage writes or network access.
+        let download_decision = ModelDownloadPolicy::default().evaluate_descriptor(&model);
+        if !download_decision.permits_download() {
+            return InstallResult::DownloadFailed(format!(
+                "model download policy {}: {}",
+                download_decision.status.as_str(),
+                download_decision.policy_reason()
+            ));
+        }
+
+        let license_decision =
+            ModelLicensePolicy.evaluate_descriptor(&model, LicenseOperation::Install, false);
+        if !license_decision.permits_operation {
+            return InstallResult::DownloadFailed(format!(
+                "model license policy {}: {}",
+                license_decision.status.as_str(),
+                license_decision.reason.as_str()
+            ));
+        }
+
+        // 4️⃣ Check storage space
         let used = self.storage.total_size_bytes();
         if !self.storage_config.has_space_for(model.size_bytes, used) {
             let needed = model.size_bytes as f64 / 1_073_741_824.0;
@@ -81,12 +102,12 @@ impl ModelInstaller {
         );
         println!("   URL: {}", model.download_url);
 
-        // 4️⃣ Download (real HTTP streaming)
+        // 5️⃣ Download (real HTTP streaming)
         if let Err(e) = self.downloader.download_model(&model, progress_tx).await {
             return InstallResult::DownloadFailed(e);
         }
 
-        // 5️⃣ Verify GGUF header (basic sanity check)
+        // 6️⃣ Verify GGUF header (basic sanity check)
         let gguf_path = self.storage.gguf_path(model_id);
         if gguf_path.exists() {
             let file_size = std::fs::metadata(&gguf_path).map(|m| m.len()).unwrap_or(0);
@@ -132,6 +153,8 @@ impl ModelInstaller {
                     None
                 };
                 let policy_decision = ModelDownloadPolicy::default().evaluate_descriptor(m);
+                let license_decision =
+                    ModelLicensePolicy.evaluate_descriptor(m, LicenseOperation::List, installed);
                 ModelStatus {
                     id: m.id.clone(),
                     version: m.version.clone(),
@@ -142,6 +165,8 @@ impl ModelInstaller {
                     size_on_disk_mb: size_on_disk.map(|s| s / 1_048_576),
                     download_policy_status: policy_decision.status.as_str().to_string(),
                     download_policy_reason: policy_decision.policy_reason(),
+                    license_policy_status: license_decision.status.as_str().to_string(),
+                    license_policy_reason: license_decision.reason.as_str().to_string(),
                 }
             })
             .collect()
@@ -175,6 +200,8 @@ pub struct ModelStatus {
     pub size_on_disk_mb: Option<u64>,
     pub download_policy_status: String,
     pub download_policy_reason: String,
+    pub license_policy_status: String,
+    pub license_policy_reason: String,
 }
 
 impl ModelStatus {
@@ -185,7 +212,7 @@ impl ModelStatus {
             .map(|s| format!(" ({} MB en disco)", s))
             .unwrap_or_default();
         println!(
-            "  {} {} v{} | {:.1} GB | {}GB RAM{} | policy={} ({})",
+            "  {} {} v{} | {:.1} GB | {}GB RAM{} | download_policy={} download_reason={} | license_policy={} license_reason={}",
             status,
             self.id,
             self.version,
@@ -193,7 +220,9 @@ impl ModelStatus {
             self.required_ram_gb,
             disk,
             self.download_policy_status,
-            self.download_policy_reason
+            self.download_policy_reason,
+            self.license_policy_status,
+            self.license_policy_reason
         );
     }
 }

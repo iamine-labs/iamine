@@ -6,6 +6,7 @@ pub mod huggingface_search;
 pub mod inference;
 pub mod inference_engine;
 pub mod inference_queue;
+pub mod license_policy;
 pub mod model_auto_provision;
 pub mod model_cache;
 pub mod model_downloader;
@@ -45,6 +46,10 @@ pub use inference_engine::{
     SamplingConfig,
 };
 pub use inference_queue::{InferenceQueue, InferenceRequest as QueuedInferenceRequest};
+pub use license_policy::{
+    LicenseClass, LicenseMetadata, LicenseOperation, LicensePolicyDecision, LicensePolicyReason,
+    LicensePolicyStatus, ModelAdmissionDecision, ModelLicensePolicy,
+};
 pub use model_auto_provision::{AutoProvisionProfile, ModelAutoProvision};
 pub use model_cache::{LoadedModel, ModelCache};
 pub use model_downloader::{DownloadPhase, DownloadProgress, ModelDownloader};

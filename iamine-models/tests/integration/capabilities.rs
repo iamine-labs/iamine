@@ -211,11 +211,10 @@ async fn test_auto_model_download() {
     let result = provision
         .auto_download_recommended(&profile, None, true)
         .await;
-    assert!(result.is_ok());
-
-    if let Some(model_id) = result.unwrap() {
-        assert!(!model_id.is_empty());
-    }
+    assert!(result.is_err());
+    let error = result.unwrap_err();
+    assert!(error.contains("model license policy"));
+    assert!(error.contains("license_missing"));
 }
 
 #[test]
