@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "iamine-core",
+    "iamine-hardware",
     "iamine-node",
     "iamine-models",   # ← nuevo
     "client-rust",

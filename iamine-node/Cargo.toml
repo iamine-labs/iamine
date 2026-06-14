@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 iamine-core = { path = "../iamine-core" }
+iamine-hardware = { path = "../iamine-hardware" }
 iamine-models = { path = "../iamine-models" }
 iamine-network = { path = "../iamine-network" }
 libp2p = { version = "0.53", features = [

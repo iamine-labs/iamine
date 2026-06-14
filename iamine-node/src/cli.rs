@@ -1,4 +1,5 @@
 use crate::cluster_stress::ClusterStressConfig;
+use crate::hardware_cli::HardwareCliCommand;
 use crate::node_modes::{InferenceControlFlags, NodeMode};
 use libp2p::Multiaddr;
 use std::str::FromStr;
@@ -164,6 +165,10 @@ pub(crate) fn parse_args_from(raw_args: Vec<String>) -> Result<NodeMode, String>
                     .to_string(),
             ),
         },
+
+        Some("hardware") => Ok(NodeMode::Hardware {
+            command: HardwareCliCommand::from_args(&args[2..])?,
+        }),
 
         Some("nodes") => Ok(NodeMode::Nodes),
 
@@ -379,6 +384,10 @@ mod tests {
             parse_args_from(args(&["iamine-node", "tasks", "stats", "--json"])).unwrap(),
             NodeMode::TasksStats { json: true }
         ));
+        assert!(matches!(
+            parse_args_from(args(&["iamine-node", "hardware", "inspect", "--json"])),
+            Ok(NodeMode::Hardware { .. })
+        ));
     }
 
     #[test]
@@ -462,6 +471,34 @@ mod tests {
         let mode = parse_args_from(args(&["iamine-node", "cluster", "stress", "--help"]));
 
         assert!(matches!(mode, Ok(NodeMode::Help)));
+    }
+
+    #[test]
+    fn hardware_cli_help_has_no_runtime_side_effect() {
+        let mode = parse_args_from(args(&["iamine-node", "hardware", "inspect", "--help"]));
+
+        assert!(matches!(mode, Ok(NodeMode::Help)));
+    }
+
+    #[test]
+    fn cli_detects_hardware_inspect_mode() {
+        let mode = parse_args_from(args(&[
+            "iamine-node",
+            "hardware",
+            "inspect",
+            "--json",
+            "--dynamic",
+        ]));
+
+        assert!(matches!(
+            mode,
+            Ok(NodeMode::Hardware {
+                command: HardwareCliCommand::Inspect {
+                    json: true,
+                    dynamic: true
+                }
+            })
+        ));
     }
 
     #[test]
