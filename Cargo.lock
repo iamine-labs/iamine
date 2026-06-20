@@ -2485,6 +2485,7 @@ dependencies = [
  "futures",
  "hex",
  "iamine-core",
+ "iamine-hardware",
  "libp2p 0.53.2",
  "llama-cpp-2",
  "reqwest 0.11.27",

@@ -4,7 +4,7 @@ use crate::worker_startup_policy::{
     emit_worker_model_load_attempt_event, emit_worker_model_load_failed_event, WorkerStartupPolicy,
 };
 use iamine_models::{
-    can_node_run_model, ModelNodeCapabilities, ModelRegistry, ModelRequirements, ModelStorage,
+    evaluate_node_model_compatibility, ModelNodeCapabilities, ModelRegistry, ModelStorage,
     RealInferenceEngine,
 };
 use iamine_network::{LogLevel, MODEL_LOAD_FAILED_001, MODEL_UNSUPPORTED_HW_002};
@@ -45,29 +45,6 @@ where
     }
 
     for model_id in local_models {
-        if let Some(requirements) = ModelRequirements::for_model(&model_id) {
-            if !can_node_run_model(node_caps, &requirements) {
-                println!(
-                    "[Health] Skipping advertisement for {}: hardware requirements not satisfied",
-                    model_id
-                );
-                log_observability_event(
-                    LogLevel::Warn,
-                    "model_advertisement_rejected",
-                    "startup",
-                    None,
-                    Some(&model_id),
-                    Some(MODEL_UNSUPPORTED_HW_002),
-                    {
-                        let mut fields = Map::new();
-                        fields.insert("reason".to_string(), "hardware_requirements".into());
-                        fields
-                    },
-                );
-                continue;
-            }
-        }
-
         let Some(model_desc) = registry.get(&model_id) else {
             println!(
                 "[Health] Skipping advertisement for {}: missing registry descriptor",
@@ -75,6 +52,32 @@ where
             );
             continue;
         };
+
+        let compatibility = evaluate_node_model_compatibility(&model_id, node_caps);
+        if !compatibility.is_compatible() {
+            println!(
+                "[Health] Skipping advertisement for {}: hardware requirements not satisfied",
+                model_id
+            );
+            log_observability_event(
+                LogLevel::Warn,
+                "model_advertisement_rejected",
+                "startup",
+                None,
+                Some(&model_id),
+                Some(MODEL_UNSUPPORTED_HW_002),
+                {
+                    let mut fields = Map::new();
+                    fields.insert("reason".to_string(), "hardware_requirements".into());
+                    fields.insert(
+                        "compatibility_status".to_string(),
+                        format!("{:?}", compatibility.status).into(),
+                    );
+                    fields
+                },
+            );
+            continue;
+        }
 
         emit_worker_model_load_attempt_event(&model_id, "advertisement_validation");
         match load_model(&model_id, &model_desc.hash) {
