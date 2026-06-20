@@ -34,7 +34,7 @@ impl ModelCompatibilityProfile {
                 .storage
                 .available_bytes
                 .map(bytes_to_gib_floor),
-            gpu_available: Some(has_non_cpu_accelerator(profile)),
+            gpu_available: Some(has_gpu_accelerator(profile)),
             cpu_features: static_profile.cpu.features.features.clone(),
             accelerator: Some(format!(
                 "{:?}",
@@ -180,25 +180,28 @@ pub fn evaluate_model_requirements_compatibility(
     }
 }
 
-fn has_non_cpu_accelerator(profile: &NodeHardwareProfile) -> bool {
-    !matches!(
-        profile.static_profile.effective.effective_accelerator,
-        AcceleratorKind::Cpu | AcceleratorKind::Unknown
-    ) || profile
-        .static_profile
-        .accelerators
-        .iter()
-        .any(|accelerator| {
-            !matches!(
-                accelerator.kind,
-                AcceleratorKind::Cpu | AcceleratorKind::Unknown
-            )
-        })
+fn has_gpu_accelerator(profile: &NodeHardwareProfile) -> bool {
+    is_gpu_accelerator_kind(profile.static_profile.effective.effective_accelerator)
+        || profile
+            .static_profile
+            .accelerators
+            .iter()
+            .any(|accelerator| is_gpu_accelerator_kind(accelerator.kind))
+}
+
+fn is_gpu_accelerator_kind(kind: AcceleratorKind) -> bool {
+    matches!(
+        kind,
+        AcceleratorKind::Metal
+            | AcceleratorKind::Cuda
+            | AcceleratorKind::Rocm
+            | AcceleratorKind::Vulkan
+    )
 }
 
 fn accelerator_name_indicates_gpu(accelerator: &str) -> bool {
     let normalized = accelerator.to_ascii_lowercase();
-    ["metal", "cuda", "rocm", "gpu", "npu"]
+    ["metal", "cuda", "rocm", "vulkan", "gpu"]
         .iter()
         .any(|needle| normalized.contains(needle))
 }
@@ -235,6 +238,50 @@ mod tests {
                 .to_string(),
             ),
         }
+    }
+
+    fn hardware_profile_with_accelerator(kind: AcceleratorKind) -> NodeHardwareProfile {
+        build_node_hardware_profile(HardwareProfileParts {
+            mode: HardwareCollectionMode::StaticOnly,
+            cpu: CpuStaticProfile {
+                architecture: "x86_64".to_string(),
+                vendor: None,
+                brand: None,
+                physical_cores: Some(4),
+                logical_cores: 8,
+                recommended_threads: 4,
+                features: CpuFeatureProfile {
+                    avx2: true,
+                    avx512f: false,
+                    fma: true,
+                    neon: false,
+                    features: vec!["AVX2".to_string(), "FMA".to_string()],
+                },
+                confidence: DetectionConfidence::High,
+            },
+            memory: MemoryStaticProfile {
+                total_bytes: 16 * 1_073_741_824,
+                available_bytes: Some(8 * 1_073_741_824),
+                total_gb: 16,
+                unified_memory: false,
+                confidence: DetectionConfidence::High,
+            },
+            accelerators: vec![AcceleratorStaticProfile {
+                kind,
+                name: format!("{kind:?}"),
+                vendor: None,
+                memory_bytes: None,
+                unified_memory: false,
+                confidence: DetectionConfidence::High,
+            }],
+            storage: StorageStaticProfile {
+                available_bytes: Some(20 * 1_073_741_824),
+                confidence: DetectionConfidence::High,
+            },
+            dynamic_profile: None,
+            warnings: Vec::new(),
+            generated_at_unix_ms: 42,
+        })
     }
 
     #[test]
@@ -326,47 +373,7 @@ mod tests {
 
     #[test]
     fn hardware_profiler_profile_can_be_normalized_for_compatibility() {
-        let hardware_profile = build_node_hardware_profile(HardwareProfileParts {
-            mode: HardwareCollectionMode::StaticOnly,
-            cpu: CpuStaticProfile {
-                architecture: "x86_64".to_string(),
-                vendor: None,
-                brand: None,
-                physical_cores: Some(4),
-                logical_cores: 8,
-                recommended_threads: 4,
-                features: CpuFeatureProfile {
-                    avx2: true,
-                    avx512f: false,
-                    fma: true,
-                    neon: false,
-                    features: vec!["AVX2".to_string(), "FMA".to_string()],
-                },
-                confidence: DetectionConfidence::High,
-            },
-            memory: MemoryStaticProfile {
-                total_bytes: 16 * 1_073_741_824,
-                available_bytes: Some(8 * 1_073_741_824),
-                total_gb: 16,
-                unified_memory: false,
-                confidence: DetectionConfidence::High,
-            },
-            accelerators: vec![AcceleratorStaticProfile {
-                kind: AcceleratorKind::Cpu,
-                name: "CPU".to_string(),
-                vendor: None,
-                memory_bytes: None,
-                unified_memory: false,
-                confidence: DetectionConfidence::High,
-            }],
-            storage: StorageStaticProfile {
-                available_bytes: Some(20 * 1_073_741_824),
-                confidence: DetectionConfidence::High,
-            },
-            dynamic_profile: None,
-            warnings: Vec::new(),
-            generated_at_unix_ms: 42,
-        });
+        let hardware_profile = hardware_profile_with_accelerator(AcceleratorKind::Cpu);
 
         let normalized = ModelCompatibilityProfile::from_hardware_profile(&hardware_profile);
         let decision = evaluate_model_compatibility("mistral-7b", &normalized);
@@ -375,6 +382,14 @@ mod tests {
         assert_eq!(normalized.storage_available_gb, Some(20));
         assert_eq!(normalized.gpu_available, Some(false));
         assert!(decision.is_compatible());
+    }
+
+    #[test]
+    fn hardware_profiler_npu_does_not_satisfy_gpu_requirement() {
+        let hardware_profile = hardware_profile_with_accelerator(AcceleratorKind::Npu);
+        let normalized = ModelCompatibilityProfile::from_hardware_profile(&hardware_profile);
+
+        assert_eq!(normalized.gpu_available, Some(false));
     }
 
     #[test]
@@ -395,5 +410,25 @@ mod tests {
         let normalized = ModelCompatibilityProfile::from_node_capabilities(&capabilities);
 
         assert_eq!(normalized.gpu_available, Some(true));
+    }
+
+    #[test]
+    fn node_capabilities_npu_accelerator_does_not_satisfy_gpu_requirement() {
+        let capabilities = NodeCapabilities {
+            node_id: "node".to_string(),
+            cpu_cores: 8,
+            ram_gb: 32,
+            gpu_type: None,
+            npu_type: Some("NPU".to_string()),
+            storage_available_gb: 50,
+            worker_slots: 8,
+            supported_models: Vec::new(),
+            cpu_features: Vec::new(),
+            accelerator: "NPU".to_string(),
+        };
+
+        let normalized = ModelCompatibilityProfile::from_node_capabilities(&capabilities);
+
+        assert_eq!(normalized.gpu_available, Some(false));
     }
 }
