@@ -1,10 +1,10 @@
 use crate::node_modes::NodeMode;
 use crate::{
     benchmark::NodeBenchmark, cluster_stress_cli::run_cluster_stress_cli,
-    code_quality::run_code_quality_checks, model_selector_cli::ModelSelectorCLI,
-    node_identity::NodeIdentity, prompt_task_label, quality_gate::run_release_validation,
-    regression_runner::run_default_regression_suite, security_checks::run_security_checks,
-    tasks_cli,
+    code_quality::run_code_quality_checks, hardware_cli::run_hardware_cli,
+    model_selector_cli::ModelSelectorCLI, node_identity::NodeIdentity, prompt_task_label,
+    quality_gate::run_release_validation, regression_runner::run_default_regression_suite,
+    security_checks::run_security_checks, tasks_cli,
 };
 use iamine_models::{
     AutoProvisionProfile, InstallResult, ModelAutoProvision, ModelInstaller, ModelNodeCapabilities,
@@ -23,6 +23,7 @@ pub(crate) fn is_control_plane_mode(mode: &NodeMode) -> bool {
             | NodeMode::TasksStats { .. }
             | NodeMode::TasksTrace { .. }
             | NodeMode::ClusterStress { .. }
+            | NodeMode::Hardware { .. }
     )
 }
 
@@ -77,6 +78,11 @@ pub(crate) async fn handle_pre_network_mode(
 
         NodeMode::ClusterStress { config } => {
             run_cluster_stress_cli(config).await?;
+            Ok(true)
+        }
+
+        NodeMode::Hardware { command } => {
+            run_hardware_cli(command)?;
             Ok(true)
         }
 
@@ -429,6 +435,12 @@ mod tests {
         }));
         assert!(!is_control_plane_mode(&NodeMode::ClusterStatus {
             json: false
+        }));
+        assert!(is_control_plane_mode(&NodeMode::Hardware {
+            command: crate::hardware_cli::HardwareCliCommand::Inspect {
+                json: false,
+                dynamic: false,
+            }
         }));
         assert!(!is_control_plane_mode(&NodeMode::Worker));
     }

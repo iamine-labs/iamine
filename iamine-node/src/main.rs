@@ -29,6 +29,7 @@ mod env_config;
 mod executor;
 mod final_outcome;
 mod gossipsub_message_runtime;
+mod hardware_cli;
 mod heartbeat;
 mod infer_observability;
 mod infer_retry;

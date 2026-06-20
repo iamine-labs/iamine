@@ -1,4 +1,5 @@
 use crate::cluster_stress::ClusterStressConfig;
+use crate::hardware_cli::HardwareCliCommand;
 use libp2p::Multiaddr;
 
 #[allow(dead_code)]
@@ -64,6 +65,9 @@ pub(crate) enum NodeMode {
     },
     ClusterStress {
         config: ClusterStressConfig,
+    },
+    Hardware {
+        command: HardwareCliCommand,
     },
     Capabilities,
     Nodes,
@@ -142,6 +146,7 @@ pub(crate) fn mode_label(mode: &NodeMode) -> &'static str {
         NodeMode::TasksTrace { .. } => "tasks-trace",
         NodeMode::ClusterStatus { .. } => "cluster-status",
         NodeMode::ClusterStress { .. } => "cluster-stress",
+        NodeMode::Hardware { .. } => "hardware",
         NodeMode::Capabilities => "capabilities",
         NodeMode::Nodes => "nodes",
         NodeMode::Topology => "topology",
