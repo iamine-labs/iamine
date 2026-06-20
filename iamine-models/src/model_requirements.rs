@@ -30,7 +30,7 @@ impl ModelRequirements {
             "mistral-7b" => Some(Self {
                 model_id: "mistral-7b".to_string(),
                 min_ram_gb: 8,
-                min_storage_gb: 4,
+                min_storage_gb: 5,
                 requires_gpu: false,
                 recommended_gpu_layers: Some(99),
             }),
@@ -73,16 +73,11 @@ impl ModelRequirements {
 
 /// Validar si un nodo puede ejecutar un modelo
 pub fn can_node_run_model(cap: &NodeCapabilities, req: &ModelRequirements) -> bool {
-    if cap.ram_gb < req.min_ram_gb {
-        return false;
-    }
-    if cap.storage_available_gb < req.min_storage_gb {
-        return false;
-    }
-    if req.requires_gpu && cap.gpu_type.is_none() {
-        return false;
-    }
-    true
+    crate::model_compatibility::evaluate_model_requirements_compatibility(
+        req,
+        &crate::model_compatibility::ModelCompatibilityProfile::from_node_capabilities(cap),
+    )
+    .is_compatible()
 }
 
 /// Validar todos los modelos que un nodo puede ejecutar

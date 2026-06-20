@@ -1,5 +1,5 @@
 use crate::worker_startup_policy::WorkerStartupPolicy;
-use iamine_models::{can_node_run_model, ModelNodeCapabilities, ModelRequirements, ModelStorage};
+use iamine_models::{evaluate_node_model_compatibility, ModelNodeCapabilities, ModelStorage};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ModelExecutability {
@@ -101,9 +101,7 @@ pub(crate) fn evaluate_worker_model_execution_gate(
 }
 
 fn worker_hardware_supports_model(model_id: &str, node_caps: &ModelNodeCapabilities) -> bool {
-    ModelRequirements::for_model(model_id)
-        .map(|requirements| can_node_run_model(node_caps, &requirements))
-        .unwrap_or(true)
+    evaluate_node_model_compatibility(model_id, node_caps).is_compatible()
 }
 
 #[cfg(test)]
@@ -176,5 +174,23 @@ mod tests {
             WorkerModelExecutionRejection::HardwareUnsupported.human_warning("mistral-7b"),
             "   ⚠️ Hardware insuficiente para mistral-7b — ignorando"
         );
+    }
+
+    #[test]
+    fn worker_hardware_support_rejects_unknown_model_requirements() {
+        let node_caps = ModelNodeCapabilities {
+            node_id: "test-node".to_string(),
+            cpu_cores: 4,
+            ram_gb: 16,
+            gpu_type: None,
+            npu_type: None,
+            storage_available_gb: 20,
+            worker_slots: 4,
+            supported_models: Vec::new(),
+            cpu_features: Vec::new(),
+            accelerator: "CPU".to_string(),
+        };
+
+        assert!(!worker_hardware_supports_model("unknown-model", &node_caps));
     }
 }
