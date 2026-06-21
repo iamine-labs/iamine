@@ -63,9 +63,9 @@ The policy can report:
 Checksum mismatches are always blocking when an expected and actual checksum are
 both available.
 
-## Deferred Gates
+## Separate Gates
 
-The following gates are intentionally separate:
+The following gates are intentionally separate from download policy:
 
 - MODEL-LICENSE-GATE-001
 - MODEL-HARDWARE-COMPATIBILITY-001
