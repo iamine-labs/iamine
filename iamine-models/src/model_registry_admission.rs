@@ -162,8 +162,9 @@ mod tests {
     }
 
     #[test]
-    fn acceptance_gate_blocks_after_license_requires_acceptance() {
-        let dir = TempDir::new().expect("temp dir");
+    fn acceptance_gate_blocks_after_license_requires_acceptance(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let dir = TempDir::new()?;
         let store = LicenseAcceptanceStore::new_in(dir.path().join("license_acceptance.json"));
         let decision = evaluate_model_registry_admission_with_license_acceptance_store(
             &acceptance_model(),
@@ -179,14 +180,16 @@ mod tests {
                 "model license acceptance policy required: license_acceptance_required".to_string()
             )
         );
+        Ok(())
     }
 
     #[test]
-    fn recorded_acceptance_satisfies_requires_acceptance_license() {
-        let dir = TempDir::new().expect("temp dir");
+    fn recorded_acceptance_satisfies_requires_acceptance_license(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let dir = TempDir::new()?;
         let store = LicenseAcceptanceStore::new_in(dir.path().join("license_acceptance.json"));
         let model = acceptance_model();
-        store.accept_descriptor(&model).expect("accept license");
+        store.accept_descriptor(&model)?;
 
         let decision = evaluate_model_registry_admission_with_license_acceptance_store(
             &model,
@@ -201,5 +204,6 @@ mod tests {
             LicenseAcceptanceStatus::Accepted
         );
         assert_eq!(decision.first_blocking_error(), None);
+        Ok(())
     }
 }
