@@ -101,9 +101,9 @@ policy evaluation and must use `https`.
 The evaluator does not fetch license URLs, scrape external pages, or interpret
 legal text.
 
-## Deferred Gates
+## Separate Gates
 
-The following work is intentionally separate:
+The following gate is intentionally separate from license policy:
 
 - MODEL-HARDWARE-COMPATIBILITY-001
 
