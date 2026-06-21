@@ -28,6 +28,7 @@ pub(crate) struct ClusterStressConfig {
     pub(crate) request_count: usize,
     pub(crate) concurrency: usize,
     pub(crate) task_type: String,
+    pub(crate) required_model_id: Option<String>,
     pub(crate) prefix: String,
     pub(crate) timeout_secs: u64,
     pub(crate) stop_on_first_failure: bool,
@@ -41,6 +42,7 @@ impl Default for ClusterStressConfig {
             request_count: DEFAULT_REQUEST_COUNT,
             concurrency: DEFAULT_CONCURRENCY,
             task_type: "reverse_string".to_string(),
+            required_model_id: None,
             prefix: format!("cluster-stress-{}", now_ms()),
             timeout_secs: DEFAULT_TIMEOUT_SECS,
             stop_on_first_failure: false,
@@ -67,6 +69,11 @@ impl ClusterStressConfig {
                 }
                 "--task" => {
                     config.task_type = parse_string_arg(args, index, "--task")?;
+                    index += 2;
+                }
+                "--required-model" => {
+                    config.required_model_id =
+                        Some(parse_string_arg(args, index, "--required-model")?);
                     index += 2;
                 }
                 "--prefix" => {
@@ -130,6 +137,13 @@ impl ClusterStressConfig {
                 "cluster stress soporta tareas simples de forma segura; task_type no soportado: {}",
                 self.task_type
             ));
+        }
+        if self
+            .required_model_id
+            .as_deref()
+            .is_some_and(|model_id| model_id.trim().is_empty())
+        {
+            return Err("--required-model no puede estar vacio".to_string());
         }
         if self.prefix.trim().is_empty() {
             return Err("--prefix no puede estar vacio".to_string());
@@ -259,6 +273,9 @@ async fn run_single_stress_request(
         .env(IAMINE_LOG_FORMAT, "ndjson")
         .env(IAMINE_LOG_PATH, &ndjson_path)
         .kill_on_drop(true);
+    if let Some(required_model_id) = config.required_model_id.as_deref() {
+        command.arg("--required-model").arg(required_model_id);
+    }
 
     match timeout(Duration::from_secs(config.timeout_secs), command.output()).await {
         Ok(Ok(output)) => {
@@ -530,6 +547,32 @@ mod tests {
         assert!(config.request_count <= MAX_REQUEST_COUNT);
         assert!(config.concurrency <= MAX_CONCURRENCY);
         assert!(is_simple_task(&config.task_type));
+        assert_eq!(config.required_model_id, None);
+    }
+
+    #[test]
+    fn stress_config_parses_required_model() {
+        let args = vec![
+            "--requests".to_string(),
+            "1".to_string(),
+            "--concurrency".to_string(),
+            "1".to_string(),
+            "--required-model".to_string(),
+            "tinyllama-1b".to_string(),
+        ];
+        let config = ClusterStressConfig::from_args(&args).expect("required model should parse");
+
+        assert_eq!(config.required_model_id.as_deref(), Some("tinyllama-1b"));
+    }
+
+    #[test]
+    fn stress_config_rejects_empty_required_model() {
+        let config = ClusterStressConfig {
+            required_model_id: Some(" ".to_string()),
+            ..ClusterStressConfig::default()
+        };
+
+        assert!(config.validate().is_err());
     }
 
     #[test]
