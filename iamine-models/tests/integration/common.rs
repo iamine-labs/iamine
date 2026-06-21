@@ -13,6 +13,8 @@ fn temp_storage() -> (TempDir, ModelStorage) {
 
 fn with_allowed_test_license(model: &ModelDescriptor) -> ModelDescriptor {
     let mut model = model.clone();
+    model.hash = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        .to_string();
     model.license = LicenseMetadata {
         license_id: Some("MIT".to_string()),
         license_url: Some("https://opensource.org/license/mit".to_string()),

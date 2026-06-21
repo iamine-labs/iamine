@@ -14,6 +14,7 @@ pub mod model_downloader;
 pub mod model_events;
 pub mod model_installer;
 pub mod model_registry;
+pub mod model_registry_admission;
 pub mod model_requirements;
 pub mod model_selector;
 pub mod model_signature;
@@ -26,6 +27,7 @@ pub mod output_cleaner;
 pub mod output_normalizer;
 pub mod output_validator;
 pub mod prompt_builder;
+pub mod registry_integrity_policy;
 pub mod signed_metrics;
 pub mod storage_config; // ← NUEVO
 
@@ -62,6 +64,9 @@ pub use model_downloader::{DownloadPhase, DownloadProgress, ModelDownloader};
 pub use model_events::{CapabilitiesUpdatedEvent, ModelInstalledEvent, ModelRemovedEvent};
 pub use model_installer::{InstallResult, ModelInstaller, ModelStatus};
 pub use model_registry::{ModelDescriptor, ModelManifest, ModelRegistry};
+pub use model_registry_admission::{
+    evaluate_model_registry_admission, ModelRegistryAdmissionDecision,
+};
 pub use model_requirements::{can_node_run_model, runnable_models, ModelRequirements};
 pub use model_selector::{
     classify_prompt, estimate_tokens, select_best_model, ModelInfo, PromptComplexity,
@@ -78,5 +83,9 @@ pub use output_cleaner::clean_output;
 pub use output_normalizer::normalize_output;
 pub use output_validator::validate_structured_output;
 pub use prompt_builder::{Language, PromptBuilder, TemplateType};
+pub use registry_integrity_policy::{
+    ModelRegistryIntegrityPolicy, RegistryIntegrityDecision, RegistryIntegrityOperation,
+    RegistryIntegrityReason, RegistryIntegrityStatus,
+};
 pub use signed_metrics::{NodeMetricsPayload, SignedNodeMetrics};
 pub use storage_config::StorageConfig;

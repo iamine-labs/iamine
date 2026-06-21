@@ -3,9 +3,10 @@
 MODEL-DOWNLOAD-POLICY-001 defines the first explicit gate before a model can enter
 the normal IAMINE download and storage flow.
 
-This policy is intentionally not the final trusted-registry gate. It preserves the
-current default registry models while marking missing trust data, such as missing
-checksums, as pending instead of silently trusted.
+This policy is intentionally separate from the trusted-registry gate. It
+preserves source, format, size, and checksum-transition status while
+`MODEL-TRUSTED-REGISTRY-INTEGRITY-001` decides whether the registry descriptor is
+trusted for a new download or install.
 
 ## Allowed Inputs
 
@@ -64,11 +65,11 @@ both available.
 
 ## Deferred Gates
 
-The following gates are intentionally deferred:
+The following gates are intentionally separate:
 
 - MODEL-LICENSE-GATE-001
 - MODEL-HARDWARE-COMPATIBILITY-001
 - MODEL-TRUSTED-REGISTRY-INTEGRITY-001
 
-Until those gates land, `pending_checksum` and related pending states are not the
-same thing as trusted execution. They are explicit markers for future hardening.
+`pending_checksum` and related pending states are not the same thing as trusted
+execution. Registry integrity must still permit the requested operation.

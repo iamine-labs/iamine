@@ -1,6 +1,6 @@
-use crate::download_policy::ModelDownloadPolicy;
-use crate::license_policy::{LicenseOperation, ModelLicensePolicy};
+use crate::license_policy::LicenseOperation;
 use crate::model_registry::ModelDescriptor;
+use crate::model_registry_admission::evaluate_model_registry_admission;
 use crate::model_storage::ModelStorage;
 use crate::model_verifier::ModelVerifier;
 use futures::StreamExt;
@@ -55,38 +55,29 @@ impl ModelDownloader {
         progress_tx: Option<tokio::sync::mpsc::Sender<DownloadProgress>>,
     ) -> Result<(), String> {
         let installed = self.storage.has_model(&model.id);
-        let policy_decision = ModelDownloadPolicy::default().evaluate_descriptor(model);
-        if !policy_decision.permits_download() {
-            return Err(format!(
-                "model download policy {}: {}",
-                policy_decision.status.as_str(),
-                policy_decision.policy_reason()
-            ));
-        }
-        println!(
-            "   Download policy: {} ({})",
-            policy_decision.status.as_str(),
-            policy_decision.policy_reason()
-        );
-
         let license_operation = if installed {
             LicenseOperation::ExistingExecution
         } else {
             LicenseOperation::Download
         };
-        let license_decision =
-            ModelLicensePolicy.evaluate_descriptor(model, license_operation, installed);
-        if !license_decision.permits_operation {
-            return Err(format!(
-                "model license policy {}: {}",
-                license_decision.status.as_str(),
-                license_decision.reason.as_str()
-            ));
+        let admission = evaluate_model_registry_admission(model, license_operation, installed);
+        if let Some(error) = admission.first_blocking_error() {
+            return Err(error);
         }
         println!(
+            "   Download policy: {} ({})",
+            admission.download.status.as_str(),
+            admission.download.policy_reason()
+        );
+        println!(
+            "   Registry integrity policy: {} ({})",
+            admission.registry_integrity.status.as_str(),
+            admission.registry_integrity.policy_reason()
+        );
+        println!(
             "   License policy: {} ({})",
-            license_decision.status.as_str(),
-            license_decision.reason.as_str()
+            admission.license.status.as_str(),
+            admission.license.reason.as_str()
         );
 
         if installed {
@@ -297,28 +288,14 @@ impl ModelDownloader {
     /// Mock for tests (no real network)
     pub async fn download_model_mock(&self, model: &ModelDescriptor) -> Result<(), String> {
         let installed = self.storage.has_model(&model.id);
-        let policy_decision = ModelDownloadPolicy::default().evaluate_descriptor(model);
-        if !policy_decision.permits_download() {
-            return Err(format!(
-                "model download policy {}: {}",
-                policy_decision.status.as_str(),
-                policy_decision.policy_reason()
-            ));
-        }
-
         let license_operation = if installed {
             LicenseOperation::ExistingExecution
         } else {
             LicenseOperation::Download
         };
-        let license_decision =
-            ModelLicensePolicy.evaluate_descriptor(model, license_operation, installed);
-        if !license_decision.permits_operation {
-            return Err(format!(
-                "model license policy {}: {}",
-                license_decision.status.as_str(),
-                license_decision.reason.as_str()
-            ));
+        let admission = evaluate_model_registry_admission(model, license_operation, installed);
+        if let Some(error) = admission.first_blocking_error() {
+            return Err(error);
         }
 
         if installed {

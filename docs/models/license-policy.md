@@ -102,7 +102,7 @@ legal text.
 
 ## Deferred Gates
 
-The following work is intentionally deferred:
+The following work is intentionally separate:
 
 - MODEL-LICENSE-ACCEPTANCE-001
 - MODEL-HARDWARE-COMPATIBILITY-001
