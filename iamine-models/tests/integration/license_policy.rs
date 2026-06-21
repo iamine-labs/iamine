@@ -11,6 +11,8 @@ fn test_models_list_reports_download_and_license_gates() -> Result<(), Box<dyn s
 
     assert_eq!(tiny.download_policy_status, "pending_checksum");
     assert_eq!(tiny.download_policy_reason, "checksum_missing");
+    assert_eq!(tiny.registry_integrity_status, "pending_integrity");
+    assert_eq!(tiny.registry_integrity_reason, "checksum_missing");
     assert_eq!(tiny.license_policy_status, "pending_metadata");
     assert_eq!(tiny.license_policy_reason, "license_missing");
     Ok(())
@@ -47,7 +49,7 @@ fn test_installed_missing_license_is_legacy_for_list_and_execution(
 }
 
 #[tokio::test]
-async fn test_installer_blocks_missing_license_before_artifact(
+async fn test_installer_blocks_missing_integrity_before_artifact(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let (_tmp_dir, storage) = temp_storage();
     let installer = ModelInstaller::with_storage(storage.clone());
@@ -56,10 +58,10 @@ async fn test_installer_blocks_missing_license_before_artifact(
 
     match result {
         InstallResult::DownloadFailed(error) => {
-            assert!(error.contains("model license policy"));
-            assert!(error.contains("license_missing"));
+            assert!(error.contains("model registry integrity policy"));
+            assert!(error.contains("checksum_missing"));
         }
-        other => return Err(format!("expected license gate failure, got {other:?}").into()),
+        other => return Err(format!("expected integrity gate failure, got {other:?}").into()),
     }
     assert!(!storage.gguf_path("llama3-3b").exists());
     assert!(!storage.model_path("llama3-3b").exists());
@@ -67,7 +69,7 @@ async fn test_installer_blocks_missing_license_before_artifact(
 }
 
 #[tokio::test]
-async fn test_mock_download_blocks_missing_license_before_artifact(
+async fn test_mock_download_blocks_missing_integrity_before_artifact(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let (_tmp_dir, storage) = temp_storage();
     let downloader = ModelDownloader::new(storage.clone_for_test());
@@ -80,10 +82,10 @@ async fn test_mock_download_blocks_missing_license_before_artifact(
 
     match result {
         Err(error) => {
-            assert!(error.contains("model license policy"));
-            assert!(error.contains("license_missing"));
+            assert!(error.contains("model registry integrity policy"));
+            assert!(error.contains("checksum_missing"));
         }
-        Ok(_) => return Err("mock download should be blocked by missing license".into()),
+        Ok(_) => return Err("mock download should be blocked by missing integrity".into()),
     }
     assert!(!storage.gguf_path("tinyllama-1b").exists());
     Ok(())

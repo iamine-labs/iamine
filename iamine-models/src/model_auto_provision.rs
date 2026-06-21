@@ -1,6 +1,6 @@
 use crate::{
-    DownloadProgress, LicenseOperation, ModelDescriptor, ModelDownloadPolicy, ModelDownloader,
-    ModelLicensePolicy, ModelRegistry, ModelStorage,
+    evaluate_model_registry_admission, DownloadProgress, LicenseOperation, ModelDescriptor,
+    ModelDownloader, ModelRegistry, ModelStorage,
 };
 
 #[derive(Debug, Clone)]
@@ -88,28 +88,15 @@ impl ModelAutoProvision {
             return Ok(None);
         };
 
-        let download_decision = ModelDownloadPolicy::default().evaluate_descriptor(model);
-        if !download_decision.permits_download() {
-            return Err(format!(
-                "model download policy {}: {}",
-                download_decision.status.as_str(),
-                download_decision.policy_reason()
-            ));
-        }
-
         let installed = self.downloader.storage.has_model(&model.id);
         let operation = if installed {
             LicenseOperation::ExistingExecution
         } else {
             LicenseOperation::Download
         };
-        let license_decision = ModelLicensePolicy.evaluate_descriptor(model, operation, installed);
-        if !license_decision.permits_operation {
-            return Err(format!(
-                "model license policy {}: {}",
-                license_decision.status.as_str(),
-                license_decision.reason.as_str()
-            ));
+        let admission = evaluate_model_registry_admission(model, operation, installed);
+        if let Some(error) = admission.first_blocking_error() {
+            return Err(error);
         }
 
         Ok(Some(model.clone()))
@@ -193,7 +180,7 @@ mod tests {
             required_ram_gb: 1,
             required_vram_gb: 0,
             shards: 1,
-            hash: String::new(),
+            hash: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
             download_url: format!("https://huggingface.co/iamine/{id}/resolve/main/{id}.gguf"),
             quantization: "q4_k_m".to_string(),
             license,
@@ -277,6 +264,14 @@ mod tests {
             "license_missing",
         )
         .await
+    }
+
+    #[tokio::test]
+    async fn auto_provision_missing_integrity_returns_error_before_download(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let mut model = test_model("missing-integrity-model", allowed_license());
+        model.hash = String::new();
+        assert_rejected_before_download(model, "checksum_missing").await
     }
 
     #[tokio::test]

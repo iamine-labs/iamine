@@ -213,8 +213,8 @@ async fn test_auto_model_download() {
         .await;
     assert!(result.is_err());
     let error = result.unwrap_err();
-    assert!(error.contains("model license policy"));
-    assert!(error.contains("license_missing"));
+    assert!(error.contains("model registry integrity policy"));
+    assert!(error.contains("checksum_missing"));
 }
 
 #[test]
