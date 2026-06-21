@@ -32,8 +32,9 @@ Missing metadata is explicit. It is not treated as approved.
 
 - `Allowed`: the license policy permits download, install, and existing
   execution when metadata is coherent.
-- `RequiresAcceptance`: download and install are blocked until a future
-  explicit acceptance feature exists.
+- `RequiresAcceptance`: download and install are blocked until
+  `MODEL-LICENSE-ACCEPTANCE-001` records explicit local acceptance for the
+  model, license id, and revision.
 - `Restricted`: download and install are blocked.
 
 ## Operations
@@ -104,9 +105,7 @@ legal text.
 
 The following work is intentionally separate:
 
-- MODEL-LICENSE-ACCEPTANCE-001
 - MODEL-HARDWARE-COMPATIBILITY-001
-- MODEL-TRUSTED-REGISTRY-INTEGRITY-001
 
 License approval is not artifact trust, checksum verification, registry
 integrity, or legal advice.

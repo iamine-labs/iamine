@@ -1,6 +1,6 @@
 use crate::{
-    evaluate_model_registry_admission, DownloadProgress, LicenseOperation, ModelDescriptor,
-    ModelDownloader, ModelRegistry, ModelStorage,
+    evaluate_model_registry_admission_with_license_acceptance_store, DownloadProgress,
+    LicenseOperation, ModelDescriptor, ModelDownloader, ModelRegistry, ModelStorage,
 };
 
 #[derive(Debug, Clone)]
@@ -94,7 +94,12 @@ impl ModelAutoProvision {
         } else {
             LicenseOperation::Download
         };
-        let admission = evaluate_model_registry_admission(model, operation, installed);
+        let admission = evaluate_model_registry_admission_with_license_acceptance_store(
+            model,
+            operation,
+            installed,
+            &self.downloader.license_acceptance_store,
+        );
         if let Some(error) = admission.first_blocking_error() {
             return Err(error);
         }
@@ -126,7 +131,7 @@ fn cpu_threshold(model_id: &str) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{LicenseClass, LicenseMetadata};
+    use crate::{LicenseAcceptanceStore, LicenseClass, LicenseMetadata};
     use tempfile::TempDir;
 
     #[derive(Default)]
@@ -228,10 +233,15 @@ mod tests {
         expected_error: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let (_tmp_dir, storage) = temp_storage()?;
+        let acceptance_dir = TempDir::new()?;
+        let acceptance_store =
+            LicenseAcceptanceStore::new_in(acceptance_dir.path().join("license_acceptance.json"));
         let storage_probe = storage.clone();
         let model_id = model.id.clone();
-        let provision =
-            ModelAutoProvision::new(ModelRegistry::from_models_for_test(vec![model]), storage);
+        let provision = ModelAutoProvision {
+            registry: ModelRegistry::from_models_for_test(vec![model]),
+            downloader: ModelDownloader::with_license_acceptance_store(storage, acceptance_store),
+        };
 
         for mock in [true, false] {
             let mut spy = DownloadSpy::default();
@@ -304,14 +314,20 @@ mod tests {
     async fn auto_provision_denied_candidate_does_not_fallback_to_alternative(
     ) -> Result<(), Box<dyn std::error::Error>> {
         let (_tmp_dir, storage) = temp_storage()?;
+        let acceptance_dir = TempDir::new()?;
+        let acceptance_store =
+            LicenseAcceptanceStore::new_in(acceptance_dir.path().join("license_acceptance.json"));
         let storage_probe = storage.clone();
         let denied = test_model("aaa-denied-candidate", restricted_license());
         let mut alternative = test_model("zzz-allowed-alternative", allowed_license());
         alternative.size_bytes = denied.size_bytes * 2;
-        let provision = ModelAutoProvision::new(
-            ModelRegistry::from_models_for_test(vec![denied.clone(), alternative.clone()]),
-            storage,
-        );
+        let provision = ModelAutoProvision {
+            registry: ModelRegistry::from_models_for_test(vec![
+                denied.clone(),
+                alternative.clone(),
+            ]),
+            downloader: ModelDownloader::with_license_acceptance_store(storage, acceptance_store),
+        };
         let mut spy = DownloadSpy::default();
 
         let result = provision

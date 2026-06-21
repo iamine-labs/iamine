@@ -6,6 +6,7 @@ pub mod huggingface_search;
 pub mod inference;
 pub mod inference_engine;
 pub mod inference_queue;
+pub mod license_acceptance;
 pub mod license_policy;
 pub mod model_auto_provision;
 pub mod model_cache;
@@ -49,6 +50,11 @@ pub use inference_engine::{
     SamplingConfig,
 };
 pub use inference_queue::{InferenceQueue, InferenceRequest as QueuedInferenceRequest};
+pub use license_acceptance::{
+    LicenseAcceptanceDecision, LicenseAcceptanceReason, LicenseAcceptanceRecord,
+    LicenseAcceptanceStatus, LicenseAcceptanceStore, ModelLicenseAcceptancePolicy,
+    LICENSE_ACCEPTANCE_SCHEMA_VERSION,
+};
 pub use license_policy::{
     LicenseClass, LicenseMetadata, LicenseOperation, LicensePolicyDecision, LicensePolicyReason,
     LicensePolicyStatus, ModelAdmissionDecision, ModelLicensePolicy,
@@ -65,7 +71,9 @@ pub use model_events::{CapabilitiesUpdatedEvent, ModelInstalledEvent, ModelRemov
 pub use model_installer::{InstallResult, ModelInstaller, ModelStatus};
 pub use model_registry::{ModelDescriptor, ModelManifest, ModelRegistry};
 pub use model_registry_admission::{
-    evaluate_model_registry_admission, ModelRegistryAdmissionDecision,
+    evaluate_model_registry_admission,
+    evaluate_model_registry_admission_with_license_acceptance_store,
+    ModelRegistryAdmissionDecision,
 };
 pub use model_requirements::{can_node_run_model, runnable_models, ModelRequirements};
 pub use model_selector::{

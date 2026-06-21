@@ -1,6 +1,7 @@
+use crate::license_acceptance::LicenseAcceptanceStore;
 use crate::license_policy::LicenseOperation;
 use crate::model_registry::ModelDescriptor;
-use crate::model_registry_admission::evaluate_model_registry_admission;
+use crate::model_registry_admission::evaluate_model_registry_admission_with_license_acceptance_store;
 use crate::model_storage::ModelStorage;
 use crate::model_verifier::ModelVerifier;
 use futures::StreamExt;
@@ -9,6 +10,7 @@ use std::io::Write;
 
 pub struct ModelDownloader {
     pub storage: ModelStorage,
+    pub license_acceptance_store: LicenseAcceptanceStore,
 }
 
 #[derive(Debug, Clone)]
@@ -30,7 +32,17 @@ pub enum DownloadPhase {
 
 impl ModelDownloader {
     pub fn new(storage: ModelStorage) -> Self {
-        Self { storage }
+        Self::with_license_acceptance_store(storage, LicenseAcceptanceStore::new())
+    }
+
+    pub fn with_license_acceptance_store(
+        storage: ModelStorage,
+        license_acceptance_store: LicenseAcceptanceStore,
+    ) -> Self {
+        Self {
+            storage,
+            license_acceptance_store,
+        }
     }
 
     fn build_http_client(&self) -> Result<reqwest::Client, String> {
@@ -60,7 +72,12 @@ impl ModelDownloader {
         } else {
             LicenseOperation::Download
         };
-        let admission = evaluate_model_registry_admission(model, license_operation, installed);
+        let admission = evaluate_model_registry_admission_with_license_acceptance_store(
+            model,
+            license_operation,
+            installed,
+            &self.license_acceptance_store,
+        );
         if let Some(error) = admission.first_blocking_error() {
             return Err(error);
         }
@@ -78,6 +95,11 @@ impl ModelDownloader {
             "   License policy: {} ({})",
             admission.license.status.as_str(),
             admission.license.reason.as_str()
+        );
+        println!(
+            "   License acceptance policy: {} ({})",
+            admission.license_acceptance.status.as_str(),
+            admission.license_acceptance.reason.as_str()
         );
 
         if installed {
@@ -293,7 +315,12 @@ impl ModelDownloader {
         } else {
             LicenseOperation::Download
         };
-        let admission = evaluate_model_registry_admission(model, license_operation, installed);
+        let admission = evaluate_model_registry_admission_with_license_acceptance_store(
+            model,
+            license_operation,
+            installed,
+            &self.license_acceptance_store,
+        );
         if let Some(error) = admission.first_blocking_error() {
             return Err(error);
         }
