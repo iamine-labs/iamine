@@ -1,7 +1,8 @@
+use crate::license_acceptance::{LicenseAcceptanceRecord, LicenseAcceptanceStore};
 use crate::license_policy::LicenseOperation;
 use crate::model_downloader::{DownloadProgress, ModelDownloader};
 use crate::model_registry::ModelRegistry;
-use crate::model_registry_admission::evaluate_model_registry_admission;
+use crate::model_registry_admission::evaluate_model_registry_admission_with_license_acceptance_store;
 use crate::model_storage::ModelStorage;
 use crate::model_validator::ModelValidator;
 use crate::node_models::{ModelId, NodeModels};
@@ -13,6 +14,7 @@ pub struct ModelInstaller {
     pub downloader: ModelDownloader,
     pub validator: ModelValidator,
     pub storage_config: StorageConfig,
+    pub license_acceptance_store: LicenseAcceptanceStore,
 }
 
 #[derive(Debug)]
@@ -30,11 +32,22 @@ impl ModelInstaller {
     }
 
     pub fn with_storage(storage: ModelStorage) -> Self {
+        Self::with_storage_and_license_acceptance_store(storage, LicenseAcceptanceStore::new())
+    }
+
+    pub fn with_storage_and_license_acceptance_store(
+        storage: ModelStorage,
+        license_acceptance_store: LicenseAcceptanceStore,
+    ) -> Self {
         Self {
             registry: ModelRegistry::new(),
-            downloader: ModelDownloader::new(storage.clone()),
+            downloader: ModelDownloader::with_license_acceptance_store(
+                storage.clone(),
+                license_acceptance_store.clone(),
+            ),
             validator: ModelValidator::new(),
             storage_config: StorageConfig::load(),
+            license_acceptance_store,
             storage,
         }
     }
@@ -63,7 +76,12 @@ impl ModelInstaller {
         }
 
         // 3️⃣ Admission gates before storage writes or network access.
-        let admission = evaluate_model_registry_admission(&model, LicenseOperation::Install, false);
+        let admission = evaluate_model_registry_admission_with_license_acceptance_store(
+            &model,
+            LicenseOperation::Install,
+            false,
+            &self.license_acceptance_store,
+        );
         if let Some(error) = admission.first_blocking_error() {
             return InstallResult::DownloadFailed(error);
         }
@@ -138,8 +156,12 @@ impl ModelInstaller {
                 } else {
                     None
                 };
-                let admission =
-                    evaluate_model_registry_admission(m, LicenseOperation::List, installed);
+                let admission = evaluate_model_registry_admission_with_license_acceptance_store(
+                    m,
+                    LicenseOperation::List,
+                    installed,
+                    &self.license_acceptance_store,
+                );
                 ModelStatus {
                     id: m.id.clone(),
                     version: m.version.clone(),
@@ -158,9 +180,27 @@ impl ModelInstaller {
                     registry_integrity_reason: admission.registry_integrity.policy_reason(),
                     license_policy_status: admission.license.status.as_str().to_string(),
                     license_policy_reason: admission.license.reason.as_str().to_string(),
+                    license_acceptance_status: admission
+                        .license_acceptance
+                        .status
+                        .as_str()
+                        .to_string(),
+                    license_acceptance_reason: admission
+                        .license_acceptance
+                        .reason
+                        .as_str()
+                        .to_string(),
                 }
             })
             .collect()
+    }
+
+    pub fn accept_license(&self, model_id: &str) -> Result<LicenseAcceptanceRecord, String> {
+        let model = self
+            .registry
+            .get(model_id)
+            .ok_or_else(|| format!("Model '{}' not in registry", model_id))?;
+        self.license_acceptance_store.accept_descriptor(model)
     }
 
     /// Generar NodeModels para broadcast P2P
@@ -195,6 +235,8 @@ pub struct ModelStatus {
     pub registry_integrity_reason: String,
     pub license_policy_status: String,
     pub license_policy_reason: String,
+    pub license_acceptance_status: String,
+    pub license_acceptance_reason: String,
 }
 
 impl ModelStatus {
@@ -205,7 +247,7 @@ impl ModelStatus {
             .map(|s| format!(" ({} MB en disco)", s))
             .unwrap_or_default();
         println!(
-            "  {} {} v{} | {:.1} GB | {}GB RAM{} | download_policy={} download_reason={} | registry_integrity={} registry_reason={} | license_policy={} license_reason={}",
+            "  {} {} v{} | {:.1} GB | {}GB RAM{} | download_policy={} download_reason={} | registry_integrity={} registry_reason={} | license_policy={} license_reason={} | license_acceptance={} acceptance_reason={}",
             status,
             self.id,
             self.version,
@@ -217,7 +259,9 @@ impl ModelStatus {
             self.registry_integrity_status,
             self.registry_integrity_reason,
             self.license_policy_status,
-            self.license_policy_reason
+            self.license_policy_reason,
+            self.license_acceptance_status,
+            self.license_acceptance_reason
         );
     }
 }

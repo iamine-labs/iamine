@@ -47,12 +47,22 @@ pub(crate) fn parse_args_from(raw_args: Vec<String>) -> Result<NodeMode, String>
                 let id = args.get(3).ok_or("Falta <model_id>")?.clone();
                 Ok(NodeMode::ModelsDownload { model_id: id })
             }
+            Some("license") => match args.get(3).map(|s| s.as_str()) {
+                Some("accept") => {
+                    let id = args.get(4).ok_or("Falta <model_id>")?.clone();
+                    Ok(NodeMode::ModelsLicenseAccept {
+                        model_id: id,
+                        yes: args.iter().any(|arg| arg == "--yes"),
+                    })
+                }
+                _ => Err("Uso: iamine models license accept <id> --yes".to_string()),
+            },
             Some("remove") => {
                 let id = args.get(3).ok_or("Falta <model_id>")?.clone();
                 Ok(NodeMode::ModelsRemove { model_id: id })
             }
             _ => Err(
-                "Uso: iamine models [list|stats|recommend|menu|search <q>|download <id>|remove <id>]"
+                "Uso: iamine models [list|stats|recommend|menu|search <q>|download <id>|license accept <id> --yes|remove <id>]"
                     .to_string(),
             ),
         },
@@ -387,6 +397,20 @@ mod tests {
         assert!(matches!(
             parse_args_from(args(&["iamine-node", "hardware", "inspect", "--json"])),
             Ok(NodeMode::Hardware { .. })
+        ));
+        assert!(matches!(
+            parse_args_from(args(&[
+                "iamine-node",
+                "models",
+                "license",
+                "accept",
+                "model-1",
+                "--yes"
+            ])),
+            Ok(NodeMode::ModelsLicenseAccept {
+                model_id,
+                yes: true
+            }) if model_id == "model-1"
         ));
     }
 

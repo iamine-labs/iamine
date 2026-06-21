@@ -30,6 +30,10 @@ pub(crate) enum NodeMode {
     ModelsDownload {
         model_id: String,
     },
+    ModelsLicenseAccept {
+        model_id: String,
+        yes: bool,
+    },
     ModelsRemove {
         model_id: String,
     },
@@ -132,6 +136,7 @@ pub(crate) fn mode_label(mode: &NodeMode) -> &'static str {
         NodeMode::ModelsList => "models-list",
         NodeMode::ModelsStats => "models-stats",
         NodeMode::ModelsDownload { .. } => "models-download",
+        NodeMode::ModelsLicenseAccept { .. } => "models-license-accept",
         NodeMode::ModelsRemove { .. } => "models-remove",
         NodeMode::ModelsMenu => "models-menu",
         NodeMode::ModelsSearch { .. } => "models-search",

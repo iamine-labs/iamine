@@ -15,6 +15,11 @@ fn test_models_list_reports_download_and_license_gates() -> Result<(), Box<dyn s
     assert_eq!(tiny.registry_integrity_reason, "checksum_missing");
     assert_eq!(tiny.license_policy_status, "pending_metadata");
     assert_eq!(tiny.license_policy_reason, "license_missing");
+    assert_eq!(tiny.license_acceptance_status, "not_required");
+    assert_eq!(
+        tiny.license_acceptance_reason,
+        "license_acceptance_not_required"
+    );
     Ok(())
 }
 
@@ -36,6 +41,11 @@ fn test_installed_missing_license_is_legacy_for_list_and_execution(
     assert!(tiny.installed);
     assert_eq!(tiny.license_policy_status, "pending_metadata");
     assert_eq!(tiny.license_policy_reason, "legacy_installed_model");
+    assert_eq!(tiny.license_acceptance_status, "not_required");
+    assert_eq!(
+        tiny.license_acceptance_reason,
+        "license_acceptance_not_required"
+    );
 
     let registry = ModelRegistry::new();
     let Some(model) = registry.get("tinyllama-1b") else {

@@ -19,6 +19,7 @@ pub(crate) fn is_control_plane_mode(mode: &NodeMode) -> bool {
         NodeMode::ModelsList
             | NodeMode::ModelsStats
             | NodeMode::ModelsDownload { .. }
+            | NodeMode::ModelsLicenseAccept { .. }
             | NodeMode::ModelsRemove { .. }
             | NodeMode::TasksStats { .. }
             | NodeMode::TasksTrace { .. }
@@ -148,6 +149,27 @@ pub(crate) async fn handle_pre_network_mode(
                 ),
                 InstallResult::DownloadFailed(e) => println!("❌ Descarga fallida: {}", e),
                 InstallResult::ValidationFailed(e) => println!("❌ Validación fallida: {}", e),
+            }
+            Ok(true)
+        }
+
+        NodeMode::ModelsLicenseAccept { model_id, yes } => {
+            println!("╔══════════════════════════════════╗");
+            println!("║  IaMine — License Acceptance     ║");
+            println!("╚══════════════════════════════════╝\n");
+            if !yes {
+                println!("❌ Aceptación no registrada: agrega --yes para confirmar explícitamente");
+                return Ok(true);
+            }
+            let installer = ModelInstaller::new();
+            match installer.accept_license(model_id) {
+                Ok(record) => {
+                    println!(
+                        "✅ Licencia aceptada para {} ({}, revision {})",
+                        record.model_id, record.license_id, record.revision
+                    );
+                }
+                Err(error) => println!("❌ Aceptación fallida: {}", error),
             }
             Ok(true)
         }
@@ -424,6 +446,10 @@ mod tests {
         assert!(is_control_plane_mode(&NodeMode::ModelsStats));
         assert!(is_control_plane_mode(&NodeMode::ModelsDownload {
             model_id: "llama3-3b".to_string()
+        }));
+        assert!(is_control_plane_mode(&NodeMode::ModelsLicenseAccept {
+            model_id: "llama3-3b".to_string(),
+            yes: true,
         }));
         assert!(is_control_plane_mode(&NodeMode::ModelsRemove {
             model_id: "llama3-3b".to_string()
