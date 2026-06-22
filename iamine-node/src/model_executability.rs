@@ -1,6 +1,9 @@
 use crate::model_backend_availability::ModelBackendAvailabilityDecision;
 use crate::worker_startup_policy::WorkerStartupPolicy;
-use iamine_models::{evaluate_node_model_compatibility, ModelNodeCapabilities, ModelStorage};
+use iamine_models::{
+    evaluate_node_model_compatibility, ModelDescriptor, ModelNetworkPolicy, ModelNodeCapabilities,
+    ModelStorage, NetworkPolicyDecision, NetworkPolicyOperation,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ModelExecutability {
@@ -46,6 +49,7 @@ pub(crate) fn classify_model_executability(input: &ModelExecutabilityInput) -> M
 pub(crate) enum WorkerModelExecutionRejection {
     MissingLocalModel,
     HardwareUnsupported,
+    NetworkPolicyBlocked,
 }
 
 impl WorkerModelExecutionRejection {
@@ -57,6 +61,12 @@ impl WorkerModelExecutionRejection {
             Self::HardwareUnsupported => {
                 format!("   ⚠️ Hardware insuficiente para {} — ignorando", model_id)
             }
+            Self::NetworkPolicyBlocked => {
+                format!(
+                    "   ⚠️ Política de red bloquea inferencia distribuida para {} — ignorando",
+                    model_id
+                )
+            }
         }
     }
 }
@@ -67,12 +77,14 @@ pub(crate) struct WorkerModelExecutionGate {
     pub(crate) mock_backend_enabled: bool,
     pub(crate) real_inference_available: bool,
     pub(crate) backend_availability: ModelBackendAvailabilityDecision,
+    pub(crate) network_policy: Option<NetworkPolicyDecision>,
     pub(crate) rejection: Option<WorkerModelExecutionRejection>,
 }
 
 pub(crate) fn evaluate_worker_model_execution_gate(
     model_id: &str,
     storage: &ModelStorage,
+    model_descriptor: Option<&ModelDescriptor>,
     node_caps: &ModelNodeCapabilities,
     startup_policy: Option<&WorkerStartupPolicy>,
 ) -> WorkerModelExecutionGate {
@@ -84,11 +96,18 @@ pub(crate) fn evaluate_worker_model_execution_gate(
         .map(|policy| policy.backend_availability_decision())
         .unwrap_or_else(ModelBackendAvailabilityDecision::available);
     let real_inference_available = backend_availability.permits_real_inference();
+    let network_policy = model_descriptor
+        .map(|model| evaluate_model_network_inference_policy(model, local_model_available));
 
     let rejection = if !local_model_available && !mock_backend_enabled {
         Some(WorkerModelExecutionRejection::MissingLocalModel)
     } else if !mock_backend_enabled && !worker_hardware_supports_model(model_id, node_caps) {
         Some(WorkerModelExecutionRejection::HardwareUnsupported)
+    } else if network_policy
+        .as_ref()
+        .is_some_and(|decision| !decision.permits_distributed_inference)
+    {
+        Some(WorkerModelExecutionRejection::NetworkPolicyBlocked)
     } else {
         None
     };
@@ -98,8 +117,20 @@ pub(crate) fn evaluate_worker_model_execution_gate(
         mock_backend_enabled,
         real_inference_available,
         backend_availability,
+        network_policy,
         rejection,
     }
+}
+
+pub(crate) fn evaluate_model_network_inference_policy(
+    model: &ModelDescriptor,
+    installed: bool,
+) -> NetworkPolicyDecision {
+    ModelNetworkPolicy.evaluate_descriptor(
+        model,
+        NetworkPolicyOperation::NetworkInference,
+        installed,
+    )
 }
 
 fn worker_hardware_supports_model(model_id: &str, node_caps: &ModelNodeCapabilities) -> bool {
@@ -112,6 +143,9 @@ mod tests {
     use crate::model_backend_availability::{
         evaluate_model_backend_availability, ModelBackendAvailabilityInput,
     };
+    use iamine_models::{LicenseMetadata, NetworkPolicyMetadata};
+    use std::fs;
+    use tempfile::TempDir;
 
     fn input(
         in_storage: bool,
@@ -133,6 +167,48 @@ mod tests {
             ),
             hardware_supported,
         }
+    }
+
+    fn descriptor(network_policy: NetworkPolicyMetadata) -> ModelDescriptor {
+        ModelDescriptor {
+            id: "tinyllama-1b".to_string(),
+            version: "1.1".to_string(),
+            architecture: "llama".to_string(),
+            size_bytes: 1_048_576,
+            required_ram_gb: 1,
+            required_vram_gb: 0,
+            shards: 1,
+            hash: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
+            download_url: "https://huggingface.co/iamine/test/resolve/main/test.gguf".to_string(),
+            quantization: "q4_k_m".to_string(),
+            license: LicenseMetadata::missing(),
+            network_policy,
+        }
+    }
+
+    fn node_caps() -> ModelNodeCapabilities {
+        ModelNodeCapabilities {
+            node_id: "test-node".to_string(),
+            cpu_cores: 4,
+            ram_gb: 16,
+            gpu_type: None,
+            npu_type: None,
+            storage_available_gb: 20,
+            worker_slots: 4,
+            supported_models: Vec::new(),
+            cpu_features: Vec::new(),
+            accelerator: "CPU".to_string(),
+        }
+    }
+
+    fn storage_with_model(model_id: &str) -> Result<(TempDir, ModelStorage), std::io::Error> {
+        let dir = TempDir::new()?;
+        let storage = ModelStorage::new_in(dir.path().to_path_buf());
+        fs::create_dir_all(storage.model_path(model_id))?;
+        let mut bytes = vec![0u8; 2048];
+        bytes[..4].copy_from_slice(b"GGUF");
+        fs::write(storage.gguf_path(model_id), bytes)?;
+        Ok((dir, storage))
     }
 
     #[test]
@@ -203,5 +279,81 @@ mod tests {
         };
 
         assert!(!worker_hardware_supports_model("unknown-model", &node_caps));
+    }
+
+    #[test]
+    fn worker_execution_gate_allows_distributed_network_policy(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let (_dir, storage) = storage_with_model("tinyllama-1b")?;
+        let model = descriptor(NetworkPolicyMetadata::distributed_allowed("test-fixture"));
+
+        let gate = evaluate_worker_model_execution_gate(
+            "tinyllama-1b",
+            &storage,
+            Some(&model),
+            &node_caps(),
+            None,
+        );
+
+        assert_eq!(gate.rejection, None);
+        assert!(gate
+            .network_policy
+            .as_ref()
+            .is_some_and(|decision| decision.permits_distributed_inference));
+        Ok(())
+    }
+
+    #[test]
+    fn worker_execution_gate_blocks_local_only_network_policy(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let (_dir, storage) = storage_with_model("tinyllama-1b")?;
+        let model = descriptor(NetworkPolicyMetadata::local_only("test-fixture"));
+
+        let gate = evaluate_worker_model_execution_gate(
+            "tinyllama-1b",
+            &storage,
+            Some(&model),
+            &node_caps(),
+            None,
+        );
+
+        assert_eq!(
+            gate.rejection,
+            Some(WorkerModelExecutionRejection::NetworkPolicyBlocked)
+        );
+        assert_eq!(
+            gate.network_policy
+                .as_ref()
+                .map(NetworkPolicyDecision::policy_reason),
+            Some("local_only")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn worker_execution_gate_blocks_missing_network_policy_metadata(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let (_dir, storage) = storage_with_model("tinyllama-1b")?;
+        let model = descriptor(NetworkPolicyMetadata::missing());
+
+        let gate = evaluate_worker_model_execution_gate(
+            "tinyllama-1b",
+            &storage,
+            Some(&model),
+            &node_caps(),
+            None,
+        );
+
+        assert_eq!(
+            gate.rejection,
+            Some(WorkerModelExecutionRejection::NetworkPolicyBlocked)
+        );
+        assert_eq!(
+            gate.network_policy
+                .as_ref()
+                .map(NetworkPolicyDecision::policy_reason),
+            Some("network_policy_missing")
+        );
+        Ok(())
     }
 }

@@ -73,3 +73,13 @@ The gate returns stable reasons:
 The evaluator does not start networking, subscribe to PubSub topics, contact
 bootnodes, inspect peer state, download artifacts, load models, decide hardware
 compatibility, decide backend availability, or alter scheduler policy.
+
+## Runtime Enforcement
+
+Workers must not advertise a registry model as executable for distributed
+inference unless the model network policy permits `network_inference`.
+
+Workers must also reject distributed inference requests for models whose network
+policy does not permit distributed inference. This enforcement happens before
+model loading and inference execution, and it does not start or reconfigure P2P
+transport.

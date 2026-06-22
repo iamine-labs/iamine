@@ -132,9 +132,11 @@ pub(crate) async fn handle_worker_inference_request(
 ) {
     let remote_attempt_started_at = tokio::time::Instant::now();
     let peer_id_string = context.peer_id.to_string();
+    let registry = ModelRegistry::new();
     let model_execution_gate = evaluate_worker_model_execution_gate(
         &request.model_id,
         context.model_storage,
+        registry.get(&request.model_id),
         context.node_caps,
         context.worker_startup_policy,
     );
@@ -194,7 +196,7 @@ pub(crate) async fn handle_worker_inference_request(
 
     let engine_ref = context.inference_engine.clone();
     let metrics_ref = Arc::clone(&context.metrics);
-    let registry_clone = ModelRegistry::new();
+    let registry_clone = registry;
     let request_id_clone = request.request_id.clone();
     let model_id_for_inference = request.model_id.clone();
     let mock_backend_for_task = model_execution_gate.mock_backend_enabled;
