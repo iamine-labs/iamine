@@ -307,7 +307,7 @@ fn restrict_owner_access(_path: &Path) {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{LicenseMetadata, ModelDescriptor};
+    use crate::{LicenseMetadata, ModelDescriptor, NetworkPolicyMetadata};
     use tempfile::TempDir;
 
     fn model(policy_class: LicenseClass, revision: Option<&str>) -> ModelDescriptor {
@@ -329,6 +329,7 @@ mod tests {
                 requires_acceptance: policy_class == LicenseClass::RequiresAcceptance,
                 revision: revision.map(str::to_string),
             },
+            network_policy: NetworkPolicyMetadata::distributed_allowed("test-fixture"),
         }
     }
 

@@ -103,8 +103,9 @@ legal text.
 
 ## Separate Gates
 
-The following gate is intentionally separate from license policy:
+The following gates are intentionally separate from license policy:
 
+- MODEL-NETWORK-POLICY-GATE-001
 - MODEL-HARDWARE-COMPATIBILITY-001
 - MODEL-BACKEND-AVAILABILITY-GATE-001
 

@@ -131,7 +131,7 @@ fn cpu_threshold(model_id: &str) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{LicenseAcceptanceStore, LicenseClass, LicenseMetadata};
+    use crate::{LicenseAcceptanceStore, LicenseClass, LicenseMetadata, NetworkPolicyMetadata};
     use tempfile::TempDir;
 
     #[derive(Default)]
@@ -189,6 +189,7 @@ mod tests {
             download_url: format!("https://huggingface.co/iamine/{id}/resolve/main/{id}.gguf"),
             quantization: "q4_k_m".to_string(),
             license,
+            network_policy: NetworkPolicyMetadata::distributed_allowed("test-fixture"),
         }
     }
 

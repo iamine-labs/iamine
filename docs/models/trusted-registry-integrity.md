@@ -10,6 +10,7 @@ This gate complements, but does not replace:
 - license policy: license metadata and operation permission
 - hardware compatibility: local hardware eligibility
 - backend availability: active runtime backend eligibility
+- network policy: distributed inference permission
 
 ## Contract
 
@@ -43,5 +44,5 @@ descriptor to trusted.
 
 The evaluator does not fetch remote manifests, scrape model pages, compute
 artifact hashes before download, decide license policy, decide hardware
-compatibility, decide backend availability, start workers, or affect scheduler
-policy.
+compatibility, decide backend availability, decide network policy, start
+workers, or affect scheduler policy.

@@ -71,6 +71,7 @@ The following gates are intentionally separate from download policy:
 - MODEL-HARDWARE-COMPATIBILITY-001
 - MODEL-TRUSTED-REGISTRY-INTEGRITY-001
 - MODEL-BACKEND-AVAILABILITY-GATE-001
+- MODEL-NETWORK-POLICY-GATE-001
 
 `pending_checksum` and related pending states are not the same thing as trusted
 execution. Registry integrity must still permit the requested operation.
