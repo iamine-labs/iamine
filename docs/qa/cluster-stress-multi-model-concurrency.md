@@ -39,8 +39,34 @@ children.
 
 Single required-model transport is supported through `--required-model` on
 `cluster stress` and is enforced by the scheduler through the existing
-capability filter. Mixed required-model field batches remain deferred until
-the stress runner has an explicit batch schema for that requirement.
+capability filter.
+
+Mixed required-model field batches use an explicit JSON schema:
+
+```json
+{
+  "requests": [
+    { "required_model_id": "tinyllama-1b" },
+    { "required_model_id": "llama3-3b" }
+  ]
+}
+```
+
+Run with:
+
+```bash
+./target/release/iamine-node cluster stress \
+  --batch-file /path/to/batch.json \
+  --concurrency 2 \
+  --task reverse_string \
+  --prefix qa-cluster-stress-mixed \
+  --json
+```
+
+When `--batch-file` is used, `--requests` is inferred from the number of
+entries. If `--requests` is also provided, it must match the batch size.
+`--required-model` and `--batch-file` are mutually exclusive to keep the
+per-request requirement explicit.
 
 ## Output
 
