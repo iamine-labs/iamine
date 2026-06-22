@@ -13,6 +13,7 @@ pub mod model_cache;
 pub mod model_compatibility;
 pub mod model_downloader;
 pub mod model_events;
+pub mod model_inference_eligibility;
 pub mod model_installer;
 pub mod model_registry;
 pub mod model_registry_admission;
@@ -69,6 +70,12 @@ pub use model_compatibility::{
 };
 pub use model_downloader::{DownloadPhase, DownloadProgress, ModelDownloader};
 pub use model_events::{CapabilitiesUpdatedEvent, ModelInstalledEvent, ModelRemovedEvent};
+pub use model_inference_eligibility::{
+    evaluate_descriptor_model_inference_eligibility, evaluate_model_inference_eligibility,
+    ModelInferenceBackendAvailability, ModelInferenceEligibilityDecision,
+    ModelInferenceEligibilityInput, ModelInferenceEligibilityReason,
+    ModelInferenceEligibilityStatus,
+};
 pub use model_installer::{InstallResult, ModelInstaller, ModelStatus};
 pub use model_registry::{ModelDescriptor, ModelManifest, ModelRegistry};
 pub use model_registry_admission::{
