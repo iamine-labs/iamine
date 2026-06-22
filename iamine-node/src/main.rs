@@ -40,6 +40,7 @@ mod metrics;
 mod metrics_policy;
 mod metrics_server;
 mod mode_dispatch;
+mod model_backend_availability;
 mod model_capability_consistency;
 mod model_display_policy;
 mod model_executability;

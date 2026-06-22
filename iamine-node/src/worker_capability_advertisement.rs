@@ -40,7 +40,10 @@ where
 {
     let mut validated = Vec::new();
 
-    if !startup_policy.real_inference_available {
+    if !startup_policy
+        .backend_availability_decision()
+        .permits_real_inference()
+    {
         return validated;
     }
 
@@ -127,7 +130,10 @@ pub(crate) fn apply_worker_startup_policy_to_capabilities(
     capabilities: &mut WorkerCapabilities,
     startup_policy: &WorkerStartupPolicy,
 ) {
-    if !startup_policy.real_inference_available {
+    if !startup_policy
+        .backend_availability_decision()
+        .permits_real_inference()
+    {
         capabilities
             .supported_tasks
             .retain(|task_type| task_type != "inference");

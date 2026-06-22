@@ -1,4 +1,7 @@
 use crate::benchmark::NodeBenchmark;
+use crate::model_backend_availability::{
+    evaluate_model_backend_availability, ModelBackendAvailabilityInput,
+};
 use crate::model_executability::{
     classify_model_executability, ModelExecutability, ModelExecutabilityInput,
 };
@@ -206,6 +209,13 @@ pub(crate) fn build_model_display_view(
     let mut seen = HashSet::new();
     let backend = backend.into();
     let backend_is_mock = backend.eq_ignore_ascii_case("mock");
+    let backend_availability =
+        evaluate_model_backend_availability(&ModelBackendAvailabilityInput {
+            backend_is_mock,
+            skip_model_load_on_startup: false,
+            cpu_feature_compatible: true,
+            real_inference_available,
+        });
     let mut rows = Vec::new();
 
     for model in registry_models {
@@ -221,8 +231,7 @@ pub(crate) fn build_model_display_view(
             classification: classify_model_executability(&ModelExecutabilityInput {
                 in_storage,
                 in_registry: true,
-                backend_is_mock,
-                real_inference_available,
+                backend_availability,
                 hardware_supported: executable,
             }),
         });

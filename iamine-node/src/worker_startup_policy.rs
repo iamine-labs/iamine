@@ -5,6 +5,10 @@ use crate::backend_config::{
 use crate::backend_policy::WorkerInferenceBackend;
 use crate::cpu_feature_guard::cpu_features_are_compatible_for_real_backend;
 use crate::log_observability_event;
+use crate::model_backend_availability::{
+    evaluate_model_backend_availability, ModelBackendAvailabilityDecision,
+    ModelBackendAvailabilityInput,
+};
 use crate::resource_policy::ResourcePolicy;
 use iamine_models::ModelNodeCapabilities;
 use iamine_network::{LogLevel, MODEL_LOAD_FAILED_001, MODEL_UNSUPPORTED_HW_002, TASK_FAILED_002};
@@ -69,6 +73,15 @@ impl WorkerStartupPolicy {
 
     pub(crate) fn mock_backend(&self) -> bool {
         self.backend.is_mock()
+    }
+
+    pub(crate) fn backend_availability_decision(&self) -> ModelBackendAvailabilityDecision {
+        evaluate_model_backend_availability(&ModelBackendAvailabilityInput {
+            backend_is_mock: self.backend.is_mock(),
+            skip_model_load_on_startup: self.skip_model_load_on_startup,
+            cpu_feature_compatible: self.cpu_feature_compatible,
+            real_inference_available: self.real_inference_available,
+        })
     }
 }
 

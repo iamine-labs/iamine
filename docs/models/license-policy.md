@@ -106,6 +106,7 @@ legal text.
 The following gate is intentionally separate from license policy:
 
 - MODEL-HARDWARE-COMPATIBILITY-001
+- MODEL-BACKEND-AVAILABILITY-GATE-001
 
 License approval is not artifact trust, checksum verification, registry
 integrity, or legal advice.
