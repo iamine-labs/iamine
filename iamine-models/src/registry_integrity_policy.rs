@@ -148,7 +148,7 @@ fn is_valid_sha256_hex(hash: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{LicenseClass, LicenseMetadata};
+    use crate::{LicenseClass, LicenseMetadata, NetworkPolicyMetadata};
 
     fn model_with_hash(hash: &str) -> ModelDescriptor {
         ModelDescriptor {
@@ -169,6 +169,7 @@ mod tests {
                 requires_acceptance: false,
                 revision: Some("test-fixture".to_string()),
             },
+            network_policy: NetworkPolicyMetadata::distributed_allowed("test-fixture"),
         }
     }
 

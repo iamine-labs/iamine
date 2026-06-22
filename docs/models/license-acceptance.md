@@ -10,6 +10,7 @@ This gate complements, but does not replace:
 - license metadata policy
 - hardware compatibility
 - backend availability
+- network policy
 
 ## Contract
 

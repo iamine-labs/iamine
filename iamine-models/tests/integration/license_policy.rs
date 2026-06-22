@@ -20,6 +20,8 @@ fn test_models_list_reports_download_and_license_gates() -> Result<(), Box<dyn s
         tiny.license_acceptance_reason,
         "license_acceptance_not_required"
     );
+    assert_eq!(tiny.network_policy_status, "allowed");
+    assert_eq!(tiny.network_policy_reason, "network_policy_allowed");
     Ok(())
 }
 
@@ -46,6 +48,8 @@ fn test_installed_missing_license_is_legacy_for_list_and_execution(
         tiny.license_acceptance_reason,
         "license_acceptance_not_required"
     );
+    assert_eq!(tiny.network_policy_status, "allowed");
+    assert_eq!(tiny.network_policy_reason, "network_policy_allowed");
 
     let registry = ModelRegistry::new();
     let Some(model) = registry.get("tinyllama-1b") else {

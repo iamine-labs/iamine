@@ -22,6 +22,7 @@ pub mod model_signature;
 pub mod model_storage;
 pub mod model_validator;
 pub mod model_verifier;
+pub mod network_policy;
 pub mod node_capabilities;
 pub mod node_models;
 pub mod output_cleaner;
@@ -85,6 +86,10 @@ pub use model_signature::{
 pub use model_storage::ModelStorage;
 pub use model_validator::ModelValidator;
 pub use model_verifier::ModelVerifier;
+pub use network_policy::{
+    ModelNetworkPolicy, NetworkPolicyClass, NetworkPolicyDecision, NetworkPolicyMetadata,
+    NetworkPolicyOperation, NetworkPolicyReason, NetworkPolicyStatus,
+};
 pub use node_capabilities::NodeCapabilities as ModelNodeCapabilities;
 pub use node_models::{DownloadStrategy, ModelId, NodeModels, PeerModelRegistry};
 pub use output_cleaner::clean_output;

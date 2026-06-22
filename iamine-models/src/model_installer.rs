@@ -190,6 +190,8 @@ impl ModelInstaller {
                         .reason
                         .as_str()
                         .to_string(),
+                    network_policy_status: admission.network_policy.status.as_str().to_string(),
+                    network_policy_reason: admission.network_policy.policy_reason().to_string(),
                 }
             })
             .collect()
@@ -237,6 +239,8 @@ pub struct ModelStatus {
     pub license_policy_reason: String,
     pub license_acceptance_status: String,
     pub license_acceptance_reason: String,
+    pub network_policy_status: String,
+    pub network_policy_reason: String,
 }
 
 impl ModelStatus {
@@ -247,7 +251,7 @@ impl ModelStatus {
             .map(|s| format!(" ({} MB en disco)", s))
             .unwrap_or_default();
         println!(
-            "  {} {} v{} | {:.1} GB | {}GB RAM{} | download_policy={} download_reason={} | registry_integrity={} registry_reason={} | license_policy={} license_reason={} | license_acceptance={} acceptance_reason={}",
+            "  {} {} v{} | {:.1} GB | {}GB RAM{} | download_policy={} download_reason={} | registry_integrity={} registry_reason={} | license_policy={} license_reason={} | license_acceptance={} acceptance_reason={} | network_policy={} network_reason={}",
             status,
             self.id,
             self.version,
@@ -261,7 +265,9 @@ impl ModelStatus {
             self.license_policy_status,
             self.license_policy_reason,
             self.license_acceptance_status,
-            self.license_acceptance_reason
+            self.license_acceptance_reason,
+            self.network_policy_status,
+            self.network_policy_reason
         );
     }
 }

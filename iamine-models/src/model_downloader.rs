@@ -101,6 +101,11 @@ impl ModelDownloader {
             admission.license_acceptance.status.as_str(),
             admission.license_acceptance.reason.as_str()
         );
+        println!(
+            "   Network policy: {} ({})",
+            admission.network_policy.status.as_str(),
+            admission.network_policy.policy_reason()
+        );
 
         if installed {
             println!("✅ Modelo {} ya existe localmente", model.id);

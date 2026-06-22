@@ -2,8 +2,9 @@ use crate::license_policy::LicenseOperation;
 use crate::{
     LicenseAcceptanceDecision, LicenseAcceptanceStatus, LicenseAcceptanceStore,
     LicensePolicyDecision, LicensePolicyStatus, ModelDescriptor, ModelDownloadDecision,
-    ModelDownloadPolicy, ModelLicenseAcceptancePolicy, ModelLicensePolicy,
-    ModelRegistryIntegrityPolicy, RegistryIntegrityDecision, RegistryIntegrityOperation,
+    ModelDownloadPolicy, ModelLicenseAcceptancePolicy, ModelLicensePolicy, ModelNetworkPolicy,
+    ModelRegistryIntegrityPolicy, NetworkPolicyDecision, NetworkPolicyOperation,
+    RegistryIntegrityDecision, RegistryIntegrityOperation,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -12,6 +13,7 @@ pub struct ModelRegistryAdmissionDecision {
     pub registry_integrity: RegistryIntegrityDecision,
     pub license: LicensePolicyDecision,
     pub license_acceptance: LicenseAcceptanceDecision,
+    pub network_policy: NetworkPolicyDecision,
     pub permits_operation: bool,
 }
 
@@ -21,16 +23,19 @@ impl ModelRegistryAdmissionDecision {
         registry_integrity: RegistryIntegrityDecision,
         license: LicensePolicyDecision,
         license_acceptance: LicenseAcceptanceDecision,
+        network_policy: NetworkPolicyDecision,
     ) -> Self {
         let permits_operation = download.permits_download()
             && registry_integrity.permits_operation
             && license_condition_permits_operation(&license, &license_acceptance)
-            && license_acceptance.permits_operation;
+            && license_acceptance.permits_operation
+            && network_policy.permits_operation;
         Self {
             download,
             registry_integrity,
             license,
             license_acceptance,
+            network_policy,
             permits_operation,
         }
     }
@@ -71,6 +76,13 @@ impl ModelRegistryAdmissionDecision {
                 self.license_acceptance.reason.as_str()
             ));
         }
+        if !self.network_policy.permits_operation {
+            return Some(format!(
+                "model network policy {}: {}",
+                self.network_policy.status.as_str(),
+                self.network_policy.policy_reason()
+            ));
+        }
         None
     }
 }
@@ -106,11 +118,14 @@ pub fn evaluate_model_registry_admission_with_license_acceptance_store(
         operation,
         license_acceptance_store.has_accepted_descriptor(model),
     );
+    let network_policy =
+        ModelNetworkPolicy.evaluate_descriptor(model, network_operation(operation), installed);
     ModelRegistryAdmissionDecision::from_decisions(
         download,
         registry_integrity,
         license,
         license_acceptance,
+        network_policy,
     )
 }
 
@@ -120,6 +135,15 @@ fn registry_operation(operation: LicenseOperation) -> RegistryIntegrityOperation
         LicenseOperation::Download => RegistryIntegrityOperation::Download,
         LicenseOperation::Install => RegistryIntegrityOperation::Install,
         LicenseOperation::ExistingExecution => RegistryIntegrityOperation::ExistingExecution,
+    }
+}
+
+fn network_operation(operation: LicenseOperation) -> NetworkPolicyOperation {
+    match operation {
+        LicenseOperation::List => NetworkPolicyOperation::List,
+        LicenseOperation::Download => NetworkPolicyOperation::Download,
+        LicenseOperation::Install => NetworkPolicyOperation::Install,
+        LicenseOperation::ExistingExecution => NetworkPolicyOperation::ExistingExecution,
     }
 }
 
@@ -136,7 +160,7 @@ fn license_condition_permits_operation(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{LicenseClass, LicenseMetadata};
+    use crate::{LicenseClass, LicenseMetadata, NetworkPolicyMetadata};
     use tempfile::TempDir;
 
     fn acceptance_model() -> ModelDescriptor {
@@ -158,6 +182,7 @@ mod tests {
                 requires_acceptance: true,
                 revision: Some("2026-06-21".to_string()),
             },
+            network_policy: NetworkPolicyMetadata::distributed_allowed("test-fixture"),
         }
     }
 
@@ -204,6 +229,35 @@ mod tests {
             LicenseAcceptanceStatus::Accepted
         );
         assert_eq!(decision.first_blocking_error(), None);
+        Ok(())
+    }
+
+    #[test]
+    fn network_policy_blocks_after_prior_gates_permit() -> Result<(), Box<dyn std::error::Error>> {
+        let dir = TempDir::new()?;
+        let store = LicenseAcceptanceStore::new_in(dir.path().join("license_acceptance.json"));
+        let mut model = acceptance_model();
+        model.license = LicenseMetadata {
+            license_id: Some("MIT".to_string()),
+            license_url: Some("https://opensource.org/license/mit".to_string()),
+            policy_class: Some(LicenseClass::Allowed),
+            requires_acceptance: false,
+            revision: Some("test-fixture".to_string()),
+        };
+        model.network_policy = NetworkPolicyMetadata::blocked("test-fixture");
+
+        let decision = evaluate_model_registry_admission_with_license_acceptance_store(
+            &model,
+            LicenseOperation::Download,
+            false,
+            &store,
+        );
+
+        assert!(!decision.permits_operation);
+        assert_eq!(
+            decision.first_blocking_error(),
+            Some("model network policy blocked: network_policy_blocked".to_string())
+        );
         Ok(())
     }
 }

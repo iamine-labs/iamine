@@ -10,6 +10,7 @@ This gate is intentionally separate from:
 - license policy
 - license acceptance
 - hardware compatibility
+- network policy
 - scheduler selection
 - rewards or reputation
 

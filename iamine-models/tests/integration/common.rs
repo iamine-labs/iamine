@@ -22,5 +22,6 @@ fn with_allowed_test_license(model: &ModelDescriptor) -> ModelDescriptor {
         requires_acceptance: false,
         revision: Some("test-fixture".to_string()),
     };
+    model.network_policy = NetworkPolicyMetadata::distributed_allowed("test-fixture");
     model
 }
