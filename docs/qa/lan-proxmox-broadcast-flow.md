@@ -148,7 +148,11 @@ worker_startup_invalid_math / metrics port:
 Ports 4101, 4102, and 4103 are below the metrics base 9000. Current behavior continues without metrics server. Status: non-blocking.
 
 QA-PROXMOX-MOCK-CAPABILITIES-DISPLAY-001:
-Human logs may still show registry/storage models while backend=mock and real_inference_available=false. Future cleanup should distinguish models in storage, models in registry, executable models by active backend, and real backend availability. Status: non-blocking.
+Closed. Cluster status now distinguishes models in storage, models in registry,
+executable models by active backend, metadata-only models, unavailable model
+reasons, backend, execution mode, and real backend availability. Mock/skip
+workers can still show registry/storage models, but do not show them as
+executable real inference models.
 
 LEGACY-BACKEND-REAL-INFERENCE-001:
 Real CPU llama/ggml inference on Proxmox/R5500 remains future work because of SIGILL risk. It is not part of Cluster LAN. Status: future feature.

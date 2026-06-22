@@ -735,6 +735,17 @@ mod tests {
         let node = registry.node_by_peer_id("peer-a");
         assert!(node.is_some(), "expected peer-a capability snapshot");
         if let Some(node) = node {
+            assert_eq!(node.backend, ClusterBackend::Mock);
+            assert_eq!(node.execution_mode, ClusterExecutionMode::Mock);
+            assert_eq!(node.capabilities.real_inference_available, Some(false));
+            assert_eq!(
+                node.capabilities.models_in_storage,
+                vec!["tinyllama-1b".to_string()]
+            );
+            assert_eq!(
+                node.capabilities.models_in_registry,
+                vec!["tinyllama-1b".to_string()]
+            );
             assert!(node.capabilities.executable_models.is_empty());
             assert_eq!(
                 node.capabilities.metadata_only_models,
