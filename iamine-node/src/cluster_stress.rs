@@ -1,3 +1,4 @@
+use crate::cluster_stress_batch::{parse_batch_file, ClusterStressBatchRequest};
 use crate::cluster_stress_metrics::ClusterStressMetrics;
 use crate::cluster_stress_validation::{
     validate_observations, StressTaskObservation, StressValidationFailure,
@@ -29,6 +30,8 @@ pub(crate) struct ClusterStressConfig {
     pub(crate) concurrency: usize,
     pub(crate) task_type: String,
     pub(crate) required_model_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) batch: Vec<ClusterStressBatchRequest>,
     pub(crate) prefix: String,
     pub(crate) timeout_secs: u64,
     pub(crate) stop_on_first_failure: bool,
@@ -43,6 +46,7 @@ impl Default for ClusterStressConfig {
             concurrency: DEFAULT_CONCURRENCY,
             task_type: "reverse_string".to_string(),
             required_model_id: None,
+            batch: Vec::new(),
             prefix: format!("cluster-stress-{}", now_ms()),
             timeout_secs: DEFAULT_TIMEOUT_SECS,
             stop_on_first_failure: false,
@@ -56,11 +60,13 @@ impl ClusterStressConfig {
     pub(crate) fn from_args(args: &[String]) -> Result<Self, String> {
         let mut config = Self::default();
         let mut index = 0;
+        let mut request_count_explicit = false;
 
         while index < args.len() {
             match args[index].as_str() {
                 "--requests" => {
                     config.request_count = parse_usize_arg(args, index, "--requests")?;
+                    request_count_explicit = true;
                     index += 2;
                 }
                 "--concurrency" => {
@@ -74,6 +80,11 @@ impl ClusterStressConfig {
                 "--required-model" => {
                     config.required_model_id =
                         Some(parse_string_arg(args, index, "--required-model")?);
+                    index += 2;
+                }
+                "--batch-file" => {
+                    config.batch =
+                        parse_batch_file(&parse_string_arg(args, index, "--batch-file")?)?;
                     index += 2;
                 }
                 "--prefix" => {
@@ -103,6 +114,18 @@ impl ClusterStressConfig {
                 unknown => {
                     return Err(format!("Argumento cluster stress desconocido: {}", unknown))
                 }
+            }
+        }
+
+        if !config.batch.is_empty() {
+            if request_count_explicit && config.request_count != config.batch.len() {
+                return Err(
+                    "--requests debe coincidir con el numero de entries en --batch-file"
+                        .to_string(),
+                );
+            }
+            if !request_count_explicit {
+                config.request_count = config.batch.len();
             }
         }
 
@@ -145,6 +168,18 @@ impl ClusterStressConfig {
         {
             return Err("--required-model no puede estar vacio".to_string());
         }
+        if self.required_model_id.is_some() && !self.batch.is_empty() {
+            return Err("--required-model no puede combinarse con --batch-file".to_string());
+        }
+        for request in &self.batch {
+            if request
+                .required_model_id
+                .as_deref()
+                .is_some_and(|model_id| model_id.trim().is_empty())
+            {
+                return Err("--batch-file contiene required_model_id vacio".to_string());
+            }
+        }
         if self.prefix.trim().is_empty() {
             return Err("--prefix no puede estar vacio".to_string());
         }
@@ -156,6 +191,13 @@ impl ClusterStressConfig {
         self.output_dir.clone().unwrap_or_else(|| {
             std::env::temp_dir().join(format!("iamine-{}", sanitized_component(&self.prefix)))
         })
+    }
+
+    fn required_model_for_request(&self, request_index: usize) -> Option<&str> {
+        self.batch
+            .get(request_index)
+            .and_then(|request| request.required_model_id.as_deref())
+            .or(self.required_model_id.as_deref())
     }
 }
 
@@ -273,7 +315,8 @@ async fn run_single_stress_request(
         .env(IAMINE_LOG_FORMAT, "ndjson")
         .env(IAMINE_LOG_PATH, &ndjson_path)
         .kill_on_drop(true);
-    if let Some(required_model_id) = config.required_model_id.as_deref() {
+    let expected_required_model = config.required_model_for_request(request_index);
+    if let Some(required_model_id) = expected_required_model {
         command.arg("--required-model").arg(required_model_id);
     }
 
@@ -304,6 +347,12 @@ async fn run_single_stress_request(
                 append_error(
                     &mut observation,
                     format!("human log write failed: {}", error),
+                );
+            }
+            if observation.required_model.as_deref() != expected_required_model {
+                append_error(
+                    &mut observation,
+                    "broadcast child trace did not preserve expected required_model",
                 );
             }
             observation.success = observation.error.is_none()
@@ -516,6 +565,9 @@ fn now_ms() -> u128 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static TEMP_BATCH_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
     #[test]
     fn stress_config_rejects_unbounded_concurrency() {
@@ -566,6 +618,65 @@ mod tests {
     }
 
     #[test]
+    fn stress_config_parses_batch_file_and_infers_request_count() -> Result<(), String> {
+        let path = write_temp_batch_file(
+            r#"{"requests":[{"required_model_id":"tinyllama-1b"},{"required_model_id":"llama3-3b"}]}"#,
+        )?;
+        let args = vec!["--batch-file".to_string(), path.display().to_string()];
+        let config = ClusterStressConfig::from_args(&args)?;
+        let _ = fs::remove_file(path);
+
+        assert_eq!(config.request_count, 2);
+        assert_eq!(config.batch.len(), 2);
+        assert_eq!(config.required_model_for_request(0), Some("tinyllama-1b"));
+        assert_eq!(config.required_model_for_request(1), Some("llama3-3b"));
+        Ok(())
+    }
+
+    #[test]
+    fn stress_config_rejects_batch_count_mismatch() -> Result<(), String> {
+        let path = write_temp_batch_file(
+            r#"{"requests":[{"required_model_id":"tinyllama-1b"},{"required_model_id":"llama3-3b"}]}"#,
+        )?;
+        let args = vec![
+            "--requests".to_string(),
+            "3".to_string(),
+            "--batch-file".to_string(),
+            path.display().to_string(),
+        ];
+        let result = ClusterStressConfig::from_args(&args);
+        let _ = fs::remove_file(path);
+
+        assert!(result.is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn stress_config_rejects_required_model_with_batch_file() {
+        let config = ClusterStressConfig {
+            required_model_id: Some("tinyllama-1b".to_string()),
+            batch: vec![ClusterStressBatchRequest {
+                required_model_id: Some("llama3-3b".to_string()),
+            }],
+            ..ClusterStressConfig::default()
+        };
+
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn stress_config_rejects_empty_required_model_in_batch_file() {
+        let config = ClusterStressConfig {
+            batch: vec![ClusterStressBatchRequest {
+                required_model_id: Some(" ".to_string()),
+            }],
+            ..ClusterStressConfig::default()
+        };
+
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
     fn stress_config_rejects_empty_required_model() {
         let config = ClusterStressConfig {
             required_model_id: Some(" ".to_string()),
@@ -610,5 +721,14 @@ mod tests {
 
         assert_eq!(summary.metrics.not_run, 2);
         assert!(!summary.passed);
+    }
+
+    fn write_temp_batch_file(contents: &str) -> Result<PathBuf, String> {
+        let counter = TEMP_BATCH_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let path =
+            std::env::temp_dir().join(format!("iamine-stress-batch-{}-{}.json", now_ms(), counter));
+        fs::write(&path, contents)
+            .map_err(|error| format!("temp batch file write failed: {error}"))?;
+        Ok(path)
     }
 }

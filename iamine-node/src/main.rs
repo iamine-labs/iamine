@@ -13,6 +13,7 @@ mod cluster_readiness;
 mod cluster_registry;
 mod cluster_status;
 mod cluster_stress;
+mod cluster_stress_batch;
 mod cluster_stress_cli;
 mod cluster_stress_metrics;
 mod cluster_stress_validation;
