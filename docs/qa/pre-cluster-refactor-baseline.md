@@ -163,7 +163,8 @@ Validated:
 
 ## Non-Blocking Items
 
-- QA-CLI-UNKNOWN-MODE-EXIT-CODE-007: verify unknown mode exit code if still 0.
+- QA-CLI-UNKNOWN-MODE-EXIT-CODE-007: closed. Current CLI smoke returns exit
+  code 1 for unknown mode and prints usage without starting runtime.
 - `worker_startup_invalid_math` remains expected for worker ports below metrics
   base 9000.
 - Rust dead_code warnings are non-blocking.

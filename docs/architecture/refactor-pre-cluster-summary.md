@@ -156,8 +156,8 @@ LAN.
 
 ## Follow-Ups
 
-- QA-CLI-UNKNOWN-MODE-EXIT-CODE-007: unknown mode does not start runtime, but a
-  field run observed possible exit code 0. Verify and fix if still present.
+- QA-CLI-UNKNOWN-MODE-EXIT-CODE-007: closed. Current CLI smoke returns exit
+  code 1 for unknown mode and prints usage without starting runtime.
 - `worker_startup_invalid_math` remains expected when worker_port is below the
   metrics base. Cluster LAN should display metrics unavailable/fallback clearly.
 - Existing Rust dead_code warnings are non-blocking.
