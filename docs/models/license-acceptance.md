@@ -9,6 +9,7 @@ This gate complements, but does not replace:
 - trusted registry integrity
 - license metadata policy
 - hardware compatibility
+- backend availability
 
 ## Contract
 

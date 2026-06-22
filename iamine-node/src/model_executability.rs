@@ -1,3 +1,4 @@
+use crate::model_backend_availability::ModelBackendAvailabilityDecision;
 use crate::worker_startup_policy::WorkerStartupPolicy;
 use iamine_models::{evaluate_node_model_compatibility, ModelNodeCapabilities, ModelStorage};
 
@@ -20,16 +21,14 @@ impl ModelExecutability {
 pub(crate) struct ModelExecutabilityInput {
     pub(crate) in_storage: bool,
     pub(crate) in_registry: bool,
-    pub(crate) backend_is_mock: bool,
-    pub(crate) real_inference_available: bool,
+    pub(crate) backend_availability: ModelBackendAvailabilityDecision,
     pub(crate) hardware_supported: bool,
 }
 
 pub(crate) fn classify_model_executability(input: &ModelExecutabilityInput) -> ModelExecutability {
     if input.in_storage
         && input.in_registry
-        && !input.backend_is_mock
-        && input.real_inference_available
+        && input.backend_availability.permits_real_inference()
         && input.hardware_supported
     {
         return ModelExecutability::Executable;
@@ -67,6 +66,7 @@ pub(crate) struct WorkerModelExecutionGate {
     pub(crate) local_model_available: bool,
     pub(crate) mock_backend_enabled: bool,
     pub(crate) real_inference_available: bool,
+    pub(crate) backend_availability: ModelBackendAvailabilityDecision,
     pub(crate) rejection: Option<WorkerModelExecutionRejection>,
 }
 
@@ -80,9 +80,10 @@ pub(crate) fn evaluate_worker_model_execution_gate(
     let mock_backend_enabled = startup_policy
         .map(|policy| policy.mock_backend())
         .unwrap_or(false);
-    let real_inference_available = startup_policy
-        .map(|policy| policy.real_inference_available)
-        .unwrap_or(true);
+    let backend_availability = startup_policy
+        .map(|policy| policy.backend_availability_decision())
+        .unwrap_or_else(ModelBackendAvailabilityDecision::available);
+    let real_inference_available = backend_availability.permits_real_inference();
 
     let rejection = if !local_model_available && !mock_backend_enabled {
         Some(WorkerModelExecutionRejection::MissingLocalModel)
@@ -96,6 +97,7 @@ pub(crate) fn evaluate_worker_model_execution_gate(
         local_model_available,
         mock_backend_enabled,
         real_inference_available,
+        backend_availability,
         rejection,
     }
 }
@@ -107,6 +109,9 @@ fn worker_hardware_supports_model(model_id: &str, node_caps: &ModelNodeCapabilit
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model_backend_availability::{
+        evaluate_model_backend_availability, ModelBackendAvailabilityInput,
+    };
 
     fn input(
         in_storage: bool,
@@ -118,8 +123,14 @@ mod tests {
         ModelExecutabilityInput {
             in_storage,
             in_registry,
-            backend_is_mock,
-            real_inference_available,
+            backend_availability: evaluate_model_backend_availability(
+                &ModelBackendAvailabilityInput {
+                    backend_is_mock,
+                    skip_model_load_on_startup: false,
+                    cpu_feature_compatible: true,
+                    real_inference_available,
+                },
+            ),
             hardware_supported,
         }
     }
