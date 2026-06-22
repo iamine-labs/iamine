@@ -82,7 +82,9 @@ worker_startup_invalid_math / metrics port:
 Ports 4101, 4102, and 4103 are below metrics base 9000. Current fallback behavior is continue_without_metrics_server. This is not blocking for Cluster LAN.
 
 QA-PROXMOX-MOCK-CAPABILITIES-DISPLAY-001:
-Human capability display can be clearer in mock/skip mode. This is useful for Cluster LAN status but not blocking.
+Closed. Cluster status now keeps mock/skip model display explicit: registry and
+storage models remain visible, executable models stay empty, real inference is
+reported as unavailable, and unavailable model reasons include disabled_by_mock.
 
 LEGACY-BACKEND-REAL-INFERENCE-001:
 Real CPU inference on Proxmox/R5500 is future work and should not be included in Cluster LAN.
