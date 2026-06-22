@@ -21,6 +21,7 @@ pub(crate) enum NodeMode {
     Broadcast {
         task_type: String,
         data: String,
+        required_model_id: Option<String>,
     },
     SimulateWorkers {
         count: usize,

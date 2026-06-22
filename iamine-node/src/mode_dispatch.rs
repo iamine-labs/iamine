@@ -481,6 +481,7 @@ mod tests {
         assert!(!is_control_plane_mode(&NodeMode::Broadcast {
             task_type: "reverse_string".to_string(),
             data: "abc".to_string(),
+            required_model_id: None,
         }));
     }
 

@@ -104,7 +104,12 @@ pub(crate) fn parse_args_from(raw_args: Vec<String>) -> Result<NodeMode, String>
         Some("--broadcast") => {
             let task_type = args.get(2).ok_or("Falta <task_type>")?.clone();
             let data = args.get(3).ok_or("Falta <data>")?.clone();
-            Ok(NodeMode::Broadcast { task_type, data })
+            let required_model_id = parse_optional_string_flag(&args, "--required-model")?;
+            Ok(NodeMode::Broadcast {
+                task_type,
+                data,
+                required_model_id,
+            })
         }
 
         Some("--simulate-workers") => {
@@ -171,7 +176,7 @@ pub(crate) fn parse_args_from(raw_args: Vec<String>) -> Result<NodeMode, String>
                 config: ClusterStressConfig::from_args(&args[3..])?,
             }),
             _ => Err(
-                "Uso: iamine-node cluster [status [--json]|stress [--requests N] [--concurrency N] [--task TYPE] [--prefix TEXT] [--timeout-secs N] [--output-dir PATH] [--stop-on-first-failure] [--json]]"
+                "Uso: iamine-node cluster [status [--json]|stress [--requests N] [--concurrency N] [--task TYPE] [--required-model MODEL] [--prefix TEXT] [--timeout-secs N] [--output-dir PATH] [--stop-on-first-failure] [--json]]"
                     .to_string(),
             ),
         },
@@ -200,6 +205,26 @@ pub(crate) fn parse_optional_u32_flag(args: &[String], flag: &str) -> Result<Opt
     raw.parse::<u32>()
         .map(Some)
         .map_err(|_| format!("Valor invalido para {}: {}", flag, raw))
+}
+
+pub(crate) fn parse_optional_string_flag(
+    args: &[String],
+    flag: &str,
+) -> Result<Option<String>, String> {
+    let Some(index) = args.iter().position(|arg| arg == flag) else {
+        return Ok(None);
+    };
+
+    let Some(raw) = args.get(index + 1) else {
+        return Err(format!("Falta valor para {}", flag));
+    };
+
+    let value = raw.trim();
+    if value.is_empty() {
+        return Err(format!("Valor invalido para {}", flag));
+    }
+
+    Ok(Some(value.to_string()))
 }
 
 pub(crate) fn parse_worker_port(args: &[String]) -> u16 {
@@ -326,9 +351,36 @@ mod tests {
         .expect("broadcast mode should parse");
 
         match mode {
-            NodeMode::Broadcast { task_type, data } => {
+            NodeMode::Broadcast {
+                task_type,
+                data,
+                required_model_id,
+            } => {
                 assert_eq!(task_type, "reverse_string");
                 assert_eq!(data, "abc");
+                assert_eq!(required_model_id, None);
+            }
+            other => panic!("unexpected mode: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cli_detects_broadcast_required_model() {
+        let mode = parse_args_from(args(&[
+            "iamine-node",
+            "--broadcast",
+            "reverse_string",
+            "abc",
+            "--required-model",
+            "tinyllama-1b",
+        ]))
+        .expect("broadcast required model should parse");
+
+        match mode {
+            NodeMode::Broadcast {
+                required_model_id, ..
+            } => {
+                assert_eq!(required_model_id.as_deref(), Some("tinyllama-1b"));
             }
             other => panic!("unexpected mode: {other:?}"),
         }
@@ -351,6 +403,29 @@ mod tests {
                 assert!(force_network);
                 assert!(!no_local);
                 assert!(!prefer_local);
+            }
+            other => panic!("unexpected mode: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cli_detects_cluster_stress_required_model() {
+        let mode = parse_args_from(args(&[
+            "iamine-node",
+            "cluster",
+            "stress",
+            "--requests",
+            "1",
+            "--concurrency",
+            "1",
+            "--required-model",
+            "tinyllama-1b",
+        ]))
+        .expect("cluster stress required model should parse");
+
+        match mode {
+            NodeMode::ClusterStress { config } => {
+                assert_eq!(config.required_model_id.as_deref(), Some("tinyllama-1b"));
             }
             other => panic!("unexpected mode: {other:?}"),
         }

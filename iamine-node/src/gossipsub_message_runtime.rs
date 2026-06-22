@@ -33,10 +33,24 @@ pub(crate) fn message_topic_name(topic: &libp2p::gossipsub::TopicHash) -> &'stat
 }
 
 pub(crate) fn broadcast_mode_task_payload(mode: &NodeMode) -> (&str, &str) {
-    if let NodeMode::Broadcast { task_type, data } = mode {
+    if let NodeMode::Broadcast {
+        task_type, data, ..
+    } = mode
+    {
         (task_type.as_str(), data.as_str())
     } else {
         ("", "")
+    }
+}
+
+pub(crate) fn broadcast_mode_required_model(mode: &NodeMode) -> Option<&str> {
+    if let NodeMode::Broadcast {
+        required_model_id, ..
+    } = mode
+    {
+        required_model_id.as_deref()
+    } else {
+        None
     }
 }
 

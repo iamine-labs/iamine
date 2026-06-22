@@ -26,6 +26,7 @@ pub(crate) struct WorkerTaskAssignment {
     pub(crate) data: String,
     pub(crate) origin_peer: String,
     pub(crate) deadline_ms: u64,
+    pub(crate) required_model_id: Option<String>,
 }
 
 impl WorkerTaskAssignment {
@@ -37,8 +38,18 @@ impl WorkerTaskAssignment {
             data: value["data"].as_str().unwrap_or("").to_string(),
             origin_peer: value["origin_peer"].as_str().unwrap_or("").to_string(),
             deadline_ms: value["deadline_ms"].as_u64().unwrap_or(30_000),
+            required_model_id: optional_model_id(value),
         }
     }
+}
+
+fn optional_model_id(value: &Value) -> Option<String> {
+    value["required_model_id"]
+        .as_str()
+        .or_else(|| value["model_id"].as_str())
+        .map(str::trim)
+        .filter(|model_id| !model_id.is_empty())
+        .map(str::to_string)
 }
 
 pub(crate) fn worker_assignment_will_execute(
@@ -76,6 +87,9 @@ pub(crate) fn handle_worker_task_assignment(
             "🎯 [Worker] ¡Asignado! task_id={} (deadline: {}ms)",
             assignment.task_id, assignment.deadline_ms
         );
+        if let Some(required_model_id) = assignment.required_model_id.as_deref() {
+            println!("   required_model={}", required_model_id);
+        }
         emit_task_lifecycle_started(&assignment.task_id, &assignment.task_type, &local_peer_id);
 
         tokio::spawn(async move {
@@ -240,6 +254,7 @@ mod tests {
             data: "abc".to_string(),
             origin_peer: "controller".to_string(),
             deadline_ms: 30_000,
+            required_model_id: None,
         }
     }
 
@@ -251,7 +266,8 @@ mod tests {
             "task_type": "reverse_string",
             "data": "abc",
             "origin_peer": "controller",
-            "deadline_ms": 42
+            "deadline_ms": 42,
+            "required_model_id": "tinyllama-1b"
         });
 
         let assignment = WorkerTaskAssignment::from_value(&value);
@@ -262,6 +278,10 @@ mod tests {
         assert_eq!(assignment.data, "abc");
         assert_eq!(assignment.origin_peer, "controller");
         assert_eq!(assignment.deadline_ms, 42);
+        assert_eq!(
+            assignment.required_model_id.as_deref(),
+            Some("tinyllama-1b")
+        );
     }
 
     #[test]

@@ -17,6 +17,7 @@ pub(crate) struct WorkerTaskOffer {
     pub(crate) task_type: String,
     pub(crate) data: String,
     pub(crate) origin_peer: String,
+    pub(crate) required_model_id: Option<String>,
 }
 
 impl WorkerTaskOffer {
@@ -26,8 +27,18 @@ impl WorkerTaskOffer {
             task_type: value["task_type"].as_str().unwrap_or("").to_string(),
             data: value["data"].as_str().unwrap_or("").to_string(),
             origin_peer: value["origin_peer"].as_str().unwrap_or("").to_string(),
+            required_model_id: optional_model_id(value),
         }
     }
+}
+
+fn optional_model_id(value: &Value) -> Option<String> {
+    value["required_model_id"]
+        .as_str()
+        .or_else(|| value["model_id"].as_str())
+        .map(str::trim)
+        .filter(|model_id| !model_id.is_empty())
+        .map(str::to_string)
 }
 
 pub(crate) struct WorkerTaskOfferRuntimeContext<'a> {
@@ -55,6 +66,9 @@ pub(crate) async fn handle_worker_task_offer(
         "📥 [Worker] TaskOffer recibido: task_id={} type={} data='{}'",
         offer.task_id, offer.task_type, offer.data
     );
+    if let Some(required_model_id) = offer.required_model_id.as_deref() {
+        println!("   required_model={}", required_model_id);
+    }
 
     if context.task_cache.is_duplicate(&offer.task_id) {
         println!(
@@ -124,7 +138,8 @@ mod tests {
             "task_id": "task-1",
             "task_type": "reverse_string",
             "data": "abc",
-            "origin_peer": "controller"
+            "origin_peer": "controller",
+            "required_model_id": "tinyllama-1b"
         });
 
         let offer = WorkerTaskOffer::from_value(&value);
@@ -133,5 +148,6 @@ mod tests {
         assert_eq!(offer.task_type, "reverse_string");
         assert_eq!(offer.data, "abc");
         assert_eq!(offer.origin_peer, "controller");
+        assert_eq!(offer.required_model_id.as_deref(), Some("tinyllama-1b"));
     }
 }

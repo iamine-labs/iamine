@@ -51,6 +51,7 @@ impl ControllerBroadcastRuntimeOutcome {
 pub(crate) struct ControllerBroadcastTickContext<'a> {
     pub(crate) task_type: &'a str,
     pub(crate) data: &'a str,
+    pub(crate) required_model_id: Option<&'a str>,
     pub(crate) controller_peer_id: &'a PeerId,
     pub(crate) scheduler: &'a Arc<TaskScheduler>,
     pub(crate) known_workers: &'a HashSet<PeerId>,
@@ -62,6 +63,7 @@ pub(crate) struct ControllerBroadcastTickContext<'a> {
 pub(crate) struct ControllerTaskBidContext<'a> {
     pub(crate) task_type: &'a str,
     pub(crate) data: &'a str,
+    pub(crate) required_model_id: Option<&'a str>,
     pub(crate) controller_peer_id: &'a PeerId,
     pub(crate) scheduler: &'a Arc<TaskScheduler>,
     pub(crate) broadcast_offer_state: &'a mut Option<BroadcastOfferState>,
@@ -112,6 +114,7 @@ pub(crate) async fn handle_controller_broadcast_tick(
                     task_id: &task_id,
                     task_type: context.task_type,
                     data: context.data,
+                    required_model_id: context.required_model_id,
                     winner: &winner,
                     controller_peer_id: context.controller_peer_id,
                     scheduler_decision,
@@ -249,7 +252,11 @@ pub(crate) async fn handle_controller_broadcast_tick(
     if !state.scheduler_registered {
         context
             .scheduler
-            .register_task(state.task_id.clone(), context.task_type.to_string())
+            .register_task_with_required_model(
+                state.task_id.clone(),
+                context.task_type.to_string(),
+                context.required_model_id.map(str::to_string),
+            )
             .await;
         state.scheduler_registered = true;
     }
@@ -259,6 +266,7 @@ pub(crate) async fn handle_controller_broadcast_tick(
         context.task_type,
         context.data,
         &context.controller_peer_id.to_string(),
+        context.required_model_id,
     );
     let payload = serde_json::to_vec(&offer)
         .map_err(|error| format!("Broadcast TaskOffer payload error: {}", error))?;
@@ -424,6 +432,7 @@ pub(crate) async fn handle_controller_task_bid(
                 task_id: &task_id,
                 task_type: context.task_type,
                 data: context.data,
+                required_model_id: context.required_model_id,
                 winner: &winner,
                 controller_peer_id: context.controller_peer_id,
                 scheduler_decision,
@@ -441,6 +450,7 @@ pub(crate) async fn handle_controller_task_bid(
             &task_id,
             context.task_type,
             context.data,
+            context.required_model_id,
             context.controller_peer_id,
             Arc::clone(context.scheduler),
         );
@@ -451,12 +461,14 @@ fn schedule_controller_rebroadcast_timeout(
     task_id: &str,
     task_type: &str,
     data: &str,
+    required_model_id: Option<&str>,
     controller_peer_id: &PeerId,
     scheduler: Arc<TaskScheduler>,
 ) {
     let rebroadcast_task_id = task_id.to_string();
     let task_type_clone = task_type.to_string();
     let data_clone = data.to_string();
+    let required_model_id = required_model_id.map(str::to_string);
     let origin_str = controller_peer_id.to_string();
     let (rebroadcast_tx, mut rebroadcast_rx) = tokio::sync::mpsc::channel::<Value>(1);
 
@@ -483,6 +495,11 @@ fn schedule_controller_rebroadcast_timeout(
                 "origin_peer": origin_str,
                 "is_retry": true,
             });
+            let mut offer = offer;
+            if let Some(required_model_id) = required_model_id.as_deref() {
+                offer["required_model_id"] = required_model_id.into();
+                offer["model_id"] = required_model_id.into();
+            }
             let _ = rebroadcast_tx.send(offer).await;
         }
     });
@@ -497,6 +514,7 @@ struct ControllerTaskAssignPublishContext<'a> {
     task_id: &'a str,
     task_type: &'a str,
     data: &'a str,
+    required_model_id: Option<&'a str>,
     winner: &'a str,
     controller_peer_id: &'a PeerId,
     scheduler_decision: SchedulerDecision,
@@ -515,6 +533,7 @@ fn publish_controller_task_assign(
         deadline_ms,
         context.task_type,
         context.data,
+        context.required_model_id,
     );
     match swarm.behaviour_mut().gossipsub.publish(
         gossipsub::IdentTopic::new(ASSIGN_TOPIC),
@@ -577,8 +596,15 @@ pub(crate) fn controller_task_offer_payload(
     task_type: &str,
     data: &str,
     controller_peer_id: &str,
+    required_model_id: Option<&str>,
 ) -> Value {
-    build_broadcast_task_offer_payload(task_id, task_type, data, controller_peer_id)
+    build_broadcast_task_offer_payload(
+        task_id,
+        task_type,
+        data,
+        controller_peer_id,
+        required_model_id,
+    )
 }
 
 pub(crate) fn controller_task_assign_payload(
@@ -588,6 +614,7 @@ pub(crate) fn controller_task_assign_payload(
     deadline_ms: u64,
     task_type: &str,
     data: &str,
+    required_model_id: Option<&str>,
 ) -> Value {
     build_broadcast_task_assign_payload(
         task_id,
@@ -596,6 +623,7 @@ pub(crate) fn controller_task_assign_payload(
         deadline_ms,
         task_type,
         data,
+        required_model_id,
     )
 }
 
@@ -606,7 +634,7 @@ mod tests {
     #[test]
     fn controller_broadcast_prepares_task_offer_preserving_fields() {
         let offer =
-            controller_task_offer_payload("task-1", "reverse_string", "abc", "controller-a");
+            controller_task_offer_payload("task-1", "reverse_string", "abc", "controller-a", None);
 
         assert_eq!(offer["type"], "TaskOffer");
         assert_eq!(offer["task_id"], "task-1");
@@ -624,6 +652,7 @@ mod tests {
             30_000,
             "reverse_string",
             "abc",
+            None,
         );
 
         assert_eq!(assign["type"], "TaskAssign");
@@ -631,5 +660,28 @@ mod tests {
         assert_eq!(assign["assigned_worker"], "worker-a");
         assert_eq!(assign["origin_peer"], "controller-a");
         assert_eq!(assign["deadline_ms"], 30_000);
+    }
+
+    #[test]
+    fn controller_broadcast_preserves_required_model() {
+        let offer = controller_task_offer_payload(
+            "task-1",
+            "reverse_string",
+            "abc",
+            "controller-a",
+            Some("tinyllama-1b"),
+        );
+        let assign = controller_task_assign_payload(
+            "task-1",
+            "worker-a",
+            "controller-a",
+            30_000,
+            "reverse_string",
+            "abc",
+            Some("tinyllama-1b"),
+        );
+
+        assert_eq!(offer["required_model_id"], "tinyllama-1b");
+        assert_eq!(assign["required_model_id"], "tinyllama-1b");
     }
 }

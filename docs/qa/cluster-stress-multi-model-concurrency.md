@@ -37,10 +37,10 @@ Limits:
 `--requests 0 --json` is a validation-only smoke that starts no Broadcast
 children.
 
-Explicit required-model transport is not added by this iteration. Model
-compatibility remains enforced by the scheduler and covered by its tests.
-Mixed required-model field batches remain deferred until an existing
-backward-compatible protocol surface can carry that requirement.
+Single required-model transport is supported through `--required-model` on
+`cluster stress` and is enforced by the scheduler through the existing
+capability filter. Mixed required-model field batches remain deferred until
+the stress runner has an explicit batch schema for that requirement.
 
 ## Output
 

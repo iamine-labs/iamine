@@ -28,8 +28,9 @@ pub(crate) fn build_broadcast_task_offer_payload(
     task_type: &str,
     data: &str,
     requester_peer_id: &str,
+    required_model_id: Option<&str>,
 ) -> Value {
-    serde_json::json!({
+    let mut payload = serde_json::json!({
         "type": "TaskOffer",
         "task_id": task_id,
         "task_type": task_type,
@@ -37,7 +38,9 @@ pub(crate) fn build_broadcast_task_offer_payload(
         "requester_id": requester_peer_id,
         "origin_peer": requester_peer_id,
         "is_retry": false,
-    })
+    });
+    insert_required_model_fields(&mut payload, required_model_id);
+    payload
 }
 
 pub(crate) fn build_task_bid_payload(
@@ -66,8 +69,9 @@ pub(crate) fn build_broadcast_task_assign_payload(
     deadline_ms: u64,
     task_type: &str,
     data: &str,
+    required_model_id: Option<&str>,
 ) -> Value {
-    serde_json::json!({
+    let mut payload = serde_json::json!({
         "type": "TaskAssign",
         "task_id": task_id,
         "assigned_worker": assigned_worker,
@@ -75,7 +79,9 @@ pub(crate) fn build_broadcast_task_assign_payload(
         "deadline_ms": deadline_ms,
         "task_type": task_type,
         "data": data,
-    })
+    });
+    insert_required_model_fields(&mut payload, required_model_id);
+    payload
 }
 
 pub(crate) fn build_broadcast_task_result_payload(result: &BroadcastResultToPublish) -> Value {
@@ -95,6 +101,26 @@ pub(crate) fn build_broadcast_task_result_payload(result: &BroadcastResultToPubl
         "error": result.error,
         "source": result.source,
     })
+}
+
+fn insert_required_model_fields(payload: &mut Value, required_model_id: Option<&str>) {
+    let Some(required_model_id) = required_model_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
+        return;
+    };
+    let Value::Object(fields) = payload else {
+        return;
+    };
+    fields.insert(
+        "required_model_id".to_string(),
+        Value::String(required_model_id.to_string()),
+    );
+    fields.insert(
+        "model_id".to_string(),
+        Value::String(required_model_id.to_string()),
+    );
 }
 
 #[cfg(test)]
@@ -129,6 +155,7 @@ mod tests {
             "reverse_string",
             "qa-payload",
             "controller-peer",
+            None,
         );
 
         assert_eq!(payload["type"], "TaskOffer");
@@ -168,6 +195,7 @@ mod tests {
             30_000,
             "reverse_string",
             "qa-payload",
+            None,
         );
 
         assert_eq!(assign["type"], "TaskAssign");
@@ -186,6 +214,7 @@ mod tests {
             "reverse_string",
             "abc",
             "controller-peer",
+            None,
         );
         let bid = build_task_bid_payload(
             offer["task_id"].as_str().unwrap(),
@@ -202,6 +231,7 @@ mod tests {
             30_000,
             offer["task_type"].as_str().unwrap(),
             offer["data"].as_str().unwrap(),
+            None,
         );
 
         assert_eq!(offer["type"], "TaskOffer");
@@ -236,10 +266,40 @@ mod tests {
     }
 
     #[test]
+    fn broadcast_payloads_preserve_required_model_aliases() {
+        let offer = build_broadcast_task_offer_payload(
+            "task-1",
+            "reverse_string",
+            "abc",
+            "controller-peer",
+            Some("tinyllama-1b"),
+        );
+        let assign = build_broadcast_task_assign_payload(
+            "task-1",
+            "worker-a",
+            "controller-peer",
+            30_000,
+            "reverse_string",
+            "abc",
+            Some("tinyllama-1b"),
+        );
+
+        assert_eq!(offer["required_model_id"], "tinyllama-1b");
+        assert_eq!(offer["model_id"], "tinyllama-1b");
+        assert_eq!(assign["required_model_id"], "tinyllama-1b");
+        assert_eq!(assign["model_id"], "tinyllama-1b");
+    }
+
+    #[test]
     fn broadcast_flow_taskoffer_to_bid_to_assign_to_result_still_works() {
         let task_id = "broadcast-flow-result";
-        let offer =
-            build_broadcast_task_offer_payload(task_id, "reverse_string", "abc", "controller-peer");
+        let offer = build_broadcast_task_offer_payload(
+            task_id,
+            "reverse_string",
+            "abc",
+            "controller-peer",
+            None,
+        );
         let bid = build_task_bid_payload(
             offer["task_id"].as_str().unwrap(),
             "assigned-worker",
@@ -255,6 +315,7 @@ mod tests {
             30_000,
             offer["task_type"].as_str().unwrap(),
             offer["data"].as_str().unwrap(),
+            None,
         );
         let result = test_broadcast_result(task_id, assign["assigned_worker"].as_str().unwrap());
         let payload = build_broadcast_task_result_payload(&result);

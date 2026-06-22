@@ -67,6 +67,7 @@ pub(crate) fn emit_task_lifecycle_scheduler_decision(decision: &SchedulerDecisio
     } else {
         event.candidate_workers = decision.candidate_worker_ids();
     }
+    event.model_id = decision.required_model_id.clone();
     emit_task_lifecycle_event(event, selected_worker_peer_id);
 }
 

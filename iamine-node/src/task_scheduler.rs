@@ -42,6 +42,7 @@ pub enum SchedulerTaskStatus {
 pub struct SchedulerTask {
     pub task_id: String,
     pub task_type: String,
+    pub required_model_id: Option<String>,
     pub bids: Vec<WorkerBid>,
     capability_candidates: Vec<SchedulerCandidate>,
     rejected_candidates: Vec<SchedulerRejectedCandidate>,
@@ -84,6 +85,16 @@ impl TaskScheduler {
 
     /// Registrar nueva tarea — empieza a recolectar bids
     pub async fn register_task(&self, task_id: String, task_type: String) {
+        self.register_task_with_required_model(task_id, task_type, None)
+            .await;
+    }
+
+    pub async fn register_task_with_required_model(
+        &self,
+        task_id: String,
+        task_type: String,
+        required_model_id: Option<String>,
+    ) {
         let deadline = Instant::now() + self.bid_window;
         let mut tasks = self.tasks.lock().await;
         tasks.insert(
@@ -91,6 +102,7 @@ impl TaskScheduler {
             SchedulerTask {
                 task_id,
                 task_type,
+                required_model_id: normalize_required_model(required_model_id),
                 bids: Vec::new(),
                 capability_candidates: Vec::new(),
                 rejected_candidates: Vec::new(),
@@ -133,7 +145,7 @@ impl TaskScheduler {
         task.capability_filter_applied = true;
         Self::upsert_capability_candidate(task, candidate.clone());
 
-        let request = SchedulerTaskRequest::new(&task.task_id, &task.task_type);
+        let request = scheduler_request_from_task(task);
         match classify_scheduler_candidate(&request, &candidate) {
             SchedulerCandidateClassification::Accepted => {
                 task.rejected_candidates
@@ -234,7 +246,7 @@ impl TaskScheduler {
         }
 
         SchedulerDecision::from_capability_filtered_broadcast_policy(
-            &SchedulerTaskRequest::new(task_id, task_type),
+            &scheduler_request_from_task(task),
             selected_worker_peer_id,
             task.capability_candidates.clone(),
             task.rejected_candidates.clone(),
@@ -258,7 +270,7 @@ impl TaskScheduler {
         }
 
         Some(SchedulerDecision::no_compatible_worker(
-            &SchedulerTaskRequest::new(&task.task_id, &task.task_type),
+            &scheduler_request_from_task(task),
             task.capability_candidates.clone(),
             task.rejected_candidates.clone(),
             decision_timestamp_ms,
@@ -399,6 +411,20 @@ impl TaskScheduler {
     }
 }
 
+fn normalize_required_model(required_model_id: Option<String>) -> Option<String> {
+    required_model_id
+        .map(|model_id| model_id.trim().to_string())
+        .filter(|model_id| !model_id.is_empty())
+}
+
+fn scheduler_request_from_task(task: &SchedulerTask) -> SchedulerTaskRequest {
+    let mut request = SchedulerTaskRequest::new(&task.task_id, &task.task_type);
+    if let Some(required_model_id) = task.required_model_id.as_deref() {
+        request = request.with_required_model(required_model_id);
+    }
+    request
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -435,6 +461,16 @@ mod tests {
             metrics_status: ClusterMetricsStatus::Fallback,
             last_seen_ms: Some(100),
         }
+    }
+
+    fn real_candidate(peer_id: &str, executable_models: Vec<&str>) -> SchedulerCandidate {
+        let mut candidate = mock_candidate(peer_id);
+        candidate.backend = ClusterBackend::Cpu;
+        candidate.execution_mode = ClusterExecutionMode::Real;
+        candidate.readiness_reason = ClusterReadinessReason::RealBackendReady;
+        candidate.real_inference_available = Some(true);
+        candidate.executable_models = executable_models.into_iter().map(str::to_string).collect();
+        candidate
     }
 
     #[tokio::test]
@@ -505,6 +541,61 @@ mod tests {
             .reasons
             .contains(&SchedulerRejectionReason::RealInferenceUnavailable));
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn scheduler_filtered_bid_preserves_required_model() {
+        let scheduler = TaskScheduler::new();
+        scheduler
+            .register_task_with_required_model(
+                "task-model".to_string(),
+                "reverse_string".to_string(),
+                Some("tinyllama-1b".to_string()),
+            )
+            .await;
+
+        assert_eq!(
+            scheduler
+                .receive_capability_filtered_bid(
+                    "task-model",
+                    real_candidate("peer-no-model", Vec::new()),
+                    90,
+                    1,
+                    10,
+                )
+                .await,
+            None
+        );
+        assert_eq!(
+            scheduler
+                .receive_capability_filtered_bid(
+                    "task-model",
+                    real_candidate("peer-model", vec!["tinyllama-1b"]),
+                    90,
+                    1,
+                    10,
+                )
+                .await,
+            None
+        );
+        assert_eq!(
+            scheduler.try_assign("task-model").await.as_deref(),
+            Some("peer-model")
+        );
+        let decision = scheduler
+            .decision_for_assignment(
+                "task-model",
+                "reverse_string",
+                "peer-model",
+                Vec::new(),
+                SelectionReason::BroadcastBidSelected,
+                200,
+            )
+            .await;
+
+        assert_eq!(decision.required_model_id.as_deref(), Some("tinyllama-1b"));
+        assert_eq!(decision.compatible_candidates_count, 1);
+        assert_eq!(decision.rejected_candidate_ids(), vec!["peer-no-model"]);
     }
 
     #[tokio::test]

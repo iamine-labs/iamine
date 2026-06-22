@@ -184,10 +184,11 @@ use discovery_runtime::{
 use executor::TaskExecutor;
 use final_outcome::*;
 use gossipsub_message_runtime::{
-    broadcast_mode_task_payload, direct_inference_request_for_local_worker,
-    handle_capability_topic_message, handle_heartbeat_message, handle_inference_progress_message,
-    handle_inference_token_message, handle_node_capabilities_message, handle_task_cancel_message,
-    log_invalid_worker_task_message, message_topic_name,
+    broadcast_mode_required_model, broadcast_mode_task_payload,
+    direct_inference_request_for_local_worker, handle_capability_topic_message,
+    handle_heartbeat_message, handle_inference_progress_message, handle_inference_token_message,
+    handle_node_capabilities_message, handle_task_cancel_message, log_invalid_worker_task_message,
+    message_topic_name,
 };
 use mode_dispatch::handle_pre_network_mode;
 use model_display_policy::*;
@@ -875,7 +876,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
             }
 
             _ = broadcast_tick.tick(), if matches!(mode, NodeMode::Broadcast { .. }) => {
-                let NodeMode::Broadcast { task_type, data } = &mode else {
+                let NodeMode::Broadcast {
+                    task_type,
+                    data,
+                    required_model_id,
+                } = &mode else {
                     continue;
                 };
                 let Some(state) = broadcast_offer_state.as_mut() else {
@@ -888,6 +893,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     ControllerBroadcastTickContext {
                         task_type,
                         data,
+                        required_model_id: required_model_id.as_deref(),
                         controller_peer_id: &peer_id,
                         scheduler: &scheduler,
                         known_workers: &known_workers,
@@ -2030,6 +2036,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     ControllerTaskBidContext {
                                         task_type: task_type_value,
                                         data: data_value,
+                                        required_model_id: broadcast_mode_required_model(&mode),
                                         controller_peer_id: &peer_id,
                                         scheduler: &scheduler,
                                         broadcast_offer_state: &mut broadcast_offer_state,
