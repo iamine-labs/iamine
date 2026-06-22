@@ -74,14 +74,18 @@ impl ModelRegistry {
         registry
     }
 
-    #[cfg(test)]
-    pub(crate) fn from_models_for_test(models: Vec<ModelDescriptor>) -> Self {
+    pub fn from_models(models: Vec<ModelDescriptor>) -> Self {
         Self {
             models: models
                 .into_iter()
                 .map(|model| (model.id.clone(), model))
                 .collect(),
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn from_models_for_test(models: Vec<ModelDescriptor>) -> Self {
+        Self::from_models(models)
     }
 
     fn register_defaults(&mut self) {

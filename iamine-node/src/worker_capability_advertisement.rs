@@ -1,4 +1,5 @@
 use crate::log_observability_event;
+use crate::model_executability::evaluate_model_network_inference_policy;
 use crate::worker_capabilities::WorkerCapabilities;
 use crate::worker_startup_policy::{
     emit_worker_model_load_attempt_event, emit_worker_model_load_failed_event, WorkerStartupPolicy,
@@ -55,6 +56,38 @@ where
             );
             continue;
         };
+
+        let network_policy = evaluate_model_network_inference_policy(model_desc, true);
+        if !network_policy.permits_distributed_inference {
+            println!(
+                "[Health] Skipping advertisement for {}: network policy {} ({})",
+                model_id,
+                network_policy.status.as_str(),
+                network_policy.policy_reason()
+            );
+            log_observability_event(
+                LogLevel::Warn,
+                "model_advertisement_rejected",
+                "startup",
+                None,
+                Some(&model_id),
+                None,
+                {
+                    let mut fields = Map::new();
+                    fields.insert("reason".to_string(), "network_policy".into());
+                    fields.insert(
+                        "network_policy_status".to_string(),
+                        network_policy.status.as_str().into(),
+                    );
+                    fields.insert(
+                        "network_policy_reason".to_string(),
+                        network_policy.policy_reason().into(),
+                    );
+                    fields
+                },
+            );
+            continue;
+        }
 
         let compatibility = evaluate_node_model_compatibility(&model_id, node_caps);
         if !compatibility.is_compatible() {
@@ -156,6 +189,24 @@ mod tests {
     use super::*;
     use crate::executor::TaskExecutor;
     use crate::worker_startup_policy::test_node_caps_for_startup;
+    use iamine_models::{LicenseMetadata, ModelDescriptor, NetworkPolicyMetadata};
+
+    fn registry_with_network_policy(network_policy: NetworkPolicyMetadata) -> ModelRegistry {
+        ModelRegistry::from_models(vec![ModelDescriptor {
+            id: "tinyllama-1b".to_string(),
+            version: "1.1".to_string(),
+            architecture: "llama".to_string(),
+            size_bytes: 669_000_000,
+            required_ram_gb: 2,
+            required_vram_gb: 0,
+            shards: 1,
+            hash: String::new(),
+            download_url: "https://huggingface.co/iamine/test/resolve/main/test.gguf".to_string(),
+            quantization: "q4_k_m".to_string(),
+            license: LicenseMetadata::missing(),
+            network_policy,
+        }])
+    }
 
     #[test]
     fn worker_skip_model_load_on_startup_does_not_load_model() {
@@ -373,5 +424,34 @@ mod tests {
                 && entry.fields.get("error").and_then(|value| value.as_str())
                     == Some("simulated load failure")
         }));
+    }
+
+    #[test]
+    fn capability_advertisement_blocks_local_only_network_policy_before_model_load() {
+        let registry =
+            registry_with_network_policy(NetworkPolicyMetadata::local_only("test-fixture"));
+        let caps = test_node_caps_for_startup();
+        let policy = WorkerStartupPolicy::from_values(
+            None,
+            None,
+            &caps.cpu_features,
+            &caps.accelerator,
+            "x86_64",
+        );
+        let mut load_attempts = 0usize;
+
+        let advertised = validate_model_advertisement_candidates(
+            vec!["tinyllama-1b".to_string()],
+            &registry,
+            &caps,
+            &policy,
+            |_model_id, _hash| {
+                load_attempts += 1;
+                Ok(())
+            },
+        );
+
+        assert!(advertised.is_empty());
+        assert_eq!(load_attempts, 0);
     }
 }
