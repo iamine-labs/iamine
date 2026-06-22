@@ -169,6 +169,26 @@ mod tests {
     }
 
     #[test]
+    fn metrics_policy_proxmox_ports_keep_non_blocking_fallback() {
+        for worker_port in [4101, 4102, 4103] {
+            let decision = metrics_startup_decision(worker_port);
+
+            assert!(decision.can_continue_worker_startup());
+            assert_eq!(decision.fallback_behavior(), METRICS_FALLBACK_CONTINUE);
+            match decision {
+                MetricsStartupDecision::ContinueWithoutMetrics { reason, error } => {
+                    assert_eq!(reason, MetricsUnavailableReason::PortBelowBase);
+                    assert_eq!(error.operation, "worker_port_minus_base");
+                    assert_eq!(error.operand_a, worker_port as u64);
+                    assert_eq!(error.operand_b, METRICS_WORKER_PORT_BASE as u64);
+                    assert_eq!(error.reason, "worker_port_below_metrics_base");
+                }
+                decision => panic!("expected fallback decision, got {decision:?}"),
+            }
+        }
+    }
+
+    #[test]
     fn metrics_policy_invalid_math_reports_reason() {
         let error = StartupMathError::new(
             "metrics_port_plus_offset",
