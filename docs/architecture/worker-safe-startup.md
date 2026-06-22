@@ -79,7 +79,9 @@ Important events:
 ## Non-Blocking Follow-Ups
 
 worker_startup_invalid_math / metrics port:
-Ports 4101, 4102, and 4103 are below metrics base 9000. Current fallback behavior is continue_without_metrics_server. This is not blocking for Cluster LAN.
+Closed. Ports 4101, 4102, and 4103 remain below metrics base 9000, but this is
+an explicit non-blocking fallback: workers continue with
+continue_without_metrics_server and publish metrics_status=fallback.
 
 QA-PROXMOX-MOCK-CAPABILITIES-DISPLAY-001:
 Closed. Cluster status now keeps mock/skip model display explicit: registry and

@@ -145,7 +145,9 @@ Expected:
 ## Known Non-Blockers
 
 worker_startup_invalid_math / metrics port:
-Ports 4101, 4102, and 4103 are below the metrics base 9000. Current behavior continues without metrics server. Status: non-blocking.
+Closed. Ports 4101, 4102, and 4103 remain below the metrics base 9000, but the
+fallback is explicit and non-blocking: workers continue with
+continue_without_metrics_server and publish metrics_status=fallback.
 
 QA-PROXMOX-MOCK-CAPABILITIES-DISPLAY-001:
 Closed. Cluster status now distinguishes models in storage, models in registry,
