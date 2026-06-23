@@ -1,23 +1,30 @@
-# Cluster LAN Auto Discovery Roadmap Gate
+# Cluster LAN Auto Discovery Closeout
 
-## Next Milestone
+## Milestone
 
 CLUSTER-LAN-AUTO-DISCOVERY-001
 
-## Recommended Base
+## Status
 
-Start from `develop` after CLOSEOUT-REFACTORING-GATE-001 is merged.
+Implemented in `develop`.
 
-Current technical base for the closeout gate:
+Reconciled from current `develop` after the model gate line:
 
 ```text
 branch: develop
-commit: 69c292a
-status: pre-cluster refactors merged
-decision: GO WITH CONDITIONS
+commit: e390befa3c4e7c4eb86c825c69a2bdd60d9bd8cf
+tree: 0b0c02f1df6c0bb23cb6c428c84931cea02e62c8
+status: CLUSTER-LAN-AUTO-DISCOVERY-001 implemented
 ```
 
-## Why Cluster LAN Is Unblocked
+Primary implementation entered `develop` through:
+
+```text
+c6ffe3b Merge pull request: add cluster LAN auto discovery status
+57fe8ca style: format cluster lan modules
+```
+
+## Why Cluster LAN Was Unblocked
 
 The pre-cluster refactor cycle reduced `iamine-node/src/main.rs` from 14150
 lines to 8931 lines and moved critical behavior into dedicated modules:
@@ -30,29 +37,29 @@ lines to 8931 lines and moved critical behavior into dedicated modules:
 - result protocol and acceptance
 - metrics policy and metrics server fallback
 
-The validated Broadcast baseline remains:
+The validated Broadcast baseline remained:
 
 ```text
 TaskOffer -> TaskBid -> TaskAssign -> TaskResult -> final_outcome=success
 ```
 
-## Cluster LAN Goal
+## Cluster LAN Goal And Current Contract
 
-Add LAN cluster auto discovery and status on top of the validated Broadcast and
-worker startup baseline.
+Cluster LAN adds LAN peer discovery and status on top of the validated Broadcast
+and worker startup baseline.
 
-Expected direction:
+Current contract:
 
-- discover LAN peers
-- classify controller and worker roles
-- expose cluster membership
-- expose cluster readiness/status
-- aggregate node capabilities
-- show backend, real inference availability, and metrics availability clearly
-- reuse PubSub readiness semantics
-- keep Broadcast baseline passing
+- discover LAN peers;
+- classify controller and worker roles;
+- expose cluster membership;
+- expose cluster readiness/status;
+- aggregate node capabilities;
+- show backend, real inference availability, and metrics availability clearly;
+- reuse PubSub readiness semantics;
+- keep Broadcast baseline passing.
 
-## In Scope For Cluster LAN
+## Implemented Scope
 
 - cluster peer discovery state
 - cluster readiness model
@@ -73,7 +80,7 @@ Expected direction:
 - dashboard/installer/autoupdate
 - major scheduler rewrite
 
-## Completed Dependencies
+## Completed Dependencies And Follow-Ups
 
 - Broadcast runtime helpers extracted
 - worker startup policy extracted
@@ -86,8 +93,11 @@ Expected direction:
 - result protocol and acceptance extracted
 - final outcome helpers extracted
 - metrics policy and server fallback extracted
+- QA-CLI-UNKNOWN-MODE-EXIT-CODE-007 closed
+- Proxmox/R5500 metrics fallback closure completed
+- QA-PROXMOX-MOCK-CAPABILITIES-DISPLAY-001 closed
 
-## Reuse Requirements
+## Reuse Requirements Preserved
 
 Cluster LAN should reuse:
 
@@ -102,9 +112,9 @@ Cluster LAN should reuse:
 
 Do not reintroduce connected_peers-only readiness.
 
-## Required Baseline Smoke
+## Required Baseline Smoke For Future Changes
 
-Before and after Cluster LAN changes, run:
+Before and after future Cluster LAN changes, run:
 
 ```bash
 SMOKE_ID="cluster-baseline-smoke-$(date +%s)"
@@ -128,40 +138,28 @@ Expected:
 - no rebroadcast after success
 - no duplicate execution/result
 
-## Pending QA
+## QA Status
 
-Proxmox/R5500 metrics field smoke is still pending for
-REFACTOR-METRICS-SERVER-008.
+Proxmox/R5500 metrics fallback is closed by the later follow-up branch and the
+LAN Proxmox Broadcast closeout.
 
-This is not blocking for starting Cluster LAN, but it is a condition for closing
-Cluster LAN cleanly.
-
-If the Proxmox metrics smoke fails, open a bugfix on `develop` before closing or
-shipping Cluster LAN.
-
-## Follow-Ups
-
-- QA-CLI-UNKNOWN-MODE-EXIT-CODE-007: verify unknown mode exit code and fix if it
-  still exits 0.
-- Keep metrics unavailable/fallback visible in cluster status.
-- Existing Rust dead_code warnings are not blocking.
-- Cluster assignment log spam can be cleaned later.
-
-## Go/No-Go
-
-GO WITH CONDITIONS.
-
-Conditions:
-
-- Run Proxmox/R5500 metrics smoke when Dell is available.
-- Keep Broadcast smoke as a protected regression.
-- Do not add Cluster LAN state directly into `main.rs` when an extracted module
-  can own it.
-- Keep worker mock/skip startup as the Proxmox safety baseline.
-- Treat real CPU inference on Proxmox/R5500 as out of scope.
-
-Recommended next branch:
+Current evidence is tracked in:
 
 ```text
-feature/cluster-lan-auto-discovery-001
+docs/qa/lan-proxmox-broadcast-flow.md
 ```
+
+Future changes that touch runtime, worker behavior, cluster status, capabilities,
+broadcast, or inference must still run field QA.
+
+## Remaining Follow-Ups
+
+- Existing Rust dead_code warnings are not blocking.
+- Cluster assignment log spam can be cleaned later.
+- LEGACY-BACKEND-REAL-INFERENCE-001 remains future work and is out of scope for
+  Cluster LAN.
+
+## Closeout Decision
+
+CLUSTER-LAN-AUTO-DISCOVERY-001 is implemented in `develop`. Treat this roadmap
+as a closeout record, not as a request to reopen the historical feature branch.
