@@ -39,6 +39,19 @@ backend_unavailable
 network_policy_blocked
 ```
 
+## Reporting Contract
+
+The decision exposes stable report codes for local observability and future
+callers:
+
+- `status_code()`: `eligible` or `ineligible`
+- `first_blocking_reason_code()`: the first ordered blocking reason, if any
+- `blocking_reason_codes()`: all blocking reasons in stable gate order
+- `report()`: a read-only summary of the same status and reason codes
+
+Reporting helpers must not start workers, networking, downloads, installs,
+model loading, inference, hardware probes, or persistence.
+
 ## Ownership
 
 The aggregate gate lives in `iamine-models` because it combines model-policy

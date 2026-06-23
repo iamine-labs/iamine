@@ -74,7 +74,7 @@ pub use model_inference_eligibility::{
     evaluate_descriptor_model_inference_eligibility, evaluate_model_inference_eligibility,
     ModelInferenceBackendAvailability, ModelInferenceEligibilityDecision,
     ModelInferenceEligibilityInput, ModelInferenceEligibilityReason,
-    ModelInferenceEligibilityStatus,
+    ModelInferenceEligibilityReport, ModelInferenceEligibilityStatus,
 };
 pub use model_installer::{InstallResult, ModelInstaller, ModelStatus};
 pub use model_registry::{ModelDescriptor, ModelManifest, ModelRegistry};

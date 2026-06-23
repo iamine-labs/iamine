@@ -79,6 +79,13 @@ pub struct ModelInferenceEligibilityDecision {
     pub reasons: Vec<ModelInferenceEligibilityReason>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModelInferenceEligibilityReport {
+    pub status: &'static str,
+    pub first_blocking_reason: Option<&'static str>,
+    pub blocking_reasons: Vec<&'static str>,
+}
+
 impl ModelInferenceEligibilityDecision {
     pub fn is_eligible(&self) -> bool {
         self.status == ModelInferenceEligibilityStatus::Eligible
@@ -86,6 +93,26 @@ impl ModelInferenceEligibilityDecision {
 
     pub fn first_blocking_reason(&self) -> Option<ModelInferenceEligibilityReason> {
         self.reasons.first().copied()
+    }
+
+    pub fn status_code(&self) -> &'static str {
+        self.status.as_str()
+    }
+
+    pub fn first_blocking_reason_code(&self) -> Option<&'static str> {
+        self.first_blocking_reason().map(|reason| reason.as_str())
+    }
+
+    pub fn blocking_reason_codes(&self) -> Vec<&'static str> {
+        self.reasons.iter().map(|reason| reason.as_str()).collect()
+    }
+
+    pub fn report(&self) -> ModelInferenceEligibilityReport {
+        ModelInferenceEligibilityReport {
+            status: self.status_code(),
+            first_blocking_reason: self.first_blocking_reason_code(),
+            blocking_reasons: self.blocking_reason_codes(),
+        }
     }
 }
 
@@ -347,6 +374,72 @@ mod tests {
         assert_eq!(
             decision.first_blocking_reason(),
             Some(ModelInferenceEligibilityReason::HardwareIncompatible)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn reporting_helpers_expose_stable_codes_for_eligible_decision(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let model = eligible_model();
+        let decision = evaluate(
+            &model,
+            true,
+            compatible_hardware(&model.id),
+            ModelInferenceBackendAvailability::Available,
+        )?;
+
+        assert_eq!(decision.status_code(), "eligible");
+        assert_eq!(decision.first_blocking_reason_code(), None);
+        assert!(decision.blocking_reason_codes().is_empty());
+        assert_eq!(
+            decision.report(),
+            ModelInferenceEligibilityReport {
+                status: "eligible",
+                first_blocking_reason: None,
+                blocking_reasons: Vec::new(),
+            }
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn reporting_helpers_preserve_ordered_blocking_reason_codes(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let mut model = eligible_model();
+        model.network_policy = NetworkPolicyMetadata::local_only("test-fixture");
+
+        let decision = evaluate(
+            &model,
+            true,
+            incompatible_hardware(&model.id),
+            ModelInferenceBackendAvailability::Unavailable,
+        )?;
+
+        assert_eq!(decision.status_code(), "ineligible");
+        assert_eq!(
+            decision.first_blocking_reason_code(),
+            Some("hardware_incompatible")
+        );
+        assert_eq!(
+            decision.blocking_reason_codes(),
+            vec![
+                "hardware_incompatible",
+                "backend_unavailable",
+                "network_policy_blocked",
+            ]
+        );
+        assert_eq!(
+            decision.report(),
+            ModelInferenceEligibilityReport {
+                status: "ineligible",
+                first_blocking_reason: Some("hardware_incompatible"),
+                blocking_reasons: vec![
+                    "hardware_incompatible",
+                    "backend_unavailable",
+                    "network_policy_blocked",
+                ],
+            }
         );
         Ok(())
     }
