@@ -1,8 +1,10 @@
 use crate::model_backend_availability::ModelBackendAvailabilityDecision;
 use crate::worker_startup_policy::WorkerStartupPolicy;
 use iamine_models::{
-    evaluate_node_model_compatibility, ModelDescriptor, ModelNetworkPolicy, ModelNodeCapabilities,
-    ModelStorage, NetworkPolicyDecision, NetworkPolicyOperation,
+    evaluate_descriptor_model_inference_eligibility, evaluate_node_model_compatibility,
+    LicenseAcceptanceStore, ModelDescriptor, ModelInferenceBackendAvailability,
+    ModelInferenceEligibilityDecision, ModelInferenceEligibilityReason, ModelNetworkPolicy,
+    ModelNodeCapabilities, ModelStorage, NetworkPolicyDecision, NetworkPolicyOperation,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -48,7 +50,9 @@ pub(crate) fn classify_model_executability(input: &ModelExecutabilityInput) -> M
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum WorkerModelExecutionRejection {
     MissingLocalModel,
+    RegistryAdmissionBlocked,
     HardwareUnsupported,
+    BackendUnavailable,
     NetworkPolicyBlocked,
 }
 
@@ -58,8 +62,17 @@ impl WorkerModelExecutionRejection {
             Self::MissingLocalModel => {
                 format!("   ⚠️ Modelo {} no instalado — ignorando", model_id)
             }
+            Self::RegistryAdmissionBlocked => {
+                format!(
+                    "   ⚠️ Admisión de registry bloquea {} — ignorando",
+                    model_id
+                )
+            }
             Self::HardwareUnsupported => {
                 format!("   ⚠️ Hardware insuficiente para {} — ignorando", model_id)
+            }
+            Self::BackendUnavailable => {
+                format!("   ⚠️ Backend no disponible para {} — ignorando", model_id)
             }
             Self::NetworkPolicyBlocked => {
                 format!(
@@ -77,6 +90,7 @@ pub(crate) struct WorkerModelExecutionGate {
     pub(crate) mock_backend_enabled: bool,
     pub(crate) real_inference_available: bool,
     pub(crate) backend_availability: ModelBackendAvailabilityDecision,
+    pub(crate) inference_eligibility: Option<ModelInferenceEligibilityDecision>,
     pub(crate) network_policy: Option<NetworkPolicyDecision>,
     pub(crate) rejection: Option<WorkerModelExecutionRejection>,
 }
@@ -96,18 +110,26 @@ pub(crate) fn evaluate_worker_model_execution_gate(
         .map(|policy| policy.backend_availability_decision())
         .unwrap_or_else(ModelBackendAvailabilityDecision::available);
     let real_inference_available = backend_availability.permits_real_inference();
-    let network_policy = model_descriptor
-        .map(|model| evaluate_model_network_inference_policy(model, local_model_available));
-
-    let rejection = if !local_model_available && !mock_backend_enabled {
-        Some(WorkerModelExecutionRejection::MissingLocalModel)
-    } else if !mock_backend_enabled && !worker_hardware_supports_model(model_id, node_caps) {
-        Some(WorkerModelExecutionRejection::HardwareUnsupported)
-    } else if network_policy
+    let hardware_compatibility = evaluate_node_model_compatibility(model_id, node_caps);
+    let inference_eligibility = model_descriptor.map(|model| {
+        evaluate_descriptor_model_inference_eligibility(
+            model,
+            local_model_available,
+            hardware_compatibility.clone(),
+            model_inference_backend_availability(backend_availability),
+            &LicenseAcceptanceStore::new(),
+        )
+    });
+    let network_policy = inference_eligibility
         .as_ref()
-        .is_some_and(|decision| !decision.permits_distributed_inference)
-    {
-        Some(WorkerModelExecutionRejection::NetworkPolicyBlocked)
+        .map(|decision| decision.network_policy.clone());
+
+    let rejection = if let Some(eligibility) = inference_eligibility.as_ref() {
+        worker_rejection_from_eligibility(eligibility, mock_backend_enabled)
+    } else if !local_model_available && !mock_backend_enabled {
+        Some(WorkerModelExecutionRejection::MissingLocalModel)
+    } else if !mock_backend_enabled && !hardware_compatibility.is_compatible() {
+        Some(WorkerModelExecutionRejection::HardwareUnsupported)
     } else {
         None
     };
@@ -117,6 +139,7 @@ pub(crate) fn evaluate_worker_model_execution_gate(
         mock_backend_enabled,
         real_inference_available,
         backend_availability,
+        inference_eligibility,
         network_policy,
         rejection,
     }
@@ -133,8 +156,38 @@ pub(crate) fn evaluate_model_network_inference_policy(
     )
 }
 
-fn worker_hardware_supports_model(model_id: &str, node_caps: &ModelNodeCapabilities) -> bool {
-    evaluate_node_model_compatibility(model_id, node_caps).is_compatible()
+fn model_inference_backend_availability(
+    decision: ModelBackendAvailabilityDecision,
+) -> ModelInferenceBackendAvailability {
+    if decision.permits_real_inference() {
+        ModelInferenceBackendAvailability::Available
+    } else {
+        ModelInferenceBackendAvailability::Unavailable
+    }
+}
+
+fn worker_rejection_from_eligibility(
+    decision: &ModelInferenceEligibilityDecision,
+    mock_backend_enabled: bool,
+) -> Option<WorkerModelExecutionRejection> {
+    decision.reasons.iter().find_map(|reason| match reason {
+        ModelInferenceEligibilityReason::ModelNotInstalled if !mock_backend_enabled => {
+            Some(WorkerModelExecutionRejection::MissingLocalModel)
+        }
+        ModelInferenceEligibilityReason::RegistryAdmissionBlocked => {
+            Some(WorkerModelExecutionRejection::RegistryAdmissionBlocked)
+        }
+        ModelInferenceEligibilityReason::HardwareIncompatible if !mock_backend_enabled => {
+            Some(WorkerModelExecutionRejection::HardwareUnsupported)
+        }
+        ModelInferenceEligibilityReason::BackendUnavailable if !mock_backend_enabled => {
+            Some(WorkerModelExecutionRejection::BackendUnavailable)
+        }
+        ModelInferenceEligibilityReason::NetworkPolicyBlocked => {
+            Some(WorkerModelExecutionRejection::NetworkPolicyBlocked)
+        }
+        _ => None,
+    })
 }
 
 #[cfg(test)]
@@ -143,7 +196,7 @@ mod tests {
     use crate::model_backend_availability::{
         evaluate_model_backend_availability, ModelBackendAvailabilityInput,
     };
-    use iamine_models::{LicenseMetadata, NetworkPolicyMetadata};
+    use iamine_models::{LicenseClass, LicenseMetadata, NetworkPolicyMetadata};
     use std::fs;
     use tempfile::TempDir;
 
@@ -184,6 +237,18 @@ mod tests {
             license: LicenseMetadata::missing(),
             network_policy,
         }
+    }
+
+    fn restricted_license_descriptor() -> ModelDescriptor {
+        let mut model = descriptor(NetworkPolicyMetadata::distributed_allowed("test-fixture"));
+        model.license = LicenseMetadata {
+            license_id: Some("custom-restricted".to_string()),
+            license_url: Some("https://example.com/license".to_string()),
+            policy_class: Some(LicenseClass::Restricted),
+            requires_acceptance: false,
+            revision: Some("test-fixture".to_string()),
+        };
+        model
     }
 
     fn node_caps() -> ModelNodeCapabilities {
@@ -278,7 +343,7 @@ mod tests {
             accelerator: "CPU".to_string(),
         };
 
-        assert!(!worker_hardware_supports_model("unknown-model", &node_caps));
+        assert!(!evaluate_node_model_compatibility("unknown-model", &node_caps).is_compatible());
     }
 
     #[test]
@@ -297,9 +362,66 @@ mod tests {
 
         assert_eq!(gate.rejection, None);
         assert!(gate
+            .inference_eligibility
+            .as_ref()
+            .is_some_and(ModelInferenceEligibilityDecision::is_eligible));
+        assert!(gate
             .network_policy
             .as_ref()
             .is_some_and(|decision| decision.permits_distributed_inference));
+        Ok(())
+    }
+
+    #[test]
+    fn worker_execution_gate_blocks_registry_admission_policy(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let (_dir, storage) = storage_with_model("tinyllama-1b")?;
+        let model = restricted_license_descriptor();
+
+        let gate = evaluate_worker_model_execution_gate(
+            "tinyllama-1b",
+            &storage,
+            Some(&model),
+            &node_caps(),
+            None,
+        );
+
+        assert_eq!(
+            gate.rejection,
+            Some(WorkerModelExecutionRejection::RegistryAdmissionBlocked)
+        );
+        assert!(gate
+            .inference_eligibility
+            .as_ref()
+            .is_some_and(|decision| !decision.is_eligible()));
+        Ok(())
+    }
+
+    #[test]
+    fn worker_execution_gate_blocks_backend_unavailable_for_real_backend(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let (_dir, storage) = storage_with_model("tinyllama-1b")?;
+        let model = descriptor(NetworkPolicyMetadata::distributed_allowed("test-fixture"));
+        let startup_policy = WorkerStartupPolicy::from_values(
+            Some("real"),
+            Some("1"),
+            &["AVX2".to_string()],
+            "CPU",
+            "x86_64",
+        );
+
+        let gate = evaluate_worker_model_execution_gate(
+            "tinyllama-1b",
+            &storage,
+            Some(&model),
+            &node_caps(),
+            Some(&startup_policy),
+        );
+
+        assert_eq!(
+            gate.rejection,
+            Some(WorkerModelExecutionRejection::BackendUnavailable)
+        );
         Ok(())
     }
 
