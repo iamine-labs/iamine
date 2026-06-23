@@ -157,7 +157,10 @@ workers can still show registry/storage models, but do not show them as
 executable real inference models.
 
 LEGACY-BACKEND-REAL-INFERENCE-001:
-Real CPU llama/ggml inference on Proxmox/R5500 remains future work because of SIGILL risk. It is not part of Cluster LAN. Status: future feature.
+Real CPU llama/ggml inference on Proxmox/R5500 is tracked separately from
+Cluster LAN because of SIGILL risk. Current implementation work uses an
+explicit daemon-only legacy CPU path and still requires Proxmox/R5500 field QA
+before closure.
 
 ## QA Pass Criteria
 

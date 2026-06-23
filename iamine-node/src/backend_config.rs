@@ -1,6 +1,7 @@
-use crate::backend_policy::WorkerInferenceBackend;
+use crate::backend_policy::{LegacyCpuRealBackendMode, WorkerInferenceBackend};
 use crate::env_config::{
-    env_string, env_truthy, IAMINE_INFERENCE_BACKEND, IAMINE_SKIP_MODEL_LOAD_ON_STARTUP,
+    env_string, env_truthy, IAMINE_INFERENCE_BACKEND, IAMINE_LEGACY_CPU_REAL_BACKEND,
+    IAMINE_SKIP_MODEL_LOAD_ON_STARTUP,
 };
 
 pub(crate) fn inference_backend_env() -> Option<String> {
@@ -11,6 +12,10 @@ pub(crate) fn skip_model_load_env() -> Option<String> {
     env_string(IAMINE_SKIP_MODEL_LOAD_ON_STARTUP)
 }
 
+pub(crate) fn legacy_cpu_real_backend_env() -> Option<String> {
+    env_string(IAMINE_LEGACY_CPU_REAL_BACKEND)
+}
+
 pub(crate) fn skip_model_load_enabled_from_value(value: Option<&str>) -> bool {
     value.map(env_truthy).unwrap_or(false)
 }
@@ -19,11 +24,19 @@ pub(crate) fn worker_backend_from_env_value(value: Option<&str>) -> WorkerInfere
     WorkerInferenceBackend::from_env_value(value)
 }
 
+pub(crate) fn legacy_cpu_real_backend_mode_from_value(
+    value: Option<&str>,
+) -> LegacyCpuRealBackendMode {
+    LegacyCpuRealBackendMode::from_env_value(value)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::config_test_utils::with_env_var;
-    use crate::env_config::{IAMINE_INFERENCE_BACKEND, IAMINE_SKIP_MODEL_LOAD_ON_STARTUP};
+    use crate::env_config::{
+        IAMINE_INFERENCE_BACKEND, IAMINE_LEGACY_CPU_REAL_BACKEND, IAMINE_SKIP_MODEL_LOAD_ON_STARTUP,
+    };
 
     #[test]
     fn backend_env_mock_preserved() {
@@ -46,5 +59,19 @@ mod tests {
     #[test]
     fn skip_model_load_invalid_value_stays_false() {
         assert!(!skip_model_load_enabled_from_value(Some("definitely")));
+    }
+
+    #[test]
+    fn legacy_cpu_real_backend_env_preserved() {
+        with_env_var(IAMINE_LEGACY_CPU_REAL_BACKEND, Some("daemon_only"), || {
+            assert_eq!(
+                legacy_cpu_real_backend_env().as_deref(),
+                Some("daemon_only")
+            );
+            assert_eq!(
+                legacy_cpu_real_backend_mode_from_value(legacy_cpu_real_backend_env().as_deref()),
+                LegacyCpuRealBackendMode::DaemonOnly
+            );
+        });
     }
 }

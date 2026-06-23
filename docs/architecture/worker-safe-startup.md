@@ -45,6 +45,29 @@ Before real CPU backend selection, startup policy checks CPU compatibility. If i
 
 This avoids entering unsafe backend code on unsupported CPUs.
 
+## Legacy CPU Real Inference
+
+`LEGACY-BACKEND-REAL-INFERENCE-001` introduces an explicit daemon-only mode for
+legacy x86_64 CPU hosts:
+
+```text
+IAMINE_LEGACY_CPU_REAL_BACKEND=daemon_only
+```
+
+When this mode is active and AVX2 is absent:
+
+- real inference may be considered available only through the daemon route;
+- local `RealInferenceEngine` creation remains disabled for the worker;
+- startup model advertisement must not validate models by loading the local
+  backend;
+- if the daemon is unavailable at task time, the worker returns a controlled
+  error instead of falling back to the local backend;
+- mock/skip behavior remains the default safe baseline.
+
+This mode does not remove the CPU feature guard. It narrows legacy real
+inference to an explicit daemon path that must be field-tested on the target
+host before merge closure.
+
 ## Capabilities Rules
 
 When real inference is unavailable:
@@ -89,4 +112,5 @@ storage models remain visible, executable models stay empty, real inference is
 reported as unavailable, and unavailable model reasons include disabled_by_mock.
 
 LEGACY-BACKEND-REAL-INFERENCE-001:
-Real CPU inference on Proxmox/R5500 is future work and should not be included in Cluster LAN.
+In progress as a daemon-only legacy CPU path. Proxmox/R5500 field QA is
+required before closure.

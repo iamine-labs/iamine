@@ -4,6 +4,7 @@ use std::path::PathBuf;
 pub(crate) const IAMINE_CLUSTER_ID: &str = "IAMINE_CLUSTER_ID";
 pub(crate) const IAMINE_CLUSTER_STATUS_WAIT_MS: &str = "IAMINE_CLUSTER_STATUS_WAIT_MS";
 pub(crate) const IAMINE_INFERENCE_BACKEND: &str = "IAMINE_INFERENCE_BACKEND";
+pub(crate) const IAMINE_LEGACY_CPU_REAL_BACKEND: &str = "IAMINE_LEGACY_CPU_REAL_BACKEND";
 #[allow(dead_code)]
 pub(crate) const IAMINE_LOG_FORMAT: &str = "IAMINE_LOG_FORMAT";
 #[allow(dead_code)]

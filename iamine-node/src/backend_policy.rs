@@ -32,6 +32,32 @@ impl WorkerInferenceBackend {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LegacyCpuRealBackendMode {
+    Block,
+    DaemonOnly,
+}
+
+impl LegacyCpuRealBackendMode {
+    pub(crate) fn from_env_value(value: Option<&str>) -> Self {
+        match value.map(|value| value.trim().to_ascii_lowercase()) {
+            Some(value) if value == "daemon_only" || value == "daemon-only" => Self::DaemonOnly,
+            _ => Self::Block,
+        }
+    }
+
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Block => "block",
+            Self::DaemonOnly => "daemon_only",
+        }
+    }
+
+    pub(crate) fn is_daemon_only(self) -> bool {
+        self == Self::DaemonOnly
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -58,5 +84,31 @@ mod tests {
             WorkerInferenceBackend::from_env_value(Some("cpu")),
             WorkerInferenceBackend::Real
         );
+    }
+
+    #[test]
+    fn legacy_cpu_real_backend_defaults_to_block() {
+        assert_eq!(
+            LegacyCpuRealBackendMode::from_env_value(None),
+            LegacyCpuRealBackendMode::Block
+        );
+        assert_eq!(
+            LegacyCpuRealBackendMode::from_env_value(Some("direct")),
+            LegacyCpuRealBackendMode::Block
+        );
+    }
+
+    #[test]
+    fn legacy_cpu_real_backend_accepts_daemon_only() {
+        assert_eq!(
+            LegacyCpuRealBackendMode::from_env_value(Some("daemon_only")),
+            LegacyCpuRealBackendMode::DaemonOnly
+        );
+        assert_eq!(
+            LegacyCpuRealBackendMode::from_env_value(Some("daemon-only")),
+            LegacyCpuRealBackendMode::DaemonOnly
+        );
+        assert_eq!(LegacyCpuRealBackendMode::DaemonOnly.as_str(), "daemon_only");
+        assert!(LegacyCpuRealBackendMode::DaemonOnly.is_daemon_only());
     }
 }

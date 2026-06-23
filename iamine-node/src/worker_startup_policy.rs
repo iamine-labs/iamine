@@ -1,8 +1,8 @@
 use crate::backend_config::{
-    inference_backend_env, skip_model_load_enabled_from_value, skip_model_load_env,
-    worker_backend_from_env_value,
+    inference_backend_env, legacy_cpu_real_backend_env, legacy_cpu_real_backend_mode_from_value,
+    skip_model_load_enabled_from_value, skip_model_load_env, worker_backend_from_env_value,
 };
-use crate::backend_policy::WorkerInferenceBackend;
+use crate::backend_policy::{LegacyCpuRealBackendMode, WorkerInferenceBackend};
 use crate::cpu_feature_guard::cpu_features_are_compatible_for_real_backend;
 use crate::log_observability_event;
 use crate::model_backend_availability::{
@@ -22,6 +22,7 @@ pub(crate) struct WorkerStartupPolicy {
     pub(crate) backend: WorkerInferenceBackend,
     pub(crate) skip_model_load_on_startup: bool,
     pub(crate) cpu_feature_compatible: bool,
+    pub(crate) legacy_cpu_real_backend_mode: LegacyCpuRealBackendMode,
     pub(crate) real_inference_available: bool,
     pub(crate) model_load_skip_reason: Option<&'static str>,
 }
@@ -30,9 +31,11 @@ impl WorkerStartupPolicy {
     pub(crate) fn from_env(node_caps: &ModelNodeCapabilities) -> Self {
         let backend_env = inference_backend_env();
         let skip_env = skip_model_load_env();
+        let legacy_cpu_real_backend_env = legacy_cpu_real_backend_env();
         Self::from_values(
             backend_env.as_deref(),
             skip_env.as_deref(),
+            legacy_cpu_real_backend_env.as_deref(),
             &node_caps.cpu_features,
             &node_caps.accelerator,
             std::env::consts::ARCH,
@@ -42,30 +45,41 @@ impl WorkerStartupPolicy {
     pub(crate) fn from_values(
         backend_env: Option<&str>,
         skip_env: Option<&str>,
+        legacy_cpu_real_backend_env: Option<&str>,
         cpu_features: &[String],
         accelerator: &str,
         target_arch: &str,
     ) -> Self {
         let backend = worker_backend_from_env_value(backend_env);
         let skip_model_load_on_startup = skip_model_load_enabled_from_value(skip_env);
+        let legacy_cpu_real_backend_mode =
+            legacy_cpu_real_backend_mode_from_value(legacy_cpu_real_backend_env);
         let cpu_feature_compatible =
             cpu_features_are_compatible_for_real_backend(cpu_features, accelerator, target_arch);
+        let legacy_cpu_daemon_only = backend.is_real()
+            && !skip_model_load_on_startup
+            && !cpu_feature_compatible
+            && legacy_cpu_real_backend_mode.is_daemon_only();
         let model_load_skip_reason = if backend.is_mock() {
             Some("mock_backend")
         } else if skip_model_load_on_startup {
             Some("skip_model_load_on_startup")
+        } else if legacy_cpu_daemon_only {
+            Some("legacy_cpu_daemon_only")
         } else if !cpu_feature_compatible {
             Some("cpu_feature_incompatible")
         } else {
             None
         };
-        let real_inference_available =
-            backend.is_real() && !skip_model_load_on_startup && cpu_feature_compatible;
+        let real_inference_available = backend.is_real()
+            && !skip_model_load_on_startup
+            && (cpu_feature_compatible || legacy_cpu_daemon_only);
 
         Self {
             backend,
             skip_model_load_on_startup,
             cpu_feature_compatible,
+            legacy_cpu_real_backend_mode,
             real_inference_available,
             model_load_skip_reason,
         }
@@ -75,11 +89,24 @@ impl WorkerStartupPolicy {
         self.backend.is_mock()
     }
 
+    pub(crate) fn legacy_cpu_daemon_only_real_inference(&self) -> bool {
+        self.backend.is_real()
+            && !self.skip_model_load_on_startup
+            && !self.cpu_feature_compatible
+            && self.legacy_cpu_real_backend_mode.is_daemon_only()
+    }
+
+    pub(crate) fn permits_local_real_backend_load(&self) -> bool {
+        self.backend_availability_decision()
+            .permits_local_backend_load()
+    }
+
     pub(crate) fn backend_availability_decision(&self) -> ModelBackendAvailabilityDecision {
         evaluate_model_backend_availability(&ModelBackendAvailabilityInput {
             backend_is_mock: self.backend.is_mock(),
             skip_model_load_on_startup: self.skip_model_load_on_startup,
             cpu_feature_compatible: self.cpu_feature_compatible,
+            legacy_cpu_daemon_only: self.legacy_cpu_daemon_only_real_inference(),
             real_inference_available: self.real_inference_available,
         })
     }
@@ -113,6 +140,10 @@ pub(crate) fn emit_inference_backend_selected_event(policy: &WorkerStartupPolicy
         {
             let mut fields = Map::new();
             fields.insert("backend".to_string(), policy.backend.as_str().into());
+            fields.insert(
+                "legacy_cpu_real_backend_mode".to_string(),
+                policy.legacy_cpu_real_backend_mode.as_str().into(),
+            );
             fields.insert(
                 "skip_model_load_on_startup".to_string(),
                 policy.skip_model_load_on_startup.into(),
@@ -233,6 +264,10 @@ pub(crate) fn emit_worker_startup_ready_event(
             fields.insert("peer_id".to_string(), peer_id.into());
             fields.insert("port".to_string(), (port as u64).into());
             fields.insert("backend".to_string(), policy.backend.as_str().into());
+            fields.insert(
+                "legacy_cpu_real_backend_mode".to_string(),
+                policy.legacy_cpu_real_backend_mode.as_str().into(),
+            );
             fields.insert(
                 "real_inference_available".to_string(),
                 policy.real_inference_available.into(),
@@ -425,6 +460,7 @@ mod tests {
         let policy = WorkerStartupPolicy::from_values(
             None,
             Some("1"),
+            None,
             &caps.cpu_features,
             &caps.accelerator,
             "x86_64",
@@ -443,6 +479,7 @@ mod tests {
         let caps = test_node_caps_for_startup();
         let policy = WorkerStartupPolicy::from_values(
             Some("mock"),
+            None,
             None,
             &caps.cpu_features,
             &caps.accelerator,
@@ -464,6 +501,7 @@ mod tests {
         let policy = WorkerStartupPolicy::from_values(
             None,
             None,
+            None,
             &caps.cpu_features,
             &caps.accelerator,
             "x86_64",
@@ -478,11 +516,41 @@ mod tests {
     }
 
     #[test]
+    fn startup_policy_allows_legacy_cpu_only_through_daemon_mode() {
+        let caps = ModelNodeCapabilities {
+            cpu_features: vec![],
+            ..test_node_caps_for_startup()
+        };
+        let policy = WorkerStartupPolicy::from_values(
+            None,
+            None,
+            Some("daemon_only"),
+            &caps.cpu_features,
+            &caps.accelerator,
+            "x86_64",
+        );
+
+        assert!(!policy.cpu_feature_compatible);
+        assert!(policy.real_inference_available);
+        assert!(policy.legacy_cpu_daemon_only_real_inference());
+        assert!(!policy.permits_local_real_backend_load());
+        assert_eq!(
+            policy.model_load_skip_reason,
+            Some("legacy_cpu_daemon_only")
+        );
+        assert_eq!(
+            policy.backend_availability_decision().reason,
+            crate::model_backend_availability::ModelBackendAvailabilityReason::LegacyCpuDaemonOnly
+        );
+    }
+
+    #[test]
     fn worker_mock_skip_startup_reaches_ready_state() {
         let caps = test_node_caps_for_startup();
         let policy = WorkerStartupPolicy::from_values(
             Some("mock"),
             Some("1"),
+            None,
             &caps.cpu_features,
             &caps.accelerator,
             "x86_64",
@@ -541,6 +609,7 @@ mod tests {
         let policy = WorkerStartupPolicy::from_values(
             None,
             None,
+            None,
             &caps.cpu_features,
             &caps.accelerator,
             "x86_64",
@@ -574,6 +643,7 @@ mod tests {
         let policy = WorkerStartupPolicy::from_values(
             Some("mock"),
             Some("1"),
+            None,
             &caps.cpu_features,
             &caps.accelerator,
             "x86_64",
