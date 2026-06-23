@@ -112,16 +112,16 @@ Expected:
 - no rebroadcast after success
 - no duplicate execution/result
 
-## Proxmox/R5500 Metrics Pending
+## Proxmox/R5500 Metrics Follow-Up Status
 
-Status: PENDING.
+Status: CLOSED BY LATER FOLLOW-UP.
 
-Reason:
+Original reason:
 
 REFACTOR-METRICS-SERVER-008 passed local validation and TS140 real-worker smoke,
 but Dell/Proxmox was unavailable for the final metrics field smoke.
 
-Run when available:
+Original validation targets:
 
 - `iamine-wrk-01` port 4101
 - `iamine-wrk-02` port 4102
@@ -141,7 +141,9 @@ Expected:
 - `final_outcome=success`
 - no SIGILL
 
-If this fails, open a bugfix on `develop` before closing Cluster LAN.
+This is no longer a blocker for the historical Cluster LAN feature. Future
+Cluster LAN runtime changes should continue to treat this matrix as regression
+coverage.
 
 ## TS140 Real Worker Baseline
 
@@ -172,9 +174,7 @@ Validated:
 
 ## QA Decision
 
-GO WITH CONDITIONS for CLUSTER-LAN-AUTO-DISCOVERY-001.
+CLUSTER-LAN-AUTO-DISCOVERY-001 is implemented in `develop`.
 
-Primary condition:
-
-Run the Proxmox/R5500 metrics smoke when Dell is available. If metrics fallback
-regresses, fix it on `develop` before closing Cluster LAN.
+Primary regression condition: if metrics fallback regresses in future Cluster
+LAN work, fix it on `develop` before closure.

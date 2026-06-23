@@ -30,7 +30,7 @@ main status: untouched during the refactor cycle
 | REFACTOR-PUBSUB-READINESS-003 | closed / merged | 10554 | 9877 | 677 | PASS |
 | REFACTOR-MODEL-REGISTRY-DISPLAY-007 | closed / merged | 9877 | 9566 | 311 | PASS |
 | REFACTOR-RESULT-PROTOCOL-004 | closed / merged | 9566 | 9176 | 390 | PASS |
-| REFACTOR-METRICS-SERVER-008 | merged | 9176 | 8931 | 245 | PASS-TS140 / PROXMOX-PENDING |
+| REFACTOR-METRICS-SERVER-008 | merged | 9176 | 8931 | 245 | PASS-TS140 / PROXMOX-CLOSED |
 
 Total reduction from `main.rs`:
 
@@ -127,11 +127,13 @@ Areas to watch:
 - Cluster LAN should reuse the extracted PubSub readiness, startup, capability,
   metrics, and result helpers.
 
-## Pending QA
+## QA Follow-Up Status
 
-Proxmox/R5500 metrics field smoke is pending for REFACTOR-METRICS-SERVER-008.
+The Proxmox/R5500 metrics field smoke that was pending for
+REFACTOR-METRICS-SERVER-008 has been closed by the later metrics fallback and
+LAN Proxmox Broadcast closeout work.
 
-Required validation targets:
+The originally required validation targets were:
 
 - `iamine-wrk-01` on port 4101
 - `iamine-wrk-02` on port 4102
@@ -151,8 +153,9 @@ Expected:
 - final_outcome=success
 - no SIGILL
 
-If this fails, open a bugfix on `develop` before closing or shipping Cluster
-LAN.
+Future Cluster LAN runtime changes should keep this matrix as regression
+coverage, but this is no longer a pending blocker for the historical Cluster LAN
+feature.
 
 ## Follow-Ups
 
@@ -165,13 +168,10 @@ LAN.
 
 ## Decision
 
-GO WITH CONDITIONS for CLUSTER-LAN-AUTO-DISCOVERY-001.
+CLUSTER-LAN-AUTO-DISCOVERY-001 is implemented in `develop`.
 
-Conditions:
+Regression conditions for future Cluster LAN changes:
 
-- Run Proxmox/R5500 metrics field smoke when Dell is available.
-- If Proxmox metrics fallback regresses, open a bugfix on `develop` before
-  closing Cluster LAN.
 - Keep Broadcast end-to-end smoke as a protected regression.
 - Keep worker mock/skip startup as the Proxmox safety baseline.
 - Do not implement legacy real CPU inference as part of Cluster LAN.
