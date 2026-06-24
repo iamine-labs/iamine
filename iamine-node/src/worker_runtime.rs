@@ -678,25 +678,26 @@ mod tests {
         };
         let (event_tx, mut event_rx) = mpsc::channel(1);
 
-        send_progress_event(&event_tx, &request, "worker-a", "model_loading", 42, None)
-            .await
-            .unwrap();
+        let sent =
+            send_progress_event(&event_tx, &request, "worker-a", "model_loading", 42, None).await;
+        assert!(sent.is_ok());
 
-        let Some(WorkerInferenceEvent::Progress {
+        let event = event_rx.recv().await;
+        assert!(matches!(event, Some(WorkerInferenceEvent::Progress { .. })));
+        if let Some(WorkerInferenceEvent::Progress {
             task_id,
             attempt_id,
             worker_peer_id,
             stage,
             elapsed_ms,
             ..
-        }) = event_rx.recv().await
-        else {
-            panic!("expected progress event");
-        };
-        assert_eq!(task_id, "task-1");
-        assert_eq!(attempt_id, "attempt-1");
-        assert_eq!(worker_peer_id, "worker-a");
-        assert_eq!(stage, "model_loading");
-        assert_eq!(elapsed_ms, 42);
+        }) = event
+        {
+            assert_eq!(task_id, "task-1");
+            assert_eq!(attempt_id, "attempt-1");
+            assert_eq!(worker_peer_id, "worker-a");
+            assert_eq!(stage, "model_loading");
+            assert_eq!(elapsed_ms, 42);
+        }
     }
 }

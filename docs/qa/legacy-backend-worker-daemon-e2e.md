@@ -85,4 +85,44 @@ SIGILL / illegal instruction: absent
 
 ## Field Result
 
-Pending execution on the Proxmox/R5500 heavy guest.
+Validated on the Proxmox/R5500 heavy guest:
+
+```text
+branch: feature/legacy-backend-worker-daemon-e2e-001
+commit: 06b0908ab78c338634b46c71946e4c3ea2621f73
+tree: 7518d2252e4fd7a58deba6f0fe7e24eabbb2b032
+base: 4b823388f37e695e9d1db11528f40af714d708c1
+```
+
+The first E2E attempt exposed a product regression: the worker awaited the
+complete inference while holding the mutable `Swarm`, so progress messages were
+queued locally but were not delivered before the client watchdog expired.
+
+The fix moves inference work behind a bounded worker event channel. The main
+runtime loop continues polling the network and publishes progress, streamed
+tokens, and the final result as events arrive. Scheduler timeouts and message
+formats were not changed.
+
+Final result:
+
+```text
+preflight: PASS
+remote progress received: PASS
+first attempt completed: PASS
+retries: 0
+model: tinyllama-1b
+tokens generated: 53
+daemon execution: 35026 ms
+client final outcome: success
+task_completed success=true: present
+result_published: present
+result_received: present
+final_outcome_success: present
+SIGILL / illegal instruction: absent
+worker cleanup: PASS
+daemon cleanup: PASS
+worker port released: PASS
+```
+
+No model was downloaded and no scheduler, discovery, model eligibility, or
+wire-format policy was changed.
