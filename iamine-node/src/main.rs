@@ -210,7 +210,8 @@ use worker_pubsub_runtime::{
 };
 use worker_result_runtime::publish_worker_broadcast_task_result;
 use worker_runtime::{
-    handle_worker_inference_request, WorkerInferenceRuntimeContext, WorkerInferenceRuntimeRequest,
+    handle_worker_inference_event, start_worker_inference_request, WorkerInferenceEvent,
+    WorkerInferenceRuntimeContext, WorkerInferenceRuntimeRequest,
 };
 use worker_startup_policy::*;
 
@@ -587,6 +588,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
         tokio::sync::mpsc::channel::<PendingTaskResponse>(64);
     let (broadcast_result_tx, mut broadcast_result_rx) =
         tokio::sync::mpsc::channel::<BroadcastResultToPublish>(64);
+    let (worker_inference_tx, mut worker_inference_rx) =
+        tokio::sync::mpsc::channel::<WorkerInferenceEvent>(256);
     let heartbeat = Arc::new(HeartbeatService::new());
     let metrics = Arc::new(RwLock::new(NodeMetrics::new()));
     let mut capabilities = if is_cluster_status_mode {
@@ -927,6 +930,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 } else {
                     eprintln!("[Task] Failed to return result for {}", task_id);
                 }
+            }
+
+            Some(event) = worker_inference_rx.recv(), if matches!(mode, NodeMode::Worker) => {
+                handle_worker_inference_event(&mut swarm, event);
             }
 
             // Heartbeat tick
@@ -2098,8 +2105,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                             "InferenceRequest" if matches!(mode, NodeMode::Worker) => {
                                 let request = WorkerInferenceRuntimeRequest::from_inference_request_value(&msg);
-                                handle_worker_inference_request(
-                                    &mut swarm,
+                                start_worker_inference_request(
                                     request,
                                     WorkerInferenceRuntimeContext {
                                         peer_id: &peer_id,
@@ -2111,8 +2117,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         inference_engine: inference_engine.clone(),
                                         metrics: Arc::clone(&metrics),
                                     },
-                                )
-                                .await;
+                                    worker_inference_tx.clone(),
+                                );
                             }
 
                             "InferenceProgress" if matches!(mode, NodeMode::Infer { .. }) => {
@@ -2690,8 +2696,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     &local_peer_id,
                                     &from_peer,
                                 ) {
-                                    handle_worker_inference_request(
-                                        &mut swarm,
+                                    start_worker_inference_request(
                                         request,
                                         WorkerInferenceRuntimeContext {
                                             peer_id: &peer_id,
@@ -2703,8 +2708,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                             inference_engine: inference_engine.clone(),
                                             metrics: Arc::clone(&metrics),
                                         },
-                                    )
-                                    .await;
+                                        worker_inference_tx.clone(),
+                                    );
                                 }
                             }
 

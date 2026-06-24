@@ -20,7 +20,7 @@ use libp2p::{gossipsub, swarm::Swarm, PeerId};
 use serde_json::Value;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::RwLock;
+use tokio::sync::{mpsc, RwLock};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum WorkerInferenceMessageKind {
@@ -125,10 +125,34 @@ pub(crate) struct WorkerInferenceRuntimeContext<'a> {
     pub(crate) metrics: Arc<RwLock<NodeMetrics>>,
 }
 
-pub(crate) async fn handle_worker_inference_request(
-    swarm: &mut Swarm<IamineBehaviour>,
+pub(crate) enum WorkerInferenceEvent {
+    Progress {
+        task_id: String,
+        attempt_id: String,
+        request_id: String,
+        model_id: String,
+        worker_peer_id: String,
+        stage: &'static str,
+        elapsed_ms: u64,
+        tokens_generated_count: Option<u64>,
+    },
+    Token {
+        request_id: String,
+        token: String,
+        index: u32,
+    },
+    Completed {
+        request: WorkerInferenceRuntimeRequest,
+        worker_peer_id: String,
+        result: InferenceTaskResult,
+        elapsed_ms: u64,
+    },
+}
+
+pub(crate) fn start_worker_inference_request(
     request: WorkerInferenceRuntimeRequest,
     context: WorkerInferenceRuntimeContext<'_>,
+    event_tx: mpsc::Sender<WorkerInferenceEvent>,
 ) {
     let remote_attempt_started_at = tokio::time::Instant::now();
     let peer_id_string = context.peer_id.to_string();
@@ -175,318 +199,391 @@ pub(crate) async fn handle_worker_inference_request(
         return;
     }
 
-    for stage in [
-        "task_received",
-        "task_message_received",
-        "worker_claimed",
-        "attempt_started",
-    ] {
-        publish_worker_progress_message(
-            swarm,
-            &request.task_id,
-            &request.attempt_id,
-            &request.request_id,
-            &request.model_id,
-            &peer_id_string,
-            stage,
-            elapsed_ms_since(remote_attempt_started_at),
-            None,
-        );
-    }
-
     let engine_ref = context.inference_engine.clone();
     let metrics_ref = Arc::clone(&context.metrics);
-    let registry_clone = registry;
-    let request_id_clone = request.request_id.clone();
-    let model_id_for_inference = request.model_id.clone();
     let mock_backend_for_task = model_execution_gate.mock_backend_enabled;
     let real_inference_available_for_task = model_execution_gate.real_inference_available;
     let daemon_only_real_backend_for_task = context
         .worker_startup_policy
         .map(|policy| policy.legacy_cpu_daemon_only_real_inference())
         .unwrap_or(false);
-    let peer_id_for_task = peer_id_string.clone();
-    let prompt_for_task = request.prompt.clone();
-    let max_tokens = request.max_tokens;
-    let temperature = request.temperature;
 
-    let (token_tx, mut token_rx) = tokio::sync::mpsc::channel::<String>(100);
-    let (worker_progress_tx, mut worker_progress_rx) =
-        tokio::sync::mpsc::channel::<&'static str>(32);
-
-    let inference_handle = tokio::spawn(async move {
-        let progress_tx = worker_progress_tx;
-        let req = RealInferenceRequest {
-            task_id: request_id_clone.clone(),
-            model_id: model_id_for_inference.clone(),
-            prompt: prompt_for_task,
-            max_tokens,
-            temperature,
-        };
-        let daemon_socket = daemon_socket_path();
-        let result = if mock_backend_for_task {
-            let _ = progress_tx.try_send("inference_started");
-            mock_real_inference_result(
-                request_id_clone.clone(),
-                model_id_for_inference.clone(),
-                req.prompt.clone(),
-                req.max_tokens,
+    tokio::spawn(async move {
+        for stage in [
+            "task_received",
+            "task_message_received",
+            "worker_claimed",
+            "attempt_started",
+        ] {
+            if send_progress_event(
+                &event_tx,
+                &request,
+                &peer_id_string,
+                stage,
+                elapsed_ms_since(remote_attempt_started_at),
+                None,
             )
-        } else if !real_inference_available_for_task {
-            return InferenceTaskResult::failure(
-                request_id_clone.clone(),
-                model_id_for_inference.clone(),
-                peer_id_for_task.clone(),
-                "real inference unavailable by worker startup policy".to_string(),
-            );
-        } else if daemon_is_available(&daemon_socket).await {
-            let _ = progress_tx.try_send("model_loading");
-            let _ = progress_tx.try_send("inference_warmup");
-            let _ = progress_tx.try_send("inference_started");
-            match infer_via_daemon(&daemon_socket, req, |token| {
-                let _ = token_tx.try_send(token);
-            })
             .await
+            .is_err()
             {
-                Ok(response) => response.result,
-                Err(e) => {
-                    return InferenceTaskResult::failure(
-                        request_id_clone.clone(),
-                        model_id_for_inference.clone(),
-                        peer_id_for_task.clone(),
-                        e,
-                    );
-                }
+                return;
             }
-        } else if daemon_only_real_backend_for_task {
-            return InferenceTaskResult::failure(
-                request_id_clone.clone(),
-                model_id_for_inference.clone(),
-                peer_id_for_task.clone(),
-                "legacy CPU real inference requires an available daemon runtime".to_string(),
-            );
-        } else {
-            let Some(eng) = engine_ref.clone() else {
-                return InferenceTaskResult::failure(
-                    request_id_clone.clone(),
-                    model_id_for_inference.clone(),
-                    peer_id_for_task.clone(),
-                    "real inference engine unavailable".to_string(),
-                );
+        }
+
+        let (token_tx, mut token_rx) = mpsc::channel::<String>(100);
+        let (worker_progress_tx, mut worker_progress_rx) = mpsc::channel::<&'static str>(32);
+        let request_id_for_inference = request.request_id.clone();
+        let model_id_for_inference = request.model_id.clone();
+        let peer_id_for_inference = peer_id_string.clone();
+        let prompt_for_inference = request.prompt.clone();
+        let max_tokens = request.max_tokens;
+        let temperature = request.temperature;
+
+        let inference_handle = tokio::spawn(async move {
+            let progress_tx = worker_progress_tx;
+            let req = RealInferenceRequest {
+                task_id: request_id_for_inference.clone(),
+                model_id: model_id_for_inference.clone(),
+                prompt: prompt_for_inference,
+                max_tokens,
+                temperature,
             };
-            let hash = registry_clone
-                .get(&model_id_for_inference)
-                .map(|m| m.hash.clone())
-                .unwrap_or_default();
-            let _ = progress_tx.try_send("model_loading");
-            if let Err(e) = eng.load_model(&model_id_for_inference, &hash) {
-                return InferenceTaskResult::failure(
-                    request_id_clone.clone(),
+            let daemon_socket = daemon_socket_path();
+            let result = if mock_backend_for_task {
+                let _ = progress_tx.try_send("inference_started");
+                mock_real_inference_result(
+                    request_id_for_inference.clone(),
                     model_id_for_inference.clone(),
-                    peer_id_for_task.clone(),
-                    e,
+                    req.prompt.clone(),
+                    req.max_tokens,
+                )
+            } else if !real_inference_available_for_task {
+                return InferenceTaskResult::failure(
+                    request_id_for_inference.clone(),
+                    model_id_for_inference.clone(),
+                    peer_id_for_inference.clone(),
+                    "real inference unavailable by worker startup policy".to_string(),
                 );
-            }
-            let _ = progress_tx.try_send("model_loaded");
-            let _ = progress_tx.try_send("inference_warmup");
-            let _ = progress_tx.try_send("inference_started");
-
-            eng.run_inference(req, Some(token_tx)).await
-        };
-
-        InferenceTaskResult::success(
-            request_id_clone,
-            model_id_for_inference,
-            result.output,
-            result.tokens_generated,
-            result.truncated,
-            result.continuation_steps,
-            result.execution_ms,
-            peer_id_for_task,
-            result.accelerator_used,
-        )
-    });
-
-    let mut token_idx = 0u32;
-    let mut produced_tokens = 0u64;
-    let mut first_token_emitted = false;
-    let mut last_token_progress_published_at: Option<tokio::time::Instant> = None;
-    while !inference_handle.is_finished() || !token_rx.is_empty() || !worker_progress_rx.is_empty()
-    {
-        tokio::select! {
-            maybe_stage = worker_progress_rx.recv() => {
-                if let Some(stage) = maybe_stage {
-                    publish_worker_progress_message(
-                        swarm,
-                        &request.task_id,
-                        &request.attempt_id,
-                        &request.request_id,
-                        &request.model_id,
-                        &peer_id_string,
-                        stage,
-                        elapsed_ms_since(remote_attempt_started_at),
-                        None,
-                    );
-                }
-            }
-            maybe_token = token_rx.recv() => {
-                if let Some(token) = maybe_token {
-                    let st = StreamedToken {
-                        request_id: request.request_id.clone(),
-                        token,
-                        index: token_idx,
-                        is_final: false,
-                    };
-                    let _ = swarm.behaviour_mut().gossipsub.publish(
-                        gossipsub::IdentTopic::new(RESULTS_TOPIC),
-                        serde_json::to_vec(&st.to_gossip_json()).unwrap(),
-                    );
-                    produced_tokens = produced_tokens.saturating_add(1);
-                    let should_publish_token_count = produced_tokens.is_multiple_of(16)
-                        || last_token_progress_published_at
-                            .map(|last| last.elapsed() >= Duration::from_secs(5))
-                            .unwrap_or(true);
-                    if !first_token_emitted {
-                        first_token_emitted = true;
-                        last_token_progress_published_at =
-                            Some(tokio::time::Instant::now());
-                        publish_worker_progress_message(
-                            swarm,
-                            &request.task_id,
-                            &request.attempt_id,
-                            &request.request_id,
-                            &request.model_id,
-                            &peer_id_string,
-                            "first_token_generated",
-                            elapsed_ms_since(remote_attempt_started_at),
-                            Some(produced_tokens),
-                        );
-                    } else if should_publish_token_count {
-                        last_token_progress_published_at =
-                            Some(tokio::time::Instant::now());
-                        publish_worker_progress_message(
-                            swarm,
-                            &request.task_id,
-                            &request.attempt_id,
-                            &request.request_id,
-                            &request.model_id,
-                            &peer_id_string,
-                            "tokens_generated_count",
-                            elapsed_ms_since(remote_attempt_started_at),
-                            Some(produced_tokens),
+            } else if daemon_is_available(&daemon_socket).await {
+                let _ = progress_tx.try_send("model_loading");
+                let _ = progress_tx.try_send("inference_warmup");
+                let _ = progress_tx.try_send("inference_started");
+                match infer_via_daemon(&daemon_socket, req, |token| {
+                    let _ = token_tx.try_send(token);
+                })
+                .await
+                {
+                    Ok(response) => response.result,
+                    Err(error) => {
+                        return InferenceTaskResult::failure(
+                            request_id_for_inference.clone(),
+                            model_id_for_inference.clone(),
+                            peer_id_for_inference.clone(),
+                            error,
                         );
                     }
-                    token_idx += 1;
+                }
+            } else if daemon_only_real_backend_for_task {
+                return InferenceTaskResult::failure(
+                    request_id_for_inference.clone(),
+                    model_id_for_inference.clone(),
+                    peer_id_for_inference.clone(),
+                    "legacy CPU real inference requires an available daemon runtime".to_string(),
+                );
+            } else {
+                let Some(engine) = engine_ref.clone() else {
+                    return InferenceTaskResult::failure(
+                        request_id_for_inference.clone(),
+                        model_id_for_inference.clone(),
+                        peer_id_for_inference.clone(),
+                        "real inference engine unavailable".to_string(),
+                    );
+                };
+                let hash = registry
+                    .get(&model_id_for_inference)
+                    .map(|model| model.hash.clone())
+                    .unwrap_or_default();
+                let _ = progress_tx.try_send("model_loading");
+                if let Err(error) = engine.load_model(&model_id_for_inference, &hash) {
+                    return InferenceTaskResult::failure(
+                        request_id_for_inference.clone(),
+                        model_id_for_inference.clone(),
+                        peer_id_for_inference.clone(),
+                        error,
+                    );
+                }
+                let _ = progress_tx.try_send("model_loaded");
+                let _ = progress_tx.try_send("inference_warmup");
+                let _ = progress_tx.try_send("inference_started");
+                engine.run_inference(req, Some(token_tx)).await
+            };
+
+            InferenceTaskResult::success(
+                request_id_for_inference,
+                model_id_for_inference,
+                result.output,
+                result.tokens_generated,
+                result.truncated,
+                result.continuation_steps,
+                result.execution_ms,
+                peer_id_for_inference,
+                result.accelerator_used,
+            )
+        });
+
+        let mut token_idx = 0u32;
+        let mut produced_tokens = 0u64;
+        let mut first_token_emitted = false;
+        let mut last_token_progress_published_at: Option<tokio::time::Instant> = None;
+        while !inference_handle.is_finished()
+            || !token_rx.is_empty()
+            || !worker_progress_rx.is_empty()
+        {
+            tokio::select! {
+                maybe_stage = worker_progress_rx.recv() => {
+                    if let Some(stage) = maybe_stage {
+                        let _ = send_progress_event(
+                            &event_tx,
+                            &request,
+                            &peer_id_string,
+                            stage,
+                            elapsed_ms_since(remote_attempt_started_at),
+                            None,
+                        )
+                        .await;
+                    }
+                }
+                maybe_token = token_rx.recv() => {
+                    if let Some(token) = maybe_token {
+                        if event_tx.send(WorkerInferenceEvent::Token {
+                            request_id: request.request_id.clone(),
+                            token,
+                            index: token_idx,
+                        }).await.is_err() {
+                            return;
+                        }
+                        produced_tokens = produced_tokens.saturating_add(1);
+                        let should_publish_token_count = produced_tokens.is_multiple_of(16)
+                            || last_token_progress_published_at
+                                .map(|last| last.elapsed() >= Duration::from_secs(5))
+                                .unwrap_or(true);
+                        if !first_token_emitted {
+                            first_token_emitted = true;
+                            last_token_progress_published_at =
+                                Some(tokio::time::Instant::now());
+                            let _ = send_progress_event(
+                                &event_tx,
+                                &request,
+                                &peer_id_string,
+                                "first_token_generated",
+                                elapsed_ms_since(remote_attempt_started_at),
+                                Some(produced_tokens),
+                            )
+                            .await;
+                        } else if should_publish_token_count {
+                            last_token_progress_published_at =
+                                Some(tokio::time::Instant::now());
+                            let _ = send_progress_event(
+                                &event_tx,
+                                &request,
+                                &peer_id_string,
+                                "tokens_generated_count",
+                                elapsed_ms_since(remote_attempt_started_at),
+                                Some(produced_tokens),
+                            )
+                            .await;
+                        }
+                        token_idx += 1;
+                    }
+                }
+                _ = tokio::time::sleep(Duration::from_secs(5)), if !first_token_emitted => {
+                    let _ = send_progress_event(
+                        &event_tx,
+                        &request,
+                        &peer_id_string,
+                        "still_running",
+                        elapsed_ms_since(remote_attempt_started_at),
+                        None,
+                    )
+                    .await;
                 }
             }
-            _ = tokio::time::sleep(Duration::from_secs(5)), if !first_token_emitted => {
-                publish_worker_progress_message(
-                    swarm,
-                    &request.task_id,
-                    &request.attempt_id,
-                    &request.request_id,
-                    &request.model_id,
-                    &peer_id_string,
-                    "still_running",
-                    elapsed_ms_since(remote_attempt_started_at),
-                    None,
-                );
-            }
         }
-    }
 
-    if let Ok(result) = inference_handle.await {
-        {
-            let mut m = metrics_ref.write().await;
-            if result.success {
-                m.inference_success(result.execution_ms, result.tokens_generated as u64);
-            } else {
-                m.inference_failed();
+        if let Ok(result) = inference_handle.await {
+            {
+                let mut metrics = metrics_ref.write().await;
+                if result.success {
+                    metrics.inference_success(result.execution_ms, result.tokens_generated as u64);
+                } else {
+                    metrics.inference_failed();
+                }
             }
+            let _ = event_tx
+                .send(WorkerInferenceEvent::Completed {
+                    request,
+                    worker_peer_id: peer_id_string,
+                    result,
+                    elapsed_ms: elapsed_ms_since(remote_attempt_started_at),
+                })
+                .await;
         }
-        publish_worker_progress_message(
+    });
+}
+
+async fn send_progress_event(
+    event_tx: &mpsc::Sender<WorkerInferenceEvent>,
+    request: &WorkerInferenceRuntimeRequest,
+    worker_peer_id: &str,
+    stage: &'static str,
+    elapsed_ms: u64,
+    tokens_generated_count: Option<u64>,
+) -> Result<(), mpsc::error::SendError<WorkerInferenceEvent>> {
+    event_tx
+        .send(WorkerInferenceEvent::Progress {
+            task_id: request.task_id.clone(),
+            attempt_id: request.attempt_id.clone(),
+            request_id: request.request_id.clone(),
+            model_id: request.model_id.clone(),
+            worker_peer_id: worker_peer_id.to_string(),
+            stage,
+            elapsed_ms,
+            tokens_generated_count,
+        })
+        .await
+}
+
+pub(crate) fn handle_worker_inference_event(
+    swarm: &mut Swarm<IamineBehaviour>,
+    event: WorkerInferenceEvent,
+) {
+    match event {
+        WorkerInferenceEvent::Progress {
+            task_id,
+            attempt_id,
+            request_id,
+            model_id,
+            worker_peer_id,
+            stage,
+            elapsed_ms,
+            tokens_generated_count,
+        } => publish_worker_progress_message(
             swarm,
-            &request.task_id,
-            &request.attempt_id,
-            &request.request_id,
-            &request.model_id,
-            &peer_id_string,
-            "inference_finished",
-            elapsed_ms_since(remote_attempt_started_at),
-            Some(result.tokens_generated as u64),
-        );
-        let result_size = result.output.len();
-        emit_worker_task_completed_event(
-            &request.task_id,
-            &request.attempt_id,
-            &request.model_id,
-            result_size,
-            result.success,
-            &peer_id_string,
-        );
-        let mut result_payload = result.to_gossip_json();
-        if let Some(map) = result_payload.as_object_mut() {
-            map.insert("task_id".to_string(), request.task_id.clone().into());
-            map.insert("attempt_id".to_string(), request.attempt_id.clone().into());
-            map.insert("worker_peer_id".to_string(), peer_id_string.clone().into());
+            &task_id,
+            &attempt_id,
+            &request_id,
+            &model_id,
+            &worker_peer_id,
+            stage,
+            elapsed_ms,
+            tokens_generated_count,
+        ),
+        WorkerInferenceEvent::Token {
+            request_id,
+            token,
+            index,
+        } => {
+            let streamed_token = StreamedToken {
+                request_id,
+                token,
+                index,
+                is_final: false,
+            };
+            let _ = swarm.behaviour_mut().gossipsub.publish(
+                gossipsub::IdentTopic::new(RESULTS_TOPIC),
+                serde_json::to_vec(&streamed_token.to_gossip_json()).unwrap_or_default(),
+            );
         }
-        publish_worker_progress_message(
-            swarm,
-            &request.task_id,
-            &request.attempt_id,
-            &request.request_id,
-            &request.model_id,
-            &peer_id_string,
-            "result_serialized",
-            elapsed_ms_since(remote_attempt_started_at),
-            Some(result.tokens_generated as u64),
-        );
-        let payload_size = result_payload.to_string().len();
-        let message_id = publish_worker_result_payload(
-            swarm,
-            &request.task_id,
-            &request.attempt_id,
-            &request.model_id,
-            &peer_id_string,
-            &result_payload,
-        );
-        if message_id.is_some() {
+        WorkerInferenceEvent::Completed {
+            request,
+            worker_peer_id,
+            result,
+            elapsed_ms,
+        } => {
             publish_worker_progress_message(
                 swarm,
                 &request.task_id,
                 &request.attempt_id,
                 &request.request_id,
                 &request.model_id,
-                &peer_id_string,
-                "result_published",
-                elapsed_ms_since(remote_attempt_started_at),
+                &worker_peer_id,
+                "inference_finished",
+                elapsed_ms,
                 Some(result.tokens_generated as u64),
             );
-            emit_worker_result_published_event(
+            let result_size = result.output.len();
+            emit_worker_task_completed_event(
                 &request.task_id,
                 &request.attempt_id,
                 &request.model_id,
-                RESULTS_TOPIC,
-                payload_size,
-                message_id.as_deref(),
-                &peer_id_string,
-            )
+                result_size,
+                result.success,
+                &worker_peer_id,
+            );
+            let mut result_payload = result.to_gossip_json();
+            if let Some(map) = result_payload.as_object_mut() {
+                map.insert("task_id".to_string(), request.task_id.clone().into());
+                map.insert("attempt_id".to_string(), request.attempt_id.clone().into());
+                map.insert("worker_peer_id".to_string(), worker_peer_id.clone().into());
+            }
+            publish_worker_progress_message(
+                swarm,
+                &request.task_id,
+                &request.attempt_id,
+                &request.request_id,
+                &request.model_id,
+                &worker_peer_id,
+                "result_serialized",
+                elapsed_ms,
+                Some(result.tokens_generated as u64),
+            );
+            let payload_size = result_payload.to_string().len();
+            let message_id = publish_worker_result_payload(
+                swarm,
+                &request.task_id,
+                &request.attempt_id,
+                &request.model_id,
+                &worker_peer_id,
+                &result_payload,
+            );
+            if message_id.is_some() {
+                publish_worker_progress_message(
+                    swarm,
+                    &request.task_id,
+                    &request.attempt_id,
+                    &request.request_id,
+                    &request.model_id,
+                    &worker_peer_id,
+                    "result_published",
+                    elapsed_ms,
+                    Some(result.tokens_generated as u64),
+                );
+                emit_worker_result_published_event(
+                    &request.task_id,
+                    &request.attempt_id,
+                    &request.model_id,
+                    RESULTS_TOPIC,
+                    payload_size,
+                    message_id.as_deref(),
+                    &worker_peer_id,
+                );
+            }
+            send_worker_result_direct_response(
+                swarm,
+                &request.requester_peer,
+                &request.task_id,
+                &request.attempt_id,
+                &request.model_id,
+                &worker_peer_id,
+                &result,
+            );
+            println!(
+                "✅ [Worker] {} completada: {} tokens en {}ms",
+                request.kind.completion_label(),
+                result.tokens_generated,
+                result.execution_ms
+            );
         }
-        send_worker_result_direct_response(
-            swarm,
-            &request.requester_peer,
-            &request.task_id,
-            &request.attempt_id,
-            &request.model_id,
-            &peer_id_string,
-            &result,
-        );
-        println!(
-            "✅ [Worker] {} completada: {} tokens en {}ms",
-            request.kind.completion_label(),
-            result.tokens_generated,
-            result.execution_ms
-        );
     }
 }
 
@@ -564,5 +661,43 @@ mod tests {
         assert_eq!(request.max_tokens, 200);
         assert_eq!(request.temperature, 0.7);
         assert_eq!(request.requester_peer, "controller");
+    }
+
+    #[tokio::test]
+    async fn worker_progress_event_can_be_drained_without_borrowing_swarm() {
+        let request = WorkerInferenceRuntimeRequest {
+            kind: WorkerInferenceMessageKind::PubsubInferenceRequest,
+            request_id: "request-1".to_string(),
+            task_id: "task-1".to_string(),
+            attempt_id: "attempt-1".to_string(),
+            model_id: "tinyllama-1b".to_string(),
+            prompt: "test".to_string(),
+            max_tokens: 8,
+            temperature: 0.2,
+            requester_peer: "controller-a".to_string(),
+        };
+        let (event_tx, mut event_rx) = mpsc::channel(1);
+
+        let sent =
+            send_progress_event(&event_tx, &request, "worker-a", "model_loading", 42, None).await;
+        assert!(sent.is_ok());
+
+        let event = event_rx.recv().await;
+        assert!(matches!(event, Some(WorkerInferenceEvent::Progress { .. })));
+        if let Some(WorkerInferenceEvent::Progress {
+            task_id,
+            attempt_id,
+            worker_peer_id,
+            stage,
+            elapsed_ms,
+            ..
+        }) = event
+        {
+            assert_eq!(task_id, "task-1");
+            assert_eq!(attempt_id, "attempt-1");
+            assert_eq!(worker_peer_id, "worker-a");
+            assert_eq!(stage, "model_loading");
+            assert_eq!(elapsed_ms, 42);
+        }
     }
 }

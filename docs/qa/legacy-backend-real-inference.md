@@ -61,13 +61,15 @@ SIGILL: no
 
 No model was downloaded during QA.
 
-## Known Limitation
+## Combined Network Follow-Up
 
-The final combined network smoke from a Mac inference client through the worker
-to the daemon was not executed because the remote execution approval service
-reached its usage quota before starting the QA processes. The worker startup
-path and daemon inference protocol were validated separately; the raw daemon
-request used the same `DaemonRequest::Infer` contract as the worker runtime.
+The combined Mac client to worker to daemon smoke is closed by
+`LEGACY-BACKEND-WORKER-DAEMON-E2E-001`.
+
+That follow-up found and fixed a blocked `Swarm` polling path during worker
+inference, then validated real TinyLlama inference with live progress, no
+retries, successful result delivery, and no SIGILL. See
+`docs/qa/legacy-backend-worker-daemon-e2e.md`.
 
 ## Decision
 
