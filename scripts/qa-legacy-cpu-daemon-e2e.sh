@@ -142,7 +142,6 @@ require_command git
 require_command jq
 require_command shasum
 require_command ssh
-require_command scp
 
 [ -x "$local_binary" ] || fail "local binary is not executable: $local_binary"
 mkdir -p "$local_qa_dir"
@@ -427,7 +426,8 @@ jq -e 'select(.event == "task_completed" and .fields.success == true)' \
 jq -e 'select(.event == "result_published")' "$worker_log" >/dev/null
 jq -e 'select(.event == "result_received")' "$local_qa_dir/client.ndjson" >/dev/null
 jq -e 'select(.event == "final_outcome_success")' "$local_qa_dir/client.ndjson" >/dev/null
-grep -F "Inference completada:" "$local_qa_dir/client.stdout" >/dev/null
+grep -E "Inference completada:|Distributed inference completada:" \
+  "$local_qa_dir/client.stdout" >/dev/null
 grep -F "[Inference] Executed in" "$daemon_stdout" >/dev/null
 
 if grep -Eqi 'illegal instruction|sigill' \
