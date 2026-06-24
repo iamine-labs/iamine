@@ -123,6 +123,7 @@ storage models remain visible, executable models stay empty, real inference is
 reported as unavailable, and unavailable model reasons include disabled_by_mock.
 
 LEGACY-BACKEND-REAL-INFERENCE-001:
-Field QA found that the standard llama.cpp build still enabled AVX2 and crashed
-with SIGILL during real inference. The dedicated legacy build and standard
-daemon startup guard must pass Proxmox/R5500 real inference QA before closure.
+Closed. Field QA reproduced SIGILL in the standard llama.cpp build, then
+validated the standard daemon guard and successful TinyLlama inference through
+the dedicated legacy CPU build. Evidence is in
+`docs/qa/legacy-backend-real-inference.md`.
