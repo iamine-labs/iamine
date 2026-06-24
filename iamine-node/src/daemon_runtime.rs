@@ -11,6 +11,43 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::{broadcast, mpsc, Mutex};
 
+const LEGACY_CPU_DAEMON_BUILD_ERROR: &str =
+    "legacy x86 CPU daemon requires scripts/build-legacy-cpu-daemon.sh";
+
+fn daemon_cpu_profile_decision(
+    target_arch: &str,
+    avx2_available: bool,
+    legacy_cpu_daemon_build: bool,
+) -> Result<(), &'static str> {
+    let legacy_x86 = matches!(target_arch, "x86" | "x86_64") && !avx2_available;
+    if legacy_x86 && !legacy_cpu_daemon_build {
+        Err(LEGACY_CPU_DAEMON_BUILD_ERROR)
+    } else {
+        Ok(())
+    }
+}
+
+fn runtime_avx2_available() -> bool {
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        std::is_x86_feature_detected!("avx2")
+    }
+
+    #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
+    {
+        true
+    }
+}
+
+pub fn validate_daemon_cpu_profile() -> Result<(), String> {
+    daemon_cpu_profile_decision(
+        std::env::consts::ARCH,
+        runtime_avx2_available(),
+        cfg!(feature = "legacy-cpu-daemon"),
+    )
+    .map_err(str::to_string)
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum DaemonRequest {
@@ -234,6 +271,7 @@ where
 }
 
 pub async fn run_daemon(socket_path: PathBuf) -> Result<(), String> {
+    validate_daemon_cpu_profile()?;
     run_daemon_with_runtime(socket_path, DaemonRuntime::new()).await
 }
 
@@ -465,6 +503,21 @@ mod tests {
             .prefix("d-")
             .tempdir_in(base)
             .expect("daemon test tempdir should be created")
+    }
+
+    #[test]
+    fn legacy_x86_daemon_requires_dedicated_build() {
+        assert_eq!(
+            daemon_cpu_profile_decision("x86_64", false, false),
+            Err(LEGACY_CPU_DAEMON_BUILD_ERROR)
+        );
+        assert_eq!(daemon_cpu_profile_decision("x86_64", false, true), Ok(()));
+    }
+
+    #[test]
+    fn compatible_and_non_x86_daemons_keep_existing_startup() {
+        assert_eq!(daemon_cpu_profile_decision("x86_64", true, false), Ok(()));
+        assert_eq!(daemon_cpu_profile_decision("aarch64", false, false), Ok(()));
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

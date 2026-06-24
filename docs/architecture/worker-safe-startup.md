@@ -58,6 +58,8 @@ When this mode is active and AVX2 is absent:
 
 - real inference may be considered available only through the daemon route;
 - local `RealInferenceEngine` creation remains disabled for the worker;
+- the daemon must be built with `scripts/build-legacy-cpu-daemon.sh`;
+- the standard daemon binary refuses to start on legacy x86 CPUs;
 - startup model advertisement must not validate models by loading the local
   backend;
 - if the daemon is unavailable at task time, the worker returns a controlled
@@ -65,8 +67,17 @@ When this mode is active and AVX2 is absent:
 - mock/skip behavior remains the default safe baseline.
 
 This mode does not remove the CPU feature guard. It narrows legacy real
-inference to an explicit daemon path that must be field-tested on the target
-host before merge closure.
+inference to an explicit daemon path. The dedicated build uses a separate Cargo
+target directory and disables AVX, AVX2, FMA, F16C, BMI2, and SSE 4.2 in the
+llama.cpp CPU backend.
+
+Build and run the legacy daemon:
+
+```bash
+./scripts/build-legacy-cpu-daemon.sh --release
+IAMINE_DAEMON_SOCKET=/tmp/iamine-legacy-daemon.sock \
+  ./target/legacy-cpu/release/iamine-node --daemon
+```
 
 ## Capabilities Rules
 
@@ -112,5 +123,6 @@ storage models remain visible, executable models stay empty, real inference is
 reported as unavailable, and unavailable model reasons include disabled_by_mock.
 
 LEGACY-BACKEND-REAL-INFERENCE-001:
-In progress as a daemon-only legacy CPU path. Proxmox/R5500 field QA is
-required before closure.
+Field QA found that the standard llama.cpp build still enabled AVX2 and crashed
+with SIGILL during real inference. The dedicated legacy build and standard
+daemon startup guard must pass Proxmox/R5500 real inference QA before closure.

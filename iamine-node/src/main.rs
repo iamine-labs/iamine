@@ -118,7 +118,7 @@ use iamine_network::NodeCapability;
 #[cfg(test)]
 use iamine_network::NodeHealth;
 
-use daemon_runtime::{daemon_socket_path, run_daemon};
+use daemon_runtime::{daemon_socket_path, run_daemon, validate_daemon_cpu_profile};
 use heartbeat::HeartbeatService;
 pub(crate) use infer_observability::*;
 pub(crate) use infer_retry::DistributedInferState;
@@ -272,6 +272,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             let node_identity = NodeIdentity::load_or_create();
             set_global_node_id(&node_identity.peer_id.to_string());
             let socket = daemon_socket_path();
+            validate_daemon_cpu_profile()?;
             emit_daemon_started_event(
                 &node_identity.peer_id.to_string(),
                 &socket.display().to_string(),
