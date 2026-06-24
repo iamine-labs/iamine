@@ -27,7 +27,9 @@ Use `AGENTS.md` for stable operating rules:
 
 Create scripts for repeatable checks:
 
-- `scripts/qa-local-gate.sh`: local precheck, format, tests, build, diff checks.
+- `scripts/qa-local-gate.sh`: implemented by
+  `PROCESS-QA-LOCAL-GATE-001`; local identity, scope, quality gate, tests,
+  build, and diff checks.
 - `scripts/qa-hardware-smoke.sh`: isolated `IAMINE_HARDWARE_PROFILE_PATH`,
   hardware inspect/refresh/show, JSON parse, schema check, persistence equality.
 - `scripts/qa-size-guard.sh`: file-size thresholds for `main.rs`,
