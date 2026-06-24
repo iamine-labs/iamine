@@ -158,9 +158,11 @@ executable real inference models.
 
 LEGACY-BACKEND-REAL-INFERENCE-001:
 Real CPU llama/ggml inference on Proxmox/R5500 is tracked separately from
-Cluster LAN because of SIGILL risk. Current implementation work uses an
-explicit daemon-only legacy CPU path and still requires Proxmox/R5500 field QA
-before closure.
+Cluster LAN because of SIGILL risk. Field QA confirmed that the standard daemon
+build is unsafe for real inference on the legacy guests. The feature now uses a
+dedicated x86 baseline daemon build and rejects the standard daemon binary on
+legacy x86 before backend initialization. Real TinyLlama inference passed on
+the dedicated build; see `docs/qa/legacy-backend-real-inference.md`.
 
 ## QA Pass Criteria
 

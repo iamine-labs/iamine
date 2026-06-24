@@ -68,4 +68,6 @@ IAMINE_LEGACY_CPU_REAL_BACKEND=daemon_only
 
 In this mode, the worker may use an available inference daemon for real model
 execution, but it must not create or fall back to the local `RealInferenceEngine`
-when the CPU feature guard remains incompatible.
+when the CPU feature guard remains incompatible. On legacy x86 hosts, the
+daemon must be produced by `scripts/build-legacy-cpu-daemon.sh`; the standard
+daemon build is rejected before backend initialization.
