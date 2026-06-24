@@ -91,10 +91,15 @@ pub(crate) fn prepare_model_runtime_context(
         let policy = WorkerStartupPolicy::from_env(&node_caps);
         emit_inference_backend_selected_event(&policy);
         if !policy.cpu_feature_compatible {
+            let action = if policy.legacy_cpu_daemon_only_real_inference() {
+                "require_daemon_runtime_for_real_inference"
+            } else {
+                "continue_degraded_without_real_inference"
+            };
             emit_backend_cpu_feature_incompatible_event(
                 &node_caps.cpu_features,
                 &node_caps.accelerator,
-                "continue_degraded_without_real_inference",
+                action,
             );
         }
         if let Some(reason) = policy.model_load_skip_reason {
@@ -108,7 +113,7 @@ pub(crate) fn prepare_model_runtime_context(
     let inference_engine = if is_worker {
         worker_startup_policy
             .as_ref()
-            .filter(|policy| policy.real_inference_available)
+            .filter(|policy| policy.permits_local_real_backend_load())
             .map(|_| Arc::new(RealInferenceEngine::new(ModelStorage::new())))
     } else if enable_non_worker_inference_engine {
         Some(Arc::new(RealInferenceEngine::new(ModelStorage::new())))
@@ -214,6 +219,7 @@ pub(crate) fn build_model_display_view(
             backend_is_mock,
             skip_model_load_on_startup: false,
             cpu_feature_compatible: true,
+            legacy_cpu_daemon_only: false,
             real_inference_available,
         });
     let mut rows = Vec::new();

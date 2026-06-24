@@ -156,8 +156,8 @@ broadcast, or inference must still run field QA.
 
 - Existing Rust dead_code warnings are not blocking.
 - Cluster assignment log spam can be cleaned later.
-- LEGACY-BACKEND-REAL-INFERENCE-001 remains future work and is out of scope for
-  Cluster LAN.
+- LEGACY-BACKEND-REAL-INFERENCE-001 remains out of scope for Cluster LAN and is
+  tracked as a separate daemon-only legacy CPU inference feature.
 
 ## Closeout Decision
 

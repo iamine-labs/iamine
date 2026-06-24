@@ -201,6 +201,10 @@ pub(crate) async fn handle_worker_inference_request(
     let model_id_for_inference = request.model_id.clone();
     let mock_backend_for_task = model_execution_gate.mock_backend_enabled;
     let real_inference_available_for_task = model_execution_gate.real_inference_available;
+    let daemon_only_real_backend_for_task = context
+        .worker_startup_policy
+        .map(|policy| policy.legacy_cpu_daemon_only_real_inference())
+        .unwrap_or(false);
     let peer_id_for_task = peer_id_string.clone();
     let prompt_for_task = request.prompt.clone();
     let max_tokens = request.max_tokens;
@@ -254,6 +258,13 @@ pub(crate) async fn handle_worker_inference_request(
                     );
                 }
             }
+        } else if daemon_only_real_backend_for_task {
+            return InferenceTaskResult::failure(
+                request_id_clone.clone(),
+                model_id_for_inference.clone(),
+                peer_id_for_task.clone(),
+                "legacy CPU real inference requires an available daemon runtime".to_string(),
+            );
         } else {
             let Some(eng) = engine_ref.clone() else {
                 return InferenceTaskResult::failure(

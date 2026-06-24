@@ -215,6 +215,7 @@ mod tests {
                     backend_is_mock,
                     skip_model_load_on_startup: false,
                     cpu_feature_compatible: true,
+                    legacy_cpu_daemon_only: false,
                     real_inference_available,
                 },
             ),
@@ -405,6 +406,7 @@ mod tests {
         let startup_policy = WorkerStartupPolicy::from_values(
             Some("real"),
             Some("1"),
+            None,
             &["AVX2".to_string()],
             "CPU",
             "x86_64",
@@ -422,6 +424,38 @@ mod tests {
             gate.rejection,
             Some(WorkerModelExecutionRejection::BackendUnavailable)
         );
+        Ok(())
+    }
+
+    #[test]
+    fn worker_execution_gate_allows_legacy_cpu_daemon_only_backend(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let (_dir, storage) = storage_with_model("tinyllama-1b")?;
+        let model = descriptor(NetworkPolicyMetadata::distributed_allowed("test-fixture"));
+        let startup_policy = WorkerStartupPolicy::from_values(
+            Some("real"),
+            None,
+            Some("daemon_only"),
+            &[],
+            "CPU",
+            "x86_64",
+        );
+
+        let gate = evaluate_worker_model_execution_gate(
+            "tinyllama-1b",
+            &storage,
+            Some(&model),
+            &node_caps(),
+            Some(&startup_policy),
+        );
+
+        assert_eq!(gate.rejection, None);
+        assert!(gate.real_inference_available);
+        assert_eq!(
+            gate.backend_availability.reason,
+            crate::model_backend_availability::ModelBackendAvailabilityReason::LegacyCpuDaemonOnly
+        );
+        assert!(startup_policy.legacy_cpu_daemon_only_real_inference());
         Ok(())
     }
 

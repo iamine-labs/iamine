@@ -41,10 +41,7 @@ where
 {
     let mut validated = Vec::new();
 
-    if !startup_policy
-        .backend_availability_decision()
-        .permits_real_inference()
-    {
+    if !startup_policy.permits_local_real_backend_load() {
         return validated;
     }
 
@@ -215,6 +212,7 @@ mod tests {
         let policy = WorkerStartupPolicy::from_values(
             None,
             Some("1"),
+            None,
             &caps.cpu_features,
             &caps.accelerator,
             "x86_64",
@@ -242,6 +240,7 @@ mod tests {
         let caps = test_node_caps_for_startup();
         let policy = WorkerStartupPolicy::from_values(
             Some("mock"),
+            None,
             None,
             &caps.cpu_features,
             &caps.accelerator,
@@ -272,6 +271,7 @@ mod tests {
         let policy = WorkerStartupPolicy::from_values(
             Some("mock"),
             Some("1"),
+            None,
             &caps.cpu_features,
             &caps.accelerator,
             "x86_64",
@@ -299,6 +299,7 @@ mod tests {
         let policy = WorkerStartupPolicy::from_values(
             Some("mock"),
             Some("1"),
+            None,
             &caps.cpu_features,
             &caps.accelerator,
             "x86_64",
@@ -326,6 +327,7 @@ mod tests {
         let policy = WorkerStartupPolicy::from_values(
             Some("mock"),
             Some("1"),
+            None,
             &caps.cpu_features,
             &caps.accelerator,
             "x86_64",
@@ -367,6 +369,7 @@ mod tests {
         let policy = WorkerStartupPolicy::from_values(
             Some("mock"),
             Some("1"),
+            None,
             &caps.cpu_features,
             &caps.accelerator,
             "x86_64",
@@ -389,10 +392,45 @@ mod tests {
     }
 
     #[test]
+    fn legacy_cpu_daemon_only_does_not_validate_models_with_local_backend() {
+        let registry = ModelRegistry::new();
+        let caps = ModelNodeCapabilities {
+            cpu_features: Vec::new(),
+            ..test_node_caps_for_startup()
+        };
+        let policy = WorkerStartupPolicy::from_values(
+            None,
+            None,
+            Some("daemon_only"),
+            &caps.cpu_features,
+            &caps.accelerator,
+            "x86_64",
+        );
+        let mut load_attempts = 0usize;
+
+        let advertised = validate_model_advertisement_candidates(
+            vec!["tinyllama-1b".to_string()],
+            &registry,
+            &caps,
+            &policy,
+            |_model_id, _hash| {
+                load_attempts += 1;
+                Ok(())
+            },
+        );
+
+        assert!(policy.real_inference_available);
+        assert!(policy.legacy_cpu_daemon_only_real_inference());
+        assert!(advertised.is_empty());
+        assert_eq!(load_attempts, 0);
+    }
+
+    #[test]
     fn worker_model_load_failure_can_continue_degraded_when_policy_allows() {
         let registry = ModelRegistry::new();
         let caps = test_node_caps_for_startup();
         let policy = WorkerStartupPolicy::from_values(
+            None,
             None,
             None,
             &caps.cpu_features,
@@ -432,6 +470,7 @@ mod tests {
             registry_with_network_policy(NetworkPolicyMetadata::local_only("test-fixture"));
         let caps = test_node_caps_for_startup();
         let policy = WorkerStartupPolicy::from_values(
+            None,
             None,
             None,
             &caps.cpu_features,

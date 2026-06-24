@@ -3067,6 +3067,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     .as_ref()
                                     .map(|policy| policy.real_inference_available)
                                     .unwrap_or(true);
+                                let daemon_only_real_backend_for_task = worker_startup_policy
+                                    .as_ref()
+                                    .map(|policy| policy.legacy_cpu_daemon_only_real_inference())
+                                    .unwrap_or(false);
                                 let engine_ref = inference_engine.clone();
 
                                 tokio::spawn(async move {
@@ -3151,6 +3155,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                             0.7,
                                         )
                                         .await
+                                    } else if daemon_only_real_backend_for_task {
+                                        Err(
+                                            "legacy CPU real inference requires an available daemon runtime"
+                                                .to_string(),
+                                        )
                                     } else {
                                         let registry = ModelRegistry::new();
                                         let model_desc = match registry.get(&model) {
