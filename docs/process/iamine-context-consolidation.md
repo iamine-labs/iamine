@@ -48,6 +48,7 @@ Keep scripts non-secret. Use SSH aliases and local config.
 
 Keep long procedure and evidence in documentation:
 
+- `docs/roadmap/iamine-product-roadmap.md`
 - `docs/qa/node-hardware-profiler.md`
 - `docs/qa/remote-field-qa.md`
 - `docs/architecture/hardware-profiler.md`
@@ -60,14 +61,11 @@ Do not put full logs or run evidence in `AGENTS.md`.
 ## Current Project State Verified From Git
 
 - Canonical integration branch: `develop`.
-- Current verified develop commit:
-  `421632cc2d018498b949c79a3bc8fab824f88b3a`.
-- `NODE-HARDWARE-PROFILER-001` is present in `develop`.
-- `MODEL-HARDWARE-COMPATIBILITY-001` is present in `develop`.
-- `MODEL-TRUSTED-REGISTRY-INTEGRITY-001` is present in `develop`.
-- `MODEL-LICENSE-ACCEPTANCE-001` is present in `develop`.
-- No active feature is selected by this consolidation document.
-- Before opening the next feature branch, Architecture should record the exact
+- Product sequence and reconciled feature states live only in
+  `docs/roadmap/iamine-product-roadmap.md`.
+- This context document must not duplicate roadmap state or select the next
+  product feature.
+- Before opening a feature branch, Architecture must still record the exact
   feature, base, scope, dependencies, and out-of-scope items.
 
 ## Parallel Work Model
@@ -93,5 +91,6 @@ Canonical roles:
 
 ## Immediate Next Action
 
-Select the next product or process feature through Architecture. Do not reuse a
-stale feature branch as active work merely because it still exists on `origin`.
+Read `docs/roadmap/iamine-product-roadmap.md`, then select the next feature
+through Architecture. Do not reuse a stale feature branch as active work merely
+because it still exists on `origin`.
