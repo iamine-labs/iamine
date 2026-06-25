@@ -5,6 +5,11 @@ process for IAMINE. It is intentionally separate from `AGENTS.md`: keep
 `AGENTS.md` as stable agent guidance, and keep this document as the detailed
 operating procedure.
 
+Product milestone meaning, feature order, and roadmap state are owned by
+`docs/roadmap/iamine-product-roadmap.md`. This workflow controls how an
+authorized feature moves through delivery; it does not independently select
+the next product feature.
+
 ## Objective
 
 Every feature must advance through a reproducible, auditable, incremental,
@@ -787,28 +792,8 @@ future feature, and do not add it to the active feature unless authorized.
 
 ## Current Applied State
 
-Verified against `origin/develop` on 2026-06-21:
-
-```text
-MODEL-DOWNLOAD-POLICY-001:
-present in develop
-
-MODEL-LICENSE-GATE-001:
-present in develop
-
-NODE-HARDWARE-PROFILER-001:
-present in develop via 8dc561d
-
-MODEL-HARDWARE-COMPATIBILITY-001:
-present in develop via b282a09
-
-MODEL-TRUSTED-REGISTRY-INTEGRITY-001:
-present in develop via 20e0930
-
-MODEL-LICENSE-ACCEPTANCE-001:
-present in develop via 421632c
-```
-
-There is no active feature selected by this document. Before opening a new
-feature branch, Architecture must select the next feature from current product
-needs and record its exact base, scope, dependencies, and out-of-scope items.
+This workflow does not duplicate current feature status. Read
+`docs/roadmap/iamine-product-roadmap.md` for the reconciled product sequence.
+Before opening a new feature branch, Architecture must select the next feature
+from that roadmap or explicitly register an enabling feature, then record its
+exact base, scope, dependencies, and out-of-scope items.
