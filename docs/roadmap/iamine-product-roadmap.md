@@ -52,10 +52,10 @@ development lifecycle. Only one next product feature should normally be
 
 ## Current Position
 
-IAMINE is closing Milestone 0. Hardware profiling, model compatibility, model
+IAMINE has closed Milestone 0. Hardware profiling, model compatibility, model
 admission gates, LAN discovery, and real legacy CPU inference have reduced
-later product risk, but they do not replace the two remaining v0.7 product
-features. Three of the five original Milestone 0 product features are closed.
+later product risk. The v0.7 foundations are now sufficient to start the
+installable LAN beta contract line.
 
 Roadmap incorporation is controlled by:
 
@@ -63,10 +63,9 @@ Roadmap incorporation is controlled by:
 PRODUCT-ROADMAP-CONSOLIDATION-001
 ```
 
-Its state remains `ACTIVE` until this document is present in `origin/develop`
-and post-merge validation passes. That evidence closes the roadmap-control
-feature. No new product feature is authorized by this change. After closure,
-Architecture may approve `MODEL-BETA-REGISTRY-METADATA-001`.
+Its state is closed by the roadmap document being present in `origin/develop`
+with post-merge validation evidence. Later feature rows are updated by their
+own feature lifecycle evidence.
 
 ## Milestone 0 - v0.7 Foundations
 
@@ -77,13 +76,13 @@ Architecture may approve `MODEL-BETA-REGISTRY-METADATA-001`.
 | NODE-HARDWARE-PROFILER-001 | CLOSED | `iamine-hardware`, `iamine-node` wiring | None | Describe local visible hardware without making scheduler or compatibility decisions. |
 | MODEL-HARDWARE-COMPATIBILITY-001 | CLOSED | `iamine-models` | Hardware profile schema | Evaluate explicit model requirements against normalized hardware. |
 | MODEL-TRUSTED-REGISTRY-INTEGRITY-001 | CLOSED | `iamine-models` | Model registry | Block new artifacts with missing, invalid, placeholder, or mismatched integrity metadata. |
-| MODEL-BETA-REGISTRY-METADATA-001 | PROPOSED | `iamine-models` | Integrity, license, network, and download gates | Add verified checksum, license, source, format, size, revision, and network metadata for the approved beta model set. |
-| MODEL-CATALOG-SELECTION-CLI-001 | PROPOSED | `iamine-models`; `iamine-node` wiring only | Beta registry metadata, hardware compatibility, all admission gates | Provide an explainable catalog, compatibility-aware selection, and controlled download flow. |
+| MODEL-BETA-REGISTRY-METADATA-001 | CLOSED | `iamine-models` | Integrity, license, network, and download gates | Add verified checksum, license, source, format, size, revision, and network metadata for the approved beta model set. |
+| MODEL-CATALOG-SELECTION-CLI-001 | CLOSED | `iamine-models`; `iamine-node` wiring only | Beta registry metadata, hardware compatibility, all admission gates | Provide an explainable catalog, compatibility-aware selection, and controlled download flow. |
 
-The registry currently contains TinyLlama, Llama 3.2 3B, and Mistral 7B
-descriptors with empty checksums and missing license metadata. Architecture must
-define the approved beta subset and verify upstream artifacts before changing
-those descriptors.
+The approved v0.7 beta registry contains TinyLlama, Llama 3.2 3B, and Mistral
+7B descriptors with verified artifact, license, source, format, size, revision,
+and network metadata. The catalog explains compatibility and admission gates
+before selection or download.
 
 ### Complementary Closed Gates
 
@@ -111,11 +110,17 @@ remaining product features.
 - selection and download do not silently bypass policy;
 - v0.7 local validation and required field QA pass.
 
+Closeout evidence:
+
+```text
+docs/roadmap/v0.7-foundations-closeout.md
+```
+
 ## Milestone 1 - v0.8 Installable LAN Beta
 
 | Feature | State | Primary owner | Dependencies | Goal |
 | --- | --- | --- | --- | --- |
-| LAN-INFERENCE-BETA-CONTRACT-001 | PROPOSED | Architecture; protocol owners | Milestone 0 closed | Define supported LAN topology, user flows, failure semantics, and release boundaries. |
+| LAN-INFERENCE-BETA-CONTRACT-001 | CLOSED | Architecture; protocol owners | Milestone 0 closed | Define supported LAN topology, user flows, failure semantics, and release boundaries. |
 | LAN-NODE-DOCTOR-001 | PROPOSED | `iamine-node` diagnostics module | Beta contract, config schema | Diagnose hardware, model, backend, configuration, and LAN readiness without starting inference. |
 | LAN-WORKER-LIFECYCLE-001 | PROPOSED | `iamine-node` worker runtime | Beta contract | Provide explicit install, start, stop, restart, readiness, and recovery behavior. |
 | NODE-CONFIG-SCHEMA-MIGRATION-001 | PROPOSED | `iamine-node` configuration | Beta contract | Version node configuration and provide bounded migration and rollback. |
@@ -298,6 +303,7 @@ PRODUCT-ROADMAP-CONSOLIDATION-001
 -> close Milestone 0 / v0.7
 -> LAN-INFERENCE-BETA-CONTRACT-001
 -> begin Milestone 1 / v0.8
+-> LAN-NODE-DOCTOR-001
 ```
 
 Each arrow still requires the complete canonical feature lifecycle. A roadmap
