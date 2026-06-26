@@ -76,6 +76,10 @@ pub(crate) enum NodeMode {
     Hardware {
         command: HardwareCliCommand,
     },
+    LanDoctor {
+        json: bool,
+        network: bool,
+    },
     Capabilities,
     Nodes,
     Topology, // ← NEW
@@ -157,6 +161,7 @@ pub(crate) fn mode_label(mode: &NodeMode) -> &'static str {
         NodeMode::ClusterStatus { .. } => "cluster-status",
         NodeMode::ClusterStress { .. } => "cluster-stress",
         NodeMode::Hardware { .. } => "hardware",
+        NodeMode::LanDoctor { .. } => "lan-doctor",
         NodeMode::Capabilities => "capabilities",
         NodeMode::Nodes => "nodes",
         NodeMode::Topology => "topology",

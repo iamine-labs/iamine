@@ -36,6 +36,7 @@ mod infer_observability;
 mod infer_retry;
 mod infer_runtime;
 mod infer_watchdog;
+mod lan_node_doctor;
 mod metrics;
 mod metrics_policy;
 mod metrics_server;
