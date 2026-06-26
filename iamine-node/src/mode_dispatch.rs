@@ -1,10 +1,10 @@
 use crate::node_modes::NodeMode;
 use crate::{
     cluster_stress_cli::run_cluster_stress_cli, code_quality::run_code_quality_checks,
-    hardware_cli::run_hardware_cli, model_selector_cli::ModelSelectorCLI,
-    node_identity::NodeIdentity, prompt_task_label, quality_gate::run_release_validation,
-    regression_runner::run_default_regression_suite, security_checks::run_security_checks,
-    tasks_cli,
+    hardware_cli::run_hardware_cli, lan_node_doctor::run_lan_node_doctor,
+    model_selector_cli::ModelSelectorCLI, node_identity::NodeIdentity, prompt_task_label,
+    quality_gate::run_release_validation, regression_runner::run_default_regression_suite,
+    security_checks::run_security_checks, tasks_cli,
 };
 use iamine_models::{
     InstallResult, ModelCatalogDownloadAction, ModelInstaller, ModelNodeCapabilities,
@@ -30,6 +30,7 @@ pub(crate) fn is_control_plane_mode(mode: &NodeMode) -> bool {
             | NodeMode::TasksTrace { .. }
             | NodeMode::ClusterStress { .. }
             | NodeMode::Hardware { .. }
+            | NodeMode::LanDoctor { .. }
     )
 }
 
@@ -105,6 +106,11 @@ pub(crate) async fn handle_pre_network_mode(
 
         NodeMode::Hardware { command } => {
             run_hardware_cli(command)?;
+            Ok(true)
+        }
+
+        NodeMode::LanDoctor { json, network } => {
+            run_lan_node_doctor(*json, *network)?;
             Ok(true)
         }
 
@@ -491,6 +497,10 @@ mod tests {
                 json: false,
                 dynamic: false,
             }
+        }));
+        assert!(is_control_plane_mode(&NodeMode::LanDoctor {
+            json: false,
+            network: false,
         }));
         assert!(!is_control_plane_mode(&NodeMode::Worker));
     }

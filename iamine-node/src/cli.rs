@@ -183,6 +183,14 @@ pub(crate) fn parse_args_from(raw_args: Vec<String>) -> Result<NodeMode, String>
             ),
         },
 
+        Some("lan") => match args.get(2).map(|s| s.as_str()) {
+            Some("doctor") => Ok(NodeMode::LanDoctor {
+                json: args.iter().any(|arg| arg == "--json"),
+                network: args.iter().any(|arg| arg == "--network"),
+            }),
+            _ => Err("Uso: iamine-node lan doctor [--json] [--network]".to_string()),
+        },
+
         Some("hardware") => Ok(NodeMode::Hardware {
             command: HardwareCliCommand::from_args(&args[2..])?,
         }),
@@ -476,6 +484,13 @@ mod tests {
             Ok(NodeMode::Hardware { .. })
         ));
         assert!(matches!(
+            parse_args_from(args(&["iamine-node", "lan", "doctor"])),
+            Ok(NodeMode::LanDoctor {
+                json: false,
+                network: false
+            })
+        ));
+        assert!(matches!(
             parse_args_from(args(&["iamine-node", "models", "catalog"])),
             Ok(NodeMode::ModelsCatalog)
         ));
@@ -587,6 +602,32 @@ mod tests {
         let mode = parse_args_from(args(&["iamine-node", "hardware", "inspect", "--help"]));
 
         assert!(matches!(mode, Ok(NodeMode::Help)));
+    }
+
+    #[test]
+    fn lan_doctor_cli_help_has_no_runtime_side_effect() {
+        let mode = parse_args_from(args(&["iamine-node", "lan", "doctor", "--help"]));
+
+        assert!(matches!(mode, Ok(NodeMode::Help)));
+    }
+
+    #[test]
+    fn cli_detects_lan_doctor_json_network_mode() {
+        let mode = parse_args_from(args(&[
+            "iamine-node",
+            "lan",
+            "doctor",
+            "--json",
+            "--network",
+        ]));
+
+        assert!(matches!(
+            mode,
+            Ok(NodeMode::LanDoctor {
+                json: true,
+                network: true
+            })
+        ));
     }
 
     #[test]
