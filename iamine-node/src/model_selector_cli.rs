@@ -1,139 +1,107 @@
 use iamine_models::{
-    can_node_run_model, ModelNodeCapabilities, ModelRegistry, ModelRequirements, ModelStorage,
+    build_model_catalog_entries, select_model_catalog_download_candidate, LicenseAcceptanceStore,
+    ModelCatalogDownloadAction, ModelCatalogEntry, ModelNodeCapabilities, ModelRegistry,
+    ModelStorage,
 };
-use std::io::{self, Write};
 
 pub struct ModelSelectorCLI;
 
 impl ModelSelectorCLI {
-    /// Mostrar modelos instalados y disponibles según capacidades del nodo
+    /// Mostrar modelos instalados y disponibles según capacidades del nodo.
     pub fn show_model_menu(peer_id: &str) -> Result<(), String> {
-        let registry = ModelRegistry::new();
-        let storage = ModelStorage::new();
-        let caps = ModelNodeCapabilities::detect(peer_id);
+        Self::show_catalog(peer_id)
+    }
 
-        let all_models = registry.list();
-        let installed: Vec<_> = all_models
-            .iter()
-            .filter(|m| storage.has_model(&m.id))
-            .collect();
-        let available: Vec<_> = all_models
-            .iter()
-            .filter(|m| !storage.has_model(&m.id) && Self::is_runnable(&m.id, &caps))
-            .collect();
+    pub fn show_catalog(peer_id: &str) -> Result<(), String> {
+        let entries = Self::catalog_entries(peer_id);
+        Self::print_catalog(&entries);
+        Ok(())
+    }
 
-        println!("╔══════════════════════════════════════╗");
-        println!("║   IaMine — Gestión de Modelos        ║");
-        println!("╚══════════════════════════════════════╝\n");
-        println!("🖥️  Tu Nodo:");
-        println!("   CPU Cores:    {}", caps.cpu_cores);
-        println!("   RAM:          {} GB", caps.ram_gb);
-        println!(
-            "   GPU:          {}",
-            caps.gpu_type.as_deref().unwrap_or("❌")
-        );
-        println!(
-            "   Storage:      {} GB disponibles\n",
-            caps.storage_available_gb
-        );
+    pub fn show_selection(peer_id: &str) -> Result<(), String> {
+        let entries = Self::catalog_entries(peer_id);
 
-        println!("✅ Modelos Instalados ({}):", installed.len());
-        if installed.is_empty() {
-            println!("   (ninguno)");
-        } else {
-            for (i, m) in installed.iter().enumerate() {
+        println!("Catalog selection:");
+        match select_model_catalog_download_candidate(&entries, None)? {
+            Some(selection) => {
                 println!(
-                    "   {}. {} ({:.1} GB, {} GB RAM)",
-                    i + 1,
-                    m.id,
-                    m.size_bytes as f64 / 1_073_741_824.0,
-                    m.required_ram_gb
+                    "selected={} reason={}",
+                    selection.model_id, selection.reason
                 );
+                Self::print_entry(&selection.entry);
             }
-        }
-
-        println!("\n⬜ Modelos Disponibles ({}):", available.len());
-        if available.is_empty() {
-            println!("   (sin recursos suficientes para otros modelos)");
-        } else {
-            for (i, m) in available.iter().enumerate() {
-                let badge = Self::badge(&m.id);
-                println!(
-                    "   {}. {} {} ({:.1} GB, {} GB RAM)",
-                    i + 1,
-                    m.id,
-                    badge,
-                    m.size_bytes as f64 / 1_073_741_824.0,
-                    m.required_ram_gb
-                );
+            None => {
+                println!("selected=(none)");
+                println!("reason=no_ready_compatible_model");
             }
         }
         Ok(())
     }
 
-    /// Selector interactivo: descargar modelo
-    pub fn select_model_to_download(peer_id: &str) -> Result<String, String> {
+    pub fn download_preflight(peer_id: &str, model_id: &str) -> Result<ModelCatalogEntry, String> {
+        let entries = Self::catalog_entries(peer_id);
+        entries
+            .into_iter()
+            .find(|entry| entry.id == model_id)
+            .ok_or_else(|| format!("model '{model_id}' not found in catalog"))
+    }
+
+    pub fn print_download_block(entry: &ModelCatalogEntry) {
+        println!(
+            "Download blocked: model={} action={} reason={}",
+            entry.id,
+            entry.download_action.as_str(),
+            entry.download_reason
+        );
+        Self::print_gates(entry);
+        if entry.download_action == ModelCatalogDownloadAction::LicenseAcceptanceRequired {
+            println!(
+                "Next step: iamine-node models license accept {} --yes",
+                entry.id
+            );
+        }
+    }
+
+    fn catalog_entries(peer_id: &str) -> Vec<ModelCatalogEntry> {
         let registry = ModelRegistry::new();
         let storage = ModelStorage::new();
         let caps = ModelNodeCapabilities::detect(peer_id);
+        let license_acceptance_store = LicenseAcceptanceStore::new();
 
-        let all_models = registry.list();
-        let available: Vec<_> = all_models
-            .iter()
-            .filter(|m| !storage.has_model(&m.id) && Self::is_runnable(&m.id, &caps))
-            .collect();
-
-        if available.is_empty() {
-            return Err("No hay modelos disponibles para descargar".into());
-        }
-
-        println!("\n📥 Selecciona modelo a descargar:");
-        for (i, m) in available.iter().enumerate() {
-            let badge = Self::badge(&m.id);
-            println!(
-                "   [{}] {} {} ({:.1} GB)",
-                i + 1,
-                m.id,
-                badge,
-                m.size_bytes as f64 / 1_073_741_824.0
-            );
-        }
-        print!("Elige [1-{}]: ", available.len());
-        let _ = io::stdout().flush();
-
-        let n = Self::read_num(1, available.len() as u32)?;
-        let chosen: String = available[(n - 1) as usize].id.clone();
-        Ok(chosen)
+        build_model_catalog_entries(&registry, &storage, &license_acceptance_store, &caps)
     }
 
-    /// Badge de confiabilidad según descarga/popularidad
-    fn badge(id: &str) -> &'static str {
-        match id {
-            "tinyllama-1b" | "llama3-3b" | "mistral-7b" => "⭐⭐⭐⭐⭐",
-            "neural-chat-7b" | "orca-mini-7b" | "zephyr-7b" => "⭐⭐⭐⭐",
-            _ => "⭐⭐⭐",
+    fn print_catalog(entries: &[ModelCatalogEntry]) {
+        println!("IaMine model catalog:");
+        if entries.is_empty() {
+            println!("(empty)");
+            return;
+        }
+
+        for entry in entries {
+            Self::print_entry(entry);
         }
     }
 
-    /// Verificar si el modelo puede ejecutarse en el nodo
-    fn is_runnable(id: &str, caps: &ModelNodeCapabilities) -> bool {
-        ModelRequirements::for_model(id)
-            .map(|r| can_node_run_model(caps, &r))
-            .unwrap_or(false)
+    fn print_entry(entry: &ModelCatalogEntry) {
+        println!(
+            "- {} v{} | size={:.1}GB | ram={}GB | storage={}GB | installed={} | compatibility={} | action={} | reason={}",
+            entry.id,
+            entry.version,
+            entry.size_gb,
+            entry.required_ram_gb,
+            entry.required_storage_gb,
+            entry.installed,
+            entry.compatibility_status,
+            entry.download_action.as_str(),
+            entry.download_reason
+        );
+        Self::print_gates(entry);
     }
 
-    /// Leer número del usuario con validación
-    fn read_num(min: u32, max: u32) -> Result<u32, String> {
-        let mut buf = String::new();
-        io::stdin().read_line(&mut buf).map_err(|e| e.to_string())?;
-        let n: u32 = buf
-            .trim()
-            .parse()
-            .map_err(|_| "Entrada inválida".to_string())?;
-        if n >= min && n <= max {
-            Ok(n)
-        } else {
-            Err(format!("Elige entre {} y {}", min, max))
+    fn print_gates(entry: &ModelCatalogEntry) {
+        for gate in &entry.gates {
+            println!("  gate {}={} ({})", gate.gate, gate.status, gate.reason);
         }
     }
 }

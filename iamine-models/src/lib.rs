@@ -11,6 +11,7 @@ pub mod license_acceptance;
 pub mod license_policy;
 pub mod model_auto_provision;
 pub mod model_cache;
+pub mod model_catalog;
 pub mod model_compatibility;
 pub mod model_downloader;
 pub mod model_events;
@@ -64,6 +65,10 @@ pub use license_policy::{
 };
 pub use model_auto_provision::{AutoProvisionProfile, ModelAutoProvision};
 pub use model_cache::{LoadedModel, ModelCache};
+pub use model_catalog::{
+    build_model_catalog_entries, select_model_catalog_download_candidate,
+    ModelCatalogDownloadAction, ModelCatalogEntry, ModelCatalogGateStatus, ModelCatalogSelection,
+};
 pub use model_compatibility::{
     evaluate_model_compatibility, evaluate_model_requirements_compatibility,
     evaluate_node_model_compatibility, ModelCompatibilityDecision, ModelCompatibilityProfile,
