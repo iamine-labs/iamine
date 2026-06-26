@@ -89,53 +89,9 @@ impl ModelRegistry {
     }
 
     fn register_defaults(&mut self) {
-        // TinyLlama 1.1B — Q4_K_M (~669 MB)
-        self.models.insert("tinyllama-1b".to_string(), ModelDescriptor {
-            id: "tinyllama-1b".to_string(),
-            version: "1.1".to_string(),
-            architecture: "llama".to_string(),
-            size_bytes: 669_000_000,
-            required_ram_gb: 2,
-            required_vram_gb: 0,
-            shards: 1,
-            hash: String::new(), // Will be computed on first download and cached
-            download_url: "https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf".to_string(),
-            quantization: "q4_k_m".to_string(),
-            license: LicenseMetadata::missing(),
-            network_policy: NetworkPolicyMetadata::distributed_allowed("default-registry"),
-        });
-
-        // Llama 3.2 3B — Q4_K_M (~2.02 GB)
-        self.models.insert("llama3-3b".to_string(), ModelDescriptor {
-            id: "llama3-3b".to_string(),
-            version: "3.2".to_string(),
-            architecture: "llama".to_string(),
-            size_bytes: 2_019_000_000,
-            required_ram_gb: 4,
-            required_vram_gb: 0,
-            shards: 1,
-            hash: String::new(),
-            download_url: "https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF/resolve/main/Llama-3.2-3B-Instruct-Q4_K_M.gguf".to_string(),
-            quantization: "q4_k_m".to_string(),
-            license: LicenseMetadata::missing(),
-            network_policy: NetworkPolicyMetadata::distributed_allowed("default-registry"),
-        });
-
-        // Mistral 7B — Q4_K_M (~4.37 GB)
-        self.models.insert("mistral-7b".to_string(), ModelDescriptor {
-            id: "mistral-7b".to_string(),
-            version: "0.3".to_string(),
-            architecture: "mistral".to_string(),
-            size_bytes: 4_370_000_000,
-            required_ram_gb: 8,
-            required_vram_gb: 0,
-            shards: 1,
-            hash: String::new(),
-            download_url: "https://huggingface.co/TheBloke/Mistral-7B-Instruct-v0.2-GGUF/resolve/main/mistral-7b-instruct-v0.2.Q4_K_M.gguf".to_string(),
-            quantization: "q4_k_m".to_string(),
-            license: LicenseMetadata::missing(),
-            network_policy: NetworkPolicyMetadata::distributed_allowed("default-registry"),
-        });
+        for model in crate::beta_registry::beta_model_descriptors() {
+            self.models.insert(model.id.clone(), model);
+        }
     }
 
     pub fn get(&self, model_id: &str) -> Option<&ModelDescriptor> {

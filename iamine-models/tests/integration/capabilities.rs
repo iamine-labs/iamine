@@ -198,9 +198,14 @@ fn test_model_recommendation() {
 }
 
 #[tokio::test]
-async fn test_auto_model_download() {
+async fn test_auto_model_download() -> Result<(), Box<dyn std::error::Error>> {
     let (_tmp_dir, storage) = temp_storage();
-    let provision = ModelAutoProvision::new(ModelRegistry::new(), storage);
+    let registry = ModelRegistry::new();
+    let llama = registry
+        .get("llama3-3b")
+        .ok_or("llama3-3b should be present")?
+        .clone();
+    let provision = ModelAutoProvision::new(ModelRegistry::from_models(vec![llama]), storage);
     let profile = AutoProvisionProfile {
         cpu_score: 200_000,
         ram_gb: 16,
@@ -213,8 +218,9 @@ async fn test_auto_model_download() {
         .await;
     assert!(result.is_err());
     let error = result.unwrap_err();
-    assert!(error.contains("model registry integrity policy"));
-    assert!(error.contains("checksum_missing"));
+    assert!(error.contains("model license acceptance policy"));
+    assert!(error.contains("license_acceptance_required"));
+    Ok(())
 }
 
 #[test]

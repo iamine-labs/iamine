@@ -423,8 +423,9 @@ mod tests {
         let model = registry.get("tinyllama-1b").unwrap();
         let decision = ModelDownloadPolicy::default().evaluate_descriptor(model);
 
-        assert_eq!(decision.status, ModelDownloadPolicyStatus::PendingChecksum);
+        assert_eq!(decision.status, ModelDownloadPolicyStatus::Allowed);
         assert!(decision.permits_download());
+        assert_eq!(decision.checksum_status, ModelChecksumStatus::Pending);
         assert_eq!(decision.source, Some(AllowedModelSource::HuggingFace));
         assert_eq!(decision.format, Some(AllowedModelFormat::Gguf));
     }

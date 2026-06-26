@@ -40,9 +40,10 @@ The policy can return these statuses:
 - `pending_license`
 - `pending_hardware_validation`
 
-For this milestone, known registry models with missing SHA256 metadata are allowed
-to proceed as `pending_checksum`. This keeps current TS140 and Proxmox workflows
-compatible while making the missing trust requirement visible.
+Descriptors with missing SHA256 metadata can still be reported as
+`pending_checksum` for transitional compatibility. The trusted-registry gate
+continues to block their new download and install flows. The approved v0.7 beta
+registry uses complete SHA256 metadata and does not rely on this state.
 
 ## Blocking Reasons
 

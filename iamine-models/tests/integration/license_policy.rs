@@ -9,12 +9,15 @@ fn test_models_list_reports_download_and_license_gates() -> Result<(), Box<dyn s
         return Err("tinyllama-1b should be present in registry list".into());
     };
 
-    assert_eq!(tiny.download_policy_status, "pending_checksum");
-    assert_eq!(tiny.download_policy_reason, "checksum_missing");
-    assert_eq!(tiny.registry_integrity_status, "pending_integrity");
-    assert_eq!(tiny.registry_integrity_reason, "checksum_missing");
-    assert_eq!(tiny.license_policy_status, "pending_metadata");
-    assert_eq!(tiny.license_policy_reason, "license_missing");
+    assert_eq!(tiny.download_policy_status, "allowed");
+    assert_eq!(tiny.download_policy_reason, "allowed");
+    assert_eq!(tiny.registry_integrity_status, "trusted");
+    assert_eq!(
+        tiny.registry_integrity_reason,
+        "trusted_registry_descriptor"
+    );
+    assert_eq!(tiny.license_policy_status, "allowed");
+    assert_eq!(tiny.license_policy_reason, "license_allowed");
     assert_eq!(tiny.license_acceptance_status, "not_required");
     assert_eq!(
         tiny.license_acceptance_reason,
@@ -26,7 +29,7 @@ fn test_models_list_reports_download_and_license_gates() -> Result<(), Box<dyn s
 }
 
 #[test]
-fn test_installed_missing_license_is_legacy_for_list_and_execution(
+fn test_installed_beta_model_keeps_declared_license_for_list_and_execution(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let (_tmp_dir, storage) = temp_storage();
     std::fs::create_dir_all(storage.model_path("tinyllama-1b"))?;
@@ -41,8 +44,8 @@ fn test_installed_missing_license_is_legacy_for_list_and_execution(
     };
 
     assert!(tiny.installed);
-    assert_eq!(tiny.license_policy_status, "pending_metadata");
-    assert_eq!(tiny.license_policy_reason, "legacy_installed_model");
+    assert_eq!(tiny.license_policy_status, "allowed");
+    assert_eq!(tiny.license_policy_reason, "license_allowed");
     assert_eq!(tiny.license_acceptance_status, "not_required");
     assert_eq!(
         tiny.license_acceptance_reason,
@@ -58,7 +61,7 @@ fn test_installed_missing_license_is_legacy_for_list_and_execution(
     let decision =
         ModelLicensePolicy.evaluate_descriptor(model, LicenseOperation::ExistingExecution, true);
     assert!(decision.permits_operation);
-    assert_eq!(decision.reason, LicensePolicyReason::LegacyInstalledModel);
+    assert_eq!(decision.reason, LicensePolicyReason::LicenseAllowed);
     Ok(())
 }
 
@@ -66,7 +69,14 @@ fn test_installed_missing_license_is_legacy_for_list_and_execution(
 async fn test_installer_blocks_missing_integrity_before_artifact(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let (_tmp_dir, storage) = temp_storage();
-    let installer = ModelInstaller::with_storage(storage.clone());
+    let mut installer = ModelInstaller::with_storage(storage.clone());
+    let mut model = installer
+        .registry
+        .get("llama3-3b")
+        .ok_or("llama3-3b should be present in registry")?
+        .clone();
+    model.hash.clear();
+    installer.registry = ModelRegistry::from_models(vec![model]);
 
     let result = installer.install("llama3-3b", "test-node", None).await;
 
@@ -91,8 +101,10 @@ async fn test_mock_download_blocks_missing_integrity_before_artifact(
     let Some(model) = registry.get("tinyllama-1b") else {
         return Err("tinyllama-1b should be present in registry".into());
     };
+    let mut model = model.clone();
+    model.hash.clear();
 
-    let result = downloader.download_model_mock(model).await;
+    let result = downloader.download_model_mock(&model).await;
 
     match result {
         Err(error) => {
