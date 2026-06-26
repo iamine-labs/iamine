@@ -121,7 +121,7 @@ docs/roadmap/v0.7-foundations-closeout.md
 | Feature | State | Primary owner | Dependencies | Goal |
 | --- | --- | --- | --- | --- |
 | LAN-INFERENCE-BETA-CONTRACT-001 | CLOSED | Architecture; protocol owners | Milestone 0 closed | Define supported LAN topology, user flows, failure semantics, and release boundaries. |
-| LAN-NODE-DOCTOR-001 | ACTIVE | `iamine-node` diagnostics module | Beta contract, config schema | Diagnose hardware, model, backend, configuration, and LAN readiness without starting inference. |
+| LAN-NODE-DOCTOR-001 | CLOSED | `iamine-node` diagnostics module | Beta contract, config schema | Diagnose hardware, model, backend, configuration, and LAN readiness without starting inference. |
 | LAN-WORKER-LIFECYCLE-001 | PROPOSED | `iamine-node` worker runtime | Beta contract | Provide explicit install, start, stop, restart, readiness, and recovery behavior. |
 | NODE-CONFIG-SCHEMA-MIGRATION-001 | PROPOSED | `iamine-node` configuration | Beta contract | Version node configuration and provide bounded migration and rollback. |
 | WORKER-METRICS-PORT-ALLOCATION-001 | PROPOSED | `iamine-node` metrics | Config schema | Allocate deterministic, non-conflicting metrics endpoints for multiple workers. |
