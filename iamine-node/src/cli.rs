@@ -35,7 +35,9 @@ pub(crate) fn parse_args_from(raw_args: Vec<String>) -> Result<NodeMode, String>
         Some("--worker") | None => Ok(NodeMode::Worker),
         Some("--relay") => Ok(NodeMode::Relay),
         Some("models") => match args.get(2).map(|s| s.as_str()) {
+            Some("catalog") => Ok(NodeMode::ModelsCatalog),
             Some("list") => Ok(NodeMode::ModelsList),
+            Some("select") => Ok(NodeMode::ModelsSelect),
             Some("stats") => Ok(NodeMode::ModelsStats),
             Some("recommend") => Ok(NodeMode::ModelsRecommend),
             Some("menu") => Ok(NodeMode::ModelsMenu),
@@ -62,7 +64,7 @@ pub(crate) fn parse_args_from(raw_args: Vec<String>) -> Result<NodeMode, String>
                 Ok(NodeMode::ModelsRemove { model_id: id })
             }
             _ => Err(
-                "Uso: iamine models [list|stats|recommend|menu|search <q>|download <id>|license accept <id> --yes|remove <id>]"
+                "Uso: iamine models [catalog|list|select|stats|recommend|menu|search <q>|download <id>|license accept <id> --yes|remove <id>]"
                     .to_string(),
             ),
         },
@@ -472,6 +474,14 @@ mod tests {
         assert!(matches!(
             parse_args_from(args(&["iamine-node", "hardware", "inspect", "--json"])),
             Ok(NodeMode::Hardware { .. })
+        ));
+        assert!(matches!(
+            parse_args_from(args(&["iamine-node", "models", "catalog"])),
+            Ok(NodeMode::ModelsCatalog)
+        ));
+        assert!(matches!(
+            parse_args_from(args(&["iamine-node", "models", "select"])),
+            Ok(NodeMode::ModelsSelect)
         ));
         assert!(matches!(
             parse_args_from(args(&[

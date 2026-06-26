@@ -26,7 +26,9 @@ pub(crate) enum NodeMode {
     SimulateWorkers {
         count: usize,
     },
+    ModelsCatalog,
     ModelsList,
+    ModelsSelect,
     ModelsStats,
     ModelsDownload {
         model_id: String,
@@ -134,7 +136,9 @@ pub(crate) fn mode_label(mode: &NodeMode) -> &'static str {
         NodeMode::Stress { .. } => "stress",
         NodeMode::Broadcast { .. } => "broadcast",
         NodeMode::SimulateWorkers { .. } => "simulate-workers",
+        NodeMode::ModelsCatalog => "models-catalog",
         NodeMode::ModelsList => "models-list",
+        NodeMode::ModelsSelect => "models-select",
         NodeMode::ModelsStats => "models-stats",
         NodeMode::ModelsDownload { .. } => "models-download",
         NodeMode::ModelsLicenseAccept { .. } => "models-license-accept",

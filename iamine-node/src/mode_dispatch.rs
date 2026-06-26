@@ -1,13 +1,13 @@
 use crate::node_modes::NodeMode;
 use crate::{
-    benchmark::NodeBenchmark, cluster_stress_cli::run_cluster_stress_cli,
-    code_quality::run_code_quality_checks, hardware_cli::run_hardware_cli,
-    model_selector_cli::ModelSelectorCLI, node_identity::NodeIdentity, prompt_task_label,
-    quality_gate::run_release_validation, regression_runner::run_default_regression_suite,
-    security_checks::run_security_checks, tasks_cli,
+    cluster_stress_cli::run_cluster_stress_cli, code_quality::run_code_quality_checks,
+    hardware_cli::run_hardware_cli, model_selector_cli::ModelSelectorCLI,
+    node_identity::NodeIdentity, prompt_task_label, quality_gate::run_release_validation,
+    regression_runner::run_default_regression_suite, security_checks::run_security_checks,
+    tasks_cli,
 };
 use iamine_models::{
-    AutoProvisionProfile, InstallResult, ModelAutoProvision, ModelInstaller, ModelNodeCapabilities,
+    InstallResult, ModelCatalogDownloadAction, ModelInstaller, ModelNodeCapabilities,
     ModelRegistry, ModelRequirements, ModelStorage, StorageConfig,
 };
 use iamine_network::{evaluate_default_dataset, ranked_models, ModelKarma};
@@ -16,11 +16,16 @@ use std::error::Error;
 pub(crate) fn is_control_plane_mode(mode: &NodeMode) -> bool {
     matches!(
         mode,
-        NodeMode::ModelsList
+        NodeMode::ModelsCatalog
+            | NodeMode::ModelsList
+            | NodeMode::ModelsSelect
             | NodeMode::ModelsStats
             | NodeMode::ModelsDownload { .. }
             | NodeMode::ModelsLicenseAccept { .. }
             | NodeMode::ModelsRemove { .. }
+            | NodeMode::ModelsMenu
+            | NodeMode::ModelsSearch { .. }
+            | NodeMode::ModelsRecommend
             | NodeMode::TasksStats { .. }
             | NodeMode::TasksTrace { .. }
             | NodeMode::ClusterStress { .. }
@@ -33,6 +38,14 @@ pub(crate) async fn handle_pre_network_mode(
     runtime_version: &str,
 ) -> Result<bool, Box<dyn Error>> {
     match mode {
+        NodeMode::ModelsCatalog => {
+            println!("╔══════════════════════════════════╗");
+            println!("║      IaMine — Model Catalog      ║");
+            println!("╚══════════════════════════════════╝\n");
+            ModelSelectorCLI::show_catalog("local")?;
+            Ok(true)
+        }
+
         NodeMode::ModelsList => {
             println!("╔══════════════════════════════════╗");
             println!("║       IaMine — Modelos           ║");
@@ -50,6 +63,14 @@ pub(crate) async fn handle_pre_network_mode(
                 used as f64 / 1_073_741_824.0,
                 cfg.max_storage_gb
             );
+            Ok(true)
+        }
+
+        NodeMode::ModelsSelect => {
+            println!("╔══════════════════════════════════╗");
+            println!("║     IaMine — Model Selection     ║");
+            println!("╚══════════════════════════════════╝\n");
+            ModelSelectorCLI::show_selection("local")?;
             Ok(true)
         }
 
@@ -133,6 +154,23 @@ pub(crate) async fn handle_pre_network_mode(
             println!("╔══════════════════════════════════╗");
             println!("║    IaMine — Descargar Modelo     ║");
             println!("╚══════════════════════════════════╝\n");
+            match ModelSelectorCLI::download_preflight("local", model_id) {
+                Ok(entry)
+                    if entry.download_action == ModelCatalogDownloadAction::AlreadyInstalled =>
+                {
+                    println!("ℹ️  Modelo {} ya está instalado", entry.id);
+                    return Ok(true);
+                }
+                Ok(entry) if entry.download_action != ModelCatalogDownloadAction::Ready => {
+                    ModelSelectorCLI::print_download_block(&entry);
+                    return Ok(true);
+                }
+                Ok(_) => {}
+                Err(error) => {
+                    println!("❌ Descarga bloqueada: {}", error);
+                    return Ok(true);
+                }
+            }
             let installer = ModelInstaller::new();
             let (tx, _rx) = tokio::sync::mpsc::channel(10);
             match installer.install(model_id, "local", Some(tx)).await {
@@ -375,28 +413,7 @@ pub(crate) async fn handle_pre_network_mode(
         }
 
         NodeMode::ModelsRecommend => {
-            let node_identity = NodeIdentity::load_or_create();
-            let caps = ModelNodeCapabilities::detect(&node_identity.peer_id.to_string());
-            let benchmark = NodeBenchmark::run();
-
-            let profile = AutoProvisionProfile {
-                cpu_score: benchmark.cpu_score as u64,
-                ram_gb: caps.ram_gb,
-                gpu_available: benchmark.gpu_available,
-                storage_available_gb: caps.storage_available_gb,
-            };
-
-            let provision = ModelAutoProvision::new(ModelRegistry::new(), ModelStorage::new());
-            let recommended = provision.recommend_for_empty_node(&profile);
-
-            println!("Compatible models for this node:");
-            if recommended.is_empty() {
-                println!("(none)");
-            } else {
-                for model in recommended {
-                    println!("{}", model.id);
-                }
-            }
+            ModelSelectorCLI::show_selection("local")?;
             Ok(true)
         }
 
@@ -454,6 +471,13 @@ mod tests {
         assert!(is_control_plane_mode(&NodeMode::ModelsRemove {
             model_id: "llama3-3b".to_string()
         }));
+        assert!(is_control_plane_mode(&NodeMode::ModelsCatalog));
+        assert!(is_control_plane_mode(&NodeMode::ModelsSelect));
+        assert!(is_control_plane_mode(&NodeMode::ModelsMenu));
+        assert!(is_control_plane_mode(&NodeMode::ModelsSearch {
+            query: "llama".to_string()
+        }));
+        assert!(is_control_plane_mode(&NodeMode::ModelsRecommend));
         assert!(is_control_plane_mode(&NodeMode::TasksStats { json: false }));
         assert!(is_control_plane_mode(&NodeMode::TasksTrace {
             task_id: "task-1".to_string(),
