@@ -1,3 +1,4 @@
+mod beta_registry;
 pub mod continuation_manager;
 pub mod distributed_inference;
 pub mod download_policy;

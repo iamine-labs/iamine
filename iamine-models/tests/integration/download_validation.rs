@@ -78,11 +78,14 @@ fn test_model_manifest() {
 fn test_model_has_known_hash() {
     let registry = iamine_models::ModelRegistry::new();
     let model = registry.get("tinyllama-1b").unwrap();
-    // Empty hash = no known hash
-    assert!(!model.has_known_hash());
+    assert!(model.has_known_hash());
+    assert_eq!(
+        model.hash,
+        "9fecc3b3cd76bba89d504f29b616eedf7da85b96540e490ca5824d3f7d2776a0"
+    );
 
     let manifest = model.to_manifest();
-    assert!(!manifest.requires_hash_verification());
+    assert!(manifest.requires_hash_verification());
 }
 
 #[test]
