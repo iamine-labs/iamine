@@ -2426,11 +2426,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                 FailureKind::TaskFailure
                                             };
                                             let failed_model = infer_state.current_model.clone();
-                                            if infer_state.schedule_retry(
+                                            if infer_state.schedule_targeted_retry(
                                                 Some(worker),
                                                 failed_model.as_deref(),
-                                            ) && retry_target.is_some()
-                                            {
+                                                retry_target.is_some(),
+                                            ) {
                                                 emit_retry_scheduled_event(
                                                     &trace_task_id,
                                                     &infer_state.current_request_id,
@@ -2441,20 +2441,21 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                         .map(|target| target.peer_id.as_str()),
                                                     "validation_failure",
                                                 );
-                                                let target = retry_target.unwrap();
-                                                println!(
-                                                    "[Retry] task_id={} attempt_id={} kind={:?} peer_id={} model_id={}",
-                                                    trace_task_id,
-                                                    infer_state.current_request_id,
-                                                    failure_kind,
-                                                    target.peer_id,
-                                                    target.model_id
-                                                );
-                                                infer_request_id =
-                                                    Some(infer_state.current_request_id.clone());
-                                                infer_broadcast_sent = false;
-                                                waiting_for_response = false;
-                                                continue;
+                                                if let Some(target) = retry_target {
+                                                    println!(
+                                                        "[Retry] task_id={} attempt_id={} kind={:?} peer_id={} model_id={}",
+                                                        trace_task_id,
+                                                        infer_state.current_request_id,
+                                                        failure_kind,
+                                                        target.peer_id,
+                                                        target.model_id
+                                                    );
+                                                    infer_request_id =
+                                                        Some(infer_state.current_request_id.clone());
+                                                    infer_broadcast_sent = false;
+                                                    waiting_for_response = false;
+                                                    continue;
+                                                }
                                             }
 
                                             finalize_and_report_distributed_task_observability(
@@ -3637,11 +3638,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                             FailureKind::TaskFailure
                                         };
                                         let failed_model = infer_state.current_model.clone();
-                                        if infer_state.schedule_retry(
+                                        if infer_state.schedule_targeted_retry(
                                             Some(&peer.to_string()),
                                             failed_model.as_deref(),
-                                        ) && retry_target.is_some()
-                                        {
+                                            retry_target.is_some(),
+                                        ) {
                                             let failed_peer_id = peer.to_string();
                                             emit_retry_scheduled_event(
                                                 &trace_task_id,
@@ -3653,25 +3654,26 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                     .map(|target| target.peer_id.as_str()),
                                                 "task_failure",
                                             );
-                                            let target = retry_target.unwrap();
-                                            println!(
-                                                "[Retry] task_id={} attempt_id={} kind={:?} peer_id={} model_id={}",
-                                                trace_task_id,
-                                                infer_state.current_request_id,
-                                                failure_kind,
-                                                target.peer_id,
-                                                target.model_id
-                                            );
-                                            clear_stream_state(
-                                                &mut token_buffer,
-                                                &mut next_token_idx,
-                                                &mut rendered_output,
-                                            );
-                                            waiting_for_response = false;
-                                            infer_broadcast_sent = false;
-                                            infer_request_id =
-                                                Some(infer_state.current_request_id.clone());
-                                            continue;
+                                            if let Some(target) = retry_target {
+                                                println!(
+                                                    "[Retry] task_id={} attempt_id={} kind={:?} peer_id={} model_id={}",
+                                                    trace_task_id,
+                                                    infer_state.current_request_id,
+                                                    failure_kind,
+                                                    target.peer_id,
+                                                    target.model_id
+                                                );
+                                                clear_stream_state(
+                                                    &mut token_buffer,
+                                                    &mut next_token_idx,
+                                                    &mut rendered_output,
+                                                );
+                                                waiting_for_response = false;
+                                                infer_broadcast_sent = false;
+                                                infer_request_id =
+                                                    Some(infer_state.current_request_id.clone());
+                                                continue;
+                                            }
                                         }
 
                                         finalize_and_report_distributed_task_observability(

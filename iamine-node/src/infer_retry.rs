@@ -212,4 +212,64 @@ impl DistributedInferState {
         self.current_model = None;
         true
     }
+
+    pub(crate) fn schedule_targeted_retry(
+        &mut self,
+        failed_peer: Option<&str>,
+        failed_model: Option<&str>,
+        target_available: bool,
+    ) -> bool {
+        if !target_available {
+            return false;
+        }
+
+        self.schedule_retry(failed_peer, failed_model)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn targeted_retry_without_target_does_not_advance_attempt() {
+        let mut state = DistributedInferState::new(
+            "prompt".to_string(),
+            Some("tinyllama-1b".to_string()),
+            None,
+        );
+        let original_request_id = state.current_request_id.clone();
+
+        let scheduled = state.schedule_targeted_retry(Some("peer-a"), Some("tinyllama-1b"), false);
+
+        assert!(!scheduled);
+        assert_eq!(state.retry_state.retry_count, 0);
+        assert_eq!(state.current_request_id, original_request_id);
+        assert!(state.current_peer.is_none());
+        assert!(state.current_model.is_none());
+    }
+
+    #[test]
+    fn targeted_retry_with_target_advances_and_resets_attempt_context() {
+        let mut state = DistributedInferState::new(
+            "prompt".to_string(),
+            Some("tinyllama-1b".to_string()),
+            None,
+        );
+        let original_request_id = state.current_request_id.clone();
+        state.current_peer = Some("peer-a".to_string());
+        state.current_model = Some("tinyllama-1b".to_string());
+        state.current_task_type = Some(PromptTaskType::General);
+        state.current_semantic_prompt = Some("prompt".to_string());
+
+        let scheduled = state.schedule_targeted_retry(Some("peer-a"), Some("tinyllama-1b"), true);
+
+        assert!(scheduled);
+        assert_eq!(state.retry_state.retry_count, 1);
+        assert_ne!(state.current_request_id, original_request_id);
+        assert!(state.current_peer.is_none());
+        assert!(state.current_model.is_none());
+        assert!(state.current_task_type.is_none());
+        assert!(state.current_semantic_prompt.is_none());
+    }
 }
