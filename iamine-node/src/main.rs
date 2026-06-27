@@ -50,6 +50,7 @@ mod network;
 mod network_config;
 mod network_event_observability;
 mod node_capability_snapshot;
+mod node_config_schema;
 mod node_identity;
 mod node_modes;
 mod path_config;
