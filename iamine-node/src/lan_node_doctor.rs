@@ -1,4 +1,6 @@
-use crate::metrics_policy::{metrics_startup_decision, MetricsStartupDecision};
+use crate::metrics_policy::{
+    allocate_metrics_port, metrics_startup_decision, MetricsStartupDecision,
+};
 use crate::model_backend_availability::{
     ModelBackendAvailabilityReason, ModelBackendAvailabilityStatus,
 };
@@ -339,12 +341,25 @@ fn worker_startup_policy_check(policy: &WorkerStartupPolicy) -> DoctorCheck {
 
 fn metrics_availability_check() -> DoctorCheck {
     let mut details = details_map();
-    details.insert("worker_port_basis".to_string(), json!(9000));
+    let worker_port_basis = 9000;
+    details.insert("worker_port_basis".to_string(), json!(worker_port_basis));
     details.insert("bind_probe".to_string(), json!("not_run"));
 
-    match metrics_startup_decision(9000) {
-        MetricsStartupDecision::StartMetrics { port } => {
-            details.insert("metrics_port".to_string(), json!(port));
+    match metrics_startup_decision(worker_port_basis) {
+        MetricsStartupDecision::StartMetrics { port: metrics_port } => {
+            details.insert("metrics_port".to_string(), json!(metrics_port));
+            if let Ok(allocation) = allocate_metrics_port(worker_port_basis) {
+                details.insert(
+                    "allocation_strategy".to_string(),
+                    json!(allocation.strategy.as_str()),
+                );
+                details.insert(
+                    "allocation_offset".to_string(),
+                    json!(allocation
+                        .metrics_port
+                        .saturating_sub(allocation.worker_port)),
+                );
+            }
             details.insert(
                 "fallback_behavior".to_string(),
                 json!("start_metrics_server"),
@@ -625,6 +640,21 @@ mod tests {
         assert_eq!(check.status, DoctorStatus::NotRun);
         assert_eq!(check.details.get("p2p_started"), Some(&json!(false)));
         assert_eq!(check.details.get("pubsub_started"), Some(&json!(false)));
+    }
+
+    #[test]
+    fn metrics_availability_reports_allocated_default_endpoint() {
+        let check = metrics_availability_check();
+
+        assert_eq!(check.status, DoctorStatus::Pass);
+        assert_eq!(check.details.get("worker_port_basis"), Some(&json!(9000)));
+        assert_eq!(check.details.get("metrics_port"), Some(&json!(9090)));
+        assert_eq!(
+            check.details.get("allocation_strategy"),
+            Some(&json!("legacy_worker_base"))
+        );
+        assert_eq!(check.details.get("allocation_offset"), Some(&json!(90)));
+        assert_eq!(check.details.get("bind_probe"), Some(&json!("not_run")));
     }
 
     #[test]

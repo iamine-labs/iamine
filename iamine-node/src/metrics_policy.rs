@@ -2,12 +2,12 @@ use crate::worker_startup_policy::StartupMathError;
 
 pub(crate) const METRICS_WORKER_PORT_BASE: u16 = 9000;
 pub(crate) const METRICS_HTTP_PORT_BASE: u16 = 9090;
+pub(crate) const METRICS_LOW_WORKER_PORT_HTTP_OFFSET: u16 = 10_000;
 pub(crate) const METRICS_FALLBACK_CONTINUE: &str = "continue_without_metrics_server";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum MetricsUnavailableReason {
     InvalidPortMath,
-    PortBelowBase,
     #[allow(dead_code)]
     PortInUse,
     #[allow(dead_code)]
@@ -21,12 +21,33 @@ impl MetricsUnavailableReason {
     pub(crate) fn as_str(self) -> &'static str {
         match self {
             Self::InvalidPortMath => "invalid_port_math",
-            Self::PortBelowBase => "worker_port_below_metrics_base",
             Self::PortInUse => "port_in_use",
             Self::DisabledByConfig => "disabled_by_config",
             Self::Unknown => "unknown",
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum MetricsPortAllocationStrategy {
+    LegacyWorkerBase,
+    LowWorkerPortOffset,
+}
+
+impl MetricsPortAllocationStrategy {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::LegacyWorkerBase => "legacy_worker_base",
+            Self::LowWorkerPortOffset => "low_worker_port_offset",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct MetricsPortAllocation {
+    pub(crate) worker_port: u16,
+    pub(crate) metrics_port: u16,
+    pub(crate) strategy: MetricsPortAllocationStrategy,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -64,45 +85,57 @@ impl MetricsStartupDecision {
     }
 }
 
-fn checked_sub_u16(
-    operation: &'static str,
-    a: u16,
-    b: u16,
-    reason: &'static str,
-) -> Result<u16, StartupMathError> {
-    a.checked_sub(b)
-        .ok_or_else(|| StartupMathError::new(operation, a as u64, b as u64, reason))
+pub(crate) fn compute_metrics_port(worker_port: u16) -> Result<u16, StartupMathError> {
+    allocate_metrics_port(worker_port).map(|allocation| allocation.metrics_port)
 }
 
-pub(crate) fn compute_metrics_port(worker_port: u16) -> Result<u16, StartupMathError> {
-    let offset = checked_sub_u16(
-        "worker_port_minus_base",
-        worker_port,
-        METRICS_WORKER_PORT_BASE,
-        "worker_port_below_metrics_base",
-    )?;
+pub(crate) fn allocate_metrics_port(
+    worker_port: u16,
+) -> Result<MetricsPortAllocation, StartupMathError> {
+    if worker_port < METRICS_WORKER_PORT_BASE {
+        let metrics_port = METRICS_LOW_WORKER_PORT_HTTP_OFFSET
+            .checked_add(worker_port)
+            .ok_or_else(|| {
+                StartupMathError::new(
+                    "low_worker_metrics_port_plus_offset",
+                    METRICS_LOW_WORKER_PORT_HTTP_OFFSET as u64,
+                    worker_port as u64,
+                    "metrics_port_out_of_range",
+                )
+            })?;
 
-    METRICS_HTTP_PORT_BASE.checked_add(offset).ok_or_else(|| {
+        return Ok(MetricsPortAllocation {
+            worker_port,
+            metrics_port,
+            strategy: MetricsPortAllocationStrategy::LowWorkerPortOffset,
+        });
+    }
+
+    let offset = worker_port - METRICS_WORKER_PORT_BASE;
+
+    let metrics_port = METRICS_HTTP_PORT_BASE.checked_add(offset).ok_or_else(|| {
         StartupMathError::new(
             "metrics_port_plus_offset",
             METRICS_HTTP_PORT_BASE as u64,
             offset as u64,
             "metrics_port_out_of_range",
         )
+    })?;
+
+    Ok(MetricsPortAllocation {
+        worker_port,
+        metrics_port,
+        strategy: MetricsPortAllocationStrategy::LegacyWorkerBase,
     })
 }
 
 pub(crate) fn metrics_startup_decision(worker_port: u16) -> MetricsStartupDecision {
     match compute_metrics_port(worker_port) {
         Ok(port) => MetricsStartupDecision::StartMetrics { port },
-        Err(error) => {
-            let reason = if error.reason == "worker_port_below_metrics_base" {
-                MetricsUnavailableReason::PortBelowBase
-            } else {
-                MetricsUnavailableReason::InvalidPortMath
-            };
-            MetricsStartupDecision::ContinueWithoutMetrics { reason, error }
-        }
+        Err(error) => MetricsStartupDecision::ContinueWithoutMetrics {
+            reason: MetricsUnavailableReason::InvalidPortMath,
+            error,
+        },
     }
 }
 
@@ -141,51 +174,57 @@ mod tests {
     }
 
     #[test]
-    fn metrics_policy_port_below_base_keeps_existing_fallback() {
-        match metrics_startup_decision(4101) {
-            MetricsStartupDecision::ContinueWithoutMetrics { reason, error } => {
-                assert_eq!(reason, MetricsUnavailableReason::PortBelowBase);
-                assert_eq!(reason.as_str(), "worker_port_below_metrics_base");
-                assert_eq!(error.operation, "worker_port_minus_base");
-                assert_eq!(error.operand_a, 4101);
-                assert_eq!(error.operand_b, METRICS_WORKER_PORT_BASE as u64);
-                assert_eq!(error.reason, "worker_port_below_metrics_base");
+    fn metrics_policy_low_worker_port_derives_metrics_port() {
+        let allocation = match allocate_metrics_port(4101) {
+            Ok(allocation) => allocation,
+            Err(error) => {
+                assert_eq!(error.reason, "low_worker_port_allocation_should_not_fail");
+                return;
             }
-            decision => panic!("expected fallback decision, got {decision:?}"),
-        }
+        };
+
+        assert_eq!(allocation.worker_port, 4101);
+        assert_eq!(allocation.metrics_port, 14101);
+        assert_eq!(
+            allocation.strategy,
+            MetricsPortAllocationStrategy::LowWorkerPortOffset
+        );
+        assert_eq!(allocation.strategy.as_str(), "low_worker_port_offset");
+        assert_eq!(compute_metrics_port(4101), Ok(14101));
     }
 
     #[test]
-    fn metrics_policy_ts140_port_7002_keeps_existing_fallback() {
-        match metrics_startup_decision(7002) {
-            MetricsStartupDecision::ContinueWithoutMetrics { reason, error } => {
-                assert_eq!(reason, MetricsUnavailableReason::PortBelowBase);
-                assert_eq!(error.operand_a, 7002);
-                assert_eq!(error.operand_b, METRICS_WORKER_PORT_BASE as u64);
-                assert_eq!(error.reason, "worker_port_below_metrics_base");
-            }
-            decision => panic!("expected fallback decision, got {decision:?}"),
-        }
+    fn metrics_policy_ts140_port_7002_gets_deterministic_metrics_endpoint() {
+        assert_eq!(
+            metrics_startup_decision(7002),
+            MetricsStartupDecision::StartMetrics { port: 17002 }
+        );
     }
 
     #[test]
-    fn metrics_policy_proxmox_ports_keep_non_blocking_fallback() {
+    fn metrics_policy_proxmox_ports_get_distinct_metrics_endpoints() {
+        let mut metrics_ports = Vec::new();
+
         for worker_port in [4101, 4102, 4103] {
             let decision = metrics_startup_decision(worker_port);
 
             assert!(decision.can_continue_worker_startup());
-            assert_eq!(decision.fallback_behavior(), METRICS_FALLBACK_CONTINUE);
-            match decision {
-                MetricsStartupDecision::ContinueWithoutMetrics { reason, error } => {
-                    assert_eq!(reason, MetricsUnavailableReason::PortBelowBase);
-                    assert_eq!(error.operation, "worker_port_minus_base");
-                    assert_eq!(error.operand_a, worker_port as u64);
-                    assert_eq!(error.operand_b, METRICS_WORKER_PORT_BASE as u64);
-                    assert_eq!(error.reason, "worker_port_below_metrics_base");
-                }
-                decision => panic!("expected fallback decision, got {decision:?}"),
-            }
+            assert_eq!(decision.fallback_behavior(), "start_metrics_server");
+            let metrics_port = match decision {
+                MetricsStartupDecision::StartMetrics { port } => port,
+                MetricsStartupDecision::ContinueWithoutMetrics { .. }
+                | MetricsStartupDecision::Disabled { .. } => 0,
+            };
+            assert_eq!(
+                metrics_port,
+                worker_port + METRICS_LOW_WORKER_PORT_HTTP_OFFSET
+            );
+            metrics_ports.push(metrics_port);
         }
+
+        metrics_ports.sort_unstable();
+        metrics_ports.dedup();
+        assert_eq!(metrics_ports.len(), 3);
     }
 
     #[test]
@@ -208,11 +247,23 @@ mod tests {
     }
 
     #[test]
-    fn metrics_policy_continue_without_metrics_does_not_block_worker() {
-        let decision = metrics_startup_decision(4103);
+    fn metrics_policy_out_of_range_metrics_port_keeps_non_blocking_fallback() {
+        let decision = metrics_startup_decision(u16::MAX);
 
         assert!(decision.can_continue_worker_startup());
         assert_eq!(decision.fallback_behavior(), METRICS_FALLBACK_CONTINUE);
+        match decision {
+            MetricsStartupDecision::ContinueWithoutMetrics { reason, error } => {
+                assert_eq!(reason, MetricsUnavailableReason::InvalidPortMath);
+                assert_eq!(reason.as_str(), "invalid_port_math");
+                assert_eq!(error.operation, "metrics_port_plus_offset");
+                assert_eq!(error.reason, "metrics_port_out_of_range");
+            }
+            MetricsStartupDecision::StartMetrics { .. }
+            | MetricsStartupDecision::Disabled { .. } => {
+                assert_eq!("fallback_decision", "metrics_start_or_disabled");
+            }
+        }
     }
 
     #[test]
@@ -220,7 +271,7 @@ mod tests {
         let decision = metrics_startup_decision(7002);
 
         assert!(decision.can_continue_worker_startup());
-        assert_eq!(decision.fallback_behavior(), METRICS_FALLBACK_CONTINUE);
+        assert_eq!(decision.fallback_behavior(), "start_metrics_server");
     }
 
     #[test]
