@@ -39,6 +39,7 @@ mod infer_runtime;
 mod infer_watchdog;
 mod lan_inference_cli;
 mod lan_node_doctor;
+mod lan_observability;
 mod metrics;
 mod metrics_policy;
 mod metrics_server;

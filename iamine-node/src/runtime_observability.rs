@@ -1,4 +1,5 @@
 use crate::infer_watchdog::{AttemptDispatchType, AttemptTimeoutPolicy};
+use crate::lan_observability::enrich_lan_observability_fields;
 use iamine_network::{
     log_structured, LogLevel, NodeHealth, StructuredLogEntry, NODE_BLACKLISTED_001,
 };
@@ -12,8 +13,9 @@ pub(crate) fn log_observability_event(
     task_id: Option<&str>,
     model_id: Option<&str>,
     error_code: Option<&str>,
-    fields: Map<String, Value>,
+    mut fields: Map<String, Value>,
 ) {
+    enrich_lan_observability_fields(event, &mut fields);
     let mut entry = StructuredLogEntry::new(level, event, trace_id, "-");
     if let Some(task_id) = task_id {
         entry = entry.with_task_id(task_id.to_string());
@@ -558,6 +560,24 @@ mod tests {
             entry.fields.get("worker_peer_id").and_then(Value::as_str),
             Some("worker-a")
         );
+        assert_eq!(
+            entry.fields.get("lan_phase").and_then(Value::as_str),
+            Some("result_delivery")
+        );
+        assert_eq!(
+            entry
+                .fields
+                .get("lan_observability_scope")
+                .and_then(Value::as_str),
+            Some("lan_beta")
+        );
+        assert_eq!(
+            entry
+                .fields
+                .get("lan_observability_schema_version")
+                .and_then(Value::as_str),
+            Some("1.0.0")
+        );
     }
 
     #[test]
@@ -631,6 +651,10 @@ mod tests {
         assert_eq!(
             entry.fields.get("recoverable").and_then(Value::as_bool),
             Some(true)
+        );
+        assert_eq!(
+            entry.fields.get("lan_phase").and_then(Value::as_str),
+            Some("recovery")
         );
     }
 }
