@@ -1,5 +1,7 @@
+use crate::cli_flags::{parse_optional_string_flag, parse_optional_u32_flag};
 use crate::cluster_stress::ClusterStressConfig;
 use crate::hardware_cli::HardwareCliCommand;
+use crate::lan_inference_cli::{lan_usage, parse_lan_infer_args};
 use crate::node_config_schema::{node_config_usage, NodeConfigCommand};
 use crate::node_modes::{InferenceControlFlags, NodeMode};
 use crate::worker_lifecycle::{worker_lifecycle_usage, WorkerLifecycleCommand};
@@ -196,7 +198,8 @@ pub(crate) fn parse_args_from(raw_args: Vec<String>) -> Result<NodeMode, String>
                 json: args.iter().any(|arg| arg == "--json"),
                 network: args.iter().any(|arg| arg == "--network"),
             }),
-            _ => Err("Uso: iamine-node lan doctor [--json] [--network]".to_string()),
+            Some("infer") => parse_lan_infer_args(&args[3..]),
+            _ => Err(lan_usage()),
         },
 
         Some("hardware") => Ok(NodeMode::Hardware {
@@ -216,40 +219,6 @@ pub(crate) fn parse_args_from(raw_args: Vec<String>) -> Result<NodeMode, String>
 
         Some(unknown) => Err(format!("Modo desconocido: {}", unknown)),
     }
-}
-
-pub(crate) fn parse_optional_u32_flag(args: &[String], flag: &str) -> Result<Option<u32>, String> {
-    let Some(index) = args.iter().position(|arg| arg == flag) else {
-        return Ok(None);
-    };
-
-    let Some(raw) = args.get(index + 1) else {
-        return Err(format!("Falta valor para {}", flag));
-    };
-
-    raw.parse::<u32>()
-        .map(Some)
-        .map_err(|_| format!("Valor invalido para {}: {}", flag, raw))
-}
-
-pub(crate) fn parse_optional_string_flag(
-    args: &[String],
-    flag: &str,
-) -> Result<Option<String>, String> {
-    let Some(index) = args.iter().position(|arg| arg == flag) else {
-        return Ok(None);
-    };
-
-    let Some(raw) = args.get(index + 1) else {
-        return Err(format!("Falta valor para {}", flag));
-    };
-
-    let value = raw.trim();
-    if value.is_empty() {
-        return Err(format!("Valor invalido para {}", flag));
-    }
-
-    Ok(Some(value.to_string()))
 }
 
 pub(crate) fn parse_worker_port(args: &[String]) -> u16 {
@@ -628,6 +597,32 @@ mod tests {
         let mode = parse_args_from(args(&["iamine-node", "lan", "doctor", "--help"]));
 
         assert!(matches!(mode, Ok(NodeMode::Help)));
+    }
+
+    #[test]
+    fn cli_detects_lan_infer_route() {
+        let mode = match parse_args_from(args(&[
+            "iamine-node",
+            "lan",
+            "infer",
+            "2+2",
+            "--model",
+            "tinyllama-1b",
+        ])) {
+            Ok(mode) => mode,
+            Err(error) => {
+                assert_eq!(error, "lan infer route should parse");
+                return;
+            }
+        };
+
+        assert!(matches!(
+            mode,
+            NodeMode::Infer {
+                force_network: true,
+                ..
+            }
+        ));
     }
 
     #[test]

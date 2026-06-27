@@ -124,8 +124,8 @@ docs/roadmap/v0.7-foundations-closeout.md
 | LAN-NODE-DOCTOR-001 | CLOSED | `iamine-node` diagnostics module | Beta contract, config schema | Diagnose hardware, model, backend, configuration, and LAN readiness without starting inference. |
 | LAN-WORKER-LIFECYCLE-001 | CLOSED | `iamine-node` worker runtime | Beta contract | Provide explicit install, start, stop, restart, readiness, and recovery behavior. |
 | NODE-CONFIG-SCHEMA-MIGRATION-001 | CLOSED | `iamine-node` configuration | Beta contract | Version node configuration and provide bounded migration and rollback. |
-| WORKER-METRICS-PORT-ALLOCATION-001 | ACTIVE | `iamine-node` metrics | Config schema | Allocate deterministic, non-conflicting metrics endpoints for multiple workers. |
-| LAN-INFERENCE-CLI-001 | PROPOSED | `iamine-node` CLI wiring | Catalog selection, beta contract | Expose the supported LAN inference workflow with clear errors and no hidden startup. |
+| WORKER-METRICS-PORT-ALLOCATION-001 | CLOSED | `iamine-node` metrics | Config schema | Allocate deterministic, non-conflicting metrics endpoints for multiple workers. |
+| LAN-INFERENCE-CLI-001 | ACTIVE | `iamine-node` CLI wiring | Catalog selection, beta contract | Expose the supported LAN inference workflow with clear errors and no hidden startup. |
 | LAN-REAL-INFERENCE-RESILIENCE-001 | PROPOSED | `iamine-node`, `iamine-network`, `iamine-models` owner modules | Worker lifecycle, LAN CLI | Recover safely from worker, network, backend, and model failures during real inference. |
 | V1-OBSERVABILITY-001 (LAN phase) | PROPOSED | `iamine-network`, `iamine-node` observability | Beta contract | Emit correlated operational evidence for setup, dispatch, execution, recovery, and result delivery. |
 | LAN-INFERENCE-BETA-PACKAGING-001 | PROPOSED | Packaging / operations | Doctor, config migration, lifecycle | Deliver clean install, upgrade, service integration, and rollback artifacts. |
@@ -307,6 +307,7 @@ PRODUCT-ROADMAP-CONSOLIDATION-001
 -> LAN-WORKER-LIFECYCLE-001
 -> NODE-CONFIG-SCHEMA-MIGRATION-001
 -> WORKER-METRICS-PORT-ALLOCATION-001
+-> LAN-INFERENCE-CLI-001
 ```
 
 Each arrow still requires the complete canonical feature lifecycle. A roadmap
