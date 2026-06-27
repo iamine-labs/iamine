@@ -4,7 +4,7 @@ use crate::{
     hardware_cli::run_hardware_cli, lan_node_doctor::run_lan_node_doctor,
     model_selector_cli::ModelSelectorCLI, node_identity::NodeIdentity, prompt_task_label,
     quality_gate::run_release_validation, regression_runner::run_default_regression_suite,
-    security_checks::run_security_checks, tasks_cli,
+    security_checks::run_security_checks, tasks_cli, worker_lifecycle::run_worker_lifecycle_cli,
 };
 use iamine_models::{
     InstallResult, ModelCatalogDownloadAction, ModelInstaller, ModelNodeCapabilities,
@@ -31,6 +31,7 @@ pub(crate) fn is_control_plane_mode(mode: &NodeMode) -> bool {
             | NodeMode::ClusterStress { .. }
             | NodeMode::Hardware { .. }
             | NodeMode::LanDoctor { .. }
+            | NodeMode::WorkerLifecycle { .. }
     )
 }
 
@@ -111,6 +112,11 @@ pub(crate) async fn handle_pre_network_mode(
 
         NodeMode::LanDoctor { json, network } => {
             run_lan_node_doctor(*json, *network)?;
+            Ok(true)
+        }
+
+        NodeMode::WorkerLifecycle { command } => {
+            run_worker_lifecycle_cli(command)?;
             Ok(true)
         }
 
