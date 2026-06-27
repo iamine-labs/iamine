@@ -1,5 +1,6 @@
 use crate::cluster_stress::ClusterStressConfig;
 use crate::hardware_cli::HardwareCliCommand;
+use crate::node_config_schema::{node_config_usage, NodeConfigCommand};
 use crate::node_modes::{InferenceControlFlags, NodeMode};
 use crate::worker_lifecycle::{worker_lifecycle_usage, WorkerLifecycleCommand};
 use libp2p::Multiaddr;
@@ -201,6 +202,13 @@ pub(crate) fn parse_args_from(raw_args: Vec<String>) -> Result<NodeMode, String>
         Some("hardware") => Ok(NodeMode::Hardware {
             command: HardwareCliCommand::from_args(&args[2..])?,
         }),
+
+        Some("node") => match args.get(2).map(|s| s.as_str()) {
+            Some("config") => Ok(NodeMode::NodeConfig {
+                command: NodeConfigCommand::from_args(&args[3..])?,
+            }),
+            _ => Err(node_config_usage()),
+        },
 
         Some("nodes") => Ok(NodeMode::Nodes),
 
@@ -645,6 +653,30 @@ mod tests {
             Ok(NodeMode::WorkerLifecycle { command })
                 if command.action == crate::worker_lifecycle::WorkerLifecycleAction::Start
                     && command.port == 4101
+                    && command.json
+        ));
+    }
+
+    #[test]
+    fn cli_detects_node_config_migrate_json_path_yes() {
+        let mode = parse_args_from(args(&[
+            "iamine-node",
+            "node",
+            "config",
+            "migrate",
+            "--path",
+            "/tmp/iamine-node-config.json",
+            "--yes",
+            "--json",
+        ]));
+
+        assert!(matches!(
+            mode,
+            Ok(NodeMode::NodeConfig { command })
+                if command.action == crate::node_config_schema::NodeConfigAction::Migrate
+                    && command.path.as_deref()
+                        == Some(std::path::Path::new("/tmp/iamine-node-config.json"))
+                    && command.yes
                     && command.json
         ));
     }

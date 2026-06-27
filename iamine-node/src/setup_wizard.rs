@@ -1,3 +1,6 @@
+use crate::node_config_schema::{
+    default_node_config_path, redacted_node_config_path_label, NODE_CONFIG_SCHEMA_VERSION,
+};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::{self, Write};
@@ -29,6 +32,8 @@ pub enum ModelDownloadMode {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NodeSetupConfig {
+    #[serde(default = "default_node_config_schema_version")]
+    pub schema_version: String,
     pub first_run_completed: bool,
     pub cpu_cores: u32,
     pub ram_gb: u32,
@@ -47,7 +52,10 @@ impl NodeSetupConfig {
         if path.exists() {
             // replace the inline fs::read/serde_json with helper (keeps behavior identical)
             let cfg = Self::load_from_path(&path)?;
-            println!("⚙️  Worker setup cargado desde {}", path.display());
+            println!(
+                "Worker setup cargado desde {} (redacted)",
+                redacted_node_config_path_label(&path)
+            );
             return Ok(cfg);
         }
         Self::run_interactive(detected)
@@ -104,6 +112,7 @@ impl NodeSetupConfig {
         let storage_limit_gb = prompt_storage(suggested_storage_gb, d.disk_available_gb)?;
 
         let cfg = Self {
+            schema_version: NODE_CONFIG_SCHEMA_VERSION.to_string(),
             first_run_completed: true,
             cpu_cores: d.cpu_cores,
             ram_gb: d.ram_gb,
@@ -118,18 +127,22 @@ impl NodeSetupConfig {
 
         cfg.save()?; // keep persistence centralized
 
-        println!("\n✅ Configuración guardada en {}", config_path().display());
+        let path = config_path();
+        println!(
+            "\nConfiguracion guardada en {} (redacted)",
+            redacted_node_config_path_label(&path)
+        );
 
         Ok(cfg)
     }
 }
 
 fn config_path() -> PathBuf {
-    dirs::home_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join(".iamine")
-        .join("config")
-        .join("node_config.json")
+    default_node_config_path()
+}
+
+fn default_node_config_schema_version() -> String {
+    NODE_CONFIG_SCHEMA_VERSION.to_string()
 }
 
 fn calculate_limits(d: &DetectedHardware, level: &ContributionLevel) -> (u8, u32, u32) {
@@ -246,6 +259,7 @@ mod tests {
         let path = base.join("node_config.json");
 
         let cfg = NodeSetupConfig {
+            schema_version: NODE_CONFIG_SCHEMA_VERSION.to_string(),
             first_run_completed: true,
             cpu_cores: 8,
             ram_gb: 16,

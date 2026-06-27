@@ -5,6 +5,10 @@ use crate::model_backend_availability::{
 use crate::node_capability_snapshot::{
     capabilities_from_hardware_profile, LOCAL_DIAGNOSTIC_NODE_ID,
 };
+use crate::node_config_schema::{
+    default_node_config_path, inspect_node_config, NodeConfigState, NODE_CONFIG_FEATURE,
+    NODE_CONFIG_SCHEMA_VERSION,
+};
 use crate::worker_startup_policy::WorkerStartupPolicy;
 use iamine_hardware::{inspect_hardware, HardwareProfilerConfig, NodeHardwareProfile};
 use iamine_models::{
@@ -385,16 +389,54 @@ fn metrics_availability_check() -> DoctorCheck {
 
 fn config_schema_check() -> DoctorCheck {
     let mut details = details_map();
+    let inspection = inspect_node_config(&default_node_config_path());
+    details.insert("feature".to_string(), json!(NODE_CONFIG_FEATURE));
     details.insert(
-        "dependency".to_string(),
-        json!("NODE-CONFIG-SCHEMA-MIGRATION-001"),
+        "expected_schema_version".to_string(),
+        json!(NODE_CONFIG_SCHEMA_VERSION),
     );
+    details.insert("config_state".to_string(), json!(inspection.state.as_str()));
+    details.insert(
+        "detected_schema_version".to_string(),
+        json!(inspection.schema_version),
+    );
+    details.insert("path_redacted".to_string(), json!(true));
+    details.insert("migration_available".to_string(), json!(true));
+    details.insert("rollback_available".to_string(), json!(true));
 
-    DoctorCheck {
-        id: "node_config_schema",
-        status: DoctorStatus::Warn,
-        message: "versioned node config schema is not implemented yet".to_string(),
-        details,
+    match inspection.state {
+        NodeConfigState::Missing => DoctorCheck {
+            id: "node_config_schema",
+            status: DoctorStatus::Pass,
+            message: "versioned node config schema is available; no config file exists yet"
+                .to_string(),
+            details,
+        },
+        NodeConfigState::Current => DoctorCheck {
+            id: "node_config_schema",
+            status: DoctorStatus::Pass,
+            message: "node config uses the current schema".to_string(),
+            details,
+        },
+        NodeConfigState::Legacy => DoctorCheck {
+            id: "node_config_schema",
+            status: DoctorStatus::Warn,
+            message: "legacy node config can be migrated with iamine-node node config migrate"
+                .to_string(),
+            details,
+        },
+        NodeConfigState::Unsupported => DoctorCheck {
+            id: "node_config_schema",
+            status: DoctorStatus::Fail,
+            message: "node config schema_version is not supported".to_string(),
+            details,
+        },
+        NodeConfigState::InvalidJson => DoctorCheck {
+            id: "node_config_schema",
+            status: DoctorStatus::Fail,
+            message: "node config is not valid JSON".to_string(),
+            details,
+        },
     }
 }
 
