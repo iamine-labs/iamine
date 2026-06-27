@@ -1,5 +1,6 @@
 use crate::cluster_stress::ClusterStressConfig;
 use crate::hardware_cli::HardwareCliCommand;
+use crate::worker_lifecycle::WorkerLifecycleCommand;
 use libp2p::Multiaddr;
 
 #[allow(dead_code)]
@@ -8,6 +9,9 @@ pub(crate) enum NodeMode {
     Help,
     Daemon,
     Worker,
+    WorkerLifecycle {
+        command: WorkerLifecycleCommand,
+    },
     Relay,
     Client {
         peer: Option<Multiaddr>,
@@ -135,6 +139,7 @@ pub(crate) fn mode_label(mode: &NodeMode) -> &'static str {
         NodeMode::Help => "help",
         NodeMode::Daemon => "daemon",
         NodeMode::Worker => "worker",
+        NodeMode::WorkerLifecycle { .. } => "worker-lifecycle",
         NodeMode::Relay => "relay",
         NodeMode::Client { .. } => "client",
         NodeMode::Stress { .. } => "stress",

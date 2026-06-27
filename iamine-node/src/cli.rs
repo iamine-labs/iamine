@@ -1,6 +1,7 @@
 use crate::cluster_stress::ClusterStressConfig;
 use crate::hardware_cli::HardwareCliCommand;
 use crate::node_modes::{InferenceControlFlags, NodeMode};
+use crate::worker_lifecycle::{worker_lifecycle_usage, WorkerLifecycleCommand};
 use libp2p::Multiaddr;
 use std::str::FromStr;
 
@@ -33,6 +34,12 @@ pub(crate) fn parse_args_from(raw_args: Vec<String>) -> Result<NodeMode, String>
         Some("--help") | Some("-h") | Some("help") => Ok(NodeMode::Help),
         Some("--daemon") => Ok(NodeMode::Daemon),
         Some("--worker") | None => Ok(NodeMode::Worker),
+        Some("worker") => match args.get(2).map(|s| s.as_str()) {
+            Some("lifecycle") => Ok(NodeMode::WorkerLifecycle {
+                command: WorkerLifecycleCommand::from_args(&args[3..])?,
+            }),
+            _ => Err(worker_lifecycle_usage()),
+        },
         Some("--relay") => Ok(NodeMode::Relay),
         Some("models") => match args.get(2).map(|s| s.as_str()) {
             Some("catalog") => Ok(NodeMode::ModelsCatalog),
@@ -448,6 +455,10 @@ mod tests {
             NodeMode::Worker
         ));
         assert!(matches!(
+            parse_args_from(args(&["iamine-node", "worker", "lifecycle", "readiness"])),
+            Ok(NodeMode::WorkerLifecycle { .. })
+        ));
+        assert!(matches!(
             parse_args_from(args(&[
                 "iamine-node",
                 "--broadcast",
@@ -609,6 +620,33 @@ mod tests {
         let mode = parse_args_from(args(&["iamine-node", "lan", "doctor", "--help"]));
 
         assert!(matches!(mode, Ok(NodeMode::Help)));
+    }
+
+    #[test]
+    fn worker_lifecycle_cli_help_has_no_runtime_side_effect() {
+        let mode = parse_args_from(args(&["iamine-node", "worker", "lifecycle", "--help"]));
+
+        assert!(matches!(mode, Ok(NodeMode::Help)));
+    }
+
+    #[test]
+    fn cli_detects_worker_lifecycle_start_json_port() {
+        let mode = parse_args_from(args(&[
+            "iamine-node",
+            "worker",
+            "lifecycle",
+            "start",
+            "--port=4101",
+            "--json",
+        ]));
+
+        assert!(matches!(
+            mode,
+            Ok(NodeMode::WorkerLifecycle { command })
+                if command.action == crate::worker_lifecycle::WorkerLifecycleAction::Start
+                    && command.port == 4101
+                    && command.json
+        ));
     }
 
     #[test]

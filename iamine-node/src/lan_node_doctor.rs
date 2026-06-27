@@ -2,10 +2,11 @@ use crate::metrics_policy::{metrics_startup_decision, MetricsStartupDecision};
 use crate::model_backend_availability::{
     ModelBackendAvailabilityReason, ModelBackendAvailabilityStatus,
 };
-use crate::worker_startup_policy::WorkerStartupPolicy;
-use iamine_hardware::{
-    inspect_hardware, AcceleratorKind, HardwareProfilerConfig, NodeHardwareProfile,
+use crate::node_capability_snapshot::{
+    capabilities_from_hardware_profile, LOCAL_DIAGNOSTIC_NODE_ID,
 };
+use crate::worker_startup_policy::WorkerStartupPolicy;
+use iamine_hardware::{inspect_hardware, HardwareProfilerConfig, NodeHardwareProfile};
 use iamine_models::{
     build_model_catalog_entries, LicenseAcceptanceStore, ModelCatalogDownloadAction,
     ModelCatalogEntry, ModelNodeCapabilities, ModelRegistry, ModelStorage,
@@ -16,7 +17,6 @@ use std::collections::BTreeMap;
 use std::error::Error;
 
 const REPORT_SCHEMA_VERSION: &str = "1.0.0";
-const LOCAL_DIAGNOSTIC_NODE_ID: &str = "local";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -192,62 +192,13 @@ fn collect_model_catalog(hardware_profile: Option<&NodeHardwareProfile>) -> Cata
     let registry = ModelRegistry::new();
     let storage = ModelStorage::new();
     let acceptance = LicenseAcceptanceStore::new();
-    let capabilities = capabilities_from_hardware_profile(hardware_profile, &storage);
+    let capabilities =
+        capabilities_from_hardware_profile(LOCAL_DIAGNOSTIC_NODE_ID, hardware_profile, &storage);
     let entries = build_model_catalog_entries(&registry, &storage, &acceptance, &capabilities);
 
     CatalogDiagnostic {
         entries,
         capabilities,
-    }
-}
-
-fn capabilities_from_hardware_profile(
-    hardware_profile: Option<&NodeHardwareProfile>,
-    storage: &ModelStorage,
-) -> ModelNodeCapabilities {
-    let supported_models = storage.list_local_models();
-
-    let Some(profile) = hardware_profile else {
-        return ModelNodeCapabilities {
-            node_id: LOCAL_DIAGNOSTIC_NODE_ID.to_string(),
-            cpu_cores: 1,
-            ram_gb: 2,
-            gpu_type: None,
-            npu_type: None,
-            storage_available_gb: 0,
-            worker_slots: 1,
-            supported_models,
-            cpu_features: Vec::new(),
-            accelerator: "Unknown".to_string(),
-        };
-    };
-
-    let effective = &profile.static_profile.effective;
-    let accelerator = accelerator_label(effective.effective_accelerator).to_string();
-    let gpu_type = if effective.effective_accelerator == AcceleratorKind::Cpu
-        || effective.effective_accelerator == AcceleratorKind::Unknown
-    {
-        None
-    } else {
-        Some(accelerator.clone())
-    };
-
-    ModelNodeCapabilities {
-        node_id: LOCAL_DIAGNOSTIC_NODE_ID.to_string(),
-        cpu_cores: profile.static_profile.cpu.logical_cores.max(1),
-        ram_gb: profile.static_profile.memory.total_gb.max(2) as u32,
-        gpu_type,
-        npu_type: None,
-        storage_available_gb: profile
-            .static_profile
-            .storage
-            .available_bytes
-            .map(bytes_to_gb)
-            .unwrap_or(0) as u32,
-        worker_slots: effective.effective_worker_slots.max(1),
-        supported_models,
-        cpu_features: profile.static_profile.cpu.features.features.clone(),
-        accelerator,
     }
 }
 
@@ -553,18 +504,6 @@ fn backend_availability_reason_code(reason: ModelBackendAvailabilityReason) -> &
         ModelBackendAvailabilityReason::CpuFeatureIncompatible => "cpu_feature_incompatible",
         ModelBackendAvailabilityReason::LegacyCpuDaemonOnly => "legacy_cpu_daemon_only",
         ModelBackendAvailabilityReason::RealInferenceUnavailable => "real_inference_unavailable",
-    }
-}
-
-fn accelerator_label(accelerator: AcceleratorKind) -> &'static str {
-    match accelerator {
-        AcceleratorKind::Cpu => "CPU",
-        AcceleratorKind::Metal => "Metal",
-        AcceleratorKind::Cuda => "CUDA",
-        AcceleratorKind::Rocm => "ROCm",
-        AcceleratorKind::Vulkan => "Vulkan",
-        AcceleratorKind::Npu => "NPU",
-        AcceleratorKind::Unknown => "Unknown",
     }
 }
 
