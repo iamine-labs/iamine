@@ -689,22 +689,22 @@ mod tests {
 
     #[test]
     fn test_invalid_startup_resource_calculation_path() {
-        let error = crate::metrics_policy::compute_metrics_port(7001).unwrap_err();
+        let error = crate::metrics_policy::compute_metrics_port(u16::MAX).unwrap_err();
 
-        assert_eq!(error.operation, "worker_port_minus_base");
-        assert_eq!(error.operand_a, 7001);
-        assert_eq!(error.operand_b, 9000);
-        assert_eq!(error.reason, "worker_port_below_metrics_base");
+        assert_eq!(error.operation, "metrics_port_plus_offset");
+        assert_eq!(error.operand_a, 9090);
+        assert_eq!(error.operand_b, 56535);
+        assert_eq!(error.reason, "metrics_port_out_of_range");
     }
 
     #[test]
     fn test_worker_startup_overflow_emits_structured_error_code() {
         let trace_id = test_id("startup-overflow-test");
         let error = StartupMathError::new(
-            "worker_port_minus_base",
-            7001,
-            9000,
-            "worker_port_below_metrics_base",
+            "metrics_port_plus_offset",
+            9090,
+            56535,
+            "metrics_port_out_of_range",
         );
         let policy = ResourcePolicy {
             cpu_cores: 4,
@@ -719,7 +719,7 @@ mod tests {
             &trace_id,
             "node-test",
             "peer-test",
-            7001,
+            u16::MAX,
             &policy,
             4,
             4,

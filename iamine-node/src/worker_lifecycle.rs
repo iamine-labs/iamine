@@ -1,4 +1,6 @@
-use crate::metrics_policy::{metrics_startup_decision, MetricsStartupDecision};
+use crate::metrics_policy::{
+    allocate_metrics_port, metrics_startup_decision, MetricsStartupDecision,
+};
 use crate::model_backend_availability::{
     ModelBackendAvailabilityReason, ModelBackendAvailabilityStatus,
 };
@@ -324,8 +326,20 @@ fn metrics_check(port: u16) -> LifecycleCheck {
     details.insert("bind_probe".to_string(), json!("not_run"));
 
     match metrics_startup_decision(port) {
-        MetricsStartupDecision::StartMetrics { port } => {
-            details.insert("metrics_port".to_string(), json!(port));
+        MetricsStartupDecision::StartMetrics { port: metrics_port } => {
+            details.insert("metrics_port".to_string(), json!(metrics_port));
+            if let Ok(allocation) = allocate_metrics_port(port) {
+                details.insert(
+                    "allocation_strategy".to_string(),
+                    json!(allocation.strategy.as_str()),
+                );
+                details.insert(
+                    "allocation_offset".to_string(),
+                    json!(allocation
+                        .metrics_port
+                        .saturating_sub(allocation.worker_port)),
+                );
+            }
             details.insert(
                 "fallback_behavior".to_string(),
                 json!("start_metrics_server"),
@@ -580,9 +594,6 @@ fn backend_reason_code(reason: ModelBackendAvailabilityReason) -> &'static str {
 fn metrics_reason_code(reason: crate::metrics_policy::MetricsUnavailableReason) -> &'static str {
     match reason {
         crate::metrics_policy::MetricsUnavailableReason::InvalidPortMath => "invalid_port_math",
-        crate::metrics_policy::MetricsUnavailableReason::PortBelowBase => {
-            "worker_port_below_metrics_base"
-        }
         crate::metrics_policy::MetricsUnavailableReason::PortInUse => "port_in_use",
         crate::metrics_policy::MetricsUnavailableReason::DisabledByConfig => "disabled_by_config",
         crate::metrics_policy::MetricsUnavailableReason::Unknown => "unknown",
@@ -676,6 +687,30 @@ mod tests {
         assert!(!report.runtime_effects.worker_started);
         assert!(!report.runtime_effects.p2p_started);
         assert!(!report.runtime_effects.model_load_started);
+        let metrics_check = match report
+            .checks
+            .iter()
+            .find(|check| check.id == "metrics_policy")
+        {
+            Some(check) => check,
+            None => {
+                assert_eq!("metrics_policy_check", "missing");
+                return;
+            }
+        };
+        assert_eq!(metrics_check.status, LifecycleStatus::Pass);
+        assert_eq!(
+            metrics_check.details.get("metrics_port"),
+            Some(&json!(14101))
+        );
+        assert_eq!(
+            metrics_check.details.get("allocation_strategy"),
+            Some(&json!("low_worker_port_offset"))
+        );
+        assert_eq!(
+            metrics_check.details.get("allocation_offset"),
+            Some(&json!(10000))
+        );
         assert!(report.steps.iter().any(|step| match &step.command {
             Some(command) => command == &worker_start_command(4101),
             None => false,
