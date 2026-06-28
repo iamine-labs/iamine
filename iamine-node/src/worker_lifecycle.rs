@@ -17,6 +17,9 @@ use std::error::Error;
 
 const REPORT_SCHEMA_VERSION: &str = "1.0.0";
 const LAN_BETA_PACKAGE_SCRIPT: &str = "scripts/lan-beta-package.sh";
+const LAN_BETA_INSTALLER_FEATURE: &str = "LAN-BETA-INSTALLER-POLISH-001";
+const LAN_BETA_INSTALL_SCRIPT: &str = "scripts/install.sh";
+const LAN_BETA_UNINSTALL_SCRIPT: &str = "scripts/uninstall.sh";
 const LAN_BETA_SYSTEMD_TEMPLATE: &str = "packaging/lan-beta/systemd/iamine-worker@.service";
 const LAN_BETA_LAUNCHD_TEMPLATE: &str =
     "packaging/lan-beta/launchd/com.iamine.worker.plist.template";
@@ -409,7 +412,16 @@ fn service_manager_check(action: WorkerLifecycleAction) -> LifecycleCheck {
         "packaging_dependency".to_string(),
         json!("LAN-INFERENCE-BETA-PACKAGING-001"),
     );
+    details.insert(
+        "installer_feature".to_string(),
+        json!(LAN_BETA_INSTALLER_FEATURE),
+    );
     details.insert("package_script".to_string(), json!(LAN_BETA_PACKAGE_SCRIPT));
+    details.insert("install_script".to_string(), json!(LAN_BETA_INSTALL_SCRIPT));
+    details.insert(
+        "uninstall_script".to_string(),
+        json!(LAN_BETA_UNINSTALL_SCRIPT),
+    );
     details.insert(
         "systemd_template".to_string(),
         json!(LAN_BETA_SYSTEMD_TEMPLATE),
@@ -460,7 +472,21 @@ fn lifecycle_steps(action: WorkerLifecycleAction, port: u16) -> Vec<LifecycleSte
             LifecycleStep {
                 id: "verify_binary",
                 message: "build or install the iamine-node binary for this host".to_string(),
-                command: Some(vec!["cargo".to_string(), "build".to_string(), "-p".to_string(), "iamine-node".to_string()]),
+                command: Some(vec![
+                    "cargo".to_string(),
+                    "build".to_string(),
+                    "-p".to_string(),
+                    "iamine-node".to_string(),
+                ]),
+            },
+            LifecycleStep {
+                id: "preview_installer",
+                message: "preview the generated package installer before copying files"
+                    .to_string(),
+                command: Some(vec![
+                    "<package>/scripts/install.sh".to_string(),
+                    "--dry-run".to_string(),
+                ]),
             },
             LifecycleStep {
                 id: "run_readiness",
@@ -768,10 +794,31 @@ mod tests {
             service_check.details.get("package_script"),
             Some(&json!(LAN_BETA_PACKAGE_SCRIPT))
         );
+        assert_eq!(
+            service_check.details.get("installer_feature"),
+            Some(&json!(LAN_BETA_INSTALLER_FEATURE))
+        );
+        assert_eq!(
+            service_check.details.get("install_script"),
+            Some(&json!(LAN_BETA_INSTALL_SCRIPT))
+        );
+        assert_eq!(
+            service_check.details.get("uninstall_script"),
+            Some(&json!(LAN_BETA_UNINSTALL_SCRIPT))
+        );
         assert!(!report.runtime_effects.worker_started);
         assert!(!report.runtime_effects.worker_stopped);
         assert!(report.steps.iter().any(|step| match &step.command {
             Some(command) => command == &vec![LAN_BETA_PACKAGE_SCRIPT.to_string()],
+            None => false,
+        }));
+        assert!(report.steps.iter().any(|step| match &step.command {
+            Some(command) =>
+                command
+                    == &vec![
+                        "<package>/scripts/install.sh".to_string(),
+                        "--dry-run".to_string(),
+                    ],
             None => false,
         }));
     }

@@ -143,6 +143,12 @@ Closed prework that reduces Milestone 1 risk:
 
 This prework is technical evidence, not formal completion of the LAN beta.
 
+## v0.8 Beta Distribution Hardening
+
+| Feature | State | Primary owner | Dependencies | Goal |
+| --- | --- | --- | --- | --- |
+| LAN-BETA-INSTALLER-POLISH-001 | ACTIVE | Packaging / operations | v0.8 LAN beta closeout | Provide safer install and uninstall helpers for controlled beta testing on additional PCs. |
+
 ## Milestone 2 - v0.9 Private Testnet
 
 | Feature | State | Primary owner | Dependencies | Goal |

@@ -1,27 +1,39 @@
 # IAMINE LAN Beta Package
 
-This directory contains static artifacts for the IAMINE installable LAN beta.
-They are templates and package inputs; they do not install, start, stop, or
-restart services by themselves.
+This directory contains artifacts for the IAMINE installable LAN beta. Package
+assembly does not install, start, stop, or restart services. The generated
+package includes explicit install and uninstall helpers for operator-controlled
+prefixes.
 
 ## Clean Install
 
 1. Build or obtain a LAN beta package.
 2. Review `manifest.json` and the included checksum.
-3. Copy `bin/iamine-node` to an operator-controlled binary location.
-4. Run:
+3. Preview the install:
 
 ```bash
-iamine-node --help
-iamine-node lan doctor --json
-iamine-node worker lifecycle readiness --json
+scripts/install.sh --prefix "$HOME/.local" --dry-run
 ```
 
-5. Configure a service manager manually if desired.
-6. Start the worker explicitly:
+4. Install into an operator-controlled prefix:
 
 ```bash
-iamine-node --worker --port=9000
+scripts/install.sh --prefix "$HOME/.local" --yes
+```
+
+5. Run:
+
+```bash
+$HOME/.local/bin/iamine-node --help
+$HOME/.local/bin/iamine-node lan doctor --json
+$HOME/.local/bin/iamine-node worker lifecycle readiness --json
+```
+
+6. Configure a service manager manually if desired.
+7. Start the worker explicitly:
+
+```bash
+$HOME/.local/bin/iamine-node --worker --port=9000
 ```
 
 ## Service Templates
@@ -41,16 +53,20 @@ launchd/com.iamine.worker.plist.template
 The launchd file intentionally uses placeholders. Replace them outside the
 repository before loading the service.
 
+The install helper copies templates for review only. It does not load, enable,
+start, stop, or restart service-manager units.
+
 ## Upgrade
 
 1. Create a new package.
 2. Keep the currently working binary available for rollback.
-3. Run `iamine-node --help` and `iamine-node lan doctor --json` from the new
+3. Run `scripts/install.sh --prefix <prefix> --dry-run`.
+4. Run `iamine-node --help` and `iamine-node lan doctor --json` from the new
    binary before replacing the running binary.
-4. Stop the operator-managed worker through the configured service manager.
-5. Replace the binary.
-6. Restart the worker.
-7. Run readiness and LAN beta smokes.
+5. Stop the operator-managed worker through the configured service manager.
+6. Replace the binary.
+7. Restart the worker.
+8. Run readiness and LAN beta smokes.
 
 ## Rollback
 
@@ -66,6 +82,23 @@ iamine-node lan doctor --json
 
 Rollback must not rewrite model stores, node configuration, hardware profiles,
 or logs.
+
+## Uninstall
+
+Preview:
+
+```bash
+scripts/uninstall.sh --prefix "$HOME/.local" --dry-run
+```
+
+Remove package-installed files:
+
+```bash
+scripts/uninstall.sh --prefix "$HOME/.local" --yes
+```
+
+Uninstall preserves models, node configuration, hardware profiles, logs, and
+service-manager state.
 
 ## Privacy
 

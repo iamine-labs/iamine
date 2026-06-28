@@ -6,8 +6,9 @@ usage() {
 Usage:
   scripts/lan-beta-package.sh [--output-dir DIR] [--binary PATH] [--no-build]
 
-Creates a portable IAMINE LAN beta package under DIR without installing,
-starting, stopping, or configuring services.
+Creates a portable IAMINE LAN beta package under DIR. The package includes
+operator-run install/uninstall helpers, but package assembly itself does not
+install, start, stop, or configure services.
 USAGE
 }
 
@@ -81,12 +82,17 @@ mkdir -p "$PACKAGE_ROOT/docs"
 mkdir -p "$PACKAGE_ROOT/env"
 mkdir -p "$PACKAGE_ROOT/systemd"
 mkdir -p "$PACKAGE_ROOT/launchd"
+mkdir -p "$PACKAGE_ROOT/scripts"
 
 cp "$BINARY_PATH" "$PACKAGE_ROOT/bin/iamine-node"
 cp packaging/lan-beta/README.md "$PACKAGE_ROOT/docs/README.md"
+cp packaging/lan-beta/INSTALL.md "$PACKAGE_ROOT/docs/INSTALL.md"
 cp packaging/lan-beta/env/iamine-worker.env.example "$PACKAGE_ROOT/env/iamine-worker.env.example"
 cp packaging/lan-beta/systemd/iamine-worker@.service "$PACKAGE_ROOT/systemd/iamine-worker@.service"
 cp packaging/lan-beta/launchd/com.iamine.worker.plist.template "$PACKAGE_ROOT/launchd/com.iamine.worker.plist.template"
+cp packaging/lan-beta/scripts/install.sh "$PACKAGE_ROOT/scripts/install.sh"
+cp packaging/lan-beta/scripts/uninstall.sh "$PACKAGE_ROOT/scripts/uninstall.sh"
+chmod 0755 "$PACKAGE_ROOT/scripts/install.sh" "$PACKAGE_ROOT/scripts/uninstall.sh"
 
 hash_file() {
   if command -v shasum >/dev/null 2>&1; then
@@ -104,7 +110,8 @@ BINARY_SHA256="$(hash_file "$PACKAGE_ROOT/bin/iamine-node")"
 cat > "$PACKAGE_ROOT/manifest.json" <<MANIFEST
 {
   "schema_version": "1.0.0",
-  "feature": "LAN-INFERENCE-BETA-PACKAGING-001",
+  "feature": "LAN-BETA-INSTALLER-POLISH-001",
+  "base_feature": "LAN-INFERENCE-BETA-PACKAGING-001",
   "package": "${PACKAGE_NAME}",
   "git_commit": "${GIT_SHA}",
   "git_tree": "${GIT_TREE}",
@@ -114,10 +121,20 @@ cat > "$PACKAGE_ROOT/manifest.json" <<MANIFEST
   },
   "artifacts": [
     "docs/README.md",
+    "docs/INSTALL.md",
     "env/iamine-worker.env.example",
     "systemd/iamine-worker@.service",
-    "launchd/com.iamine.worker.plist.template"
+    "launchd/com.iamine.worker.plist.template",
+    "scripts/install.sh",
+    "scripts/uninstall.sh"
   ],
+  "installer": {
+    "install": "scripts/install.sh",
+    "uninstall": "scripts/uninstall.sh",
+    "requires_confirmation": true,
+    "supports_dry_run": true,
+    "service_activation": "manual"
+  },
   "runtime_effects": {
     "worker_started": false,
     "worker_stopped": false,
