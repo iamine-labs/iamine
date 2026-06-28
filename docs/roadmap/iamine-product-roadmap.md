@@ -52,9 +52,9 @@ development lifecycle. Only one next product feature should normally be
 
 ## Current Position
 
-IAMINE has closed Milestone 0. Hardware profiling, model compatibility, model
-admission gates, LAN discovery, and real legacy CPU inference have reduced
-later product risk. Milestone 1 is in its final LAN beta release gate.
+IAMINE has closed Milestone 0 and Milestone 1. Hardware profiling, model
+compatibility, model admission gates, LAN discovery, real legacy CPU inference,
+and LAN beta release-gate QA have reduced later product risk.
 
 Roadmap incorporation is controlled by:
 
@@ -128,7 +128,7 @@ docs/roadmap/v0.7-foundations-closeout.md
 | LAN-REAL-INFERENCE-RESILIENCE-001 | CLOSED | `iamine-node`, `iamine-network`, `iamine-models` owner modules | Worker lifecycle, LAN CLI | Recover safely from worker, network, backend, and model failures during real inference. |
 | V1-OBSERVABILITY-001 (LAN phase) | CLOSED | `iamine-network`, `iamine-node` observability | Beta contract | Emit correlated operational evidence for setup, dispatch, execution, recovery, and result delivery. |
 | LAN-INFERENCE-BETA-PACKAGING-001 | CLOSED | Packaging / operations | Doctor, config migration, lifecycle | Deliver clean install, upgrade, service integration, and rollback artifacts. |
-| LAN-INFERENCE-BETA-001 | ACTIVE | Architecture / QA release gate | All Milestone 1 features | Validate and publish the installable LAN beta. |
+| LAN-INFERENCE-BETA-001 | CLOSED | Architecture / QA release gate | All Milestone 1 features | Validate and publish the installable LAN beta. |
 
 Milestone gate: clean installation, one to five workers, real inference,
 diagnostics, reboot recovery, failure recovery, upgrade, and rollback.
