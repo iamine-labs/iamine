@@ -48,9 +48,12 @@ The package script creates an output directory and archive containing:
 ```text
 bin/iamine-node
 docs/README.md
+docs/INSTALL.md
 env/iamine-worker.env.example
 systemd/iamine-worker@.service
 launchd/com.iamine.worker.plist.template
+scripts/install.sh
+scripts/uninstall.sh
 manifest.json
 ```
 
@@ -78,6 +81,16 @@ Packaging artifacts must not:
 Operators install service templates explicitly through their OS tooling. The
 templates are examples, not privileged installers.
 
+## Installer Polish Extension
+
+`LAN-BETA-INSTALLER-POLISH-001` adds package-local install and uninstall
+helpers. They copy the binary, docs, environment example, manifest, and service
+templates into an operator-selected prefix. They require `--yes` for writes and
+support `--dry-run` for previews.
+
+The helpers do not load or enable service-manager units and do not start,
+stop, or restart workers. Service activation remains manual.
+
 ## Upgrade and Rollback
 
 Upgrade is a staged binary replacement:
@@ -100,6 +113,7 @@ path.
 Local validation must prove:
 
 - package assembly succeeds into an isolated output path;
+- installer dry-run and temporary-prefix install/uninstall succeed;
 - manifest JSON is parseable;
 - manifest paths are relative and privacy-safe;
 - service templates contain placeholders or generic system paths only;
