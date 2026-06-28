@@ -14,8 +14,8 @@ Reconciled against:
 
 ```text
 branch: origin/develop
-commit: 2dd9132eed357a5a0cc5bdd83437a4f80750a029
-date: 2026-06-24
+commit: 27bc8df3365294a0883c5319b765e4a1ffd53981
+date: 2026-06-28
 ```
 
 ## State Vocabulary
@@ -54,8 +54,7 @@ development lifecycle. Only one next product feature should normally be
 
 IAMINE has closed Milestone 0. Hardware profiling, model compatibility, model
 admission gates, LAN discovery, and real legacy CPU inference have reduced
-later product risk. The v0.7 foundations are now sufficient to start the
-installable LAN beta contract line.
+later product risk. Milestone 1 is in its final LAN beta release gate.
 
 Roadmap incorporation is controlled by:
 
@@ -128,8 +127,8 @@ docs/roadmap/v0.7-foundations-closeout.md
 | LAN-INFERENCE-CLI-001 | CLOSED | `iamine-node` CLI wiring | Catalog selection, beta contract | Expose the supported LAN inference workflow with clear errors and no hidden startup. |
 | LAN-REAL-INFERENCE-RESILIENCE-001 | CLOSED | `iamine-node`, `iamine-network`, `iamine-models` owner modules | Worker lifecycle, LAN CLI | Recover safely from worker, network, backend, and model failures during real inference. |
 | V1-OBSERVABILITY-001 (LAN phase) | CLOSED | `iamine-network`, `iamine-node` observability | Beta contract | Emit correlated operational evidence for setup, dispatch, execution, recovery, and result delivery. |
-| LAN-INFERENCE-BETA-PACKAGING-001 | ACTIVE | Packaging / operations | Doctor, config migration, lifecycle | Deliver clean install, upgrade, service integration, and rollback artifacts. |
-| LAN-INFERENCE-BETA-001 | PROPOSED | Architecture / QA release gate | All Milestone 1 features | Validate and publish the installable LAN beta. |
+| LAN-INFERENCE-BETA-PACKAGING-001 | CLOSED | Packaging / operations | Doctor, config migration, lifecycle | Deliver clean install, upgrade, service integration, and rollback artifacts. |
+| LAN-INFERENCE-BETA-001 | ACTIVE | Architecture / QA release gate | All Milestone 1 features | Validate and publish the installable LAN beta. |
 
 Milestone gate: clean installation, one to five workers, real inference,
 diagnostics, reboot recovery, failure recovery, upgrade, and rollback.
