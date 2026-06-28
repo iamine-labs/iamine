@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.iamine.worker.__WORKER_PORT__</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>__IAMINE_NODE_BINARY__</string>
+    <string>--worker</string>
+    <string>--port=__WORKER_PORT__</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>IAMINE_LOG_FORMAT</key>
+    <string>ndjson</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <false/>
+  <key>KeepAlive</key>
+  <false/>
+  <key>StandardOutPath</key>
+  <string>__LOG_PATH__</string>
+  <key>StandardErrorPath</key>
+  <string>__LOG_PATH__</string>
+</dict>
+</plist>
