@@ -127,8 +127,8 @@ docs/roadmap/v0.7-foundations-closeout.md
 | WORKER-METRICS-PORT-ALLOCATION-001 | CLOSED | `iamine-node` metrics | Config schema | Allocate deterministic, non-conflicting metrics endpoints for multiple workers. |
 | LAN-INFERENCE-CLI-001 | CLOSED | `iamine-node` CLI wiring | Catalog selection, beta contract | Expose the supported LAN inference workflow with clear errors and no hidden startup. |
 | LAN-REAL-INFERENCE-RESILIENCE-001 | CLOSED | `iamine-node`, `iamine-network`, `iamine-models` owner modules | Worker lifecycle, LAN CLI | Recover safely from worker, network, backend, and model failures during real inference. |
-| V1-OBSERVABILITY-001 (LAN phase) | ACTIVE | `iamine-network`, `iamine-node` observability | Beta contract | Emit correlated operational evidence for setup, dispatch, execution, recovery, and result delivery. |
-| LAN-INFERENCE-BETA-PACKAGING-001 | PROPOSED | Packaging / operations | Doctor, config migration, lifecycle | Deliver clean install, upgrade, service integration, and rollback artifacts. |
+| V1-OBSERVABILITY-001 (LAN phase) | CLOSED | `iamine-network`, `iamine-node` observability | Beta contract | Emit correlated operational evidence for setup, dispatch, execution, recovery, and result delivery. |
+| LAN-INFERENCE-BETA-PACKAGING-001 | ACTIVE | Packaging / operations | Doctor, config migration, lifecycle | Deliver clean install, upgrade, service integration, and rollback artifacts. |
 | LAN-INFERENCE-BETA-001 | PROPOSED | Architecture / QA release gate | All Milestone 1 features | Validate and publish the installable LAN beta. |
 
 Milestone gate: clean installation, one to five workers, real inference,

@@ -732,6 +732,23 @@ POST-MERGE FAILURE
 NEXT FEATURES BLOCKED
 ```
 
+## Phase 15A - Milestone QA
+
+After the final feature of any product milestone merges, run an exhaustive
+milestone QA pass before declaring the milestone closed.
+
+The milestone QA pass must cover:
+
+- every feature delivered inside the milestone;
+- existing behavior that those features depend on;
+- install, upgrade, rollback, diagnostics, runtime, and field paths promised
+  by the milestone gate;
+- regression checks against the prior milestone baseline;
+- local, TS140, and Proxmox/R5500 evidence when the milestone touches runtime,
+  workers, networking, inference, packaging, or operations.
+
+Do not mark a milestone closed from feature-local validation alone.
+
 ## Phase 16 - Operational Normalization
 
 When a feature changed or stopped real processes:

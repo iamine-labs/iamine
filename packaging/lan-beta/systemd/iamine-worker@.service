@@ -1,0 +1,14 @@
+[Unit]
+Description=IAMINE LAN beta worker on port %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/iamine/worker-%i.env
+ExecStart=/opt/iamine/bin/iamine-node --worker --port=%i
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -16,6 +16,10 @@ use std::collections::BTreeMap;
 use std::error::Error;
 
 const REPORT_SCHEMA_VERSION: &str = "1.0.0";
+const LAN_BETA_PACKAGE_SCRIPT: &str = "scripts/lan-beta-package.sh";
+const LAN_BETA_SYSTEMD_TEMPLATE: &str = "packaging/lan-beta/systemd/iamine-worker@.service";
+const LAN_BETA_LAUNCHD_TEMPLATE: &str =
+    "packaging/lan-beta/launchd/com.iamine.worker.plist.template";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -397,17 +401,29 @@ fn process_observation_check() -> LifecycleCheck {
 
 fn service_manager_check(action: WorkerLifecycleAction) -> LifecycleCheck {
     let mut details = details_map();
-    details.insert("service_manager".to_string(), json!("not_configured"));
+    details.insert(
+        "service_manager".to_string(),
+        json!("templates_available_not_installed"),
+    );
     details.insert(
         "packaging_dependency".to_string(),
         json!("LAN-INFERENCE-BETA-PACKAGING-001"),
+    );
+    details.insert("package_script".to_string(), json!(LAN_BETA_PACKAGE_SCRIPT));
+    details.insert(
+        "systemd_template".to_string(),
+        json!(LAN_BETA_SYSTEMD_TEMPLATE),
+    );
+    details.insert(
+        "launchd_template".to_string(),
+        json!(LAN_BETA_LAUNCHD_TEMPLATE),
     );
     details.insert("action".to_string(), json!(action.as_str()));
 
     LifecycleCheck {
         id: "service_manager",
         status: LifecycleStatus::Manual,
-        message: "service manager integration is deferred to packaging; use explicit commands"
+        message: "service manager templates are available; installation remains explicit"
             .to_string(),
         details,
     }
@@ -435,6 +451,12 @@ fn runtime_effects_check() -> LifecycleCheck {
 fn lifecycle_steps(action: WorkerLifecycleAction, port: u16) -> Vec<LifecycleStep> {
     match action {
         WorkerLifecycleAction::Install => vec![
+            LifecycleStep {
+                id: "create_package",
+                message: "assemble portable LAN beta artifacts without installing services"
+                    .to_string(),
+                command: Some(vec![LAN_BETA_PACKAGE_SCRIPT.to_string()]),
+            },
             LifecycleStep {
                 id: "verify_binary",
                 message: "build or install the iamine-node binary for this host".to_string(),
@@ -713,6 +735,43 @@ mod tests {
         );
         assert!(report.steps.iter().any(|step| match &step.command {
             Some(command) => command == &worker_start_command(4101),
+            None => false,
+        }));
+    }
+
+    #[test]
+    fn worker_lifecycle_reports_packaging_artifacts_without_installing_service() {
+        let command = WorkerLifecycleCommand {
+            action: WorkerLifecycleAction::Install,
+            json: true,
+            port: 9000,
+        };
+        let report = build_worker_lifecycle_report(&command);
+        let service_check = match report
+            .checks
+            .iter()
+            .find(|check| check.id == "service_manager")
+        {
+            Some(check) => check,
+            None => {
+                assert_eq!("service_manager_check", "missing");
+                return;
+            }
+        };
+
+        assert_eq!(service_check.status, LifecycleStatus::Manual);
+        assert_eq!(
+            service_check.details.get("service_manager"),
+            Some(&json!("templates_available_not_installed"))
+        );
+        assert_eq!(
+            service_check.details.get("package_script"),
+            Some(&json!(LAN_BETA_PACKAGE_SCRIPT))
+        );
+        assert!(!report.runtime_effects.worker_started);
+        assert!(!report.runtime_effects.worker_stopped);
+        assert!(report.steps.iter().any(|step| match &step.command {
+            Some(command) => command == &vec![LAN_BETA_PACKAGE_SCRIPT.to_string()],
             None => false,
         }));
     }
