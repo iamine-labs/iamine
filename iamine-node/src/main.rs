@@ -56,6 +56,7 @@ mod node_capability_snapshot;
 mod node_config_schema;
 mod node_identity;
 mod node_modes;
+mod p2p_protocol_version_runtime;
 mod path_config;
 mod peer_tracker;
 mod protocol;
@@ -208,6 +209,7 @@ use network_config::{
     RuntimeNetworkIntervals,
 };
 use node_modes::{mode_label, InferenceControlFlags, NodeMode};
+use p2p_protocol_version_runtime::handle_identify_event;
 use task_protocol::{TaskRequest, TaskResponse};
 use usage::print_usage;
 use worker_assignment_runtime::{handle_worker_task_assignment, WorkerTaskAssignment};
@@ -3010,6 +3012,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         &mut human_log_throttle,
                     )
                     .await;
+                }
+
+                SwarmEvent::Behaviour(IaMineEvent::Identify(event)) => {
+                    handle_identify_event(&mut swarm, event);
                 }
 
                 SwarmEvent::Behaviour(IaMineEvent::Kademlia(kad::Event::RoutingUpdated { peer, .. })) => {

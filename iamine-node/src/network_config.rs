@@ -8,7 +8,9 @@ use crate::{
     emit_controller_pubsub_ready, emit_controller_topic_subscribed_event,
     emit_worker_pubsub_ready_event, emit_worker_topic_subscribed_event, log_observability_event,
 };
-use iamine_network::LogLevel;
+use iamine_network::{
+    LogLevel, IAMINE_IDENTIFY_PROTOCOL, IAMINE_RESULT_PROTOCOL, IAMINE_TASK_PROTOCOL,
+};
 use libp2p::{
     gossipsub, identify, kad, mdns, ping,
     request_response::{self, cbor, Event as RREvent, ProtocolSupport},
@@ -197,19 +199,19 @@ pub(crate) fn build_iamine_behaviour(
     IamineBehaviour {
         ping: ping::Behaviour::default(),
         identify: identify::Behaviour::new(identify::Config::new(
-            "/iamine/1.0".to_string(),
+            IAMINE_IDENTIFY_PROTOCOL.to_string(),
             id_keys.public(),
         )),
         request_response: cbor::Behaviour::<TaskRequest, TaskResponse>::new(
             [(
-                StreamProtocol::new("/iamine/task/1.0"),
+                StreamProtocol::new(IAMINE_TASK_PROTOCOL),
                 ProtocolSupport::Full,
             )],
             request_response::Config::default(),
         ),
         result_response: cbor::Behaviour::<TaskResultRequest, TaskResultResponse>::new(
             [(
-                StreamProtocol::new("/iamine/result/1.0"),
+                StreamProtocol::new(IAMINE_RESULT_PROTOCOL),
                 ProtocolSupport::Full,
             )],
             request_response::Config::default(),

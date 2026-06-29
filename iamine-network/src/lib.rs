@@ -18,6 +18,7 @@ pub mod prompt_analyzer;
 mod prompt_routing_hints;
 mod prompt_semantic_signals;
 mod prompt_task_detection;
+pub mod protocol_version;
 pub mod result_validator;
 pub mod scheduler;
 pub mod semantic_eval;
@@ -80,6 +81,11 @@ pub use prompt_analyzer::{
 pub use prompt_analyzer::{
     analyze_prompt_semantics, analyze_prompt_semantics_with_context, estimate_confidence,
     SemanticRoutingDecision, Signal, SignalKind, CONFIDENCE_THRESHOLD,
+};
+pub use protocol_version::{
+    peer_protocol_decision, PeerProtocolDecision, IAMINE_IDENTIFY_PROTOCOL,
+    IAMINE_PROTOCOL_VERSION, IAMINE_RESULT_PROTOCOL, IAMINE_TASK_PROTOCOL,
+    REQUIRED_STREAM_PROTOCOLS,
 };
 pub use result_validator::{validate_result, ResultStatus};
 pub use scheduler::IntelligentScheduler;
