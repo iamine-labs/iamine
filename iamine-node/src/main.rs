@@ -206,7 +206,8 @@ use model_display_policy::*;
 use network_config::{
     bootnodes_from_runtime_args, build_gossipsub_behaviour, build_iamine_behaviour, build_kademlia,
     cluster_status_wait_ms_from_env, dial_configured_bootnodes, listen_addr_for_mode,
-    register_local_broadcast_pubsub_topics, swarm_idle_connection_timeout, IaMineEvent,
+    register_local_broadcast_pubsub_topics, start_wan_peer_discovery,
+    swarm_idle_connection_timeout, wan_peers_from_runtime_args, IaMineEvent,
     RuntimeNetworkIntervals,
 };
 use node_modes::{mode_label, InferenceControlFlags, NodeMode};
@@ -459,6 +460,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
 
     let bootnodes = bootnodes_from_runtime_args(&args)?;
+    let wan_peers = wan_peers_from_runtime_args(&args)?;
     let runtime_startup = prepare_runtime_startup_config(
         &mode,
         &args,
@@ -679,6 +681,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
         println!(
             "🔗 Bootnodes configurados: {} dial attempt(s), {} routed peer(s)",
             bootnode_summary.dial_attempts, bootnode_summary.routed_peers
+        );
+    }
+    let wan_discovery_summary = start_wan_peer_discovery(&mut swarm, &wan_peers)?;
+    if wan_discovery_summary.dial_attempts > 0 {
+        println!(
+            "🌍 WAN discovery configurado: {} dial attempt(s), {} routed peer(s), {} bootstrap query",
+            wan_discovery_summary.dial_attempts,
+            wan_discovery_summary.routed_peers,
+            wan_discovery_summary.bootstrap_queries
         );
     }
 

@@ -1,3 +1,4 @@
+mod arg_values;
 pub mod bootnode;
 pub mod cluster;
 pub mod error_codes;
@@ -31,6 +32,7 @@ pub mod task_manager;
 pub mod task_state;
 pub mod task_trace;
 pub mod topology;
+pub mod wan_discovery;
 
 pub use bootnode::{
     bootnodes_from_args, bootnodes_from_values, Bootnode, BootnodeArgError, BootnodeParseError,
@@ -117,3 +119,7 @@ pub use task_trace::{
     record_task_attempt, record_task_latency, task_trace, TaskTrace, TaskTraceManager,
 };
 pub use topology::{NetworkTopology, SharedNetworkTopology};
+pub use wan_discovery::{
+    wan_peer_seeds_from_args, wan_peer_seeds_from_values, WanPeerArgError, WanPeerSeed,
+    WanPeerSeedParseError, MAX_WAN_DISCOVERY_PEERS, WAN_PEER_FLAG,
+};

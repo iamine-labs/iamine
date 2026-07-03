@@ -9,8 +9,9 @@ use crate::{
     emit_worker_pubsub_ready_event, emit_worker_topic_subscribed_event, log_observability_event,
 };
 use iamine_network::{
-    bootnodes_from_args, Bootnode, BootnodeArgError, LogLevel, IAMINE_IDENTIFY_PROTOCOL,
-    IAMINE_RESULT_PROTOCOL, IAMINE_TASK_PROTOCOL,
+    bootnodes_from_args, wan_peer_seeds_from_args, Bootnode, BootnodeArgError, LogLevel,
+    WanPeerArgError, WanPeerSeed, IAMINE_IDENTIFY_PROTOCOL, IAMINE_RESULT_PROTOCOL,
+    IAMINE_TASK_PROTOCOL,
 };
 use libp2p::{
     gossipsub, identify, kad, mdns, ping,
@@ -168,6 +169,12 @@ pub(crate) fn bootnodes_from_runtime_args(
     bootnodes_from_args(args)
 }
 
+pub(crate) fn wan_peers_from_runtime_args(
+    args: &[String],
+) -> Result<Vec<WanPeerSeed>, WanPeerArgError> {
+    wan_peer_seeds_from_args(args)
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct BootnodeDialSummary {
     pub(crate) dial_attempts: usize,
@@ -194,6 +201,46 @@ pub(crate) fn dial_configured_bootnodes(
             .dial(bootnode.dial_addr().clone())
             .map_err(|_| "bootnode dial setup failed".to_string())?;
         summary.dial_attempts += 1;
+    }
+
+    Ok(summary)
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct WanDiscoverySummary {
+    pub(crate) dial_attempts: usize,
+    pub(crate) routed_peers: usize,
+    pub(crate) bootstrap_queries: usize,
+}
+
+pub(crate) fn start_wan_peer_discovery(
+    swarm: &mut Swarm<IamineBehaviour>,
+    peers: &[WanPeerSeed],
+) -> Result<WanDiscoverySummary, String> {
+    let mut summary = WanDiscoverySummary::default();
+
+    for peer in peers {
+        let peer_id = peer.peer_id();
+        swarm
+            .behaviour_mut()
+            .kademlia
+            .add_address(&peer_id, peer.routing_addr().clone());
+        swarm.behaviour_mut().gossipsub.add_explicit_peer(&peer_id);
+        summary.routed_peers += 1;
+
+        swarm
+            .dial(peer.dial_addr().clone())
+            .map_err(|_| "WAN peer discovery dial setup failed".to_string())?;
+        summary.dial_attempts += 1;
+    }
+
+    if !peers.is_empty() {
+        swarm
+            .behaviour_mut()
+            .kademlia
+            .bootstrap()
+            .map_err(|_| "WAN peer discovery bootstrap setup failed".to_string())?;
+        summary.bootstrap_queries = 1;
     }
 
     Ok(summary)
@@ -384,6 +431,16 @@ mod tests {
         let args = vec!["iamine-node".to_string(), "--bootnode=bad".to_string()];
 
         assert!(bootnodes_from_runtime_args(&args).is_err());
+    }
+
+    #[test]
+    fn wan_peer_args_require_peer_qualified_addresses() {
+        let args = vec![
+            "iamine-node".to_string(),
+            "--wan-peer=/ip4/127.0.0.1/tcp/9001".to_string(),
+        ];
+
+        assert!(wan_peers_from_runtime_args(&args).is_err());
     }
 
     #[test]
