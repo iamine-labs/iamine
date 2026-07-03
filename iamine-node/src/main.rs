@@ -204,8 +204,8 @@ use gossipsub_message_runtime::{
 use mode_dispatch::handle_pre_network_mode;
 use model_display_policy::*;
 use network_config::{
-    bootnode_addresses_from_args, build_gossipsub_behaviour, build_iamine_behaviour,
-    build_kademlia, cluster_status_wait_ms_from_env, listen_addr_for_mode,
+    bootnodes_from_runtime_args, build_gossipsub_behaviour, build_iamine_behaviour, build_kademlia,
+    cluster_status_wait_ms_from_env, dial_configured_bootnodes, listen_addr_for_mode,
     register_local_broadcast_pubsub_topics, swarm_idle_connection_timeout, IaMineEvent,
     RuntimeNetworkIntervals,
 };
@@ -458,6 +458,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         unreachable!("control plane mode should have returned before runtime startup");
     }
 
+    let bootnodes = bootnodes_from_runtime_args(&args)?;
     let runtime_startup = prepare_runtime_startup_config(
         &mode,
         &args,
@@ -673,9 +674,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
         println!("   Scheduler: activo (bid window 1.5s)\n");
     }
 
-    for addr in bootnode_addresses_from_args(&args) {
-        println!("🔗 Conectando a bootnode: {}", addr);
-        let _ = swarm.dial(addr);
+    let bootnode_summary = dial_configured_bootnodes(&mut swarm, &bootnodes)?;
+    if bootnode_summary.dial_attempts > 0 {
+        println!(
+            "🔗 Bootnodes configurados: {} dial attempt(s), {} routed peer(s)",
+            bootnode_summary.dial_attempts, bootnode_summary.routed_peers
+        );
     }
 
     if matches!(mode, NodeMode::Worker) {

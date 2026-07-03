@@ -9,12 +9,13 @@ use crate::{
     emit_worker_pubsub_ready_event, emit_worker_topic_subscribed_event, log_observability_event,
 };
 use iamine_network::{
-    LogLevel, IAMINE_IDENTIFY_PROTOCOL, IAMINE_RESULT_PROTOCOL, IAMINE_TASK_PROTOCOL,
+    bootnodes_from_args, Bootnode, BootnodeArgError, LogLevel, IAMINE_IDENTIFY_PROTOCOL,
+    IAMINE_RESULT_PROTOCOL, IAMINE_TASK_PROTOCOL,
 };
 use libp2p::{
     gossipsub, identify, kad, mdns, ping,
     request_response::{self, cbor, Event as RREvent, ProtocolSupport},
-    swarm::NetworkBehaviour,
+    swarm::{NetworkBehaviour, Swarm},
     Multiaddr, PeerId, StreamProtocol,
 };
 use serde_json::Map;
@@ -161,11 +162,41 @@ pub(crate) fn listen_addr_for_mode(mode: &NodeMode, worker_port: u16) -> Result<
     addr.parse::<Multiaddr>().map_err(|error| error.to_string())
 }
 
-pub(crate) fn bootnode_addresses_from_args(args: &[String]) -> Vec<Multiaddr> {
-    args.iter()
-        .filter_map(|arg| arg.strip_prefix("--bootnode="))
-        .filter_map(|addr| addr.parse::<Multiaddr>().ok())
-        .collect()
+pub(crate) fn bootnodes_from_runtime_args(
+    args: &[String],
+) -> Result<Vec<Bootnode>, BootnodeArgError> {
+    bootnodes_from_args(args)
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct BootnodeDialSummary {
+    pub(crate) dial_attempts: usize,
+    pub(crate) routed_peers: usize,
+}
+
+pub(crate) fn dial_configured_bootnodes(
+    swarm: &mut Swarm<IamineBehaviour>,
+    bootnodes: &[Bootnode],
+) -> Result<BootnodeDialSummary, String> {
+    let mut summary = BootnodeDialSummary::default();
+
+    for bootnode in bootnodes {
+        if let Some(peer_id) = bootnode.peer_id() {
+            swarm
+                .behaviour_mut()
+                .kademlia
+                .add_address(&peer_id, bootnode.routing_addr().clone());
+            swarm.behaviour_mut().gossipsub.add_explicit_peer(&peer_id);
+            summary.routed_peers += 1;
+        }
+
+        swarm
+            .dial(bootnode.dial_addr().clone())
+            .map_err(|_| "bootnode dial setup failed".to_string())?;
+        summary.dial_attempts += 1;
+    }
+
+    Ok(summary)
 }
 
 pub(crate) fn build_gossipsub_behaviour(
@@ -327,15 +358,32 @@ mod tests {
     }
 
     #[test]
-    fn bootnode_args_parse_valid_and_ignore_invalid() {
+    fn bootnode_args_parse_repeated_forms() {
         let args = vec![
             "iamine-node".to_string(),
             "--bootnode=/ip4/127.0.0.1/tcp/9999".to_string(),
-            "--bootnode=bad".to_string(),
+            "--bootnode".to_string(),
+            "/ip4/127.0.0.1/tcp/9001".to_string(),
         ];
-        let addresses = bootnode_addresses_from_args(&args);
-        assert_eq!(addresses.len(), 1);
-        assert_eq!(addresses[0].to_string(), "/ip4/127.0.0.1/tcp/9999");
+        let result = bootnodes_from_runtime_args(&args);
+        assert!(result.is_ok(), "bootnodes should parse: {result:?}");
+        let bootnodes: Vec<Bootnode> = result.ok().into_iter().flatten().collect();
+        assert_eq!(bootnodes.len(), 2);
+        assert_eq!(
+            bootnodes[0].dial_addr().to_string(),
+            "/ip4/127.0.0.1/tcp/9999"
+        );
+        assert_eq!(
+            bootnodes[1].dial_addr().to_string(),
+            "/ip4/127.0.0.1/tcp/9001"
+        );
+    }
+
+    #[test]
+    fn bootnode_args_reject_invalid_values() {
+        let args = vec!["iamine-node".to_string(), "--bootnode=bad".to_string()];
+
+        assert!(bootnodes_from_runtime_args(&args).is_err());
     }
 
     #[test]
