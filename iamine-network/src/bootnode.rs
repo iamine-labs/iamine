@@ -1,3 +1,4 @@
+use crate::arg_values::{values_from_repeated_flag, RepeatedFlagArgError};
 use libp2p::{multiaddr::Protocol, Multiaddr, PeerId};
 use std::collections::HashSet;
 use std::error::Error;
@@ -104,28 +105,9 @@ impl Error for BootnodeArgError {
 }
 
 pub fn bootnodes_from_args(args: &[String]) -> Result<Vec<Bootnode>, BootnodeArgError> {
-    let mut values = Vec::new();
-    let mut index = 0;
-
-    while index < args.len() {
-        let arg = &args[index];
-        if arg == BOOTNODE_FLAG {
-            let Some(value) = args.get(index + 1) else {
-                return Err(BootnodeArgError::MissingAddress);
-            };
-            if value.starts_with("--") {
-                return Err(BootnodeArgError::MissingAddress);
-            }
-            values.push(value.as_str());
-            index += 2;
-            continue;
-        }
-
-        if let Some(value) = arg.strip_prefix("--bootnode=") {
-            values.push(value);
-        }
-        index += 1;
-    }
+    let values = values_from_repeated_flag(args, BOOTNODE_FLAG).map_err(|error| match error {
+        RepeatedFlagArgError::MissingValue => BootnodeArgError::MissingAddress,
+    })?;
 
     bootnodes_from_values(values)
 }
@@ -154,14 +136,14 @@ where
     Ok(bootnodes)
 }
 
-fn trailing_peer_id(addr: &Multiaddr) -> Option<PeerId> {
+pub(crate) fn trailing_peer_id(addr: &Multiaddr) -> Option<PeerId> {
     match addr.iter().last() {
         Some(Protocol::P2p(peer_id)) => Some(peer_id),
         _ => None,
     }
 }
 
-fn routing_addr_without_trailing_peer(addr: &Multiaddr) -> Multiaddr {
+pub(crate) fn routing_addr_without_trailing_peer(addr: &Multiaddr) -> Multiaddr {
     let protocols: Vec<_> = addr.iter().collect();
     let strip_peer = matches!(protocols.last(), Some(Protocol::P2p(_)));
     if !strip_peer {
