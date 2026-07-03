@@ -14,8 +14,8 @@ Reconciled against:
 
 ```text
 branch: origin/develop
-commit: 27bc8df3365294a0883c5319b765e4a1ffd53981
-date: 2026-06-28
+commit: 80da92f7c49e2f8de6c40c887a296d5e4421cd59
+date: 2026-07-02
 ```
 
 ## State Vocabulary
@@ -52,9 +52,10 @@ development lifecycle. Only one next product feature should normally be
 
 ## Current Position
 
-IAMINE has closed Milestone 0 and Milestone 1. Hardware profiling, model
-compatibility, model admission gates, LAN discovery, real legacy CPU inference,
-and LAN beta release-gate QA have reduced later product risk.
+IAMINE has closed Milestone 0 and Milestone 1. Milestone 2 has started with
+P2P protocol versioning closed. Hardware profiling, model compatibility, model
+admission gates, LAN discovery, real legacy CPU inference, LAN beta release-gate
+QA, and explicit P2P compatibility checks have reduced later product risk.
 
 Roadmap incorporation is controlled by:
 
@@ -153,7 +154,7 @@ This prework is technical evidence, not formal completion of the LAN beta.
 
 | Feature | State | Primary owner | Dependencies | Goal |
 | --- | --- | --- | --- | --- |
-| P2P-PROTOCOL-VERSIONING-001 | ACTIVE | `iamine-network` | v0.8 | Negotiate compatible protocol versions and reject unsupported peers explicitly. |
+| P2P-PROTOCOL-VERSIONING-001 | CLOSED | `iamine-network` | v0.8 | Negotiate compatible protocol versions and reject unsupported peers explicitly. |
 | NODE-IDENTITY-REGISTRATION-001 | PROPOSED | Identity / `iamine-node` | Protocol versioning | Register durable operator-controlled node identities without exposing host secrets. |
 | BOOTNODE-DISCOVERY-001 | PROPOSED | `iamine-network` | Protocol versioning | Bootstrap peers from an explicit, replaceable bootnode set. |
 | WAN-PEER-DISCOVERY-001 | PROPOSED | `iamine-network` | Bootnodes | Discover authorized peers across physical networks. |
@@ -302,19 +303,17 @@ features.
 ## Immediate Sequence
 
 ```text
-PRODUCT-ROADMAP-CONSOLIDATION-001
--> MODEL-BETA-REGISTRY-METADATA-001
--> MODEL-CATALOG-SELECTION-CLI-001
--> close Milestone 0 / v0.7
--> LAN-INFERENCE-BETA-CONTRACT-001
--> begin Milestone 1 / v0.8
--> LAN-NODE-DOCTOR-001
--> LAN-WORKER-LIFECYCLE-001
--> NODE-CONFIG-SCHEMA-MIGRATION-001
--> WORKER-METRICS-PORT-ALLOCATION-001
--> LAN-INFERENCE-CLI-001
--> LAN-REAL-INFERENCE-RESILIENCE-001
--> V1-OBSERVABILITY-001 (LAN phase)
+P2P-PROTOCOL-VERSIONING-001
+-> NODE-IDENTITY-REGISTRATION-001
+-> BOOTNODE-DISCOVERY-001
+-> WAN-PEER-DISCOVERY-001
+-> NAT-TRAVERSAL-RELAY-001
+-> TESTNET-NODE-ADMISSION-001
+-> P2P-SECURE-TRANSPORT-POLICY-001
+-> REMOTE-INFERENCE-API-001
+-> TESTNET-OBSERVABILITY-001
+-> TESTNET-LOAD-RESILIENCE-001
+-> PRIVATE-TESTNET-RELEASE-001
 ```
 
 Each arrow still requires the complete canonical feature lifecycle. A roadmap
