@@ -158,7 +158,7 @@ This prework is technical evidence, not formal completion of the LAN beta.
 | --- | --- | --- | --- | --- |
 | P2P-PROTOCOL-VERSIONING-001 | CLOSED | `iamine-network` | v0.8 | Negotiate compatible protocol versions and reject unsupported peers explicitly. |
 | NODE-IDENTITY-REGISTRATION-001 | CLOSED | Identity / `iamine-node` | Protocol versioning | Register durable operator-controlled node identities without exposing host secrets. |
-| BOOTNODE-DISCOVERY-001 | LOCAL VALIDATION PASSED | `iamine-network` | Protocol versioning | Bootstrap peers from an explicit, replaceable bootnode set. |
+| BOOTNODE-DISCOVERY-001 | READY FOR MERGE REVIEW | `iamine-network` | Protocol versioning | Bootstrap peers from an explicit, replaceable bootnode set. |
 | WAN-PEER-DISCOVERY-001 | PROPOSED | `iamine-network` | Bootnodes | Discover authorized peers across physical networks. |
 | NAT-TRAVERSAL-RELAY-001 | PROPOSED | `iamine-network` | WAN discovery | Connect constrained nodes through bounded NAT traversal and relay policy. |
 | TESTNET-NODE-ADMISSION-001 | PROPOSED | Identity / network policy | Node registration | Admit only authorized private-testnet nodes. |
