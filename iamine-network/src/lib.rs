@@ -1,3 +1,4 @@
+pub mod bootnode;
 pub mod cluster;
 pub mod error_codes;
 pub mod expression_parser;
@@ -31,6 +32,10 @@ pub mod task_state;
 pub mod task_trace;
 pub mod topology;
 
+pub use bootnode::{
+    bootnodes_from_args, bootnodes_from_values, Bootnode, BootnodeArgError, BootnodeParseError,
+    BOOTNODE_FLAG, MAX_BOOTNODE_ADDRESSES,
+};
 pub use cluster::{relation_for_cluster, Cluster, ClusterRelation, ClusterTier};
 pub use error_codes::{
     is_standard_error_code, MODEL_LOAD_FAILED_001, MODEL_UNSUPPORTED_HW_002,
