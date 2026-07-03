@@ -55,6 +55,7 @@ mod network_event_observability;
 mod node_capability_snapshot;
 mod node_config_schema;
 mod node_identity;
+mod node_identity_cli;
 mod node_modes;
 mod p2p_protocol_version_runtime;
 mod path_config;

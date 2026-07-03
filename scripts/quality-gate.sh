@@ -225,6 +225,7 @@ architecture_guard() {
   local large_fail_files=""
   while IFS= read -r file; do
     [ "$file" = "$main_file" ] && continue
+    [ -f "$file" ] || continue
     local lines
     lines="$(line_count "$file")"
     if [ "$lines" -gt "$large_file_fail_lines" ]; then

@@ -14,7 +14,7 @@ Reconciled against:
 
 ```text
 branch: origin/develop
-commit: 80da92f7c49e2f8de6c40c887a296d5e4421cd59
+commit: cc3084d51a9288224541088e9b4489c345946128
 date: 2026-07-02
 ```
 
@@ -53,9 +53,11 @@ development lifecycle. Only one next product feature should normally be
 ## Current Position
 
 IAMINE has closed Milestone 0 and Milestone 1. Milestone 2 has started with
-P2P protocol versioning closed. Hardware profiling, model compatibility, model
-admission gates, LAN discovery, real legacy CPU inference, LAN beta release-gate
-QA, and explicit P2P compatibility checks have reduced later product risk.
+P2P protocol versioning closed and node identity registration locally
+validated. Hardware profiling, model compatibility, model admission gates, LAN
+discovery, real legacy CPU inference, LAN beta release-gate QA, explicit P2P
+compatibility checks, and durable local node identity controls have reduced
+later product risk.
 
 Roadmap incorporation is controlled by:
 
@@ -155,7 +157,7 @@ This prework is technical evidence, not formal completion of the LAN beta.
 | Feature | State | Primary owner | Dependencies | Goal |
 | --- | --- | --- | --- | --- |
 | P2P-PROTOCOL-VERSIONING-001 | CLOSED | `iamine-network` | v0.8 | Negotiate compatible protocol versions and reject unsupported peers explicitly. |
-| NODE-IDENTITY-REGISTRATION-001 | PROPOSED | Identity / `iamine-node` | Protocol versioning | Register durable operator-controlled node identities without exposing host secrets. |
+| NODE-IDENTITY-REGISTRATION-001 | LOCAL VALIDATION PASSED | Identity / `iamine-node` | Protocol versioning | Register durable operator-controlled node identities without exposing host secrets. |
 | BOOTNODE-DISCOVERY-001 | PROPOSED | `iamine-network` | Protocol versioning | Bootstrap peers from an explicit, replaceable bootnode set. |
 | WAN-PEER-DISCOVERY-001 | PROPOSED | `iamine-network` | Bootnodes | Discover authorized peers across physical networks. |
 | NAT-TRAVERSAL-RELAY-001 | PROPOSED | `iamine-network` | WAN discovery | Connect constrained nodes through bounded NAT traversal and relay policy. |
@@ -303,8 +305,7 @@ features.
 ## Immediate Sequence
 
 ```text
-P2P-PROTOCOL-VERSIONING-001
--> NODE-IDENTITY-REGISTRATION-001
+NODE-IDENTITY-REGISTRATION-001
 -> BOOTNODE-DISCOVERY-001
 -> WAN-PEER-DISCOVERY-001
 -> NAT-TRAVERSAL-RELAY-001

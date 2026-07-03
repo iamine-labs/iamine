@@ -3,9 +3,9 @@ use crate::{
     cluster_stress_cli::run_cluster_stress_cli, code_quality::run_code_quality_checks,
     hardware_cli::run_hardware_cli, lan_node_doctor::run_lan_node_doctor,
     model_selector_cli::ModelSelectorCLI, node_config_schema::run_node_config_cli,
-    node_identity::NodeIdentity, prompt_task_label, quality_gate::run_release_validation,
-    regression_runner::run_default_regression_suite, security_checks::run_security_checks,
-    tasks_cli, worker_lifecycle::run_worker_lifecycle_cli,
+    node_identity::NodeIdentity, node_identity_cli::run_node_identity_cli, prompt_task_label,
+    quality_gate::run_release_validation, regression_runner::run_default_regression_suite,
+    security_checks::run_security_checks, tasks_cli, worker_lifecycle::run_worker_lifecycle_cli,
 };
 use iamine_models::{
     InstallResult, ModelCatalogDownloadAction, ModelInstaller, ModelNodeCapabilities,
@@ -32,6 +32,7 @@ pub(crate) fn is_control_plane_mode(mode: &NodeMode) -> bool {
             | NodeMode::ClusterStress { .. }
             | NodeMode::Hardware { .. }
             | NodeMode::NodeConfig { .. }
+            | NodeMode::NodeIdentity { .. }
             | NodeMode::LanDoctor { .. }
             | NodeMode::WorkerLifecycle { .. }
     )
@@ -114,6 +115,11 @@ pub(crate) async fn handle_pre_network_mode(
 
         NodeMode::NodeConfig { command } => {
             run_node_config_cli(command)?;
+            Ok(true)
+        }
+
+        NodeMode::NodeIdentity { command } => {
+            run_node_identity_cli(command)?;
             Ok(true)
         }
 
@@ -509,6 +515,13 @@ mod tests {
             command: crate::hardware_cli::HardwareCliCommand::Inspect {
                 json: false,
                 dynamic: false,
+            }
+        }));
+        assert!(is_control_plane_mode(&NodeMode::NodeIdentity {
+            command: crate::node_identity_cli::NodeIdentityCommand {
+                action: crate::node_identity_cli::NodeIdentityAction::Status,
+                json: false,
+                path: None,
             }
         }));
         assert!(is_control_plane_mode(&NodeMode::LanDoctor {

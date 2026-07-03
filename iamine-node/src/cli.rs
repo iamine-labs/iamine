@@ -3,6 +3,7 @@ use crate::cluster_stress::ClusterStressConfig;
 use crate::hardware_cli::HardwareCliCommand;
 use crate::lan_inference_cli::{lan_usage, parse_lan_infer_args};
 use crate::node_config_schema::{node_config_usage, NodeConfigCommand};
+use crate::node_identity_cli::{node_identity_usage, NodeIdentityCommand};
 use crate::node_modes::{InferenceControlFlags, NodeMode};
 use crate::worker_lifecycle::{worker_lifecycle_usage, WorkerLifecycleCommand};
 use libp2p::Multiaddr;
@@ -210,7 +211,10 @@ pub(crate) fn parse_args_from(raw_args: Vec<String>) -> Result<NodeMode, String>
             Some("config") => Ok(NodeMode::NodeConfig {
                 command: NodeConfigCommand::from_args(&args[3..])?,
             }),
-            _ => Err(node_config_usage()),
+            Some("identity") => Ok(NodeMode::NodeIdentity {
+                command: NodeIdentityCommand::from_args(&args[3..])?,
+            }),
+            _ => Err(format!("{}\n{}", node_config_usage(), node_identity_usage())),
         },
 
         Some("nodes") => Ok(NodeMode::Nodes),
@@ -472,6 +476,10 @@ mod tests {
             Ok(NodeMode::Hardware { .. })
         ));
         assert!(matches!(
+            parse_args_from(args(&["iamine-node", "node", "identity", "status"])),
+            Ok(NodeMode::NodeIdentity { .. })
+        ));
+        assert!(matches!(
             parse_args_from(args(&["iamine-node", "lan", "doctor"])),
             Ok(NodeMode::LanDoctor {
                 json: false,
@@ -672,6 +680,28 @@ mod tests {
                     && command.path.as_deref()
                         == Some(std::path::Path::new("/tmp/iamine-node-config.json"))
                     && command.yes
+                    && command.json
+        ));
+    }
+
+    #[test]
+    fn cli_detects_node_identity_init_json_path() {
+        let mode = parse_args_from(args(&[
+            "iamine-node",
+            "node",
+            "identity",
+            "init",
+            "--path",
+            "/tmp/iamine-node-key",
+            "--json",
+        ]));
+
+        assert!(matches!(
+            mode,
+            Ok(NodeMode::NodeIdentity { command })
+                if command.action == crate::node_identity_cli::NodeIdentityAction::Init
+                    && command.path.as_deref()
+                        == Some(std::path::Path::new("/tmp/iamine-node-key"))
                     && command.json
         ));
     }
