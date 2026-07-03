@@ -147,13 +147,13 @@ This prework is technical evidence, not formal completion of the LAN beta.
 
 | Feature | State | Primary owner | Dependencies | Goal |
 | --- | --- | --- | --- | --- |
-| LAN-BETA-INSTALLER-POLISH-001 | ACTIVE | Packaging / operations | v0.8 LAN beta closeout | Provide safer install and uninstall helpers for controlled beta testing on additional PCs. |
+| LAN-BETA-INSTALLER-POLISH-001 | CLOSED | Packaging / operations | v0.8 LAN beta closeout | Provide safer install and uninstall helpers for controlled beta testing on additional PCs. |
 
 ## Milestone 2 - v0.9 Private Testnet
 
 | Feature | State | Primary owner | Dependencies | Goal |
 | --- | --- | --- | --- | --- |
-| P2P-PROTOCOL-VERSIONING-001 | PROPOSED | `iamine-network` | v0.8 | Negotiate compatible protocol versions and reject unsupported peers explicitly. |
+| P2P-PROTOCOL-VERSIONING-001 | ACTIVE | `iamine-network` | v0.8 | Negotiate compatible protocol versions and reject unsupported peers explicitly. |
 | NODE-IDENTITY-REGISTRATION-001 | PROPOSED | Identity / `iamine-node` | Protocol versioning | Register durable operator-controlled node identities without exposing host secrets. |
 | BOOTNODE-DISCOVERY-001 | PROPOSED | `iamine-network` | Protocol versioning | Bootstrap peers from an explicit, replaceable bootnode set. |
 | WAN-PEER-DISCOVERY-001 | PROPOSED | `iamine-network` | Bootnodes | Discover authorized peers across physical networks. |
