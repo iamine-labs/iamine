@@ -53,11 +53,11 @@ development lifecycle. Only one next product feature should normally be
 ## Current Position
 
 IAMINE has closed Milestone 0 and Milestone 1. Milestone 2 has started with
-P2P protocol versioning, node identity registration, and bootnode discovery
-closed. Hardware profiling, model compatibility, model admission gates, LAN
-discovery, real legacy CPU inference, LAN beta release-gate QA, explicit P2P
-compatibility checks, and durable local node identity controls have reduced
-later product risk.
+P2P protocol versioning, node identity registration, bootnode discovery, and WAN
+peer discovery closed. Hardware profiling, model compatibility, model admission
+gates, LAN discovery, real legacy CPU inference, LAN beta release-gate QA,
+explicit P2P compatibility checks, and durable local node identity controls have
+reduced later product risk.
 
 Roadmap incorporation is controlled by:
 
@@ -159,7 +159,7 @@ This prework is technical evidence, not formal completion of the LAN beta.
 | P2P-PROTOCOL-VERSIONING-001 | CLOSED | `iamine-network` | v0.8 | Negotiate compatible protocol versions and reject unsupported peers explicitly. |
 | NODE-IDENTITY-REGISTRATION-001 | CLOSED | Identity / `iamine-node` | Protocol versioning | Register durable operator-controlled node identities without exposing host secrets. |
 | BOOTNODE-DISCOVERY-001 | CLOSED | `iamine-network` | Protocol versioning | Bootstrap peers from an explicit, replaceable bootnode set. |
-| WAN-PEER-DISCOVERY-001 | PROPOSED | `iamine-network` | Bootnodes | Discover authorized peers across physical networks. |
+| WAN-PEER-DISCOVERY-001 | CLOSED | `iamine-network` | Bootnodes | Discover authorized peers across physical networks. |
 | NAT-TRAVERSAL-RELAY-001 | PROPOSED | `iamine-network` | WAN discovery | Connect constrained nodes through bounded NAT traversal and relay policy. |
 | TESTNET-NODE-ADMISSION-001 | PROPOSED | Identity / network policy | Node registration | Admit only authorized private-testnet nodes. |
 | P2P-SECURE-TRANSPORT-POLICY-001 | PROPOSED | `iamine-network` | Node identity | Define authenticated transport and downgrade rejection. |
@@ -305,8 +305,7 @@ features.
 ## Immediate Sequence
 
 ```text
-WAN-PEER-DISCOVERY-001
--> NAT-TRAVERSAL-RELAY-001
+NAT-TRAVERSAL-RELAY-001
 -> TESTNET-NODE-ADMISSION-001
 -> P2P-SECURE-TRANSPORT-POLICY-001
 -> REMOTE-INFERENCE-API-001
