@@ -206,9 +206,9 @@ use model_display_policy::*;
 use network_config::{
     bootnodes_from_runtime_args, build_gossipsub_behaviour, build_iamine_behaviour, build_kademlia,
     cluster_status_wait_ms_from_env, dial_configured_bootnodes, listen_addr_for_mode,
-    register_local_broadcast_pubsub_topics, start_wan_peer_discovery,
-    swarm_idle_connection_timeout, wan_peers_from_runtime_args, IaMineEvent,
-    RuntimeNetworkIntervals,
+    nat_relay_policy_from_runtime_args, register_local_broadcast_pubsub_topics,
+    start_nat_relay_policy, start_wan_peer_discovery, swarm_idle_connection_timeout,
+    wan_peers_from_runtime_args, IaMineEvent, RuntimeNetworkIntervals,
 };
 use node_modes::{mode_label, InferenceControlFlags, NodeMode};
 use p2p_protocol_version_runtime::handle_identify_event;
@@ -461,6 +461,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let bootnodes = bootnodes_from_runtime_args(&args)?;
     let wan_peers = wan_peers_from_runtime_args(&args)?;
+    let nat_relay_policy = nat_relay_policy_from_runtime_args(&args)?;
     let runtime_startup = prepare_runtime_startup_config(
         &mode,
         &args,
@@ -690,6 +691,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
             wan_discovery_summary.dial_attempts,
             wan_discovery_summary.routed_peers,
             wan_discovery_summary.bootstrap_queries
+        );
+    }
+    let nat_relay_summary = start_nat_relay_policy(&mut swarm, &nat_relay_policy)?;
+    if nat_relay_summary.policy_enabled {
+        println!(
+            "NAT relay policy configurada: operator-configured, {} dial attempt(s), {} routed relay peer(s)",
+            nat_relay_summary.dial_attempts,
+            nat_relay_summary.routed_peers
         );
     }
 
