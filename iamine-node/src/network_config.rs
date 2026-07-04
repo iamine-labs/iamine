@@ -9,9 +9,9 @@ use crate::{
     emit_worker_pubsub_ready_event, emit_worker_topic_subscribed_event, log_observability_event,
 };
 use iamine_network::{
-    bootnodes_from_args, wan_peer_seeds_from_args, Bootnode, BootnodeArgError, LogLevel,
-    WanPeerArgError, WanPeerSeed, IAMINE_IDENTIFY_PROTOCOL, IAMINE_RESULT_PROTOCOL,
-    IAMINE_TASK_PROTOCOL,
+    bootnodes_from_args, nat_relay_policy_from_args, wan_peer_seeds_from_args, Bootnode,
+    BootnodeArgError, LogLevel, NatRelayArgError, NatRelayPolicy, RelayPeerSeed, WanPeerArgError,
+    WanPeerSeed, IAMINE_IDENTIFY_PROTOCOL, IAMINE_RESULT_PROTOCOL, IAMINE_TASK_PROTOCOL,
 };
 use libp2p::{
     gossipsub, identify, kad, mdns, ping,
@@ -175,6 +175,12 @@ pub(crate) fn wan_peers_from_runtime_args(
     wan_peer_seeds_from_args(args)
 }
 
+pub(crate) fn nat_relay_policy_from_runtime_args(
+    args: &[String],
+) -> Result<NatRelayPolicy, NatRelayArgError> {
+    nat_relay_policy_from_args(args)
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct BootnodeDialSummary {
     pub(crate) dial_attempts: usize,
@@ -244,6 +250,53 @@ pub(crate) fn start_wan_peer_discovery(
     }
 
     Ok(summary)
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct NatRelayStartupSummary {
+    pub(crate) policy_enabled: bool,
+    pub(crate) dial_attempts: usize,
+    pub(crate) routed_peers: usize,
+}
+
+pub(crate) fn start_nat_relay_policy(
+    swarm: &mut Swarm<IamineBehaviour>,
+    policy: &NatRelayPolicy,
+) -> Result<NatRelayStartupSummary, String> {
+    let mut summary = NatRelayStartupSummary {
+        policy_enabled: policy.is_enabled(),
+        ..NatRelayStartupSummary::default()
+    };
+
+    if !policy.is_enabled() {
+        return Ok(summary);
+    }
+
+    register_relay_peers(swarm, policy.relay_peers(), &mut summary)?;
+    Ok(summary)
+}
+
+fn register_relay_peers(
+    swarm: &mut Swarm<IamineBehaviour>,
+    peers: &[RelayPeerSeed],
+    summary: &mut NatRelayStartupSummary,
+) -> Result<(), String> {
+    for peer in peers {
+        let peer_id = peer.peer_id();
+        swarm
+            .behaviour_mut()
+            .kademlia
+            .add_address(&peer_id, peer.routing_addr().clone());
+        swarm.behaviour_mut().gossipsub.add_explicit_peer(&peer_id);
+        summary.routed_peers += 1;
+
+        swarm
+            .dial(peer.dial_addr().clone())
+            .map_err(|_| "NAT relay peer dial setup failed".to_string())?;
+        summary.dial_attempts += 1;
+    }
+
+    Ok(())
 }
 
 pub(crate) fn build_gossipsub_behaviour(
@@ -441,6 +494,36 @@ mod tests {
         ];
 
         assert!(wan_peers_from_runtime_args(&args).is_err());
+    }
+
+    #[test]
+    fn relay_policy_args_require_explicit_operator_mode() {
+        let relay = PeerId::random();
+        let args = vec![
+            "iamine-node".to_string(),
+            format!("--relay-peer=/ip4/127.0.0.1/tcp/9101/p2p/{relay}"),
+        ];
+
+        assert!(nat_relay_policy_from_runtime_args(&args).is_err());
+    }
+
+    #[test]
+    fn relay_policy_args_parse_operator_mode() {
+        let relay = PeerId::random();
+        let args = vec![
+            "iamine-node".to_string(),
+            "--relay-policy=operator-configured".to_string(),
+            format!("--relay-peer=/ip4/127.0.0.1/tcp/9101/p2p/{relay}"),
+        ];
+
+        let result = nat_relay_policy_from_runtime_args(&args);
+        let Ok(policy) = result else {
+            assert!(result.is_ok(), "relay policy should parse");
+            return;
+        };
+
+        assert!(policy.is_enabled());
+        assert_eq!(policy.relay_peers().len(), 1);
     }
 
     #[test]

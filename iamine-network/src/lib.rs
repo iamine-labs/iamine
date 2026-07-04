@@ -11,6 +11,7 @@ pub mod model_karma;
 pub mod model_karma_store;
 pub mod model_metrics;
 pub mod model_policy;
+pub mod nat_relay;
 pub mod node_health;
 pub mod node_registry;
 pub mod node_scoring;
@@ -68,6 +69,11 @@ pub use model_karma_store::{
 };
 pub use model_metrics::ModelMetrics;
 pub use model_policy::{ModelPolicyEngine, PolicyRule};
+pub use nat_relay::{
+    nat_relay_policy_from_args, relay_peers_from_values, NatRelayArgError, NatRelayPolicy,
+    RelayPeerSeed, RelayPeerSeedParseError, RelayPolicyMode, RelayPolicyModeParseError,
+    MAX_RELAY_PEERS, RELAY_PEER_FLAG, RELAY_POLICY_FLAG,
+};
 pub use node_health::{health_policy_thresholds, NodeHealth};
 pub use node_registry::{
     NodeCapability, NodeCapabilityHeartbeat, NodeRegistry, SharedNodeRegistry,
