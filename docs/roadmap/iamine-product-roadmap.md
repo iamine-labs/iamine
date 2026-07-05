@@ -161,7 +161,7 @@ This prework is technical evidence, not formal completion of the LAN beta.
 | BOOTNODE-DISCOVERY-001 | CLOSED | `iamine-network` | Protocol versioning | Bootstrap peers from an explicit, replaceable bootnode set. |
 | WAN-PEER-DISCOVERY-001 | CLOSED | `iamine-network` | Bootnodes | Discover authorized peers across physical networks. |
 | NAT-TRAVERSAL-RELAY-001 | CLOSED | `iamine-network` | WAN discovery | Connect constrained nodes through bounded NAT traversal and relay policy. |
-| TESTNET-NODE-ADMISSION-001 | PROPOSED | Identity / network policy | Node registration | Admit only authorized private-testnet nodes. |
+| TESTNET-NODE-ADMISSION-001 | ACTIVE | Identity / network policy | Node registration | Admit only authorized private-testnet nodes. |
 | P2P-SECURE-TRANSPORT-POLICY-001 | PROPOSED | `iamine-network` | Node identity | Define authenticated transport and downgrade rejection. |
 | REMOTE-INFERENCE-API-001 | PROPOSED | API boundary / `iamine-node` wiring | Secure transport, admission | Accept bounded remote inference requests with explicit authentication and policy checks. |
 | TESTNET-OBSERVABILITY-001 | PROPOSED | Observability owner modules | Remote API, WAN network | Correlate cross-operator health, routing, execution, and failure evidence. |

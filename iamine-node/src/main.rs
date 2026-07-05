@@ -89,6 +89,7 @@ mod task_queue;
 mod task_scheduler;
 mod task_trace;
 mod tasks_cli;
+mod testnet_admission_runtime;
 mod usage;
 mod wallet;
 mod worker_assignment_runtime;
@@ -204,15 +205,18 @@ use gossipsub_message_runtime::{
 use mode_dispatch::handle_pre_network_mode;
 use model_display_policy::*;
 use network_config::{
-    bootnodes_from_runtime_args, build_gossipsub_behaviour, build_iamine_behaviour, build_kademlia,
-    cluster_status_wait_ms_from_env, dial_configured_bootnodes, listen_addr_for_mode,
-    nat_relay_policy_from_runtime_args, register_local_broadcast_pubsub_topics,
-    start_nat_relay_policy, start_wan_peer_discovery, swarm_idle_connection_timeout,
+    admitted_bootnodes_for_testnet_policy, admitted_nat_relay_policy_for_testnet_policy,
+    admitted_wan_peers_for_testnet_policy, bootnodes_from_runtime_args, build_gossipsub_behaviour,
+    build_iamine_behaviour, build_kademlia, cluster_status_wait_ms_from_env,
+    dial_configured_bootnodes, listen_addr_for_mode, nat_relay_policy_from_runtime_args,
+    register_local_broadcast_pubsub_topics, start_nat_relay_policy, start_wan_peer_discovery,
+    swarm_idle_connection_timeout, testnet_admission_policy_from_runtime_args,
     wan_peers_from_runtime_args, IaMineEvent, RuntimeNetworkIntervals,
 };
 use node_modes::{mode_label, InferenceControlFlags, NodeMode};
 use p2p_protocol_version_runtime::handle_identify_event;
 use task_protocol::{TaskRequest, TaskResponse};
+use testnet_admission_runtime::enforce_runtime_peer_admission;
 use usage::print_usage;
 use worker_assignment_runtime::{handle_worker_task_assignment, WorkerTaskAssignment};
 use worker_capability_advertisement::*;
@@ -462,6 +466,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let bootnodes = bootnodes_from_runtime_args(&args)?;
     let wan_peers = wan_peers_from_runtime_args(&args)?;
     let nat_relay_policy = nat_relay_policy_from_runtime_args(&args)?;
+    let testnet_admission_policy = testnet_admission_policy_from_runtime_args(&args)?;
+    let bootnodes = admitted_bootnodes_for_testnet_policy(&bootnodes, &testnet_admission_policy)?;
+    let wan_peers = admitted_wan_peers_for_testnet_policy(&wan_peers, &testnet_admission_policy)?;
+    let nat_relay_policy =
+        admitted_nat_relay_policy_for_testnet_policy(&nat_relay_policy, &testnet_admission_policy)?;
     let runtime_startup = prepare_runtime_startup_config(
         &mode,
         &args,
@@ -488,6 +497,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
             wallet.tasks_completed,
             wallet.reputation,
         );
+        if testnet_admission_policy.is_restricted() {
+            println!(
+                "   Testnet admission: {} ({} allowed peer(s))",
+                testnet_admission_policy.mode_name(),
+                testnet_admission_policy.allowed_peer_count()
+            );
+        }
     }
 
     // 6️⃣ MODEL INFRASTRUCTURE v0.6
@@ -2009,6 +2025,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         is_client,
                         connected_peer,
                         tasks_sent,
+                        &testnet_admission_policy,
                     );
                 }
 
@@ -2991,6 +3008,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 }
 
                 SwarmEvent::ConnectionEstablished { peer_id: pid, endpoint, .. } => {
+                    if !enforce_runtime_peer_admission(
+                        &mut swarm,
+                        &pid,
+                        &testnet_admission_policy,
+                        "connection_established",
+                    ) {
+                        continue;
+                    }
                     handle_connection_established(
                         &mut swarm,
                         pid,

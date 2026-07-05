@@ -9,9 +9,11 @@ use crate::{
     emit_worker_pubsub_ready_event, emit_worker_topic_subscribed_event, log_observability_event,
 };
 use iamine_network::{
-    bootnodes_from_args, nat_relay_policy_from_args, wan_peer_seeds_from_args, Bootnode,
-    BootnodeArgError, LogLevel, NatRelayArgError, NatRelayPolicy, RelayPeerSeed, WanPeerArgError,
-    WanPeerSeed, IAMINE_IDENTIFY_PROTOCOL, IAMINE_RESULT_PROTOCOL, IAMINE_TASK_PROTOCOL,
+    bootnodes_from_args, nat_relay_policy_from_args, testnet_admission_policy_from_args,
+    wan_peer_seeds_from_args, Bootnode, BootnodeArgError, LogLevel, NatRelayArgError,
+    NatRelayPolicy, RelayPeerSeed, TestnetAdmissionArgError, TestnetAdmissionPolicy,
+    WanPeerArgError, WanPeerSeed, IAMINE_IDENTIFY_PROTOCOL, IAMINE_RESULT_PROTOCOL,
+    IAMINE_TASK_PROTOCOL,
 };
 use libp2p::{
     gossipsub, identify, kad, mdns, ping,
@@ -179,6 +181,93 @@ pub(crate) fn nat_relay_policy_from_runtime_args(
     args: &[String],
 ) -> Result<NatRelayPolicy, NatRelayArgError> {
     nat_relay_policy_from_args(args)
+}
+
+pub(crate) fn testnet_admission_policy_from_runtime_args(
+    args: &[String],
+) -> Result<TestnetAdmissionPolicy, TestnetAdmissionArgError> {
+    testnet_admission_policy_from_args(args)
+}
+
+pub(crate) fn admitted_bootnodes_for_testnet_policy(
+    bootnodes: &[Bootnode],
+    policy: &TestnetAdmissionPolicy,
+) -> Result<Vec<Bootnode>, String> {
+    if !policy.is_restricted() {
+        return Ok(bootnodes.to_vec());
+    }
+
+    let mut admitted = Vec::with_capacity(bootnodes.len());
+    for bootnode in bootnodes {
+        ensure_optional_peer_admitted(
+            bootnode.peer_id(),
+            policy,
+            "bootnode",
+            "bootnode must end with /p2p/<peer_id> when testnet admission allowlist is enabled",
+        )?;
+        admitted.push(bootnode.clone());
+    }
+
+    Ok(admitted)
+}
+
+pub(crate) fn admitted_wan_peers_for_testnet_policy(
+    peers: &[WanPeerSeed],
+    policy: &TestnetAdmissionPolicy,
+) -> Result<Vec<WanPeerSeed>, String> {
+    if !policy.is_restricted() {
+        return Ok(peers.to_vec());
+    }
+
+    let mut admitted = Vec::with_capacity(peers.len());
+    for peer in peers {
+        ensure_peer_admitted(peer.peer_id(), policy, "WAN peer")?;
+        admitted.push(peer.clone());
+    }
+
+    Ok(admitted)
+}
+
+pub(crate) fn admitted_nat_relay_policy_for_testnet_policy(
+    relay_policy: &NatRelayPolicy,
+    admission_policy: &TestnetAdmissionPolicy,
+) -> Result<NatRelayPolicy, String> {
+    if !admission_policy.is_restricted() || !relay_policy.is_enabled() {
+        return Ok(relay_policy.clone());
+    }
+
+    let mut admitted_peers = Vec::with_capacity(relay_policy.relay_peers().len());
+    for peer in relay_policy.relay_peers() {
+        ensure_peer_admitted(peer.peer_id(), admission_policy, "relay peer")?;
+        admitted_peers.push(peer.clone());
+    }
+
+    Ok(NatRelayPolicy::operator_configured(admitted_peers))
+}
+
+fn ensure_optional_peer_admitted(
+    peer_id: Option<PeerId>,
+    policy: &TestnetAdmissionPolicy,
+    role: &str,
+    missing_identity_message: &str,
+) -> Result<(), String> {
+    let peer_id = peer_id.ok_or_else(|| missing_identity_message.to_string())?;
+    ensure_peer_admitted(peer_id, policy, role)
+}
+
+fn ensure_peer_admitted(
+    peer_id: PeerId,
+    policy: &TestnetAdmissionPolicy,
+    role: &str,
+) -> Result<(), String> {
+    if policy.allows_peer(&peer_id) {
+        Ok(())
+    } else {
+        Err(format!(
+            "{} is not authorized by the testnet admission allowlist",
+            role
+        ))
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -524,6 +613,88 @@ mod tests {
 
         assert!(policy.is_enabled());
         assert_eq!(policy.relay_peers().len(), 1);
+    }
+
+    #[test]
+    fn testnet_admission_args_default_to_open_policy() {
+        let result = testnet_admission_policy_from_runtime_args(&["iamine-node".to_string()]);
+        let Ok(policy) = result else {
+            assert!(result.is_ok(), "default admission policy should parse");
+            return;
+        };
+
+        assert!(!policy.is_restricted());
+        assert!(policy.allows_peer(&PeerId::random()));
+    }
+
+    #[test]
+    fn testnet_admission_filter_accepts_allowed_bootnode() {
+        let peer = PeerId::random();
+        let parsed = Bootnode::parse(&format!("/ip4/127.0.0.1/tcp/9001/p2p/{peer}"));
+        let Ok(bootnode) = parsed else {
+            assert!(parsed.is_ok(), "bootnode should parse");
+            return;
+        };
+        let policy = TestnetAdmissionPolicy::allowlist(vec![peer]);
+
+        let result = admitted_bootnodes_for_testnet_policy(&[bootnode], &policy);
+        let Ok(admitted) = result else {
+            assert!(result.is_ok(), "bootnode should be admitted");
+            return;
+        };
+
+        assert_eq!(admitted.len(), 1);
+    }
+
+    #[test]
+    fn testnet_admission_filter_rejects_unqualified_bootnode() {
+        let parsed = Bootnode::parse("/ip4/127.0.0.1/tcp/9001");
+        let Ok(bootnode) = parsed else {
+            assert!(parsed.is_ok(), "bootnode should parse");
+            return;
+        };
+        let policy = TestnetAdmissionPolicy::allowlist(vec![PeerId::random()]);
+
+        let result = admitted_bootnodes_for_testnet_policy(&[bootnode], &policy);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn testnet_admission_filter_rejects_unauthorized_wan_peer() {
+        let allowed = PeerId::random();
+        let denied = PeerId::random();
+        let parsed = WanPeerSeed::parse(&format!("/ip4/127.0.0.1/tcp/9001/p2p/{denied}"));
+        let Ok(seed) = parsed else {
+            assert!(parsed.is_ok(), "WAN peer should parse");
+            return;
+        };
+        let policy = TestnetAdmissionPolicy::allowlist(vec![allowed]);
+
+        let result = admitted_wan_peers_for_testnet_policy(&[seed], &policy);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn testnet_admission_filter_preserves_allowed_relay_policy() {
+        let relay = PeerId::random();
+        let parsed = RelayPeerSeed::parse(&format!("/ip4/127.0.0.1/tcp/9101/p2p/{relay}"));
+        let Ok(peer) = parsed else {
+            assert!(parsed.is_ok(), "relay peer should parse");
+            return;
+        };
+        let relay_policy = NatRelayPolicy::operator_configured(vec![peer]);
+        let admission_policy = TestnetAdmissionPolicy::allowlist(vec![relay]);
+
+        let result = admitted_nat_relay_policy_for_testnet_policy(&relay_policy, &admission_policy);
+        let Ok(admitted) = result else {
+            assert!(result.is_ok(), "relay policy should be admitted");
+            return;
+        };
+
+        assert!(admitted.is_enabled());
+        assert_eq!(admitted.relay_peers().len(), 1);
     }
 
     #[test]
