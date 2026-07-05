@@ -15,11 +15,12 @@ use crate::pubsub_topic_tracker::{
 };
 use crate::pubsub_topics::TASK_TOPIC;
 use crate::task_protocol::TaskRequest;
+use crate::testnet_admission_runtime::should_accept_runtime_peer;
 use crate::worker_startup_policy::{
     emit_worker_listening_event, emit_worker_startup_ready_event, WorkerStartupPolicy,
 };
 use crate::{IamineBehaviour, NET_PEER_DISCONNECTED_002};
-use iamine_network::{LogLevel, SharedNetworkTopology};
+use iamine_network::{LogLevel, SharedNetworkTopology, TestnetAdmissionPolicy};
 use libp2p::core::ConnectedPoint;
 use libp2p::{gossipsub, ping, swarm::Swarm, Multiaddr, PeerId};
 use serde_json::Map;
@@ -59,9 +60,13 @@ pub(crate) fn handle_mdns_discovered(
     is_client: bool,
     connected_peer: Option<PeerId>,
     tasks_sent: bool,
+    testnet_admission_policy: &TestnetAdmissionPolicy,
 ) {
     for (pid, addr) in peers {
         if pid == local_peer_id {
+            continue;
+        }
+        if !should_accept_runtime_peer(&pid, testnet_admission_policy, "mdns_discovery") {
             continue;
         }
         println!("🔍 mDNS descubrió: {} @ {}", pid, addr);

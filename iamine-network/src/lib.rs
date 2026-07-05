@@ -32,6 +32,7 @@ pub mod task_analyzer;
 pub mod task_manager;
 pub mod task_state;
 pub mod task_trace;
+pub mod testnet_admission;
 pub mod topology;
 pub mod wan_discovery;
 
@@ -123,6 +124,11 @@ pub use task_state::TaskStatus as DistributedTaskStatus;
 pub use task_trace::{
     all_task_traces, claim_task_attempt_peer, default_task_trace_path, global_task_trace_manager,
     record_task_attempt, record_task_latency, task_trace, TaskTrace, TaskTraceManager,
+};
+pub use testnet_admission::{
+    allowed_peers_from_values, testnet_admission_policy_from_args, TestnetAdmissionArgError,
+    TestnetAdmissionMode, TestnetAdmissionModeParseError, TestnetAdmissionPolicy,
+    MAX_TESTNET_ALLOWED_PEERS, TESTNET_ADMISSION_FLAG, TESTNET_ALLOW_PEER_FLAG,
 };
 pub use topology::{NetworkTopology, SharedNetworkTopology};
 pub use wan_discovery::{
