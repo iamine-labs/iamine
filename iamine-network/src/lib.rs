@@ -24,6 +24,7 @@ mod prompt_task_detection;
 pub mod protocol_version;
 pub mod result_validator;
 pub mod scheduler;
+pub mod secure_transport;
 pub mod semantic_eval;
 pub mod semantic_feedback;
 pub mod semantic_validator;
@@ -103,6 +104,11 @@ pub use protocol_version::{
 };
 pub use result_validator::{validate_result, ResultStatus};
 pub use scheduler::IntelligentScheduler;
+pub use secure_transport::{
+    current_secure_transport_profile, secure_transport_decision, P2pBaseTransport, P2pMultiplexer,
+    P2pSecurityProtocol, P2pUpgradeVersion, SecureTransportDecision, SecureTransportProfile,
+    IAMINE_SECURE_TRANSPORT_POLICY,
+};
 pub use semantic_eval::{
     evaluate_dataset, evaluate_default_dataset, load_default_dataset, should_use_strict_handling,
     SemanticDatasetEntry, SemanticEvalError, SemanticEvalReport,

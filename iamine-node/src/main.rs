@@ -162,14 +162,10 @@ use libp2p::{
     gossipsub,
     kad,
     mdns,
-    noise,
     ping, // ← quitado identity de aquí
     request_response::{self, Event as RREvent, Message},
     swarm::{Swarm, SwarmEvent},
-    tcp,
-    yamux,
     PeerId,
-    Transport,
 };
 use std::error::Error;
 use std::time::Duration;
@@ -207,11 +203,12 @@ use model_display_policy::*;
 use network_config::{
     admitted_bootnodes_for_testnet_policy, admitted_nat_relay_policy_for_testnet_policy,
     admitted_wan_peers_for_testnet_policy, bootnodes_from_runtime_args, build_gossipsub_behaviour,
-    build_iamine_behaviour, build_kademlia, cluster_status_wait_ms_from_env,
-    dial_configured_bootnodes, listen_addr_for_mode, nat_relay_policy_from_runtime_args,
-    register_local_broadcast_pubsub_topics, start_nat_relay_policy, start_wan_peer_discovery,
-    swarm_idle_connection_timeout, testnet_admission_policy_from_runtime_args,
-    wan_peers_from_runtime_args, IaMineEvent, RuntimeNetworkIntervals,
+    build_iamine_behaviour, build_kademlia, build_secure_transport,
+    cluster_status_wait_ms_from_env, dial_configured_bootnodes, listen_addr_for_mode,
+    nat_relay_policy_from_runtime_args, register_local_broadcast_pubsub_topics,
+    start_nat_relay_policy, start_wan_peer_discovery, swarm_idle_connection_timeout,
+    testnet_admission_policy_from_runtime_args, wan_peers_from_runtime_args, IaMineEvent,
+    RuntimeNetworkIntervals,
 };
 use node_modes::{mode_label, InferenceControlFlags, NodeMode};
 use p2p_protocol_version_runtime::handle_identify_event;
@@ -554,11 +551,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         return Ok(());
     }
 
-    let transport = tcp::tokio::Transport::new(tcp::Config::default())
-        .upgrade(libp2p::core::upgrade::Version::V1)
-        .authenticate(noise::Config::new(&id_keys)?)
-        .multiplex(yamux::Config::default())
-        .boxed();
+    let transport = build_secure_transport(&id_keys)?;
 
     let mut gossipsub_behaviour = build_gossipsub_behaviour(&id_keys)?;
     let local_backend = worker_startup_policy
