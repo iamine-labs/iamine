@@ -14,8 +14,8 @@ Reconciled against:
 
 ```text
 branch: origin/develop
-commit: cc3084d51a9288224541088e9b4489c345946128
-date: 2026-07-02
+commit: b7accd36ee1094f71093e70d914359789262c933
+date: 2026-07-06
 ```
 
 ## State Vocabulary
@@ -57,7 +57,10 @@ P2P protocol versioning, node identity registration, bootnode discovery, WAN
 peer discovery, and NAT traversal relay policy closed. Hardware profiling,
 model compatibility, model admission gates, LAN discovery, real legacy CPU
 inference, LAN beta release-gate QA, explicit P2P compatibility checks, and
-durable local node identity controls have reduced later product risk.
+durable local node identity controls have reduced later product risk. The LAN
+beta first-run preflight is now merged and post-merge validated, so Remote
+Inference is the next active product feature before broader private-testnet
+observability and load-resilience gates.
 
 Roadmap incorporation is controlled by:
 
@@ -151,7 +154,7 @@ This prework is technical evidence, not formal completion of the LAN beta.
 | Feature | State | Primary owner | Dependencies | Goal |
 | --- | --- | --- | --- | --- |
 | LAN-BETA-INSTALLER-POLISH-001 | CLOSED | Packaging / operations | v0.8 LAN beta closeout | Provide safer install and uninstall helpers for controlled beta testing on additional PCs. |
-| LAN-BETA-FIRST-RUN-PREFLIGHT-001 | ACTIVE | Packaging / operations / diagnostics | Installer polish, node doctor, LAN beta closeout | Validate first-run configuration, model, backend, ports, permissions, diagnostics, worker readiness, and basic LAN smoke before broader beta testing on additional PCs. |
+| LAN-BETA-FIRST-RUN-PREFLIGHT-001 | CLOSED | Packaging / operations / diagnostics | merge `b7accd3`; post-merge `quality-gate.sh` PASS WITH WARNINGS | Validate first-run configuration, model, backend, ports, permissions, diagnostics, worker readiness, and basic LAN smoke before broader beta testing on additional PCs. |
 
 ## Milestone 2 - v0.9 Private Testnet
 
@@ -164,7 +167,7 @@ This prework is technical evidence, not formal completion of the LAN beta.
 | NAT-TRAVERSAL-RELAY-001 | CLOSED | `iamine-network` | WAN discovery | Connect constrained nodes through bounded NAT traversal and relay policy. |
 | TESTNET-NODE-ADMISSION-001 | CLOSED | Identity / network policy | Node registration | Admit only authorized private-testnet nodes. |
 | P2P-SECURE-TRANSPORT-POLICY-001 | CLOSED | `iamine-network` | Node identity | Define authenticated transport and downgrade rejection. |
-| REMOTE-INFERENCE-API-001 | PROPOSED | API boundary / `iamine-node` wiring | Secure transport, admission | Accept bounded remote inference requests with explicit authentication and policy checks. |
+| REMOTE-INFERENCE-API-001 | ACTIVE | API boundary / `iamine-node` wiring | Secure transport, admission, first-run preflight | Accept bounded remote inference requests with explicit authentication and policy checks. |
 | TESTNET-OBSERVABILITY-001 | PROPOSED | Observability owner modules | Remote API, WAN network | Correlate cross-operator health, routing, execution, and failure evidence. |
 | TESTNET-LOAD-RESILIENCE-001 | PROPOSED | Runtime, scheduler, QA | Testnet observability | Prove bounded behavior under concurrency, partial outages, retries, and recovery. |
 | PRIVATE-TESTNET-RELEASE-001 | PROPOSED | Architecture / QA release gate | All Milestone 2 features | Operate and close the private multi-operator testnet gate. |
