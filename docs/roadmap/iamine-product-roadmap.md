@@ -151,6 +151,7 @@ This prework is technical evidence, not formal completion of the LAN beta.
 | Feature | State | Primary owner | Dependencies | Goal |
 | --- | --- | --- | --- | --- |
 | LAN-BETA-INSTALLER-POLISH-001 | CLOSED | Packaging / operations | v0.8 LAN beta closeout | Provide safer install and uninstall helpers for controlled beta testing on additional PCs. |
+| LAN-BETA-FIRST-RUN-PREFLIGHT-001 | ACTIVE | Packaging / operations / diagnostics | Installer polish, node doctor, LAN beta closeout | Validate first-run configuration, model, backend, ports, permissions, diagnostics, worker readiness, and basic LAN smoke before broader beta testing on additional PCs. |
 
 ## Milestone 2 - v0.9 Private Testnet
 
@@ -162,7 +163,7 @@ This prework is technical evidence, not formal completion of the LAN beta.
 | WAN-PEER-DISCOVERY-001 | CLOSED | `iamine-network` | Bootnodes | Discover authorized peers across physical networks. |
 | NAT-TRAVERSAL-RELAY-001 | CLOSED | `iamine-network` | WAN discovery | Connect constrained nodes through bounded NAT traversal and relay policy. |
 | TESTNET-NODE-ADMISSION-001 | CLOSED | Identity / network policy | Node registration | Admit only authorized private-testnet nodes. |
-| P2P-SECURE-TRANSPORT-POLICY-001 | ACTIVE | `iamine-network` | Node identity | Define authenticated transport and downgrade rejection. |
+| P2P-SECURE-TRANSPORT-POLICY-001 | CLOSED | `iamine-network` | Node identity | Define authenticated transport and downgrade rejection. |
 | REMOTE-INFERENCE-API-001 | PROPOSED | API boundary / `iamine-node` wiring | Secure transport, admission | Accept bounded remote inference requests with explicit authentication and policy checks. |
 | TESTNET-OBSERVABILITY-001 | PROPOSED | Observability owner modules | Remote API, WAN network | Correlate cross-operator health, routing, execution, and failure evidence. |
 | TESTNET-LOAD-RESILIENCE-001 | PROPOSED | Runtime, scheduler, QA | Testnet observability | Prove bounded behavior under concurrency, partial outages, retries, and recovery. |
@@ -307,6 +308,7 @@ features.
 ```text
 TESTNET-NODE-ADMISSION-001
 -> P2P-SECURE-TRANSPORT-POLICY-001
+-> LAN-BETA-FIRST-RUN-PREFLIGHT-001
 -> REMOTE-INFERENCE-API-001
 -> TESTNET-OBSERVABILITY-001
 -> TESTNET-LOAD-RESILIENCE-001
