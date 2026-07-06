@@ -25,9 +25,11 @@ scripts/install.sh --prefix "$HOME/.local" --yes
 
 ```bash
 $HOME/.local/bin/iamine-node --help
-$HOME/.local/bin/iamine-node lan doctor --json
-$HOME/.local/bin/iamine-node worker lifecycle readiness --json
+$HOME/.local/share/iamine/scripts/first-run-preflight.sh --binary "$HOME/.local/bin/iamine-node"
 ```
+
+Use `--skip-lan-smoke` if the operator wants to validate package readiness
+without running the bounded `cluster status --json` LAN smoke.
 
 6. Configure a service manager manually if desired.
 7. Start the worker explicitly:
@@ -61,8 +63,8 @@ start, stop, or restart service-manager units.
 1. Create a new package.
 2. Keep the currently working binary available for rollback.
 3. Run `scripts/install.sh --prefix <prefix> --dry-run`.
-4. Run `iamine-node --help` and `iamine-node lan doctor --json` from the new
-   binary before replacing the running binary.
+4. Run the first-run preflight against the new binary before replacing the
+   running binary.
 5. Stop the operator-managed worker through the configured service manager.
 6. Replace the binary.
 7. Restart the worker.

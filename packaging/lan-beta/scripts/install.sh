@@ -80,6 +80,7 @@ require_file "docs/INSTALL.md"
 require_file "env/iamine-worker.env.example"
 require_file "systemd/iamine-worker@.service"
 require_file "launchd/com.iamine.worker.plist.template"
+require_file "scripts/first-run-preflight.sh"
 require_file "manifest.json"
 
 if [ "$DRY_RUN" -eq 0 ] && [ "$YES" -eq 0 ]; then
@@ -106,6 +107,10 @@ copy_file "$PACKAGE_ROOT/docs/INSTALL.md" "$SHARE_DIR/docs/INSTALL.md"
 copy_file "$PACKAGE_ROOT/env/iamine-worker.env.example" "$SHARE_DIR/env/iamine-worker.env.example"
 copy_file "$PACKAGE_ROOT/systemd/iamine-worker@.service" "$SHARE_DIR/systemd/iamine-worker@.service"
 copy_file "$PACKAGE_ROOT/launchd/com.iamine.worker.plist.template" "$SHARE_DIR/launchd/com.iamine.worker.plist.template"
+copy_file "$PACKAGE_ROOT/scripts/first-run-preflight.sh" "$SHARE_DIR/scripts/first-run-preflight.sh"
+if [ "$DRY_RUN" -eq 0 ]; then
+  chmod 0755 "$SHARE_DIR/scripts/first-run-preflight.sh"
+fi
 
 cat <<NEXT
 install_status=success
@@ -113,8 +118,7 @@ runtime_effects=false
 
 Next checks:
   $BIN_DIR/iamine-node --help
-  $BIN_DIR/iamine-node lan doctor --json
-  $BIN_DIR/iamine-node worker lifecycle readiness --json
+  $SHARE_DIR/scripts/first-run-preflight.sh --binary "$BIN_DIR/iamine-node"
 
 Service templates were copied for review only. Load or enable services manually
 with your operating-system tooling after editing local paths.
