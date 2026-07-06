@@ -9,17 +9,18 @@ use crate::{
     emit_worker_pubsub_ready_event, emit_worker_topic_subscribed_event, log_observability_event,
 };
 use iamine_network::{
-    bootnodes_from_args, nat_relay_policy_from_args, testnet_admission_policy_from_args,
-    wan_peer_seeds_from_args, Bootnode, BootnodeArgError, LogLevel, NatRelayArgError,
-    NatRelayPolicy, RelayPeerSeed, TestnetAdmissionArgError, TestnetAdmissionPolicy,
-    WanPeerArgError, WanPeerSeed, IAMINE_IDENTIFY_PROTOCOL, IAMINE_RESULT_PROTOCOL,
-    IAMINE_TASK_PROTOCOL,
+    bootnodes_from_args, current_secure_transport_profile, nat_relay_policy_from_args,
+    secure_transport_decision, testnet_admission_policy_from_args, wan_peer_seeds_from_args,
+    Bootnode, BootnodeArgError, LogLevel, NatRelayArgError, NatRelayPolicy, RelayPeerSeed,
+    SecureTransportDecision, TestnetAdmissionArgError, TestnetAdmissionPolicy, WanPeerArgError,
+    WanPeerSeed, IAMINE_IDENTIFY_PROTOCOL, IAMINE_RESULT_PROTOCOL, IAMINE_TASK_PROTOCOL,
 };
 use libp2p::{
-    gossipsub, identify, kad, mdns, ping,
+    core::{muxing::StreamMuxerBox, transport::Boxed, upgrade},
+    gossipsub, identify, kad, mdns, noise, ping,
     request_response::{self, cbor, Event as RREvent, ProtocolSupport},
     swarm::{NetworkBehaviour, Swarm},
-    Multiaddr, PeerId, StreamProtocol,
+    tcp, yamux, Multiaddr, PeerId, StreamProtocol, Transport,
 };
 use serde_json::Map;
 use std::time::Duration;
@@ -152,6 +153,33 @@ pub(crate) fn simulated_worker_tick_interval() -> Duration {
 
 pub(crate) fn simulated_worker_run_duration() -> Duration {
     Duration::from_secs(SIMULATED_WORKER_RUN_SECS)
+}
+
+pub(crate) fn current_secure_transport_decision() -> SecureTransportDecision {
+    secure_transport_decision(&current_secure_transport_profile())
+}
+
+pub(crate) fn build_secure_transport(
+    id_keys: &libp2p::identity::Keypair,
+) -> Result<Boxed<(PeerId, StreamMuxerBox)>, String> {
+    let decision = current_secure_transport_decision();
+    if !decision.is_allowed() {
+        return Err(format!(
+            "secure transport policy rejected runtime profile: {}",
+            decision
+                .reason_code()
+                .unwrap_or("secure_transport_rejected")
+        ));
+    }
+
+    let noise_config = noise::Config::new(id_keys)
+        .map_err(|error| format!("secure transport noise config error: {error}"))?;
+
+    Ok(tcp::tokio::Transport::new(tcp::Config::default())
+        .upgrade(upgrade::Version::V1)
+        .authenticate(noise_config)
+        .multiplex(yamux::Config::default())
+        .boxed())
 }
 
 pub(crate) fn listen_addr_for_mode(mode: &NodeMode, worker_port: u16) -> Result<Multiaddr, String> {
