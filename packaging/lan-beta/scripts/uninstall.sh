@@ -92,11 +92,13 @@ remove_file "$SHARE_DIR/docs/INSTALL.md"
 remove_file "$SHARE_DIR/env/iamine-worker.env.example"
 remove_file "$SHARE_DIR/systemd/iamine-worker@.service"
 remove_file "$SHARE_DIR/launchd/com.iamine.worker.plist.template"
+remove_file "$SHARE_DIR/scripts/first-run-preflight.sh"
 
 remove_empty_dir "$SHARE_DIR/docs"
 remove_empty_dir "$SHARE_DIR/env"
 remove_empty_dir "$SHARE_DIR/systemd"
 remove_empty_dir "$SHARE_DIR/launchd"
+remove_empty_dir "$SHARE_DIR/scripts"
 remove_empty_dir "$SHARE_DIR"
 
 cat <<DONE

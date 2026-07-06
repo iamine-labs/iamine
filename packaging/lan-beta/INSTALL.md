@@ -20,9 +20,11 @@ Then run:
 
 ```bash
 $HOME/.local/bin/iamine-node --help
-$HOME/.local/bin/iamine-node lan doctor --json
-$HOME/.local/bin/iamine-node worker lifecycle readiness --json
+$HOME/.local/share/iamine/scripts/first-run-preflight.sh --binary "$HOME/.local/bin/iamine-node"
 ```
+
+Use `--skip-lan-smoke` to avoid the bounded `cluster status --json` LAN smoke
+when validating a package on an isolated host.
 
 ## Services
 

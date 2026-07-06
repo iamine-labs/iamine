@@ -92,7 +92,11 @@ cp packaging/lan-beta/systemd/iamine-worker@.service "$PACKAGE_ROOT/systemd/iami
 cp packaging/lan-beta/launchd/com.iamine.worker.plist.template "$PACKAGE_ROOT/launchd/com.iamine.worker.plist.template"
 cp packaging/lan-beta/scripts/install.sh "$PACKAGE_ROOT/scripts/install.sh"
 cp packaging/lan-beta/scripts/uninstall.sh "$PACKAGE_ROOT/scripts/uninstall.sh"
-chmod 0755 "$PACKAGE_ROOT/scripts/install.sh" "$PACKAGE_ROOT/scripts/uninstall.sh"
+cp packaging/lan-beta/scripts/first-run-preflight.sh "$PACKAGE_ROOT/scripts/first-run-preflight.sh"
+chmod 0755 \
+  "$PACKAGE_ROOT/scripts/install.sh" \
+  "$PACKAGE_ROOT/scripts/uninstall.sh" \
+  "$PACKAGE_ROOT/scripts/first-run-preflight.sh"
 
 hash_file() {
   if command -v shasum >/dev/null 2>&1; then
@@ -110,7 +114,7 @@ BINARY_SHA256="$(hash_file "$PACKAGE_ROOT/bin/iamine-node")"
 cat > "$PACKAGE_ROOT/manifest.json" <<MANIFEST
 {
   "schema_version": "1.0.0",
-  "feature": "LAN-BETA-INSTALLER-POLISH-001",
+  "feature": "LAN-BETA-FIRST-RUN-PREFLIGHT-001",
   "base_feature": "LAN-INFERENCE-BETA-PACKAGING-001",
   "package": "${PACKAGE_NAME}",
   "git_commit": "${GIT_SHA}",
@@ -126,7 +130,8 @@ cat > "$PACKAGE_ROOT/manifest.json" <<MANIFEST
     "systemd/iamine-worker@.service",
     "launchd/com.iamine.worker.plist.template",
     "scripts/install.sh",
-    "scripts/uninstall.sh"
+    "scripts/uninstall.sh",
+    "scripts/first-run-preflight.sh"
   ],
   "installer": {
     "install": "scripts/install.sh",
@@ -134,6 +139,16 @@ cat > "$PACKAGE_ROOT/manifest.json" <<MANIFEST
     "requires_confirmation": true,
     "supports_dry_run": true,
     "service_activation": "manual"
+  },
+  "first_run_preflight": {
+    "script": "scripts/first-run-preflight.sh",
+    "requires_python3": true,
+    "supports_skip_lan_smoke": true,
+    "starts_workers": false,
+    "starts_services": false,
+    "downloads_models": false,
+    "loads_models": false,
+    "runs_inference": false
   },
   "runtime_effects": {
     "worker_started": false,
