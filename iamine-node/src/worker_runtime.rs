@@ -6,6 +6,10 @@ use crate::infer_observability::{
 use crate::infer_runtime::mock_real_inference_result;
 use crate::metrics::NodeMetrics;
 use crate::model_executability::evaluate_worker_model_execution_gate;
+use crate::remote_inference_api::{
+    emit_remote_inference_api_rejected_event, evaluate_remote_inference_api_request,
+    remote_inference_max_tokens_from_json, RemoteInferenceApiContext, RemoteInferenceApiRequest,
+};
 use crate::result_observability::{
     emit_worker_result_published_event, emit_worker_task_completed_event,
 };
@@ -16,6 +20,7 @@ use iamine_models::{
     InferenceTaskResult, ModelNodeCapabilities, ModelRegistry, ModelStorage, RealInferenceEngine,
     RealInferenceRequest, StreamedToken,
 };
+use iamine_network::{SecureTransportDecision, TestnetAdmissionPolicy};
 use libp2p::{gossipsub, swarm::Swarm, PeerId};
 use serde_json::Value;
 use std::sync::Arc;
@@ -71,7 +76,7 @@ impl WorkerInferenceRuntimeRequest {
                 .to_string(),
             model_id: value["model_id"].as_str().unwrap_or("").to_string(),
             prompt: value["prompt"].as_str().unwrap_or("").to_string(),
-            max_tokens: value["max_tokens"].as_u64().unwrap_or(200) as u32,
+            max_tokens: remote_inference_max_tokens_from_json(value["max_tokens"].as_u64()),
             temperature: value["temperature"].as_f64().unwrap_or(0.7) as f32,
             requester_peer: value["requester_peer"].as_str().unwrap_or("").to_string(),
             request_id,
@@ -106,7 +111,7 @@ impl WorkerInferenceRuntimeRequest {
                 .unwrap_or("tinyllama-1b")
                 .to_string(),
             prompt: value["prompt"].as_str().unwrap_or("").to_string(),
-            max_tokens: value["max_tokens"].as_u64().unwrap_or(200) as u32,
+            max_tokens: remote_inference_max_tokens_from_json(value["max_tokens"].as_u64()),
             temperature: 0.7,
             requester_peer: requester_peer.to_string(),
             request_id,
@@ -123,6 +128,8 @@ pub(crate) struct WorkerInferenceRuntimeContext<'a> {
     pub(crate) worker_startup_policy: Option<&'a WorkerStartupPolicy>,
     pub(crate) inference_engine: Option<Arc<RealInferenceEngine>>,
     pub(crate) metrics: Arc<RwLock<NodeMetrics>>,
+    pub(crate) secure_transport_decision: SecureTransportDecision,
+    pub(crate) testnet_admission_policy: &'a TestnetAdmissionPolicy,
 }
 
 pub(crate) enum WorkerInferenceEvent {
@@ -165,15 +172,46 @@ pub(crate) fn start_worker_inference_request(
         context.worker_startup_policy,
     );
     let local_model_available = model_execution_gate.local_model_available;
+    let remote_api_request = RemoteInferenceApiRequest {
+        task_id: &request.task_id,
+        attempt_id: &request.attempt_id,
+        model_id: &request.model_id,
+        prompt: &request.prompt,
+        max_tokens: request.max_tokens,
+    };
+    let requester_peer =
+        authoritative_requester_peer(context.from_peer, &request.requester_peer, context.peer_id);
+    let remote_api_decision = evaluate_remote_inference_api_request(
+        remote_api_request,
+        RemoteInferenceApiContext {
+            requester_peer: &requester_peer,
+            secure_transport_decision: context.secure_transport_decision,
+            testnet_admission_policy: context.testnet_admission_policy,
+            model_execution_gate: &model_execution_gate,
+        },
+    );
     emit_worker_task_message_received_event(
         &request.task_id,
         &request.attempt_id,
         context.message_topic,
         context.from_peer,
-        "ok",
+        if remote_api_decision.is_accepted() {
+            "ok"
+        } else {
+            "rejected"
+        },
         &request.model_id,
         local_model_available,
     );
+    if !remote_api_decision.is_accepted() {
+        emit_remote_inference_api_rejected_event(
+            remote_api_request,
+            &requester_peer,
+            &remote_api_decision,
+        );
+        println!("   ⚠️ {}", remote_api_decision.failure_message());
+        return;
+    }
     if request.kind.emits_direct_request_received() {
         emit_direct_inference_request_received_event(
             &request.task_id,
@@ -431,6 +469,18 @@ pub(crate) fn start_worker_inference_request(
     });
 }
 
+fn authoritative_requester_peer(
+    transport_peer: &str,
+    payload_peer: &str,
+    local_peer: &PeerId,
+) -> PeerId {
+    transport_peer
+        .parse::<PeerId>()
+        .ok()
+        .or_else(|| payload_peer.parse::<PeerId>().ok())
+        .unwrap_or(*local_peer)
+}
+
 async fn send_progress_event(
     event_tx: &mpsc::Sender<WorkerInferenceEvent>,
     request: &WorkerInferenceRuntimeRequest,
@@ -661,6 +711,21 @@ mod tests {
         assert_eq!(request.max_tokens, 200);
         assert_eq!(request.temperature, 0.7);
         assert_eq!(request.requester_peer, "controller");
+    }
+
+    #[test]
+    fn worker_runtime_uses_transport_peer_before_payload_requester() {
+        let transport_peer = PeerId::random();
+        let spoofed_payload_peer = PeerId::random();
+        let local_peer = PeerId::random();
+
+        let requester = authoritative_requester_peer(
+            &transport_peer.to_string(),
+            &spoofed_payload_peer.to_string(),
+            &local_peer,
+        );
+
+        assert_eq!(requester, transport_peer);
     }
 
     #[tokio::test]

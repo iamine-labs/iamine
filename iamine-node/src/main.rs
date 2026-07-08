@@ -68,6 +68,7 @@ mod pubsub_topics;
 mod quality_gate;
 mod rate_limiter;
 mod regression_runner;
+mod remote_inference_api;
 mod resource_policy;
 mod result_acceptance;
 mod result_observability;
@@ -204,11 +205,11 @@ use network_config::{
     admitted_bootnodes_for_testnet_policy, admitted_nat_relay_policy_for_testnet_policy,
     admitted_wan_peers_for_testnet_policy, bootnodes_from_runtime_args, build_gossipsub_behaviour,
     build_iamine_behaviour, build_kademlia, build_secure_transport,
-    cluster_status_wait_ms_from_env, dial_configured_bootnodes, listen_addr_for_mode,
-    nat_relay_policy_from_runtime_args, register_local_broadcast_pubsub_topics,
-    start_nat_relay_policy, start_wan_peer_discovery, swarm_idle_connection_timeout,
-    testnet_admission_policy_from_runtime_args, wan_peers_from_runtime_args, IaMineEvent,
-    RuntimeNetworkIntervals,
+    cluster_status_wait_ms_from_env, current_secure_transport_decision, dial_configured_bootnodes,
+    listen_addr_for_mode, nat_relay_policy_from_runtime_args,
+    register_local_broadcast_pubsub_topics, start_nat_relay_policy, start_wan_peer_discovery,
+    swarm_idle_connection_timeout, testnet_admission_policy_from_runtime_args,
+    wan_peers_from_runtime_args, IaMineEvent, RuntimeNetworkIntervals,
 };
 use node_modes::{mode_label, InferenceControlFlags, NodeMode};
 use p2p_protocol_version_runtime::handle_identify_event;
@@ -2160,6 +2161,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         worker_startup_policy: worker_startup_policy.as_ref(),
                                         inference_engine: inference_engine.clone(),
                                         metrics: Arc::clone(&metrics),
+                                        secure_transport_decision: current_secure_transport_decision(),
+                                        testnet_admission_policy: &testnet_admission_policy,
                                     },
                                     worker_inference_tx.clone(),
                                 );
@@ -2752,6 +2755,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                             worker_startup_policy: worker_startup_policy.as_ref(),
                                             inference_engine: inference_engine.clone(),
                                             metrics: Arc::clone(&metrics),
+                                            secure_transport_decision: current_secure_transport_decision(),
+                                            testnet_admission_policy: &testnet_admission_policy,
                                         },
                                         worker_inference_tx.clone(),
                                     );
