@@ -167,7 +167,7 @@ This prework is technical evidence, not formal completion of the LAN beta.
 | NAT-TRAVERSAL-RELAY-001 | CLOSED | `iamine-network` | WAN discovery | Connect constrained nodes through bounded NAT traversal and relay policy. |
 | TESTNET-NODE-ADMISSION-001 | CLOSED | Identity / network policy | Node registration | Admit only authorized private-testnet nodes. |
 | P2P-SECURE-TRANSPORT-POLICY-001 | CLOSED | `iamine-network` | Node identity | Define authenticated transport and downgrade rejection. |
-| REMOTE-INFERENCE-API-001 | ACTIVE | API boundary / `iamine-node` wiring | Secure transport, admission, first-run preflight | Accept bounded remote inference requests with explicit authentication and policy checks. |
+| REMOTE-INFERENCE-API-001 | CLOSED | API boundary / `iamine-node` wiring | merge `c4046068`; Mac/TS140/Proxmox QA PASS; post-merge `quality-gate.sh` PASS WITH WARNINGS | Accept bounded remote inference requests with explicit authentication and policy checks. |
 | TESTNET-OBSERVABILITY-001 | PROPOSED | Observability owner modules | Remote API, WAN network | Correlate cross-operator health, routing, execution, and failure evidence. |
 | TESTNET-LOAD-RESILIENCE-001 | PROPOSED | Runtime, scheduler, QA | Testnet observability | Prove bounded behavior under concurrency, partial outages, retries, and recovery. |
 | PRIVATE-TESTNET-RELEASE-001 | PROPOSED | Architecture / QA release gate | All Milestone 2 features | Operate and close the private multi-operator testnet gate. |
