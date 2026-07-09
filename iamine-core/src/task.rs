@@ -15,17 +15,26 @@ impl FromStr for TaskType {
     type Err = ();
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(match s {
+        Ok(Self::parse_lossy(s))
+    }
+}
+
+impl TaskType {
+    #[allow(clippy::should_implement_trait)]
+    pub fn from_str(s: &str) -> Self {
+        Self::parse_lossy(s)
+    }
+
+    fn parse_lossy(s: &str) -> Self {
+        match s {
             "reverse_string" => Self::ReverseString,
             "compute_hash" => Self::ComputeHash,
             "validate_challenge" => Self::ValidateChallenge,
             "inference" => Self::InferenceRequest,
             _ => Self::ComputeHash,
-        })
+        }
     }
-}
 
-impl TaskType {
     pub fn as_str(&self) -> &str {
         match self {
             Self::ReverseString => "reverse_string",
