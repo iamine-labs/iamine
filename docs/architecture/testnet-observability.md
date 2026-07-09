@@ -74,3 +74,34 @@ Local validation must prove:
 
 Because this changes runtime observability output, field QA is required before
 merge review.
+
+## Closure Evidence
+
+State:
+
+```text
+CLOSED
+```
+
+Merge:
+
+```text
+d6068ceaf6bbaf58e87cdabce99e8d90c03cb64a
+```
+
+Tree:
+
+```text
+feda5490c897eec716e5719ac31fce76007f4e94
+```
+
+Validation:
+
+- local `./scripts/quality-gate.sh`: PASS WITH WARNINGS;
+- TS140 field QA: PASS;
+- Proxmox field QA on `iamine-ctrl`, `iamine-wrk1`, `iamine-wrk2`, and
+  `iamine-heavy`: PASS;
+- post-merge `./scripts/quality-gate.sh`: PASS WITH WARNINGS.
+
+Warnings were historical lint/dead-code warnings. Optional tools unavailable in
+the local gate were `cargo audit`, `cargo deny`, and `gitleaks`.
