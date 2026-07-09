@@ -91,6 +91,7 @@ mod task_scheduler;
 mod task_trace;
 mod tasks_cli;
 mod testnet_admission_runtime;
+mod testnet_observability;
 mod usage;
 mod wallet;
 mod worker_assignment_runtime;
