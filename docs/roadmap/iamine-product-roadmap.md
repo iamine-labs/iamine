@@ -14,8 +14,8 @@ Reconciled against:
 
 ```text
 branch: origin/develop
-commit: b7accd36ee1094f71093e70d914359789262c933
-date: 2026-07-06
+commit: 2e03f5984abdadfb3eedb12ab6ea7cfbdd7710a1
+date: 2026-07-09
 ```
 
 ## State Vocabulary
@@ -42,25 +42,49 @@ development lifecycle. Only one next product feature should normally be
 | --- | --- |
 | v0.7 | Hardware and model foundations |
 | v0.8 | Installable LAN beta |
-| v0.9 | Private multi-operator testnet |
-| v1.0 | Stable public testnet |
-| v1.1 | Verification and reputation |
-| v1.5 | Economic testnet using units with no real-world value |
+| v0.9.1 | Remote inference operational |
+| v0.9.2 | Private testnet release candidate |
+| v0.10 | Pre-public infrastructure |
+| v0.11 | Agent research, architecture, runtime, and internal developer bootstrap |
+| v0.12 | Official agent pack |
+| v0.13 | Agent beta productization |
+| v1.0 | IAMINE Agent Network Public Beta |
+| v1.1 | Validation, reputation, and trust |
+| v1.2 | Public Agent Developer Platform |
+| v1.3 | Curated agent registry |
+| v1.4 | Curated agent marketplace |
+| v1.5 | Economic agent testnet using units with no real-world value |
 | v2.0 | Mainnet |
 
-`LAN-INFERENCE-BETA-001` is not IAMINE v1. Mainnet is not part of v1.
+`LAN-INFERENCE-BETA-001` is not IAMINE v1. IAMINE v1.0 is not an
+inference-only public beta; it is the IAMINE Agent Network Public Beta.
+Mainnet is not part of v1.
+
+## Agent Network Public Beta Decision
+
+IAMINE public beta must launch as an agent network, not only as a remote
+inference network. Before v1.0, IAMINE must close private testnet readiness,
+pre-public infrastructure, agent package contracts, permissions, audit logs,
+runtime controls, sandbox baseline, internal agent developer bootstrap, P0
+official agents, catalog preview, onboarding, and feedback loop.
+
+The public developer platform is intentionally after v1.0. IAMINE may use
+internal agent developer tools before v1.0 to build official agents, but
+third-party agent creation, open publication, real payments, and mainnet remain
+blocked until their registry, validation, reputation, and economic gates exist.
 
 ## Current Position
 
-IAMINE has closed Milestone 0 and Milestone 1. Milestone 2 has started with
+IAMINE has closed Milestone 0, Milestone 1, beta distribution hardening,
+remote inference, and private-testnet observability. Milestone 2 has closed
 P2P protocol versioning, node identity registration, bootnode discovery, WAN
-peer discovery, and NAT traversal relay policy closed. Hardware profiling,
-model compatibility, model admission gates, LAN discovery, real legacy CPU
-inference, LAN beta release-gate QA, explicit P2P compatibility checks, and
-durable local node identity controls have reduced later product risk. The LAN
-beta first-run preflight is now merged and post-merge validated, so Remote
-Inference is the next active product feature before broader private-testnet
-observability and load-resilience gates.
+peer discovery, NAT traversal relay policy, testnet admission, secure transport
+policy, remote inference API, and testnet observability.
+
+The next product gap before load-resilience work is a fresh-install private
+testnet E2E. That gate validates that a clean machine can install IAMINE, join
+the private testnet, and execute the first bounded test inference with the
+current remote inference and observability contracts.
 
 Roadmap incorporation is controlled by:
 
@@ -158,6 +182,8 @@ This prework is technical evidence, not formal completion of the LAN beta.
 
 ## Milestone 2 - v0.9 Private Testnet
 
+### v0.9.1 - Remote Inference Operational
+
 | Feature | State | Primary owner | Dependencies | Goal |
 | --- | --- | --- | --- | --- |
 | P2P-PROTOCOL-VERSIONING-001 | CLOSED | `iamine-network` | v0.8 | Negotiate compatible protocol versions and reject unsupported peers explicitly. |
@@ -169,13 +195,30 @@ This prework is technical evidence, not formal completion of the LAN beta.
 | P2P-SECURE-TRANSPORT-POLICY-001 | CLOSED | `iamine-network` | Node identity | Define authenticated transport and downgrade rejection. |
 | REMOTE-INFERENCE-API-001 | CLOSED | API boundary / `iamine-node` wiring | merge `c4046068`; Mac/TS140/Proxmox QA PASS; post-merge `quality-gate.sh` PASS WITH WARNINGS | Accept bounded remote inference requests with explicit authentication and policy checks. |
 | TESTNET-OBSERVABILITY-001 | CLOSED | Observability owner modules | merge `d6068ce`; Mac/TS140/Proxmox QA PASS; post-merge `quality-gate.sh` PASS WITH WARNINGS | Correlate cross-operator health, routing, execution, and failure evidence. |
-| TESTNET-LOAD-RESILIENCE-001 | PROPOSED | Runtime, scheduler, QA | Testnet observability | Prove bounded behavior under concurrency, partial outages, retries, and recovery. |
-| PRIVATE-TESTNET-RELEASE-001 | PROPOSED | Architecture / QA release gate | All Milestone 2 features | Operate and close the private multi-operator testnet gate. |
+| V0.9-BETA-FRESH-INSTALL-E2E-001 | PROPOSED | Architecture / QA release gate | Remote inference, testnet observability, beta packaging | Validate a clean Proxmox VM user journey from installation through first private-testnet inference. |
 
-Milestone gate: 10-50 nodes, 3-10 operators, multiple physical networks, and
-two to four weeks of stable operation.
+Close criteria:
 
-## Milestone 3 - v1.0 Public Testnet
+- a fresh install node can join the private testnet;
+- bootnode discovery and durable identity work on the clean node;
+- remote inference works with explicit policy checks;
+- errors carry trace IDs and are visible in observability output;
+- Mac, TS140, and Proxmox QA pass for the supported path.
+
+### v0.9.2 - Private Testnet Release Candidate
+
+| Feature | State | Primary owner | Dependencies | Goal |
+| --- | --- | --- | --- | --- |
+| TESTNET-LOAD-RESILIENCE-001 | PROPOSED | Runtime, scheduler, QA | Testnet observability, fresh-install E2E | Prove bounded behavior under concurrency, partial outages, retries, and recovery. |
+| PRIVATE-TESTNET-RELEASE-001 | PROPOSED | Architecture / QA release gate | All v0.9 features | Operate and close the private multi-operator testnet gate. |
+
+`V0.9-BETA-FRESH-INSTALL-E2E-001` blocks v0.9.2 if it has not closed.
+
+Milestone gate: 10-50 nodes, 3-10 operators, multiple physical networks,
+remote inference across nodes, basic fault tolerance, diagnosable logs, private
+installation documentation, and two to four weeks of stable operation.
+
+## v0.10 - Pre-Public Infrastructure
 
 | Feature | State | Primary owner | Dependencies | Goal |
 | --- | --- | --- | --- | --- |
@@ -184,12 +227,140 @@ two to four weeks of stable operation.
 | USER-DIAGNOSTICS-SUPPORT-001 | PROPOSED | `iamine-node` diagnostics | v0.9 observability | Produce privacy-safe support bundles and actionable user diagnostics. |
 | V1-SUPPLY-CHAIN-SECURITY-001 | PROPOSED | Security / release engineering | Signed artifacts | Secure source, dependency, build, artifact, and release provenance. |
 | NODE-UPGRADE-ROLLBACK-001 | PROPOSED | Packaging / operations | Signed autoupdate | Recover nodes safely from failed or incompatible upgrades. |
-| IAMINE-V1-RELEASE-GATE-001 | PROPOSED | Architecture / QA release gate | All Milestone 3 features | Prove stable public-testnet operation and publish IAMINE v1.0. |
+| PUBLIC-TESTNET-DOCUMENTATION-001 | PROPOSED | Documentation / operations | Pre-public install path | Publish minimum controlled public-testnet documentation. |
+| IAMINE-PREPUBLIC-READINESS-GATE-001 | PROPOSED | Architecture / QA release gate | All v0.10 features | Confirm IAMINE is ready for external users without launching public beta. |
 
-Milestone gate: 50-200 initial nodes, 30-60 stable days, signed updates,
-operational rollback, and zero unresolved critical defects.
+Close criteria: controlled public-style install works, signed upgrade and
+rollback work, diagnostics export is available, documentation exists, and beta
+public launch remains blocked until the agent network gates close.
 
-## Milestone 4 - v1.1 Verification and Reputation
+## v0.11 - Agent Foundation
+
+### v0.11.0 - Agent Research and Product Fit
+
+| Feature | State | Primary owner | Dependencies | Goal |
+| --- | --- | --- | --- | --- |
+| AGENT-MARKET-FIT-RESEARCH-001 | PROPOSED | Product / research | v0.10 planning | Identify agent use cases by real adoption signals, not technical intuition alone. |
+| AGENT-USER-PERSONA-MAPPING-001 | PROPOSED | Product / research | Market-fit research | Map target users, pain points, hardware reality, and safety expectations. |
+| AGENT-BETA-PACK-SELECTION-001 | PROPOSED | Product / Architecture | Persona mapping | Choose the official beta agent pack by value, safety, demo quality, and feasibility. |
+
+### v0.11.1 - Agent Architecture Foundation
+
+| Feature | State | Primary owner | Dependencies | Goal |
+| --- | --- | --- | --- | --- |
+| AGENT-PACKAGE-MANIFEST-001 | PROPOSED | Agent package schema | Agent beta pack selection | Define the agent package manifest and validation boundary. |
+| AGENT-CAPABILITY-METADATA-001 | PROPOSED | Capability model | Agent manifest | Let agents declare capability inputs, outputs, and compatibility metadata. |
+| AGENT-RESOURCE-REQUIREMENTS-001 | PROPOSED | Resource policy | Capability metadata | Declare CPU, memory, storage, network, and backend requirements explicitly. |
+| AGENT-PERMISSION-MODEL-001 | PROPOSED | Permission policy | Agent manifest | Define visible, deny-by-default permissions for agent execution. |
+| AGENT-AUDIT-LOG-001 | PROPOSED | Observability / audit | Permission model | Record privacy-safe execution, permission, and failure evidence. |
+| AGENT-REGISTRY-LOCAL-001 | PROPOSED | Local registry | Agent manifest | Provide a local official-agent registry without opening third-party publication. |
+
+### v0.11.2 - Agent Runtime Baseline
+
+| Feature | State | Primary owner | Dependencies | Goal |
+| --- | --- | --- | --- | --- |
+| AGENT-RUNTIME-BASELINE-001 | PROPOSED | Agent runtime | Architecture foundation | Execute official agents through a controlled runtime. |
+| AGENT-RUNTIME-SANDBOX-001 | PROPOSED | Agent runtime / security | Runtime baseline | Enforce sandbox boundaries for official agents. |
+| AGENT-EXECUTION-LIFECYCLE-001 | PROPOSED | Agent runtime | Runtime baseline | Support queued, permission_pending, running, completed, failed, cancelled, timeout, and blocked states. |
+| AGENT-INPUT-OUTPUT-CONTRACT-001 | PROPOSED | Agent runtime / schema | Runtime baseline | Define structured inputs, outputs, and errors. |
+| AGENT-TIMEOUT-CANCEL-001 | PROPOSED | Agent runtime | Execution lifecycle | Bound long-running agents with timeout and cancellation. |
+
+### v0.11.3 - Internal Agent Developer Bootstrap
+
+| Feature | State | Primary owner | Dependencies | Goal |
+| --- | --- | --- | --- | --- |
+| AGENT-FRAMEWORK-BASELINE-001 | PROPOSED | Internal agent framework | Runtime baseline | Provide the internal framework used to build official IAMINE agents. |
+| AGENT-TEMPLATE-DIAGNOSTIC-001 | PROPOSED | Internal templates | Framework baseline | Generate diagnostic agent skeletons. |
+| AGENT-TEMPLATE-FILE-READONLY-001 | PROPOSED | Internal templates | Framework baseline | Generate file-readonly agent skeletons with scoped permissions. |
+| AGENT-TEMPLATE-NETWORK-DIAGNOSTIC-001 | PROPOSED | Internal templates | Framework baseline | Generate LAN/network diagnostic agent skeletons. |
+| AGENT-TEMPLATE-REPORTER-001 | PROPOSED | Internal templates | Framework baseline | Generate reporter agent skeletons. |
+| AGENT-TEMPLATE-TEXT-ASSISTANT-001 | PROPOSED | Internal templates | Framework baseline | Generate text-assistant agent skeletons. |
+| AGENT-TEMPLATE-OS-DIAGNOSTIC-001 | PROPOSED | Internal templates | Framework baseline | Generate OS diagnostic agent skeletons. |
+| IAMINE-DEV-SETUP-AGENT-001-INTERNAL | PROPOSED | Internal developer agents | Framework baseline | Help IAMINE maintainers install and validate internal agent tooling with confirmation. |
+| AGENT-BUILDER-ASSISTANT-AGENT-001-INTERNAL | PROPOSED | Internal developer agents | Templates | Assist maintainers in creating official agents from approved templates. |
+| AGENT-MANIFEST-WIZARD-AGENT-001-INTERNAL | PROPOSED | Internal developer agents | Manifest schema | Generate and correct manifests for official agents. |
+| AGENT-PERMISSION-REVIEW-AGENT-001-INTERNAL | PROPOSED | Internal developer agents | Permission model | Detect excessive permissions before official agents proceed. |
+
+Internal bootstrap must not publish tools to third parties, auto-publish
+agents, generate destructive permissions by default, or grant unrestricted
+shell, filesystem, or network access.
+
+## v0.12 - Official Agents
+
+### v0.12.0 - P0 Official Agents
+
+| Feature | State | Primary owner | Dependencies | Goal |
+| --- | --- | --- | --- | --- |
+| NODE-DOCTOR-AGENT-001 | PROPOSED | Official agents / diagnostics | Agent runtime | Diagnose IAMINE node health, identity, peers, models, readiness, logs, config, and warnings. |
+| REPORTER-AGENT-001 | PROPOSED | Official agents / reporting | Agent runtime | Convert technical results into clear technical and user-friendly reports. |
+| LAN-FILE-SHARE-ASSISTANT-AGENT-001 | PROPOSED | Official agents / LAN files | Permission model, local-only mode | Copy allowed files or folders between IAMINE LAN nodes with hashing, progress, cancel, and overwrite protection. |
+| PHOTO-LIBRARY-ORGANIZER-AGENT-001 | PROPOSED | Official agents / local files | Permission model | Detect exact duplicates, large media, metadata dates, and proposed folder organization without auto-delete. |
+| HOME-NETWORK-ASSISTANT-AGENT-001 | PROPOSED | Official agents / networking | Network diagnostic template | Diagnose gateway, DNS, latency, ports, peer reachability, and connectivity without changing router settings. |
+| WINDOWS-OPTIMIZER-ASSISTANT-AGENT-001 | PROPOSED | Official agents / OS diagnostics | OS diagnostic template | Produce safe Windows performance recommendations without destructive changes or silent uninstall. |
+
+### v0.12.1 - P1 Adoption Agents
+
+| Feature | State | Primary owner | Dependencies | Goal |
+| --- | --- | --- | --- | --- |
+| PRINTER-DOCTOR-AGENT-001 | PROPOSED | Official agents / LAN diagnostics | Agent runtime | Diagnose LAN printers, queues, reachability, and platform print services without unsafe driver or firewall changes. |
+| DOCUMENT-ORGANIZER-AGENT-001 | PROPOSED | Official agents / local files | File-readonly template | Classify permitted documents, detect duplicates, infer metadata, and propose organization without moving files automatically. |
+| CONTENT-POST-DRAFT-AGENT-001 | PROPOSED | Official agents / content | Text assistant template | Draft captions, hashtags, tone variants, and platform-specific text without publishing. |
+| CONTENT-CALENDAR-AGENT-001 | PROPOSED | Official agents / content | Text assistant template | Create weekly content calendars, topic suggestions, campaign grouping, and posting checklists. |
+| RECIPE-TEXT-AGENT-001 | PROPOSED | Official agents / text assistant | Text assistant template | Generate simple recipes, substitutions, steps, and timing from user-provided ingredients. |
+| HOMELAB-DOCTOR-AGENT-001 | PROPOSED | Official agents / homelab diagnostics | Diagnostic templates | Report IAMINE nodes, services, resources, network, containers when available, warnings, and health. |
+
+### v0.12.2 - P2 Experimental and Technical Agents
+
+| Feature | State | Primary owner | Dependencies | Goal |
+| --- | --- | --- | --- | --- |
+| PROXMOX-READONLY-AGENT-001 | PROPOSED | Experimental agents | Permission model | Inspect Proxmox environments in read-only mode where available. |
+| DOCKER-READONLY-AGENT-001 | PROPOSED | Experimental agents | Permission model | Inspect Docker environments in read-only mode where available. |
+| SMART-HOME-DOCTOR-AGENT-001 | PROPOSED | Experimental agents | Permission model | Diagnose smart-home state without modifying devices. |
+| HOME-ASSISTANT-YAML-INSPECTOR-AGENT-001 | PROPOSED | Experimental agents | File-readonly template | Inspect Home Assistant YAML for local issues without applying changes. |
+| CODE-REPO-INSPECTOR-AGENT-001 | PROPOSED | Experimental agents | File-readonly template | Inspect repositories and produce local findings without committing or publishing changes. |
+
+P2 agents remain read-only by default, local-only or LAN-only for private
+credentials, and cannot restart services, mutate infrastructure, or publish
+changes automatically.
+
+## v0.13 - Agent Beta Productization
+
+| Feature | State | Primary owner | Dependencies | Goal |
+| --- | --- | --- | --- | --- |
+| IAMINE-AGENT-NETWORK-BETA-001 | PROPOSED | Product / Architecture | Official agents | Assemble the installable agent-network beta experience. |
+| OFFICIAL-AGENT-PACK-001 | PROPOSED | Product / official agents | P0 agents | Ship the initial official agent pack. |
+| AGENT-CATALOG-PREVIEW-001 | PROPOSED | Catalog | Local registry | Show official, beta, experimental, and disabled catalog states. |
+| BETA-ONBOARDING-FLOW-001 | PROPOSED | Product / UX | Catalog preview | Guide users from install to first agent run. |
+| BETA-FEEDBACK-LOOP-001 | PROPOSED | Product / operations | Onboarding flow | Collect actionable feedback without leaking private data. |
+| AGENT-PERMISSION-DISPLAY-001 | PROPOSED | Permission UX | Permission model | Show permissions before execution. |
+| AGENT-RISK-LABELING-001 | PROPOSED | Security / product | Permission display | Label agent risk consistently. |
+| AGENT-LOCAL-ONLY-MODE-001 | PROPOSED | Runtime / security | Permission model | Enforce local-only operation for agents that must not reach public networks. |
+
+Close criteria: a user installs IAMINE, joins beta, runs Node Doctor, sees the
+agent catalog, executes at least one domestic agent and one technical agent,
+reviews permissions before execution, submits feedback, and sees understandable
+errors. Open marketplace remains blocked.
+
+## v1.0 - IAMINE Agent Network Public Beta
+
+| Feature | State | Primary owner | Dependencies | Goal |
+| --- | --- | --- | --- | --- |
+| IAMINE-V1-RELEASE-GATE-001 | PROPOSED | Architecture / QA release gate | v0.13 beta productization | Decide whether IAMINE can launch the Agent Network Public Beta. |
+| IAMINE-AGENT-NETWORK-PUBLIC-BETA-001 | PROPOSED | Product / operations | Release gate | Launch the public beta as an agent network. |
+| OFFICIAL-AGENT-PACK-v1.0 | PROPOSED | Product / official agents | P0 agents, selected P1 agents | Publish the supported official agent pack for v1.0. |
+| PUBLIC-BETA-DOCUMENTATION-001 | PROPOSED | Documentation | Public beta release gate | Publish public beta docs, install flow, known limits, and safety guidance. |
+| PUBLIC-BETA-WEBSITE-ALIGNMENT-001 | PROPOSED | Product / website | Documentation | Align public web messaging with the agent-network beta scope. |
+| PUBLIC-BETA-SUPPORT-FLOW-001 | PROPOSED | Support / diagnostics | User diagnostics | Provide a support flow tied to diagnostics and feedback evidence. |
+| PUBLIC-BETA-KNOWN-LIMITATIONS-001 | PROPOSED | Product / QA | Release gate | Publish explicit known limitations before beta launch. |
+
+Minimum v1.0 official agents: Node Doctor, Reporter, LAN File Share Assistant,
+Photo Library Organizer, Home Network Assistant, and Windows Optimizer
+Assistant.
+
+v1.0 does not include real payments, open marketplace, arbitrary third-party
+agents, or mainnet.
+
+## v1.1 - Validation, Reputation, and Trust
 
 | Feature | State | Primary owner | Dependencies | Goal |
 | --- | --- | --- | --- | --- |
@@ -202,10 +373,73 @@ operational rollback, and zero unresolved critical defects.
 | SCHEDULER-REPUTATION-WIRING-001 | PROPOSED | Scheduler wiring only | Reputation policy | Consume reputation without moving policy into the scheduler. |
 | NODE-BENCHMARK-CERTIFICATION-001 | PROPOSED | Hardware certification | Stable hardware profiler | Certify bounded benchmark methods separately from profiling. |
 | NODE-PERFORMANCE-ATTESTATION-001 | PROPOSED | Hardware certification | Benchmark certification | Attach verifiable performance attestations to node capability claims. |
+| AGENT-RESULT-VALIDATION-001 | PROPOSED | Agent validation | Agent audit logs | Validate accepted agent outputs separately from node performance. |
+| AGENT-QUALITY-SIGNAL-001 | PROPOSED | Agent reputation | Agent result validation | Track agent quality signals without conflating them with node reputation. |
 
-Reputation, verification, and hardware certification remain separate domains.
+Performance certification, behavioral reputation, reward eligibility, and agent
+quality remain separate domains.
 
-## Milestone 5 - v1.5 Economic Testnet
+## v1.2 - Public Agent Developer Platform
+
+### v1.2.0 - Developer Platform Foundation
+
+| Feature | State | Primary owner | Dependencies | Goal |
+| --- | --- | --- | --- | --- |
+| AGENT-SDK-PYTHON-001 | PROPOSED | Developer platform | v1.0 beta evidence | Provide a supported Python SDK for external agent creators. |
+| AGENT-SDK-TYPESCRIPT-001 | PROPOSED | Developer platform | v1.0 beta evidence | Provide a supported TypeScript SDK for external agent creators. |
+| AGENT-CLI-DEVTOOLS-001 | PROPOSED | Developer platform CLI | SDK baseline | Provide CLI tools for creating, validating, testing, simulating, and packaging agents. |
+| AGENT-TEMPLATE-BASELINE-001 | PROPOSED | Developer platform templates | SDK baseline | Publish the base public agent template set. |
+| AGENT-TEST-HARNESS-001 | PROPOSED | Developer platform QA | SDK baseline | Provide a public test harness for agent packages. |
+| AGENT-PACKAGE-VALIDATOR-CLI-001 | PROPOSED | Developer platform CLI | Manifest schema | Validate manifests, permissions, dependencies, and package structure. |
+| AGENT-LOCAL-SIMULATOR-001 | PROPOSED | Developer platform runtime | Runtime baseline | Simulate local agent execution, permissions, fixtures, and timeouts. |
+| AGENT-DEVELOPER-DOCS-001 | PROPOSED | Documentation | Developer tools | Publish developer quickstart and package guidance. |
+
+### v1.2.1 - AI-Assisted Developer Experience
+
+| Feature | State | Primary owner | Dependencies | Goal |
+| --- | --- | --- | --- | --- |
+| IAMINE-DEV-SETUP-AGENT-001 | PROPOSED | Developer assistant agents | Developer platform foundation | Install and validate developer prerequisites with explicit confirmation. |
+| AGENT-BUILDER-ASSISTANT-AGENT-001 | PROPOSED | Developer assistant agents | Templates, SDKs | Help creators shape an agent idea into template, category, inputs, outputs, permissions, risk, tests, and manifest. |
+| AGENT-MANIFEST-WIZARD-AGENT-001 | PROPOSED | Developer assistant agents | Manifest schema | Generate and correct manifests. |
+| AGENT-PERMISSION-REVIEW-AGENT-001 | PROPOSED | Developer assistant agents | Permission model | Detect excessive permissions and unsafe access requests. |
+| AGENT-TEST-GENERATOR-AGENT-001 | PROPOSED | Developer assistant agents | Test harness | Generate minimum manifest, permission, validation, timeout, sandbox, privacy, and mock-tool tests. |
+| AGENT-LOCAL-SIMULATION-AGENT-001 | PROPOSED | Developer assistant agents | Local simulator | Simulate local execution, fixtures, mock permissions, compatible nodes, and timeout or permission failures. |
+| AGENT-PACKAGE-REVIEW-AGENT-001 | PROPOSED | Developer assistant agents | Package validator | Review package structure, manifest, checksums, dependencies, license, README, permissions, resources, and sandbox profile. |
+
+### v1.2.2 - Developer Onboarding E2E
+
+| Feature | State | Primary owner | Dependencies | Goal |
+| --- | --- | --- | --- | --- |
+| AGENT-DEVELOPER-ONBOARDING-FLOW-001 | PROPOSED | Developer platform / UX | Developer assistant agents | Close the complete creator journey from install through dry-run submission. |
+| AGENT-CREATOR-QUICKSTART-001 | PROPOSED | Documentation | Developer onboarding | Publish the first creator quickstart. |
+| AGENT-SAMPLE-PACK-001 | PROPOSED | Developer samples | Templates | Publish sample agent packages. |
+| AGENT-SDK-DOCS-SITE-001 | PROPOSED | Documentation | SDKs | Publish the SDK documentation site. |
+| AGENT-SUBMISSION-DRY-RUN-001 | PROPOSED | Registry / developer platform | Package validator | Let creators dry-run submission without automatic publication. |
+
+## v1.3 - Curated Agent Registry
+
+| Feature | State | Primary owner | Dependencies | Goal |
+| --- | --- | --- | --- | --- |
+| AGENT-PACKAGE-REGISTRY-001 | PROPOSED | Agent registry | Developer platform | Accept reviewed external agent packages without opening marketplace. |
+| AGENT-VALIDATION-PIPELINE-001 | PROPOSED | Agent registry / QA | Package registry | Validate manifests, permissions, dependencies, signatures, tests, and malicious package signals. |
+| AGENT-SIGNING-REVOCATION-001 | PROPOSED | Agent registry / security | Validation pipeline | Sign accepted agents and revoke unsafe or obsolete packages. |
+| AGENT-TRUST-SCORE-001 | PROPOSED | Agent registry / trust | Validation pipeline | Calculate explicit trust signals for curated agents. |
+| AGENT-REPUTATION-REVIEWS-001 | PROPOSED | Agent registry / reputation | Trust score | Collect bounded reviews and reputation evidence. |
+| AGENT-CREATOR-PROFILE-001 | PROPOSED | Agent registry / identity | Wallet or registry identity | Represent reviewed creator identity and package ownership. |
+
+## v1.4 - Curated Agent Marketplace
+
+| Feature | State | Primary owner | Dependencies | Goal |
+| --- | --- | --- | --- | --- |
+| AGENT-MARKETPLACE-CURATED-001 | PROPOSED | Marketplace | Curated registry | Present reviewed agents through a limited, curated marketplace. |
+| AGENT-DISCOVERY-001 | PROPOSED | Marketplace / catalog | Curated marketplace | Support search and discovery for curated agents. |
+| AGENT-CATEGORY-TAXONOMY-001 | PROPOSED | Marketplace / product | Agent discovery | Define agent categories consistently. |
+| AGENT-MARKETPLACE-PERMISSION-DISPLAY-001 | PROPOSED | Marketplace / permission UX | Permission model | Show permissions in marketplace and install flows. |
+| AGENT-COMPATIBILITY-DISPLAY-001 | PROPOSED | Marketplace / compatibility | Capability metadata | Show node and resource compatibility before install or run. |
+| AGENT-RATING-REVIEWS-001 | PROPOSED | Marketplace / reputation | Agent reputation reviews | Provide review and rating flows with abuse controls. |
+| AGENT-MARKETPLACE-CREATOR-PROFILE-DISPLAY-001 | PROPOSED | Marketplace / identity | Creator profile | Display reviewed creator identity and package history. |
+
+## v1.5 - Economic Agent Testnet
 
 | Feature | State | Primary owner | Dependencies | Goal |
 | --- | --- | --- | --- | --- |
@@ -216,10 +450,18 @@ Reputation, verification, and hardware certification remain separate domains.
 | CERTIFIED-NODE-REWARD-BOOST-001 | PROPOSED | Rewards / certification wiring | Benchmark certification, reward policy | Apply explicit certification modifiers without changing benchmark policy. |
 | STAKE-AND-SLASHING-BASELINE-001 | PROPOSED | Economic security | Wallet identity, misbehavior evidence | Simulate bounded stake and slashing behavior. |
 | REWARD-DISPUTE-001 | PROPOSED | Dispute protocol | Reward ledger, evidence | Resolve disputed accounting and reward decisions. |
+| AGENT-USAGE-METERING-001 | PROPOSED | Agent accounting | Curated marketplace | Meter agent usage accurately in testnet units. |
+| AGENT-REVENUE-SHARE-001 | PROPOSED | Agent economics | Usage metering | Simulate creator share in testnet units. |
+| NODE-COMPUTE-PAYOUT-001 | PROPOSED | Node economics | Compute accounting | Simulate node payout in testnet units. |
+| BILLING-DISPUTE-001 | PROPOSED | Disputes | Usage and reward ledgers | Resolve disputed usage and billing evidence. |
+| AGENT-COMMISSION-POLICY-001 | PROPOSED | Agent economics | Revenue share | Define IAMINE commission rules for testnet simulation. |
+| AGENT-CREATOR-DASHBOARD-001 | PROPOSED | Product / creator UX | Agent revenue share | Show creator testnet usage and credit evidence. |
+| NODE-OPERATOR-EARNINGS-DASHBOARD-001 | PROPOSED | Product / operator UX | Node payout | Show node operator testnet earnings evidence. |
 
-This milestone uses testnet units with no real-world value.
+This milestone uses testnet units with no real-world value. There is no mainnet
+and no irreversible real-money settlement.
 
-## Milestone 6 - v2.0 Mainnet
+## v2.0 - Mainnet
 
 | Feature | State | Primary owner | Dependencies | Goal |
 | --- | --- | --- | --- | --- |
@@ -248,7 +490,7 @@ closed or authorized.
 | MOBILE-CONTROL-APP-001 | DEFERRED | Mobile application | Remote management API | Monitor and control nodes from mobile devices. |
 | MOBILE-COMPUTE-CONTRIBUTION-001 | DEFERRED | Mobile runtime | Mobile control, platform feasibility | Evaluate bounded mobile compute contribution. |
 
-### Marketplace
+### Enterprise and Integrations
 
 | Feature | State | Primary owner | Activation dependency | Goal |
 | --- | --- | --- | --- | --- |
@@ -309,13 +551,17 @@ features.
 ## Immediate Sequence
 
 ```text
-TESTNET-NODE-ADMISSION-001
--> P2P-SECURE-TRANSPORT-POLICY-001
--> LAN-BETA-FIRST-RUN-PREFLIGHT-001
--> REMOTE-INFERENCE-API-001
--> TESTNET-OBSERVABILITY-001
+V0.9-BETA-FRESH-INSTALL-E2E-001
 -> TESTNET-LOAD-RESILIENCE-001
 -> PRIVATE-TESTNET-RELEASE-001
+-> PUBLIC-TESTNET-ADMISSION-001
+-> SIGNED-AUTOUPDATE-001
+-> USER-DIAGNOSTICS-SUPPORT-001
+-> V1-SUPPLY-CHAIN-SECURITY-001
+-> NODE-UPGRADE-ROLLBACK-001
+-> PUBLIC-TESTNET-DOCUMENTATION-001
+-> IAMINE-PREPUBLIC-READINESS-GATE-001
+-> AGENT-MARKET-FIT-RESEARCH-001
 ```
 
 Each arrow still requires the complete canonical feature lifecycle. A roadmap
