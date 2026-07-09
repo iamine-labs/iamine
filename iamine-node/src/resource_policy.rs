@@ -59,7 +59,7 @@ impl ResourcePolicy {
 pub(crate) fn format_ram_limit_for_display(raw_ram_limit: u64) -> String {
     if raw_ram_limit >= 1024 {
         let gb = raw_ram_limit / 1024;
-        if raw_ram_limit % 1024 == 0 {
+        if raw_ram_limit.is_multiple_of(1024) {
             format!("{} MB ({} GB)", raw_ram_limit, gb)
         } else {
             format!(

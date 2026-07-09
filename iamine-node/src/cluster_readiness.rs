@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 const SIMPLE_TASK_TYPES: &[&str] = &["reverse_string", "test", "echo"];
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum ClusterReadinessReason {
     WorkerReady,
@@ -21,6 +21,7 @@ pub(crate) enum ClusterReadinessReason {
     NoSupportedTaskTypes,
     NoExecutableModels,
     StartupIncomplete,
+    #[default]
     Unknown,
 }
 
@@ -41,12 +42,6 @@ impl ClusterReadinessReason {
             Self::StartupIncomplete => "startup_incomplete",
             Self::Unknown => "unknown",
         }
-    }
-}
-
-impl Default for ClusterReadinessReason {
-    fn default() -> Self {
-        Self::Unknown
     }
 }
 

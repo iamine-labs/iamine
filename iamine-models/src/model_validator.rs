@@ -16,6 +16,12 @@ impl ValidationResult {
     }
 }
 
+impl Default for ModelValidator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ModelValidator {
     pub fn new() -> Self {
         Self

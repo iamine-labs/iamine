@@ -315,12 +315,12 @@ pub fn default_node_log_path() -> PathBuf {
 
     #[cfg(test)]
     {
-        return std::env::temp_dir().join("iamine-node-log-tests.ndjson");
+        std::env::temp_dir().join("iamine-node-log-tests.ndjson")
     }
 
     #[cfg(not(test))]
     {
-        return PathBuf::from("logs").join("iamine-node.ndjson");
+        PathBuf::from("logs").join("iamine-node.ndjson")
     }
 }
 

@@ -20,8 +20,8 @@ impl WorkerCapabilities {
         let hw = HardwareAcceleration::detect();
         let storage = ModelStorage::new();
         let cfg = StorageConfig::load();
-        let used_gb = (storage.total_size_bytes() / 1_073_741_824) as u64;
-        let disk_available_gb = (cfg.max_storage_gb as u64).saturating_sub(used_gb);
+        let used_gb = storage.total_size_bytes() / 1_073_741_824;
+        let disk_available_gb = cfg.max_storage_gb.saturating_sub(used_gb);
 
         Self {
             cpu_cores: cores,

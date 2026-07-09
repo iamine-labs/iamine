@@ -41,6 +41,12 @@ pub struct NodeRegistry {
 
 pub type SharedNodeRegistry = std::sync::Arc<tokio::sync::RwLock<NodeRegistry>>;
 
+impl Default for NodeRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl NodeRegistry {
     pub fn new() -> Self {
         Self {

@@ -65,6 +65,12 @@ pub struct ModelRegistry {
     models: HashMap<String, ModelDescriptor>,
 }
 
+impl Default for ModelRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ModelRegistry {
     pub fn new() -> Self {
         let mut registry = Self {

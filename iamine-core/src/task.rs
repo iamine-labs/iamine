@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::str::FromStr;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Tipos de tareas soportadas
@@ -10,8 +11,21 @@ pub enum TaskType {
     InferenceRequest, // ML futuro
 }
 
+impl FromStr for TaskType {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Self::parse_lossy(s))
+    }
+}
+
 impl TaskType {
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Self {
+        Self::parse_lossy(s)
+    }
+
+    fn parse_lossy(s: &str) -> Self {
         match s {
             "reverse_string" => Self::ReverseString,
             "compute_hash" => Self::ComputeHash,

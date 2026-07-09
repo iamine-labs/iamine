@@ -26,6 +26,12 @@ pub enum InstallResult {
     ValidationFailed(String),
 }
 
+impl Default for ModelInstaller {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ModelInstaller {
     pub fn new() -> Self {
         Self::with_storage(ModelStorage::new())

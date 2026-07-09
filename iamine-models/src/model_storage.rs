@@ -6,6 +6,12 @@ pub struct ModelStorage {
     base_path: PathBuf,
 }
 
+impl Default for ModelStorage {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ModelStorage {
     pub fn new() -> Self {
         Self::new_in(Self::models_dir())

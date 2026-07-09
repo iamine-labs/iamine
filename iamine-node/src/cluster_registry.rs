@@ -114,7 +114,7 @@ impl ClusterMetricsStatus {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct ClusterCapabilitySummary {
     pub(crate) models_in_storage: Vec<String>,
     pub(crate) models_in_registry: Vec<String>,
@@ -123,20 +123,6 @@ pub(crate) struct ClusterCapabilitySummary {
     pub(crate) unavailable_models: Vec<ModelCapabilityStatus>,
     pub(crate) supported_task_types: Vec<String>,
     pub(crate) real_inference_available: Option<bool>,
-}
-
-impl Default for ClusterCapabilitySummary {
-    fn default() -> Self {
-        Self {
-            models_in_storage: Vec::new(),
-            models_in_registry: Vec::new(),
-            executable_models: Vec::new(),
-            metadata_only_models: Vec::new(),
-            unavailable_models: Vec::new(),
-            supported_task_types: Vec::new(),
-            real_inference_available: None,
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
