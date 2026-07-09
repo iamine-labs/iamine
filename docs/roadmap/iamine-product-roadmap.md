@@ -169,7 +169,7 @@ This prework is technical evidence, not formal completion of the LAN beta.
 | P2P-SECURE-TRANSPORT-POLICY-001 | CLOSED | `iamine-network` | Node identity | Define authenticated transport and downgrade rejection. |
 | REMOTE-INFERENCE-API-001 | CLOSED | API boundary / `iamine-node` wiring | merge `c4046068`; Mac/TS140/Proxmox QA PASS; post-merge `quality-gate.sh` PASS WITH WARNINGS | Accept bounded remote inference requests with explicit authentication and policy checks. |
 | TESTNET-OBSERVABILITY-001 | CLOSED | Observability owner modules | merge `d6068ce`; Mac/TS140/Proxmox QA PASS; post-merge `quality-gate.sh` PASS WITH WARNINGS | Correlate cross-operator health, routing, execution, and failure evidence. |
-| TESTNET-LOAD-RESILIENCE-001 | PROPOSED | Runtime, scheduler, QA | Testnet observability | Prove bounded behavior under concurrency, partial outages, retries, and recovery. |
+| TESTNET-LOAD-RESILIENCE-001 | ACTIVE | Runtime, scheduler, QA | Testnet observability | Prove bounded behavior under concurrency, partial outages, retries, and recovery. |
 | PRIVATE-TESTNET-RELEASE-001 | PROPOSED | Architecture / QA release gate | All Milestone 2 features | Operate and close the private multi-operator testnet gate. |
 
 Milestone gate: 10-50 nodes, 3-10 operators, multiple physical networks, and

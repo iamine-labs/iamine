@@ -17,6 +17,7 @@ mod cluster_stress;
 mod cluster_stress_batch;
 mod cluster_stress_cli;
 mod cluster_stress_metrics;
+mod cluster_stress_resilience;
 mod cluster_stress_validation;
 mod code_quality;
 #[cfg(test)]
