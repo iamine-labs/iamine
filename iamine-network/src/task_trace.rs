@@ -128,14 +128,18 @@ impl TaskTraceManager {
             store: Arc::new(RwLock::new(store)),
         })
     }
+}
 
-    pub fn default() -> Self {
+impl Default for TaskTraceManager {
+    fn default() -> Self {
         Self::new(default_task_trace_path()).unwrap_or_else(|_| Self {
             path: default_task_trace_path(),
             store: Arc::new(RwLock::new(TaskTraceStore::new())),
         })
     }
+}
 
+impl TaskTraceManager {
     pub fn record_attempt(
         &self,
         task_id: &str,
@@ -234,16 +238,16 @@ pub fn default_task_trace_path() -> PathBuf {
 
     #[cfg(test)]
     {
-        return std::env::temp_dir().join("iamine-task-traces-tests.json");
+        std::env::temp_dir().join("iamine-task-traces-tests.json")
     }
 
     #[cfg(not(test))]
     {
-        return std::env::var_os("HOME")
+        std::env::var_os("HOME")
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from("."))
             .join(".iamine")
-            .join("task_traces.json");
+            .join("task_traces.json")
     }
 }
 

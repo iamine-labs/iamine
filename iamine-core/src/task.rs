@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::str::FromStr;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Tipos de tareas soportadas
@@ -10,17 +11,21 @@ pub enum TaskType {
     InferenceRequest, // ML futuro
 }
 
-impl TaskType {
-    pub fn from_str(s: &str) -> Self {
-        match s {
+impl FromStr for TaskType {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s {
             "reverse_string" => Self::ReverseString,
             "compute_hash" => Self::ComputeHash,
             "validate_challenge" => Self::ValidateChallenge,
             "inference" => Self::InferenceRequest,
             _ => Self::ComputeHash,
-        }
+        })
     }
+}
 
+impl TaskType {
     pub fn as_str(&self) -> &str {
         match self {
             Self::ReverseString => "reverse_string",

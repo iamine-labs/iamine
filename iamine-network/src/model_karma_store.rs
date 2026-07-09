@@ -23,14 +23,18 @@ impl ModelKarmaManager {
             store: Arc::new(RwLock::new(loaded)),
         })
     }
+}
 
-    pub fn default() -> Self {
+impl Default for ModelKarmaManager {
+    fn default() -> Self {
         Self::new(default_model_karma_path()).unwrap_or_else(|_| Self {
             path: default_model_karma_path(),
             store: Arc::new(RwLock::new(ModelKarmaStore::new())),
         })
     }
+}
 
+impl ModelKarmaManager {
     pub fn path(&self) -> &Path {
         &self.path
     }

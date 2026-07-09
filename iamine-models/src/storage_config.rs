@@ -8,14 +8,16 @@ pub struct StorageConfig {
     pub models_path: String,
 }
 
-impl StorageConfig {
-    pub fn default() -> Self {
+impl Default for StorageConfig {
+    fn default() -> Self {
         Self {
             max_storage_gb: 50,
             models_path: Self::default_path().to_string_lossy().to_string(),
         }
     }
+}
 
+impl StorageConfig {
     pub fn load() -> Self {
         let path = Self::config_path();
         if path.exists() {

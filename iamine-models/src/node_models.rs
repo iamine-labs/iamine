@@ -37,6 +37,12 @@ pub struct PeerModelRegistry {
     peers: HashMap<String, NodeModels>,
 }
 
+impl Default for PeerModelRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PeerModelRegistry {
     pub fn new() -> Self {
         Self {

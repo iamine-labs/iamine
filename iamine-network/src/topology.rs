@@ -12,6 +12,12 @@ pub struct NetworkTopology {
     peer_cluster: HashMap<String, String>,
 }
 
+impl Default for NetworkTopology {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl NetworkTopology {
     pub fn new() -> Self {
         Self {

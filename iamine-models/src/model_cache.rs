@@ -99,6 +99,13 @@ impl ModelCache {
         self.models.read().unwrap().len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        match self.models.read() {
+            Ok(models) => models.is_empty(),
+            Err(_) => true,
+        }
+    }
+
     pub fn actual_loads(&self) -> usize {
         self.actual_loads.load(Ordering::SeqCst)
     }

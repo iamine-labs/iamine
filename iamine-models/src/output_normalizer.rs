@@ -17,7 +17,7 @@ fn normalize_exact_math(exact_subtype: Option<&str>, output: &str) -> (String, O
         Some("Integer") => {
             let normalized = extract_last_integer(trimmed).unwrap_or_else(|| {
                 trimmed
-                    .trim_end_matches(|c: char| matches!(c, '.' | ',' | ';' | ':'))
+                    .trim_end_matches(['.', ',', ';', ':'])
                     .trim()
                     .to_string()
             });
@@ -62,7 +62,6 @@ fn normalize_structured_list(output: &str) -> (String, Option<String>) {
         .collect::<Vec<_>>()
         .join(" ")
         .replace(" ,", ",")
-        .replace(", ", ", ")
         .trim()
         .to_string();
 

@@ -61,14 +61,18 @@ impl DistributedTaskMetricsManager {
             metrics: Arc::new(RwLock::new(metrics)),
         })
     }
+}
 
-    pub fn default() -> Self {
+impl Default for DistributedTaskMetricsManager {
+    fn default() -> Self {
         Self::new(default_task_metrics_path()).unwrap_or_else(|_| Self {
             path: default_task_metrics_path(),
             metrics: Arc::new(RwLock::new(DistributedTaskMetrics::default())),
         })
     }
+}
 
+impl DistributedTaskMetricsManager {
     pub fn metrics(&self) -> DistributedTaskMetrics {
         self.metrics
             .read()
@@ -169,16 +173,16 @@ pub fn default_task_metrics_path() -> PathBuf {
 
     #[cfg(test)]
     {
-        return std::env::temp_dir().join("iamine-task-metrics-tests.json");
+        std::env::temp_dir().join("iamine-task-metrics-tests.json")
     }
 
     #[cfg(not(test))]
     {
-        return std::env::var_os("HOME")
+        std::env::var_os("HOME")
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from("."))
             .join(".iamine")
-            .join("task_metrics.json");
+            .join("task_metrics.json")
     }
 }
 
