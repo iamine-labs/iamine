@@ -74,6 +74,29 @@ Recommendation:
 READY FOR ARCHITECTURE MERGE REVIEW
 ```
 
+## Post-Merge Closure Evidence
+
+```text
+Target branch: develop
+Merge commit: c850c2e0ceb6f86076bcfea71b384d3aafe9f81e
+Merge tree: ec1c541c90ff14ea46e93d8d4b405bea9c9728b9
+Feature HEAD: f6990f5bcc71db664d2fe448db7d816b355794fd
+```
+
+Post-merge validation on the merge commit:
+
+- `./scripts/quality-gate.sh`: PASS WITH WARNINGS.
+- Required checks: PASS, `required_failures=0`.
+- `cargo clippy --workspace --all-targets`: PASS.
+- Optional tools skipped: `cargo audit`, `cargo deny`, and `gitleaks` were not
+  installed.
+
+Closure:
+
+```text
+MERGED / VALIDATED / CLOSED
+```
+
 ## Local Validation
 
 ```bash
