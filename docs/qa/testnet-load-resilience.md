@@ -11,6 +11,69 @@ TESTNET-LOAD-RESILIENCE-001
 Validate the explicit `testnet-load-resilience` cluster stress profile without
 changing scheduler, worker, transport, model loading, or inference behavior.
 
+## Executed Closure Evidence
+
+Identity:
+
+```text
+Branch: feature/testnet-load-resilience-001
+HEAD: 93b7f4e5a9c2309988cf2401bb5379bf0700494b
+Tree: d702ea7f26aac107c19aa66f709fea5d8613325f
+Base: 67687efb65e14a873df6a09f4b9ef5623641f4a4
+```
+
+Local/Mac validation:
+
+- `cargo fmt --all -- --check`: PASS.
+- `cargo test -p iamine-node cluster_stress`: PASS, 43/43.
+- `cargo test -p iamine-node`: PASS, 471/471.
+- `cargo build -p iamine-node`: PASS.
+- CLI smokes for help, zero-request JSON, and invalid guardrail shapes: PASS.
+- `./scripts/quality-gate.sh`: PASS WITH WARNINGS; optional tools were skipped
+  when unavailable and baseline warnings were not new regressions.
+
+TS140 field QA:
+
+- Disposable QA worktree:
+  `/tmp/iamine-qa-testnet-load-resilience-93b7f4e`.
+- Identity matched branch, HEAD, tree, and base above.
+- `cargo fmt --all -- --check`: PASS.
+- `cargo test -p iamine-node cluster_stress`: PASS, 43/43.
+- `cargo build -p iamine-node`: PASS.
+- CLI smokes for help, zero-request JSON, and invalid guardrail shapes: PASS.
+- Baseline `dead_code` warnings were observed and were not introduced by this
+  feature.
+
+Proxmox/R5500 field QA:
+
+- Disposable QA worktree on all guests:
+  `/tmp/iamine-qa-testnet-load-resilience-93b7f4e`.
+- Identity matched branch, HEAD, tree, and base above on `iamine-ctrl`,
+  `iamine-wrk1`, `iamine-wrk2`, and `iamine-heavy`.
+- Targeted validation passed on all four guests:
+  `cargo fmt --all -- --check`,
+  `cargo test -p iamine-node cluster_stress`, and
+  `cargo build -p iamine-node`.
+- CLI smokes passed on all four guests for help, zero-request JSON, and invalid
+  guardrail shapes.
+- Real Proxmox stress run from `iamine-ctrl` passed with
+  `--requests 30 --concurrency 6 --task reverse_string --profile
+  testnet-load-resilience`.
+- Observed result: 30 total, 30 observed, 30 completed, 0 failed, 0 timed out,
+  0 duplicate results, 0 duplicate executions, 0 duplicate request IDs,
+  0 duplicate task IDs, 0 incompatible assignments, `resilience.passed=true`,
+  and `resilience.blocking_failures=[]`.
+- Worker logs confirmed no `SIGILL` and no real model load markers; mock backend
+  markers were present.
+- QA-owned worker processes were stopped after the run. Logs and JSON evidence
+  were preserved outside the repository.
+
+Recommendation:
+
+```text
+READY FOR ARCHITECTURE MERGE REVIEW
+```
+
 ## Local Validation
 
 ```bash
