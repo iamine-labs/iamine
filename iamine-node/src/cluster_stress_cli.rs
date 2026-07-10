@@ -30,6 +30,9 @@ pub(crate) fn render_cluster_stress_human(summary: &ClusterStressSummary) -> Str
         "IAMINE Cluster Stress\n\
          result: {}\n\
          output_dir: {}\n\
+         resilience_profile: {}\n\
+         recovery_evidence_required: {}\n\
+         recovery_evidence_observed: {}\n\
          total_requests: {}\n\
          observed_requests: {}\n\
          not_run: {}\n\
@@ -46,9 +49,13 @@ pub(crate) fn render_cluster_stress_human(summary: &ClusterStressSummary) -> Str
          p50_latency_ms: {}\n\
          p95_latency_ms: {}\n\
          p99_latency_ms: {}\n\
+         resilience_failures: {}\n\
          validation_failures: {}",
         if summary.passed { "PASS" } else { "FAIL" },
         summary.output_dir.display(),
+        summary.resilience.profile.as_str(),
+        summary.resilience.recovery_evidence_required,
+        summary.resilience.recovery_evidence_observed,
         metrics.total_requests,
         metrics.observed_requests,
         metrics.not_run,
@@ -65,6 +72,7 @@ pub(crate) fn render_cluster_stress_human(summary: &ClusterStressSummary) -> Str
         optional_ms(metrics.p50_latency_ms),
         optional_ms(metrics.p95_latency_ms),
         optional_ms(metrics.p99_latency_ms),
+        summary.resilience.blocking_failures.len(),
         summary.validation_failures.len(),
     )
 }
@@ -89,6 +97,7 @@ mod tests {
             },
             output_dir: PathBuf::from("/tmp/iamine-cluster-stress-test"),
             metrics: ClusterStressMetrics::default(),
+            resilience: Default::default(),
             observations: Vec::new(),
             validation_failures: Vec::new(),
             passed: true,
@@ -102,6 +111,7 @@ mod tests {
             serde_json::from_str(&rendered).map_err(|error| error.to_string())?;
 
         assert!(parsed.get("metrics").is_some());
+        assert!(parsed.get("resilience").is_some());
         assert!(parsed["metrics"].get("p95_latency_ms").is_some());
         assert!(parsed["metrics"].get("p99_latency_ms").is_some());
         assert_eq!(parsed["passed"], true);
@@ -117,6 +127,8 @@ mod tests {
         assert!(rendered.contains("duplicate_request_ids: 0"));
         assert!(rendered.contains("duplicate_task_ids: 0"));
         assert!(rendered.contains("incompatible_assignments: 0"));
+        assert!(rendered.contains("resilience_profile: standard"));
+        assert!(rendered.contains("resilience_failures: 0"));
         assert!(rendered.contains("p95_latency_ms: -"));
         assert!(rendered.contains("p99_latency_ms: -"));
     }

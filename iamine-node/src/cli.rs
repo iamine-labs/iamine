@@ -189,7 +189,7 @@ pub(crate) fn parse_args_from(raw_args: Vec<String>) -> Result<NodeMode, String>
                 config: ClusterStressConfig::from_args(&args[3..])?,
             }),
             _ => Err(
-                "Uso: iamine-node cluster [status [--json]|stress [--requests N] [--concurrency N] [--task TYPE] [--required-model MODEL] [--batch-file PATH] [--prefix TEXT] [--timeout-secs N] [--output-dir PATH] [--stop-on-first-failure] [--json]]"
+                "Uso: iamine-node cluster [status [--json]|stress [--requests N] [--concurrency N] [--task TYPE] [--required-model MODEL] [--batch-file PATH] [--prefix TEXT] [--timeout-secs N] [--output-dir PATH] [--profile standard|testnet-load-resilience] [--require-recovery-evidence] [--stop-on-first-failure] [--json]]"
                     .to_string(),
             ),
         },
@@ -761,6 +761,32 @@ mod tests {
             mode,
             Ok(NodeMode::ClusterStress { config })
                 if config.request_count == 0 && config.json
+        ));
+    }
+
+    #[test]
+    fn cli_detects_cluster_stress_testnet_load_profile() {
+        let mode = parse_args_from(args(&[
+            "iamine-node",
+            "cluster",
+            "stress",
+            "--requests",
+            "2",
+            "--concurrency",
+            "2",
+            "--profile",
+            "testnet-load-resilience",
+            "--require-recovery-evidence",
+            "--json",
+        ]));
+
+        assert!(matches!(
+            mode,
+            Ok(NodeMode::ClusterStress { config })
+                if config.profile
+                    == crate::cluster_stress_resilience::ClusterStressProfile::TestnetLoadResilience
+                    && config.require_recovery_evidence
+                    && config.json
         ));
     }
 }

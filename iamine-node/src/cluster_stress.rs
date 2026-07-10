@@ -1,5 +1,9 @@
 use crate::cluster_stress_batch::{parse_batch_file, ClusterStressBatchRequest};
 use crate::cluster_stress_metrics::ClusterStressMetrics;
+use crate::cluster_stress_resilience::{
+    evaluate_resilience, validate_resilience_profile, ClusterStressProfile,
+    ClusterStressResilienceReport,
+};
 use crate::cluster_stress_validation::{
     validate_observations, StressTaskObservation, StressValidationFailure,
 };
@@ -37,6 +41,10 @@ pub(crate) struct ClusterStressConfig {
     pub(crate) stop_on_first_failure: bool,
     pub(crate) json: bool,
     pub(crate) output_dir: Option<PathBuf>,
+    #[serde(default)]
+    pub(crate) profile: ClusterStressProfile,
+    #[serde(default)]
+    pub(crate) require_recovery_evidence: bool,
 }
 
 impl Default for ClusterStressConfig {
@@ -52,6 +60,8 @@ impl Default for ClusterStressConfig {
             stop_on_first_failure: false,
             json: false,
             output_dir: None,
+            profile: ClusterStressProfile::Standard,
+            require_recovery_evidence: false,
         }
     }
 }
@@ -102,6 +112,15 @@ impl ClusterStressConfig {
                         "--output-dir",
                     )?));
                     index += 2;
+                }
+                "--profile" => {
+                    config.profile =
+                        ClusterStressProfile::parse(&parse_string_arg(args, index, "--profile")?)?;
+                    index += 2;
+                }
+                "--require-recovery-evidence" => {
+                    config.require_recovery_evidence = true;
+                    index += 1;
                 }
                 "--stop-on-first-failure" => {
                     config.stop_on_first_failure = true;
@@ -183,6 +202,7 @@ impl ClusterStressConfig {
         if self.prefix.trim().is_empty() {
             return Err("--prefix no puede estar vacio".to_string());
         }
+        validate_resilience_profile(self)?;
 
         Ok(())
     }
@@ -206,6 +226,7 @@ pub(crate) struct ClusterStressSummary {
     pub(crate) config: ClusterStressConfig,
     pub(crate) output_dir: PathBuf,
     pub(crate) metrics: ClusterStressMetrics,
+    pub(crate) resilience: ClusterStressResilienceReport,
     pub(crate) observations: Vec<StressTaskObservation>,
     pub(crate) validation_failures: Vec<StressValidationFailure>,
     pub(crate) passed: bool,
@@ -219,15 +240,19 @@ impl ClusterStressSummary {
     ) -> Self {
         let metrics = ClusterStressMetrics::from_observations(config.request_count, &observations);
         let validation_failures = validate_observations(&observations);
+        let resilience =
+            evaluate_resilience(&config, &metrics, &observations, &validation_failures);
         let passed = observations.len() == config.request_count
             && metrics.failed == 0
             && metrics.timed_out == 0
-            && validation_failures.is_empty();
+            && validation_failures.is_empty()
+            && resilience.passed;
 
         Self {
             config,
             output_dir,
             metrics,
+            resilience,
             observations,
             validation_failures,
             passed,
@@ -704,6 +729,27 @@ mod tests {
         };
 
         assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn stress_config_parses_testnet_load_resilience_profile() {
+        let args = vec![
+            "--requests".to_string(),
+            "2".to_string(),
+            "--concurrency".to_string(),
+            "2".to_string(),
+            "--profile".to_string(),
+            "testnet-load-resilience".to_string(),
+            "--require-recovery-evidence".to_string(),
+        ];
+        let parsed = ClusterStressConfig::from_args(&args);
+        assert!(parsed.is_ok(), "profile parse should succeed: {parsed:?}");
+        let Ok(config) = parsed else {
+            return;
+        };
+
+        assert_eq!(config.profile, ClusterStressProfile::TestnetLoadResilience);
+        assert!(config.require_recovery_evidence);
     }
 
     #[test]
