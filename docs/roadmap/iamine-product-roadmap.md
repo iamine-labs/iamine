@@ -54,10 +54,10 @@ development lifecycle. Only one next product feature should normally be
 
 IAMINE has closed Milestone 0 and Milestone 1. Milestone 2 has closed its
 private-testnet protocol, identity, discovery, admission, secure transport,
-remote inference, observability, and load-resilience feature gates. The active
-work is now the `PRIVATE-TESTNET-RELEASE-001` repository launch-readiness gate.
-Mac local validation, TS140 field QA, and Proxmox/R5500 field QA have passed;
-the release-gate branch is ready for Architecture merge review.
+remote inference, observability, load-resilience, and repository
+launch-readiness feature gates. `PRIVATE-TESTNET-RELEASE-001` merged at
+`92fdda4`; Mac local validation, TS140 field QA, Proxmox/R5500 field QA, and
+post-merge validation passed with documented baseline warnings.
 The broader v0.9 operational stability claim still requires the roadmap
 milestone target: 10-50 nodes, 3-10 operators, multiple physical networks, and
 two to four weeks of stable operation.
@@ -170,7 +170,7 @@ This prework is technical evidence, not formal completion of the LAN beta.
 | REMOTE-INFERENCE-API-001 | CLOSED | API boundary / `iamine-node` wiring | merge `c4046068`; Mac/TS140/Proxmox QA PASS; post-merge `quality-gate.sh` PASS WITH WARNINGS | Accept bounded remote inference requests with explicit authentication and policy checks. |
 | TESTNET-OBSERVABILITY-001 | CLOSED | Observability owner modules | merge `d6068ce`; Mac/TS140/Proxmox QA PASS; post-merge `quality-gate.sh` PASS WITH WARNINGS | Correlate cross-operator health, routing, execution, and failure evidence. |
 | TESTNET-LOAD-RESILIENCE-001 | CLOSED | Runtime, scheduler, QA | merge `c850c2e`; Mac/TS140/Proxmox QA PASS; post-merge `quality-gate.sh` PASS WITH WARNINGS | Prove bounded behavior under concurrency, partial outages, retries, and recovery. |
-| PRIVATE-TESTNET-RELEASE-001 | READY FOR MERGE REVIEW | Architecture / QA release gate | All Milestone 2 features closed; Mac local validation PASS WITH WARNINGS; TS140 QA PASS; Proxmox/R5500 QA PASS | Operate and close the private multi-operator testnet gate. |
+| PRIVATE-TESTNET-RELEASE-001 | CLOSED | Architecture / QA release gate | merge `92fdda4`; Mac/TS140/Proxmox QA PASS; post-merge `quality-gate.sh` PASS WITH WARNINGS | Close the repository launch-readiness gate while preserving the future multi-operator soak as a separate operational gate. |
 
 Milestone gate: 10-50 nodes, 3-10 operators, multiple physical networks, and
 two to four weeks of stable operation.
