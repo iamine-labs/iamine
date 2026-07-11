@@ -194,15 +194,45 @@ Not required for this feature because it adds policy types and docs only.
 Runtime, P2P startup, scheduler, worker, and inference behavior were not changed.
 ```
 
-## QA Recommendation
+## Post-Merge Validation
 
-QA may recommend:
+Merge:
 
 ```text
-READY FOR ARCHITECTURE MERGE REVIEW
+Source branch: origin/feature/public-testnet-admission-001
+Target branch: origin/develop
+Merge commit: e0c125a49b802db38e30b51dd8cea97f2045c9fb
+Tree: 5bd8708f6f6b4e58218c6ba1618423f65b67bbfc
 ```
 
-QA must not emit:
+Executed after pushing the merge commit to `origin/develop`:
+
+```text
+cargo test -p iamine-network public_testnet_admission: PASS; 9 passed
+./scripts/quality-gate.sh: PASS WITH WARNINGS
+required_failures: 0
+warnings: 0
+skipped: 3
+```
+
+Optional tools skipped by post-merge quality gate:
+
+```text
+cargo audit: skipped; not installed
+cargo deny check: skipped; not installed
+gitleaks secret scan: skipped; not installed
+```
+
+## QA Recommendation
+
+QA recommendation:
+
+```text
+MERGED / VALIDATED / CLOSED
+```
+
+Closeout is based on controlled merge and post-merge validation evidence.
+QA must not emit authorization language without Merge Owner authority:
 
 ```text
 MERGE APPROVED
