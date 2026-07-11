@@ -157,7 +157,49 @@ Expected:
 Status:
 
 ```text
-PENDING: requires feature branch push before TS140 can fetch exact QA identity.
+PASS: executed from disposable worktree after feature branch push.
+```
+
+TS140 identity and validation on 2026-07-10 / 2026-07-11:
+
+```text
+canonical path: /home/ts140/iamine
+canonical branch: feature/wan-peer-discovery-001
+canonical state: dirty, preserved
+QA path: /tmp/iamine-qa-private-testnet-release-fb73154-20260710233101
+HEAD: fb73154144f84d8aed96c0cb3bb4b9894e6d5a4a
+Tree: 9876ccc42a41d2d947477c94c194826130175c92
+Base: de1b35e50455fa9b639d9dac01b22c3a239b6bc6
+tracked clean: yes
+staging clean: yes
+```
+
+TS140 sync note:
+
+```text
+Initial merge-base check reported stale origin/develop on TS140.
+Resolution used fetch-only remote-tracking sync:
+git fetch origin +refs/heads/develop:refs/remotes/origin/develop
+No source reset, clean, checkout -f, switch -f, or canonical worktree edit was used.
+Classification: environment sync precondition, not product regression.
+```
+
+TS140 results:
+
+```text
+cargo fmt --all -- --check: PASS
+cargo test -p iamine-network protocol_version: PASS (5 passed)
+cargo test -p iamine-network secure_transport: PASS (4 passed)
+cargo test -p iamine-network testnet_admission: PASS (6 passed)
+cargo test -p iamine-node remote_inference_api: PASS (6 passed)
+cargo test -p iamine-node testnet_observability: PASS (2 passed)
+cargo test -p iamine-node cluster_stress: PASS (43 passed)
+cargo build -p iamine-node: PASS
+./target/debug/iamine-node --help: PASS
+./target/debug/iamine-node cluster status --json: PASS, JSON payload parseable
+./target/debug/iamine-node cluster stress --requests 0 --profile testnet-load-resilience --json: PASS
+git diff --check: PASS
+git diff --cached --check: PASS
 ```
 
 ## Proxmox/R5500 Field QA
@@ -220,7 +262,111 @@ Expected:
 Status:
 
 ```text
-PENDING: requires feature branch push before Proxmox/R5500 guests can fetch exact QA identity.
+PASS: executed from disposable worktrees on all four Proxmox/R5500 guests.
+```
+
+Proxmox/R5500 identity on 2026-07-10 / 2026-07-11:
+
+```text
+canonical path on every guest: /home/iamine/work/iamine
+canonical branch on every guest: feature/wan-peer-discovery-001
+canonical state on every guest: dirty, preserved
+
+iamine-ctrl QA path: /tmp/iamine-qa-private-testnet-release-fb73154-20260710234032
+iamine-wrk1 QA path: /tmp/iamine-qa-private-testnet-release-fb73154-20260710234046
+iamine-wrk2 QA path: /tmp/iamine-qa-private-testnet-release-fb73154-20260710234101
+iamine-heavy QA path: /tmp/iamine-qa-private-testnet-release-fb73154-20260710234117
+
+HEAD on every QA worktree: fb73154144f84d8aed96c0cb3bb4b9894e6d5a4a
+Tree on every QA worktree: 9876ccc42a41d2d947477c94c194826130175c92
+Base on every QA worktree: de1b35e50455fa9b639d9dac01b22c3a239b6bc6
+tracked clean on every QA worktree: yes
+staging clean on every QA worktree: yes
+```
+
+Targeted validation passed on all four Proxmox/R5500 guests:
+
+```text
+cargo fmt --all -- --check: PASS
+cargo test -p iamine-network protocol_version: PASS
+cargo test -p iamine-network secure_transport: PASS
+cargo test -p iamine-network testnet_admission: PASS
+cargo test -p iamine-node remote_inference_api: PASS
+cargo test -p iamine-node testnet_observability: PASS
+cargo test -p iamine-node cluster_stress: PASS
+cargo build -p iamine-node: PASS
+./target/debug/iamine-node --help: PASS
+./target/debug/iamine-node cluster status --json: PASS, JSON payload parseable
+./target/debug/iamine-node cluster stress --requests 0 --profile testnet-load-resilience --json: PASS
+git diff --check: PASS
+git diff --cached --check: PASS
+```
+
+Proxmox/R5500 QA log roots:
+
+```text
+iamine-ctrl: /tmp/iamine-private-testnet-release-qa-iamine-ctrl-20260710234306
+iamine-wrk1: /tmp/iamine-private-testnet-release-qa-iamine-wrk1-20260710235821
+iamine-wrk2: /tmp/iamine-private-testnet-release-qa-iamine-wrk2-20260711001252
+iamine-heavy: /tmp/iamine-private-testnet-release-qa-iamine-heavy-20260711002744
+```
+
+Field stress finding:
+
+```text
+First stress attempt from iamine-ctrl without active QA workers:
+- total_requests=30
+- observed_requests=30
+- completed=0
+- failed=30
+- timed_out=30
+- resilience.blocking_failures=["failed_requests", "timed_out_requests"]
+
+Classification: harness/environment precondition. The stress profile requires
+active workers for non-zero request execution; the zero-request smoke had
+already validated the local profile shape.
+```
+
+Field stress with QA workers:
+
+```text
+workers:
+- iamine-wrk1, mock backend, skip model load, QA pid stopped after run
+- iamine-wrk2, mock backend, skip model load, QA pid stopped after run
+- iamine-heavy, mock backend, skip model load, QA pid stopped after run
+
+worker log roots:
+- /tmp/iamine-private-testnet-release-worker-wrk1-20260711004556
+- /tmp/iamine-private-testnet-release-worker-wrk2-20260711004556
+- /tmp/iamine-private-testnet-release-worker-heavy-20260711004556
+
+controller stress log root:
+- /tmp/iamine-private-testnet-release-fieldstress-with-workers-20260711004629
+
+command:
+./target/debug/iamine-node cluster stress \
+  --requests 30 \
+  --concurrency 6 \
+  --task reverse_string \
+  --profile testnet-load-resilience \
+  --prefix qa-private-testnet-release-workers-20260711 \
+  --json
+
+result:
+- passed=true
+- resilience.passed=true
+- resilience.blocking_failures=[]
+- total_requests=30
+- observed_requests=30
+- completed=30
+- failed=0
+- timed_out=0
+- duplicate_results=0
+- duplicate_executions=0
+- duplicate_request_ids=0
+- duplicate_task_ids=0
+- incompatible_assignments=0
+- p95_latency_ms=1168
 ```
 
 ## Release Gate Decision
@@ -235,3 +381,9 @@ The feature can move to `READY FOR MERGE REVIEW` when:
   readiness and the future 2-4 week operational soak.
 
 QA must not emit `MERGE APPROVED`.
+
+QA recommendation:
+
+```text
+READY FOR ARCHITECTURE MERGE REVIEW
+```
