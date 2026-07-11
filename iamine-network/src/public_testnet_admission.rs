@@ -24,9 +24,8 @@ impl PublicTestnetAdmissionMode {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PublicTestnetAbuseControls {
-    pub require_identity_registration: bool,
-    pub require_secure_transport: bool,
-    pub allow_removal: bool,
+    require_identity_registration: bool,
+    require_secure_transport: bool,
 }
 
 impl PublicTestnetAbuseControls {
@@ -34,8 +33,15 @@ impl PublicTestnetAbuseControls {
         Self {
             require_identity_registration: true,
             require_secure_transport: true,
-            allow_removal: true,
         }
+    }
+
+    pub fn requires_identity_registration(&self) -> bool {
+        self.require_identity_registration
+    }
+
+    pub fn requires_secure_transport(&self) -> bool {
+        self.require_secure_transport
     }
 }
 
@@ -154,7 +160,7 @@ impl PublicTestnetAdmissionPolicy {
             );
         }
 
-        if self.removed_peers.contains(&candidate.peer_id) && self.abuse_controls.allow_removal {
+        if self.removed_peers.contains(&candidate.peer_id) {
             return PublicTestnetAdmissionDecision::rejected(
                 PublicTestnetAdmissionReason::PeerRemoved,
             );
@@ -440,6 +446,9 @@ mod tests {
             assert!(result.is_ok(), "controlled policy should parse");
             return;
         };
+
+        assert!(policy.abuse_controls().requires_identity_registration());
+        assert!(policy.abuse_controls().requires_secure_transport());
 
         let missing_identity =
             PublicTestnetAdmissionCandidate::new(peer).with_secure_transport_authenticated(true);

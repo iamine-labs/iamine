@@ -98,6 +98,26 @@ P2P, worker, scheduler, or inference behavior changes. Field QA is required for
 any later feature that wires public-testnet admission into node startup,
 discovery, connection handling, remote inference, or operator provisioning.
 
+## Architecture Review
+
+Architecture checkpoint found one API invariant issue after the initial branch
+push:
+
+```text
+The first implementation exposed public abuse-control fields that could be used
+to construct a controlled public-testnet policy without identity, secure
+transport, or mandatory removal enforcement. That contradicted the documented
+public admission invariants.
+```
+
+Correction:
+
+```text
+PublicTestnetAbuseControls fields are private.
+The public API exposes read-only getters for strict controls.
+Removal override is unconditional once a peer appears in the removed set.
+```
+
 ## Local Results
 
 Status:
@@ -117,8 +137,16 @@ cargo fmt --all -- --check: PASS
 git diff --check: PASS
 privacy scan over changed docs/module exports: PASS; no matches
 ./scripts/quality-gate.sh: PASS WITH WARNINGS
+architecture correction revalidation:
+- cargo fmt --all -- --check: PASS
+- cargo test -p iamine-network public_testnet_admission: PASS; 9 passed
+- cargo test -p iamine-network testnet_admission: PASS; 15 passed
+- cargo test -p iamine-node testnet_admission_runtime: PASS; 2 passed
+- cargo test -p iamine-node network_config: PASS; 14 passed
+- git diff --check: PASS
+post-correction ./scripts/quality-gate.sh: PASS WITH WARNINGS
 size guard:
-- iamine-network/src/public_testnet_admission.rs: 541 lines
+- iamine-network/src/public_testnet_admission.rs: 550 lines
 - iamine-node/src/main.rs: 4928 lines
 - iamine-node/src/cluster_registry.rs: 862 lines
 ```
