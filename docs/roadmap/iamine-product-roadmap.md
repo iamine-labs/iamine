@@ -80,7 +80,9 @@ foundation has closed its protocol, identity, discovery, admission, secure
 transport, remote inference, observability, load-resilience, and repository
 launch-readiness feature gates. `PRIVATE-TESTNET-RELEASE-001` merged at
 `92fdda4`; Mac local validation, TS140 field QA, Proxmox/R5500 field QA, and
-post-merge validation passed with documented baseline warnings.
+post-merge validation passed with documented baseline warnings. The repository
+fresh-install E2E gap also closed through
+`V0.9-BETA-FRESH-INSTALL-E2E-001`, merge `a4cedc9`.
 
 The official roadmap now requires IAMINE to continue through pre-public
 infrastructure and Agent Network foundations before v1.0. The next product
@@ -175,11 +177,11 @@ Closed prework that reduces Milestone 1 risk:
 | TESTNET-OBSERVABILITY-001 | CLOSED | Observability owner modules | Correlate cross-operator health, routing, execution, and failure evidence. |
 | TESTNET-LOAD-RESILIENCE-001 | CLOSED | Runtime, scheduler, QA | Prove bounded behavior under concurrency, partial outages, retries, and recovery. |
 | PRIVATE-TESTNET-RELEASE-001 | CLOSED | Architecture / QA release gate | Close the repository launch-readiness gate while preserving the future multi-operator soak as a separate operational gate. |
-| V0.9-BETA-FRESH-INSTALL-E2E-001 | ACTIVE | Packaging / QA / operations | Prove that a fresh node install can join the private testnet and exercise bootnode, identity, remote inference, and observability. |
+| V0.9-BETA-FRESH-INSTALL-E2E-001 | CLOSED | Packaging / QA / operations | Prove that a fresh node install can join the private testnet and exercise bootnode, identity, remote inference, and observability; merge `a4cedc9`, post-merge validation PASS WITH WARNINGS. |
 
-`V0.9-BETA-FRESH-INSTALL-E2E-001` blocks the full v0.9.2 operational
-release-candidate claim until it is closed or Architecture explicitly accepts
-its scheduling.
+The repository fresh-install E2E gap is closed. The broader v0.9 operational
+stability claim still requires the 10-50 node, 3-10 operator, multi-network,
+two-to-four-week soak.
 
 ## v0.10.0 - Pre-Public Infrastructure
 
