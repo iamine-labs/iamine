@@ -104,3 +104,30 @@ QA must not emit:
 MERGE APPROVED
 MERGE AUTHORIZED
 ```
+
+## Post-Merge Validation and Closure
+
+Merge result:
+
+```text
+Target branch: develop
+Merge commit: 62761cb7a6eb7ff440ab48e59ffb0b45b16623f5
+Merge tree: 073165807c3ef0ab221c62ed9fe7bd8c6c5d793e
+Feature HEAD: 0151915e9fe3293b60b04f1b4c83bf33eabefb1f
+```
+
+Post-merge validation on the merge commit:
+
+- `git diff --check HEAD~1..HEAD`: PASS.
+- Remote identity: `origin/develop` matched merge commit `62761cb`.
+- Old v1.0 stable-public-testnet wording: absent.
+- Privacy scan on feature files: no local paths or IP addresses found.
+- Required official terms present: `IAMINE Agent Network Public Beta`,
+  `scope-bound`, `AGENT-SCOPE-MANIFEST-001`, and
+  `V0.9-BETA-FRESH-INSTALL-E2E-001`.
+
+Closure:
+
+```text
+MERGED / VALIDATED / CLOSED
+```

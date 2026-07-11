@@ -98,7 +98,7 @@ or handed off to the orchestrator.
 
 | Feature | State | Owner | Goal |
 | --- | --- | --- | --- |
-| ROADMAP-OFFICIAL-AGENT-NETWORK-RECONCILIATION-001 | ACTIVE | Architecture / product roadmap | Reconcile this repository roadmap with the official Agent Network roadmap and preserve closed feature evidence without reinterpreting it. |
+| ROADMAP-OFFICIAL-AGENT-NETWORK-RECONCILIATION-001 | CLOSED | Architecture / product roadmap | Reconciled this repository roadmap with the official Agent Network roadmap while preserving closed feature evidence without reinterpreting it; merge `62761cb`, post-merge validation PASS. |
 
 ## Milestone 0 - v0.7 Foundations
 
