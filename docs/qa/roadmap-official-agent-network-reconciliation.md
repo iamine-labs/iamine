@@ -47,7 +47,7 @@ change in this feature.
 git diff --check
 git diff --cached --check
 git diff --name-only origin/develop..HEAD
-rg -n "Stable public testnet" docs/roadmap/iamine-product-roadmap.md docs/roadmap/iamine-agent-network-roadmap.md docs/architecture/roadmap-official-agent-network-reconciliation.md
+rg -n "v1[.]0[.]0[|].*Stable|v1[.]0[|].*Stable" docs/roadmap/iamine-product-roadmap.md docs/roadmap/iamine-agent-network-roadmap.md docs/architecture/roadmap-official-agent-network-reconciliation.md
 rg -n "inference-only public beta" docs/roadmap docs/architecture docs/qa
 rg -n "IAMINE Agent Network Public Beta|scope-bound|AGENT-SCOPE-MANIFEST-001|V0.9-BETA-FRESH-INSTALL-E2E-001" docs/roadmap/iamine-product-roadmap.md docs/roadmap/iamine-agent-network-roadmap.md docs/architecture/roadmap-official-agent-network-reconciliation.md docs/qa/roadmap-official-agent-network-reconciliation.md
 rg -n -e '/''home/' -e '/''Users/' -e 'ip4/''[0-9]' -e '[0-9]+[.][0-9]+[.][0-9]+[.][0-9]+' docs/roadmap/iamine-product-roadmap.md docs/roadmap/iamine-agent-network-roadmap.md docs/architecture/roadmap-official-agent-network-reconciliation.md docs/qa/roadmap-official-agent-network-reconciliation.md
@@ -57,7 +57,8 @@ Expected:
 
 - whitespace checks pass;
 - changed files are docs only;
-- `Stable public testnet` is absent from roadmap release definitions;
+- old v1.0 stable-public-testnet wording is absent from roadmap release
+  definitions;
 - `inference-only public beta` appears only as a rejected interpretation;
 - `IAMINE Agent Network Public Beta` is present;
 - `scope-bound` is present;
