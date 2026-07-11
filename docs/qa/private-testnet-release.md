@@ -122,8 +122,9 @@ No new runtime code was added by this feature.
 
 ## TS140 Field QA
 
-Use a disposable QA worktree if `/home/ts140/iamine` is dirty or on another
-feature.
+Use a disposable QA worktree if the TS140 canonical clone is dirty or on
+another feature. Do not persist operator-local home-directory paths in repo
+evidence.
 
 Required:
 
@@ -163,10 +164,10 @@ PASS: executed from disposable worktree after feature branch push.
 TS140 identity and validation on 2026-07-10 / 2026-07-11:
 
 ```text
-canonical path: /home/ts140/iamine
+canonical path: operator-local path redacted per privacy policy
 canonical branch: feature/wan-peer-discovery-001
 canonical state: dirty, preserved
-QA path: /tmp/iamine-qa-private-testnet-release-fb73154-20260710233101
+QA worktree: disposable /tmp worktree, exact path retained only in local QA logs
 HEAD: fb73154144f84d8aed96c0cb3bb4b9894e6d5a4a
 Tree: 9876ccc42a41d2d947477c94c194826130175c92
 Base: de1b35e50455fa9b639d9dac01b22c3a239b6bc6
@@ -268,14 +269,14 @@ PASS: executed from disposable worktrees on all four Proxmox/R5500 guests.
 Proxmox/R5500 identity on 2026-07-10 / 2026-07-11:
 
 ```text
-canonical path on every guest: /home/iamine/work/iamine
+canonical path on every guest: operator-local path redacted per privacy policy
 canonical branch on every guest: feature/wan-peer-discovery-001
 canonical state on every guest: dirty, preserved
 
-iamine-ctrl QA path: /tmp/iamine-qa-private-testnet-release-fb73154-20260710234032
-iamine-wrk1 QA path: /tmp/iamine-qa-private-testnet-release-fb73154-20260710234046
-iamine-wrk2 QA path: /tmp/iamine-qa-private-testnet-release-fb73154-20260710234101
-iamine-heavy QA path: /tmp/iamine-qa-private-testnet-release-fb73154-20260710234117
+iamine-ctrl QA worktree: disposable /tmp worktree, exact path retained only in local QA logs
+iamine-wrk1 QA worktree: disposable /tmp worktree, exact path retained only in local QA logs
+iamine-wrk2 QA worktree: disposable /tmp worktree, exact path retained only in local QA logs
+iamine-heavy QA worktree: disposable /tmp worktree, exact path retained only in local QA logs
 
 HEAD on every QA worktree: fb73154144f84d8aed96c0cb3bb4b9894e6d5a4a
 Tree on every QA worktree: 9876ccc42a41d2d947477c94c194826130175c92
