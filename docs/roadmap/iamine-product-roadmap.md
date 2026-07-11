@@ -175,7 +175,7 @@ Closed prework that reduces Milestone 1 risk:
 | TESTNET-OBSERVABILITY-001 | CLOSED | Observability owner modules | Correlate cross-operator health, routing, execution, and failure evidence. |
 | TESTNET-LOAD-RESILIENCE-001 | CLOSED | Runtime, scheduler, QA | Prove bounded behavior under concurrency, partial outages, retries, and recovery. |
 | PRIVATE-TESTNET-RELEASE-001 | CLOSED | Architecture / QA release gate | Close the repository launch-readiness gate while preserving the future multi-operator soak as a separate operational gate. |
-| V0.9-BETA-FRESH-INSTALL-E2E-001 | PROPOSED | Packaging / QA / operations | Prove that a fresh node install can join the private testnet and exercise bootnode, identity, remote inference, and observability. |
+| V0.9-BETA-FRESH-INSTALL-E2E-001 | ACTIVE | Packaging / QA / operations | Prove that a fresh node install can join the private testnet and exercise bootnode, identity, remote inference, and observability. |
 
 `V0.9-BETA-FRESH-INSTALL-E2E-001` blocks the full v0.9.2 operational
 release-candidate claim until it is closed or Architecture explicitly accepts
