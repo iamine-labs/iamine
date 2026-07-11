@@ -22,6 +22,7 @@ mod prompt_routing_hints;
 mod prompt_semantic_signals;
 mod prompt_task_detection;
 pub mod protocol_version;
+pub mod public_testnet_admission;
 pub mod result_validator;
 pub mod scheduler;
 pub mod secure_transport;
@@ -101,6 +102,12 @@ pub use protocol_version::{
     peer_protocol_decision, PeerProtocolDecision, IAMINE_IDENTIFY_PROTOCOL,
     IAMINE_PROTOCOL_VERSION, IAMINE_RESULT_PROTOCOL, IAMINE_TASK_PROTOCOL,
     REQUIRED_STREAM_PROTOCOLS,
+};
+pub use public_testnet_admission::{
+    PublicTestnetAbuseControls, PublicTestnetAdmissionCandidate, PublicTestnetAdmissionDecision,
+    PublicTestnetAdmissionMode, PublicTestnetAdmissionPolicy, PublicTestnetAdmissionPolicyError,
+    PublicTestnetAdmissionReason, DEFAULT_PUBLIC_TESTNET_MAX_NODES_PER_OPERATOR,
+    MAX_PUBLIC_TESTNET_ADMITTED_PEERS, MAX_PUBLIC_TESTNET_REMOVED_PEERS,
 };
 pub use result_validator::{validate_result, ResultStatus};
 pub use scheduler::IntelligentScheduler;
