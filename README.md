@@ -1,23 +1,31 @@
 # Iamine
 
 **Mina IA con tu PC mientras duermes**  
-Red descentralizada de cómputo para Inteligencia Artificial.  
-Cualquier laptop, PC gamer o celular idle aporta 2 núcleos + 2 GB RAM y recibe **$IAMINE** tokens.
+Red descentralizada de computo para Inteligencia Artificial.
+La participacion publica, admision de operadores y recompensas dependen de
+futuros gates de testnet y no estan abiertas todavia.
 
 **Whitepaper**: [docs/whitepaper.md](docs/whitepaper.md)  
-**Sitio web (próximo)**: iamine.ai  
-**Discord / Telegram**: (próximamente)  
-**Testnet**: Q2 2026
+**Sitio web (proximo)**: iamine.ai
+**Discord / Telegram**: (proximamente)
+**Public testnet**: pre-public; not open yet. See
+[docs/public-testnet/README.md](docs/public-testnet/README.md).
 
-## ¿Cómo funciona?
-- Instalas el cliente ligero (Rust).  
-- Eliges cuánto aportar (CPU/GPU/RAM).  
-- La red divide preguntas de IA en micro-tareas → tus nodos procesan → ganas **$IAMINE**.  
-- Blockchain (Solana) solo maneja pagos y reputación.  
-- Todo P2P y verificado con Proof of Inference + ZK-SNARKs.
+## Como funciona?
+- Instalas el cliente ligero cuando exista un paquete publico validado.
+- Eliges cuanto aportar dentro de los limites publicados para la red.
+- La red divide tareas de IA y los nodos admitidos procesan trabajo.
+- Las recompensas publicas quedan bloqueadas hasta los gates economicos futuros.
+- Todo P2P y verificado con las politicas que cierre el roadmap publico.
 
-## Quick Start (Testnet)
+## Quick Start
+
+IAMINE public-testnet onboarding is not open yet. The repository can be built
+for development and private validation, but source checkout commands are not a
+supported public-testnet install path.
+
 ```bash
 git clone https://github.com/iamine-labs/iamine.git
-cd iamine/client-rust
-cargo run
+cd iamine
+cargo test -p iamine-core
+```
