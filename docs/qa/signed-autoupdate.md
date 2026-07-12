@@ -205,3 +205,44 @@ QA must not emit:
 MERGE APPROVED
 MERGE AUTHORIZED
 ```
+
+## Post-Merge Validation and Closure
+
+Merge result:
+
+```text
+source branch: feature/signed-autoupdate-001
+target branch: develop
+merge commit: 39c6243e8ff360e6944fed7dd60038d9eaf13ca4
+tree: e46d46921e359665daf536df1f7524a4fdccba3f
+origin/develop: 39c6243e8ff360e6944fed7dd60038d9eaf13ca4
+origin/develop..origin/main: 0
+```
+
+Post-merge validation:
+
+```text
+./scripts/quality-gate.sh: PASS WITH WARNINGS
+required_failures: 0
+warnings: 0
+skipped: 3
+git diff --check origin/develop~1..origin/develop: PASS
+```
+
+Optional tools skipped by post-merge quality gate:
+
+```text
+cargo audit: skipped; not installed
+cargo deny check: skipped; not installed
+gitleaks secret scan: skipped; not installed
+```
+
+Field QA was not required for this policy-only feature because it did not change
+runtime behavior, scheduler behavior, P2P behavior, worker behavior, inference
+behavior, install behavior, or model execution.
+
+Closure:
+
+```text
+MERGED / VALIDATED / CLOSED
+```
