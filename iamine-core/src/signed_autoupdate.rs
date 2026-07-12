@@ -1,3 +1,4 @@
+use crate::release_validation::valid_sha256_hex;
 use serde::{Deserialize, Serialize};
 
 pub const DEFAULT_MAX_ROLLOUT_PERCENT: u8 = 10;
@@ -297,10 +298,6 @@ impl SignedAutoupdateRejectReason {
 
 fn valid_rollout_percent(value: u8) -> bool {
     (1..=100).contains(&value)
-}
-
-fn valid_sha256_hex(value: &str) -> bool {
-    value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
 #[cfg(test)]

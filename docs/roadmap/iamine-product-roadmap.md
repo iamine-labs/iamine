@@ -191,7 +191,7 @@ two-to-four-week soak.
 | SIGNED-AUTOUPDATE-001 | CLOSED | Release engineering | Distribute authenticated updates with explicit rollout controls; merge `39c6243`, post-merge validation PASS WITH WARNINGS. |
 | USER-DIAGNOSTICS-SUPPORT-001 | CLOSED | `iamine-node` diagnostics | Produce privacy-safe support bundles and actionable user diagnostics; merge `8070963`, post-merge validation PASS WITH WARNINGS. |
 | V1-SUPPLY-CHAIN-SECURITY-001 | CLOSED | Security / release engineering | Secure source, dependency, build, artifact, and release provenance; merge `a741699`, post-merge validation PASS WITH WARNINGS. |
-| NODE-UPGRADE-ROLLBACK-001 | PROPOSED | Packaging / operations | Recover nodes safely from failed or incompatible upgrades. |
+| NODE-UPGRADE-ROLLBACK-001 | ACTIVE | Packaging / operations | Recover nodes safely from failed or incompatible upgrades. |
 | PUBLIC-TESTNET-DOCUMENTATION-001 | PROPOSED | Documentation / operations | Provide minimum public documentation without launching public beta. |
 | IAMINE-PREPUBLIC-READINESS-GATE-001 | PROPOSED | Architecture / QA release gate | Decide whether IAMINE is ready to proceed into Agent Network foundations. |
 

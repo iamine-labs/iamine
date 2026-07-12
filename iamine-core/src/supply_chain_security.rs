@@ -1,3 +1,4 @@
+use crate::release_validation::valid_sha256_hex;
 use serde::{Deserialize, Serialize};
 
 pub const MAX_SUPPLY_CHAIN_ARTIFACTS: usize = 24;
@@ -424,10 +425,6 @@ fn artifact_provenance_rejection(
 
 fn valid_git_object_sha(value: &str) -> bool {
     matches!(value.len(), 40 | 64) && value.bytes().all(|byte| byte.is_ascii_hexdigit())
-}
-
-fn valid_sha256_hex(value: &str) -> bool {
-    value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
 #[cfg(test)]

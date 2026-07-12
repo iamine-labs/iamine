@@ -1,6 +1,8 @@
 pub mod errors;
 pub mod message;
 pub mod node;
+pub mod node_upgrade_rollback;
+mod release_validation;
 pub mod result;
 pub mod signed_autoupdate;
 pub mod supply_chain_security;
@@ -9,6 +11,13 @@ pub mod task;
 pub use errors::{IaMineError, IaMineResult};
 pub use message::IaMineMessage;
 pub use node::{NodeCapabilities, NodeReputation};
+pub use node_upgrade_rollback::{
+    NodeRollbackArtifact, NodeRollbackArtifactKind, NodeRollbackSignatureStatus,
+    NodeRollbackSignatureVerification, NodeUpgradeRollbackCandidate, NodeUpgradeRollbackDecision,
+    NodeUpgradeRollbackDecisionReason, NodeUpgradeRollbackMode, NodeUpgradeRollbackPlan,
+    NodeUpgradeRollbackPolicy, NodeUpgradeRollbackRejectReason, NodeUpgradeState,
+    MAX_ALLOWED_ROLLBACK_VERSIONS, MAX_ROLLBACK_ARTIFACTS, MAX_ROLLBACK_TRUSTED_SIGNING_KEYS,
+};
 pub use result::TaskResult;
 pub use signed_autoupdate::{
     SignatureVerification, SignatureVerificationStatus, SignedAutoupdateCandidate,
