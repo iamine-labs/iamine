@@ -94,6 +94,7 @@ mod tasks_cli;
 mod testnet_admission_runtime;
 mod testnet_observability;
 mod usage;
+mod user_diagnostics_support;
 mod wallet;
 mod worker_assignment_runtime;
 mod worker_capabilities;

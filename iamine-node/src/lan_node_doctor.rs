@@ -34,7 +34,7 @@ pub(crate) enum DoctorStatus {
 }
 
 impl DoctorStatus {
-    fn as_str(self) -> &'static str {
+    pub(crate) fn as_str(self) -> &'static str {
         match self {
             Self::Pass => "PASS",
             Self::Warn => "WARN",
@@ -84,6 +84,16 @@ pub(crate) struct LanNodeDoctorReport {
     overall_status: DoctorStatus,
     runtime_side_effects: RuntimeSideEffectPolicy,
     checks: Vec<DoctorCheck>,
+}
+
+impl LanNodeDoctorReport {
+    pub(crate) fn overall_status(&self) -> DoctorStatus {
+        self.overall_status
+    }
+
+    pub(crate) fn checks(&self) -> &[DoctorCheck] {
+        &self.checks
+    }
 }
 
 pub(crate) fn run_lan_node_doctor(

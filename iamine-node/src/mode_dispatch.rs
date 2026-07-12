@@ -5,7 +5,8 @@ use crate::{
     model_selector_cli::ModelSelectorCLI, node_config_schema::run_node_config_cli,
     node_identity::NodeIdentity, node_identity_cli::run_node_identity_cli, prompt_task_label,
     quality_gate::run_release_validation, regression_runner::run_default_regression_suite,
-    security_checks::run_security_checks, tasks_cli, worker_lifecycle::run_worker_lifecycle_cli,
+    security_checks::run_security_checks, tasks_cli, user_diagnostics_support::run_support_cli,
+    worker_lifecycle::run_worker_lifecycle_cli,
 };
 use iamine_models::{
     InstallResult, ModelCatalogDownloadAction, ModelInstaller, ModelNodeCapabilities,
@@ -33,6 +34,7 @@ pub(crate) fn is_control_plane_mode(mode: &NodeMode) -> bool {
             | NodeMode::Hardware { .. }
             | NodeMode::NodeConfig { .. }
             | NodeMode::NodeIdentity { .. }
+            | NodeMode::Support { .. }
             | NodeMode::LanDoctor { .. }
             | NodeMode::WorkerLifecycle { .. }
     )
@@ -120,6 +122,11 @@ pub(crate) async fn handle_pre_network_mode(
 
         NodeMode::NodeIdentity { command } => {
             run_node_identity_cli(command)?;
+            Ok(true)
+        }
+
+        NodeMode::Support { command } => {
+            run_support_cli(command)?;
             Ok(true)
         }
 

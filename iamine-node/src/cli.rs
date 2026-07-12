@@ -5,6 +5,7 @@ use crate::lan_inference_cli::{lan_usage, parse_lan_infer_args};
 use crate::node_config_schema::{node_config_usage, NodeConfigCommand};
 use crate::node_identity_cli::{node_identity_usage, NodeIdentityCommand};
 use crate::node_modes::{InferenceControlFlags, NodeMode};
+use crate::user_diagnostics_support::{support_usage, SupportCommand};
 use crate::worker_lifecycle::{worker_lifecycle_usage, WorkerLifecycleCommand};
 use libp2p::Multiaddr;
 use std::str::FromStr;
@@ -215,6 +216,13 @@ pub(crate) fn parse_args_from(raw_args: Vec<String>) -> Result<NodeMode, String>
                 command: NodeIdentityCommand::from_args(&args[3..])?,
             }),
             _ => Err(format!("{}\n{}", node_config_usage(), node_identity_usage())),
+        },
+
+        Some("support") => match args.get(2).map(|s| s.as_str()) {
+            Some("bundle") => Ok(NodeMode::Support {
+                command: SupportCommand::from_args(&args[2..])?,
+            }),
+            _ => Err(support_usage()),
         },
 
         Some("nodes") => Ok(NodeMode::Nodes),
@@ -480,6 +488,10 @@ mod tests {
             Ok(NodeMode::NodeIdentity { .. })
         ));
         assert!(matches!(
+            parse_args_from(args(&["iamine-node", "support", "bundle", "--json"])),
+            Ok(NodeMode::Support { .. })
+        ));
+        assert!(matches!(
             parse_args_from(args(&["iamine-node", "lan", "doctor"])),
             Ok(NodeMode::LanDoctor {
                 json: false,
@@ -703,6 +715,26 @@ mod tests {
                     && command.path.as_deref()
                         == Some(std::path::Path::new("/tmp/iamine-node-key"))
                     && command.json
+        ));
+    }
+
+    #[test]
+    fn cli_detects_support_bundle_json_output() {
+        let mode = parse_args_from(args(&[
+            "iamine-node",
+            "support",
+            "bundle",
+            "--output",
+            "/tmp/private/operator/support.json",
+            "--json",
+        ]));
+
+        assert!(matches!(
+            mode,
+            Ok(NodeMode::Support { command })
+                if command.json
+                    && command.output.as_deref()
+                        == Some(std::path::Path::new("/tmp/private/operator/support.json"))
         ));
     }
 
