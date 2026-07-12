@@ -45,6 +45,76 @@ Validate:
 - action items include next commands for non-pass diagnostics;
 - runtime side-effect flags are all false.
 
+## Local Results
+
+Status:
+
+```text
+LOCAL VALIDATION PASSED
+```
+
+Executed on Mac local worktree:
+
+```text
+cargo fmt --all -- --check: PASS
+cargo test -p iamine-node user_diagnostics_support: PASS; 8 passed
+cargo test -p iamine-node cli_detects_support_bundle_json_output: PASS
+cargo test -p iamine-node cli_: PASS; 47 passed
+cargo test -p iamine-node: PASS; 480 passed
+cargo build -p iamine-node: PASS
+cargo clippy -p iamine-node --all-targets: PASS with baseline warnings only
+./scripts/quality-gate.sh: PASS WITH WARNINGS
+git diff --check: PASS
+git diff --cached --check: PASS
+support bundle JSON smoke: PASS
+support bundle output file smoke: PASS; Unix permissions 0600
+privacy and runtime side-effect checks: PASS
+```
+
+Observed non-blockers:
+
+```text
+One full iamine-node test run initially reported
+cluster_stress_batch::tests::batch_file_rejects_empty_requests as failed.
+The test passed in isolation and passed in the full rerun. It was classified
+as non-reproducible and not a feature regression.
+
+Optional quality-gate tools skipped because they were unavailable locally:
+cargo audit, cargo deny, gitleaks.
+```
+
+Size guard:
+
+```text
+iamine-node/src/user_diagnostics_support.rs: 521 lines
+iamine-node/src/main.rs: 4929 lines; +1 module registration only
+iamine-node/src/cluster_registry.rs: 862 lines; unchanged
+```
+
+## Merge and Post-Merge Validation
+
+Controlled merge:
+
+```text
+Source branch: feature/user-diagnostics-support-001
+Feature commit: ab5b0a8206c6e0b1668e6e79bdaa062d660a79d5
+Target branch: develop
+Merge commit: 80709636a36e518786207dbbdd887ebd68cd3368
+Merge tree: 4a7b4a5544eb2afeccbb05edd726f60711cdaba3
+```
+
+Post-merge validation on the merge commit:
+
+```text
+./scripts/quality-gate.sh: PASS WITH WARNINGS
+required_failures=0
+warnings=0
+skipped=3
+origin/develop: 80709636a36e518786207dbbdd887ebd68cd3368
+origin/develop tree: 4a7b4a5544eb2afeccbb05edd726f60711cdaba3
+origin/develop..origin/main: 0
+```
+
 ## Field QA Decision
 
 Field QA is not required for this implementation unless Architecture expands the
