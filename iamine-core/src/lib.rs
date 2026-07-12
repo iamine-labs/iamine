@@ -2,12 +2,20 @@ pub mod errors;
 pub mod message;
 pub mod node;
 pub mod result;
+pub mod signed_autoupdate;
 pub mod task;
 
 pub use errors::{IaMineError, IaMineResult};
 pub use message::IaMineMessage;
 pub use node::{NodeCapabilities, NodeReputation};
 pub use result::TaskResult;
+pub use signed_autoupdate::{
+    SignatureVerification, SignatureVerificationStatus, SignedAutoupdateCandidate,
+    SignedAutoupdateDecision, SignedAutoupdateDecisionReason, SignedAutoupdateMode,
+    SignedAutoupdatePolicy, SignedAutoupdateRejectReason, SignedReleaseArtifact,
+    SignedReleaseArtifactKind, DEFAULT_MAX_ROLLOUT_PERCENT, MAX_RELEASE_ARTIFACTS,
+    MAX_TRUSTED_SIGNING_KEYS,
+};
 pub use task::{Task, TaskStatus, TaskType};
 
 pub fn sha256_hex(data: &[u8]) -> String {

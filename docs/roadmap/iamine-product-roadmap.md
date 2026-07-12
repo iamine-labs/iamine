@@ -188,7 +188,7 @@ two-to-four-week soak.
 | Feature | State | Primary owner | Goal |
 | --- | --- | --- | --- |
 | PUBLIC-TESTNET-ADMISSION-001 | CLOSED | Identity / network policy | Define controlled public operator admission, abuse controls, and removal policy before public beta; merge `e0c125a`, post-merge validation PASS WITH WARNINGS. |
-| SIGNED-AUTOUPDATE-001 | PROPOSED | Release engineering | Distribute authenticated updates with explicit rollout controls. |
+| SIGNED-AUTOUPDATE-001 | ACTIVE | Release engineering | Distribute authenticated updates with explicit rollout controls. |
 | USER-DIAGNOSTICS-SUPPORT-001 | PROPOSED | `iamine-node` diagnostics | Produce privacy-safe support bundles and actionable user diagnostics. |
 | V1-SUPPLY-CHAIN-SECURITY-001 | PROPOSED | Security / release engineering | Secure source, dependency, build, artifact, and release provenance. |
 | NODE-UPGRADE-ROLLBACK-001 | PROPOSED | Packaging / operations | Recover nodes safely from failed or incompatible upgrades. |
