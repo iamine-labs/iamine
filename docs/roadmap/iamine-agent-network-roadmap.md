@@ -96,7 +96,7 @@ AGENT-BETA-PACK-SELECTION-001
 | Feature | State | Goal |
 | --- | --- | --- |
 | AGENT-MARKET-FIT-RESEARCH-001 | CLOSED | Define the research baseline, candidate segments, safety criteria, and exclusion rules for early IAMINE agents; merge `9931f1d`, focused post-merge validation PASS. |
-| AGENT-USER-PERSONA-MAPPING-001 | ACTIVE | Convert research segments into explicit user personas and task contexts. |
+| AGENT-USER-PERSONA-MAPPING-001 | CLOSED | Convert research segments into explicit user personas and task contexts; merge `6c84f6c`, focused post-merge validation PASS. |
 | AGENT-BETA-PACK-SELECTION-001 | PROPOSED | Select the first official beta agent pack from validated personas and constraints. |
 
 Research segments include home users, non-technical users, homelabs,
