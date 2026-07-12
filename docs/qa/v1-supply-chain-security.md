@@ -157,3 +157,38 @@ QA must not emit:
 MERGE APPROVED
 MERGE AUTHORIZED
 ```
+
+## Post-Merge Validation and Closure
+
+Merge result:
+
+```text
+source branch: feature/v1-supply-chain-security-001
+feature commit: 941b859a4e7dfbb1a7252a86ded9317325712733
+target branch: develop
+merge commit: a7416996d6ca6732c85014f454b9c3be28d3c433
+tree: 38d39d46f90d4036bad3757c04ad8d1604253a2b
+origin/develop: a7416996d6ca6732c85014f454b9c3be28d3c433
+origin/develop tree: 38d39d46f90d4036bad3757c04ad8d1604253a2b
+origin/develop..origin/main: 0
+```
+
+Post-merge validation:
+
+```text
+./scripts/quality-gate.sh: PASS WITH WARNINGS
+required_failures=0
+warnings=0
+skipped=3
+cargo audit: SKIPPED; not installed
+cargo deny check: SKIPPED; not installed
+gitleaks secret scan: SKIPPED; not installed
+```
+
+Closure:
+
+```text
+runtime behavior changed: none
+field QA required: no
+status: MERGED / VALIDATED / CLOSED after closeout merge
+```
