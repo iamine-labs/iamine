@@ -210,7 +210,7 @@ docs/roadmap/iamine-agent-network-roadmap.md
 
 | Release | State | Product focus |
 | --- | --- | --- |
-| v0.11.0 | PROPOSED | Agent research and product fit |
+| v0.11.0 | ACTIVE | Agent research and product fit |
 | v0.11.1 | PROPOSED | Agent architecture foundation |
 | v0.11.2 | PROPOSED | Agent runtime baseline |
 | v0.11.3 | PROPOSED | Internal agent developer bootstrap |
