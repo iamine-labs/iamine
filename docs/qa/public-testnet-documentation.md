@@ -109,6 +109,69 @@ Warnings observed during clippy/build are baseline Rust warnings in existing
 code paths, including `client-rust`, `iamine-models`, `iamine-network`, and
 `iamine-node`. They are not introduced by this documentation-only feature.
 
+## Post-Merge Validation
+
+Merge:
+
+```text
+origin/develop: 2a3bd6d34af10c0d0cd17e4d228ef89c12732b74
+feature commit: 963890d1ffa0f0550c0ce441d6e1cc3e320951fa
+tree: 145e581a7277307377d01cb50b629169bb0cc36e
+```
+
+Focused post-merge checks:
+
+```text
+git diff --check origin/develop~1..origin/develop: PASS
+README stale/public reward claims scan: PASS; no matches
+public beta wording scan: PASS; matches are only in explicit rejected-meaning context
+pre-public/not-open wording scan: PASS
+privacy boundary scan: PASS; matches are only in explicit prohibition context
+```
+
+Post-merge quality gate:
+
+```text
+./scripts/quality-gate.sh: PASS WITH WARNINGS
+required_failures=0
+warnings=1
+skipped=3
+```
+
+Required post-merge checks:
+
+```text
+cargo fmt --all -- --check: PASS
+cargo test -p iamine-models: PASS
+cargo test -p iamine-network: PASS
+cargo test -p iamine-node: PASS
+cargo build -p iamine-node: PASS
+cargo test --workspace: PASS
+git diff --check: PASS
+git diff --cached --check: PASS
+```
+
+Post-merge warning:
+
+```text
+cargo clippy --workspace --all-targets: WARN
+```
+
+The warning is classified as environmental. `/private/tmp` was at 100%
+capacity with 116 MiB available during `clippy`, and `clippy` failed while
+creating files under `target/debug/.fingerprint`. Required checks had already
+passed on the published merge commit. Generated `target/` artifacts were
+removed after validation to restore local disk capacity; source files and logs
+were preserved.
+
+Skipped optional tools:
+
+```text
+cargo audit: SKIPPED; not available
+cargo deny check: SKIPPED; not available
+gitleaks secret scan: SKIPPED; not available
+```
+
 ## Expected Results
 
 - README does not imply that public testnet is currently open;
@@ -120,7 +183,7 @@ code paths, including `client-rust`, `iamine-models`, `iamine-network`, and
 - public docs preserve IAMINE Agent Network Public Beta wording;
 - privacy boundary is explicit;
 - `NODE-UPGRADE-ROLLBACK-001` roadmap state is normalized to `CLOSED`;
-- `PUBLIC-TESTNET-DOCUMENTATION-001` roadmap state is `ACTIVE`.
+- `PUBLIC-TESTNET-DOCUMENTATION-001` roadmap state is `CLOSED`.
 
 ## Field QA Decision
 
