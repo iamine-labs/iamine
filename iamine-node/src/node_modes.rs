@@ -2,6 +2,7 @@ use crate::cluster_stress::ClusterStressConfig;
 use crate::hardware_cli::HardwareCliCommand;
 use crate::node_config_schema::NodeConfigCommand;
 use crate::node_identity_cli::NodeIdentityCommand;
+use crate::user_diagnostics_support::SupportCommand;
 use crate::worker_lifecycle::WorkerLifecycleCommand;
 use libp2p::Multiaddr;
 
@@ -87,6 +88,9 @@ pub(crate) enum NodeMode {
     },
     NodeIdentity {
         command: NodeIdentityCommand,
+    },
+    Support {
+        command: SupportCommand,
     },
     LanDoctor {
         json: bool,
@@ -176,6 +180,7 @@ pub(crate) fn mode_label(mode: &NodeMode) -> &'static str {
         NodeMode::Hardware { .. } => "hardware",
         NodeMode::NodeConfig { .. } => "node-config",
         NodeMode::NodeIdentity { .. } => "node-identity",
+        NodeMode::Support { .. } => "support",
         NodeMode::LanDoctor { .. } => "lan-doctor",
         NodeMode::Capabilities => "capabilities",
         NodeMode::Nodes => "nodes",
