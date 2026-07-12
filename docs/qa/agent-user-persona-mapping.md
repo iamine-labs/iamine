@@ -58,12 +58,12 @@ cargo fmt --all -- --check
 rg -n "AGENT-USER-PERSONA-MAPPING-001" docs/agents/agent-user-personas.md docs/architecture/agent-user-persona-mapping.md docs/qa/agent-user-persona-mapping.md docs/roadmap/iamine-agent-network-roadmap.md
 rg -n "research artifact|does not claim completed external user research|not beta-pack selection|not as validated external market evidence" docs/agents/agent-user-personas.md docs/architecture/agent-user-persona-mapping.md
 rg -n "scope-bound|Blocked actions|blocked actions|refusal|handoff" docs/agents/agent-user-personas.md docs/architecture/agent-user-persona-mapping.md
-rg -n "AGENT-USER-PERSONA-MAPPING-001 \\| ACTIVE|AGENT-BETA-PACK-SELECTION-001 \\| PROPOSED" docs/roadmap/iamine-agent-network-roadmap.md
+rg -n "AGENT-USER-PERSONA-MAPPING-001 \\| CLOSED|AGENT-BETA-PACK-SELECTION-001 \\| PROPOSED" docs/roadmap/iamine-agent-network-roadmap.md
 ```
 
 Expected:
 
-- roadmap marks this feature active;
+- roadmap marks this feature closed after merge closeout;
 - beta-pack selection remains proposed;
 - personas are documented as research inputs;
 - blocked actions and refusal/handoff triggers are present;
@@ -87,7 +87,8 @@ cargo fmt --all -- --check: PASS
 feature presence scan: PASS
 research-artifact / no-external-validation wording scan: PASS
 scope-bound, blocked-action, refusal, and handoff scan: PASS
-roadmap state scan: PASS
+pre-merge roadmap ACTIVE state scan: PASS before closeout
+post-merge roadmap CLOSED state scan: PASS in closeout
 ```
 
 File-size check:
@@ -113,6 +114,16 @@ Reason:
 The recent full gate already passed all required checks before docs-only agent
 research changes. The local environment remains disk constrained, and this
 feature does not alter the Rust workspace.
+```
+
+## Merge Closeout
+
+```text
+source branch: feature/agent-user-persona-mapping-001
+feature commit: a73449a539d738350c7786795f2bdb0c46cef638
+merge commit: 6c84f6c62f4d0bbbf2f04166dd69156b4d9ecad3
+post-merge validation: PASS
+roadmap closeout state: CLOSED
 ```
 
 ## Field QA Decision
