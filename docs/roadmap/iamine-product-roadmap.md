@@ -193,7 +193,7 @@ two-to-four-week soak.
 | V1-SUPPLY-CHAIN-SECURITY-001 | CLOSED | Security / release engineering | Secure source, dependency, build, artifact, and release provenance; merge `a741699`, post-merge validation PASS WITH WARNINGS. |
 | NODE-UPGRADE-ROLLBACK-001 | CLOSED | Packaging / operations | Recover nodes safely from failed or incompatible upgrades; merge `7dc1f11`, post-merge validation PASS. |
 | PUBLIC-TESTNET-DOCUMENTATION-001 | CLOSED | Documentation / operations | Provide minimum public documentation without launching public beta; merge `2a3bd6d`, post-merge validation PASS WITH WARNINGS. |
-| IAMINE-PREPUBLIC-READINESS-GATE-001 | ACTIVE | Architecture / QA release gate | Decide whether IAMINE is ready to proceed into Agent Network foundations. |
+| IAMINE-PREPUBLIC-READINESS-GATE-001 | CLOSED | Architecture / QA release gate | Decide whether IAMINE is ready to proceed into Agent Network foundations; merge `eb8db38`, focused post-merge validation PASS. |
 
 Milestone gate: controlled public install, signed upgrade, rollback,
 diagnostic export, public documentation baseline, release artifact validation,
