@@ -93,6 +93,12 @@ AGENT-USER-PERSONA-MAPPING-001
 AGENT-BETA-PACK-SELECTION-001
 ```
 
+| Feature | State | Goal |
+| --- | --- | --- |
+| AGENT-MARKET-FIT-RESEARCH-001 | ACTIVE | Define the research baseline, candidate segments, safety criteria, and exclusion rules for early IAMINE agents. |
+| AGENT-USER-PERSONA-MAPPING-001 | PROPOSED | Convert research segments into explicit user personas and task contexts. |
+| AGENT-BETA-PACK-SELECTION-001 | PROPOSED | Select the first official beta agent pack from validated personas and constraints. |
+
 Research segments include home users, non-technical users, homelabs,
 self-hosted users, content creators, small businesses, users with several PCs,
 users with network or printer problems, and future agent developers.
