@@ -118,6 +118,42 @@ the Rust workspace, so repeating the same full gate with /private/tmp still at
 98% would primarily retest the local disk limitation.
 ```
 
+## Post-Merge Validation
+
+Merge:
+
+```text
+origin/develop: eb8db38c3999c3c4d369c32e211e7adf834af401
+feature commit: c317f9c999d77700e472f7a4bf68f239e82c6fa0
+tree: 6f529a27ba3b5b9e933fb66647161f3635886572
+```
+
+Focused post-merge checks:
+
+```text
+git diff --check origin/develop~1..origin/develop: PASS
+cargo fmt --all -- --check: PASS
+roadmap ACTIVE state scan: PASS before closeout
+v0.11 readiness decision scan: PASS
+public beta/public onboarding blocked scan: PASS
+README stale public-testnet/reward claims scan: PASS; no matches
+```
+
+Full post-merge quality gate:
+
+```text
+./scripts/quality-gate.sh: NOT RERUN
+classification: environment risk / redundant broad gate
+```
+
+Reason:
+
+```text
+This feature is documentation-only and the immediately preceding origin/develop
+quality gate already passed all required checks. The known local disk
+limitation remained: /private/tmp was at 98% capacity with 5.1Gi available.
+```
+
 ## Field QA Decision
 
 Field QA is not required for this documentation-only feature because no runtime,
