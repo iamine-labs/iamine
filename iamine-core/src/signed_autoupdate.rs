@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 pub const DEFAULT_MAX_ROLLOUT_PERCENT: u8 = 10;
 pub const MAX_RELEASE_ARTIFACTS: usize = 16;
+pub const MAX_TRUSTED_SIGNING_KEYS: usize = 8;
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub enum SignedAutoupdateMode {
@@ -15,7 +16,6 @@ pub struct SignedAutoupdatePolicy {
     pub mode: SignedAutoupdateMode,
     pub trusted_signing_keys: Vec<String>,
     pub max_rollout_percent: u8,
-    pub rollback_required: bool,
 }
 
 impl Default for SignedAutoupdatePolicy {
@@ -24,7 +24,6 @@ impl Default for SignedAutoupdatePolicy {
             mode: SignedAutoupdateMode::Disabled,
             trusted_signing_keys: Vec::new(),
             max_rollout_percent: DEFAULT_MAX_ROLLOUT_PERCENT,
-            rollback_required: true,
         }
     }
 }
@@ -35,7 +34,6 @@ impl SignedAutoupdatePolicy {
             mode: SignedAutoupdateMode::ControlledRollout,
             trusted_signing_keys,
             max_rollout_percent,
-            rollback_required: true,
         }
     }
 
@@ -47,6 +45,12 @@ impl SignedAutoupdatePolicy {
         if !valid_rollout_percent(self.max_rollout_percent) {
             return SignedAutoupdateDecision::reject(
                 SignedAutoupdateRejectReason::InvalidPolicyRolloutLimit,
+            );
+        }
+
+        if self.trusted_signing_keys.len() > MAX_TRUSTED_SIGNING_KEYS {
+            return SignedAutoupdateDecision::reject(
+                SignedAutoupdateRejectReason::TooManyTrustedSigningKeys,
             );
         }
 
@@ -94,19 +98,17 @@ impl SignedAutoupdatePolicy {
             }
         }
 
-        if self.rollback_required {
-            match &candidate.rollback_artifact {
-                Some(artifact) if self.artifact_rejection_reason(artifact).is_none() => {}
-                Some(_) => {
-                    return SignedAutoupdateDecision::reject(
-                        SignedAutoupdateRejectReason::RollbackNotAuthenticated,
-                    );
-                }
-                None => {
-                    return SignedAutoupdateDecision::reject(
-                        SignedAutoupdateRejectReason::MissingRollback,
-                    );
-                }
+        match &candidate.rollback_artifact {
+            Some(artifact) if self.artifact_rejection_reason(artifact).is_none() => {}
+            Some(_) => {
+                return SignedAutoupdateDecision::reject(
+                    SignedAutoupdateRejectReason::RollbackNotAuthenticated,
+                );
+            }
+            None => {
+                return SignedAutoupdateDecision::reject(
+                    SignedAutoupdateRejectReason::MissingRollback,
+                );
             }
         }
 
@@ -253,6 +255,7 @@ pub enum SignedAutoupdateRejectReason {
     PolicyDisabled,
     InvalidPolicyRolloutLimit,
     NoTrustedSigningKeys,
+    TooManyTrustedSigningKeys,
     MissingReleaseVersion,
     InvalidRequestedRollout,
     RolloutExceedsPolicy,
@@ -274,6 +277,7 @@ impl SignedAutoupdateRejectReason {
             Self::PolicyDisabled => "policy_disabled",
             Self::InvalidPolicyRolloutLimit => "invalid_policy_rollout_limit",
             Self::NoTrustedSigningKeys => "no_trusted_signing_keys",
+            Self::TooManyTrustedSigningKeys => "too_many_trusted_signing_keys",
             Self::MissingReleaseVersion => "missing_release_version",
             Self::InvalidRequestedRollout => "invalid_requested_rollout",
             Self::RolloutExceedsPolicy => "rollout_exceeds_policy",
@@ -369,6 +373,19 @@ mod tests {
 
         assert!(!decision.accepted);
         assert_eq!(decision.reason_code(), "untrusted_signing_key");
+    }
+
+    #[test]
+    fn controlled_policy_rejects_unbounded_trusted_signing_keys() {
+        let keys = (0..=MAX_TRUSTED_SIGNING_KEYS)
+            .map(|idx| format!("iamine-release-key-{idx}"))
+            .collect();
+        let policy = SignedAutoupdatePolicy::controlled(keys, 10);
+
+        let decision = policy.evaluate(&verified_candidate());
+
+        assert!(!decision.accepted);
+        assert_eq!(decision.reason_code(), "too_many_trusted_signing_keys");
     }
 
     #[test]

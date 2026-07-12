@@ -14,6 +14,7 @@ pub use signed_autoupdate::{
     SignedAutoupdateDecision, SignedAutoupdateDecisionReason, SignedAutoupdateMode,
     SignedAutoupdatePolicy, SignedAutoupdateRejectReason, SignedReleaseArtifact,
     SignedReleaseArtifactKind, DEFAULT_MAX_ROLLOUT_PERCENT, MAX_RELEASE_ARTIFACTS,
+    MAX_TRUSTED_SIGNING_KEYS,
 };
 pub use task::{Task, TaskStatus, TaskType};
 

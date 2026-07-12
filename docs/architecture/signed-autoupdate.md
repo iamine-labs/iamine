@@ -19,7 +19,7 @@ The module defines:
 
 - disabled-by-default update policy;
 - controlled rollout mode;
-- trusted signing key allowlist;
+- bounded trusted signing key allowlist;
 - per-release rollout percentage bounds;
 - verified artifact and rollback requirements;
 - stable decision reason codes.
@@ -47,7 +47,7 @@ Controlled rollout accepts an update only when all required conditions pass:
 
 ```text
 policy is controlled rollout
-AND trusted signing keys are configured
+AND trusted signing keys are configured within the policy limit
 AND release version is present
 AND requested rollout percent is between 1 and policy maximum
 AND at least one release artifact is present
@@ -91,6 +91,8 @@ permanent hardware fingerprints.
   evaluates caller-supplied update evidence.
 - Accepting artifacts with merely present signatures would be unsafe; the gate
   requires caller-supplied `Verified` signature status and trusted key IDs.
+- Allowing unbounded trusted key lists would make the update policy harder to
+  audit and reason about.
 - Enabling rollout without authenticated rollback would risk stranding nodes on
   a bad release.
 - Future runtime wiring must avoid update checks during active inference,

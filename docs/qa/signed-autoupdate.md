@@ -35,13 +35,13 @@ staging:
 
 ```text
 docs/architecture/signed-autoupdate.md
-22206c6e209b71383304d2d61ee2c777611f9c0d14bf36a9d0d6dd1ec9dbbe11
+2de8906cfb8fdbbeaef4549794d33de180d213127e232bd128a31e655c301397
 docs/roadmap/iamine-product-roadmap.md
 4aa81f4acd6752a991c248e35b8c3c251a249663b550ce01fabda879831c7c3e
 iamine-core/src/lib.rs
-ad109896c28ee6ece896e6fb946c538cb54556793c23d15782d62743b0f3e2b7
+b4c91f577d00dd01dda526ea42f75f715878ffa42ffc4ae1e496dc88d8b4b8ef
 iamine-core/src/signed_autoupdate.rs
-309e7242edff3039bf25d60a62875136b0c3716bf3ac38a6145bec2e3912c588
+a7e77a24ba71ce7e83a374f335c96a078e1d50e66232706e704222c1a152b734
 ```
 
 ## Scope Checks
@@ -86,9 +86,10 @@ Run `./scripts/quality-gate.sh` before merge review.
 - missing signatures reject;
 - invalid signatures reject;
 - untrusted signing keys reject;
+- trusted signing key allowlist is bounded;
 - missing or invalid SHA-256 digests reject;
 - requested rollout percentage must be between 1 and the policy maximum;
-- rollback artifact is required by default;
+- rollback artifact is required;
 - too many artifacts reject with a stable reason code.
 
 ## Field QA Decision
@@ -101,6 +102,37 @@ Field QA is required for any later feature that wires this policy into updater
 execution, package installation, node startup, service management, release
 fetching, or runtime artifact replacement.
 
+## Architecture Review
+
+Architecture checkpoint found one API invariant issue after the initial branch
+push:
+
+```text
+The first implementation exposed `rollback_required` as a public policy field.
+That allowed callers to construct a controlled rollout policy without an
+authenticated rollback artifact, contradicting the documented update gate.
+```
+
+Correction:
+
+```text
+Removed the configurable rollback bypass.
+Controlled rollout now always requires an authenticated rollback artifact.
+Added `MAX_TRUSTED_SIGNING_KEYS` and `too_many_trusted_signing_keys` rejection
+to keep trusted key policy bounded.
+Added unit coverage for bounded trusted key policy.
+```
+
+Targeted correction revalidation:
+
+```text
+cargo fmt --all -- --check: PASS
+cargo test -p iamine-core signed_autoupdate: PASS; 9 passed
+cargo test -p iamine-core: PASS; 9 passed; doc tests 0 passed
+cargo clippy -p iamine-core --all-targets: PASS
+git diff --check: PASS
+```
+
 ## Local Results
 
 Status:
@@ -112,8 +144,8 @@ LOCAL VALIDATION PASSED
 Executed on Mac local worktree:
 
 ```text
-cargo test -p iamine-core signed_autoupdate: PASS; 8 passed
-cargo test -p iamine-core: PASS; 8 passed; doc tests 0 passed
+cargo test -p iamine-core signed_autoupdate: PASS; 9 passed
+cargo test -p iamine-core: PASS; 9 passed; doc tests 0 passed
 cargo fmt --all -- --check: PASS
 git diff --check: PASS
 privacy scan over changed docs/module exports: PASS; no matches
@@ -121,7 +153,7 @@ targeted clippy correction:
 - cargo clippy -p iamine-core --all-targets: PASS
 ./scripts/quality-gate.sh: PASS WITH WARNINGS
 size guard:
-- iamine-core/src/signed_autoupdate.rs: 423 lines
+- iamine-core/src/signed_autoupdate.rs: 440 lines
 - iamine-node/src/main.rs: 4928 lines; unchanged
 - iamine-node/src/cluster_registry.rs: 862 lines; unchanged
 ```
