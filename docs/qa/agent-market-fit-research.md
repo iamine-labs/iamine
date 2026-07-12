@@ -118,6 +118,42 @@ clippy. This feature changes documentation only and does not alter the Rust
 workspace.
 ```
 
+## Post-Merge Validation
+
+Merge:
+
+```text
+origin/develop: 9931f1dd5093dd0c619f344442655e7dd1fdbc28
+feature commit: 6f62372afa7b91dff7921a15189a0064d7197cf9
+tree: 8764222fc8a5773d9a883bc729c99c0fa4f9dfde
+```
+
+Focused post-merge checks:
+
+```text
+git diff --check origin/develop~1..origin/develop: PASS
+cargo fmt --all -- --check: PASS
+roadmap ACTIVE state scan: PASS before closeout
+hypothesis-level wording scan: PASS
+scope-bound and blocked-behavior scan: PASS
+unsafe early-agent exclusion scan: PASS
+```
+
+Full post-merge quality gate:
+
+```text
+./scripts/quality-gate.sh: NOT RERUN
+classification: environment risk / redundant broad gate
+```
+
+Reason:
+
+```text
+This feature is documentation-only. /private/tmp remained at 98% capacity with
+5.0Gi available, and the preceding full quality gate already passed all
+required checks on the prior origin/develop state.
+```
+
 ## Field QA Decision
 
 Field QA is not required for this documentation-only research feature because no
@@ -133,5 +169,6 @@ Proxmox/R5500 remains relevant for later runtime and operational features.
 - hypotheses are not presented as validated evidence;
 - unsafe early-agent categories are excluded;
 - next feature is `AGENT-USER-PERSONA-MAPPING-001`;
+- `AGENT-MARKET-FIT-RESEARCH-001` roadmap state is `CLOSED`;
 - public beta remains blocked;
 - agent runtime remains blocked.
