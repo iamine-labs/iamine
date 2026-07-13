@@ -60,12 +60,12 @@ rg -n "iamine.agent.package.draft-0.1|iamine-agent-package.toml|execution_author
 rg -n "scope_manifest|capability_metadata|resource_requirements|permission_model|audit_policy|boundary_tests" docs/agents/agent-package-manifest.md docs/architecture/agent-package-manifest.md
 rg -n "does not authorize executable|documentation-only|does not implement TOML parsing|not executable|block install and execution" docs/agents/agent-package-manifest.md docs/architecture/agent-package-manifest.md
 rg -n "credentials|host identifiers|MAC addresses|serial|machine IDs|private paths|arbitrary_shell|unrestricted_filesystem|scope-bound" docs/agents/agent-package-manifest.md docs/architecture/agent-package-manifest.md
-rg -n "AGENT-PACKAGE-MANIFEST-001 \\| ACTIVE|AGENT-SCOPE-MANIFEST-001 \\| PROPOSED" docs/roadmap/iamine-agent-network-roadmap.md
+rg -n "AGENT-PACKAGE-MANIFEST-001 \\| CLOSED|AGENT-SCOPE-MANIFEST-001 \\| PROPOSED" docs/roadmap/iamine-agent-network-roadmap.md
 ```
 
 Expected:
 
-- roadmap marks this feature active before merge closeout;
+- roadmap marks this feature closed after merge closeout;
 - package manifest draft schema is documented;
 - package manifest does not authorize execution;
 - required references to later contract files are present;
@@ -94,6 +94,7 @@ required references scan: PASS
 runtime boundary scan: PASS
 privacy and blocked-mode scan: PASS
 roadmap ACTIVE state scan: PASS before closeout
+post-merge roadmap CLOSED state scan: PASS in closeout
 ```
 
 File-size check:
@@ -119,6 +120,16 @@ Reason:
 The recent full gate already passed all required checks before docs-only agent
 research changes. The local environment remains disk constrained, and this
 feature does not alter the Rust workspace.
+```
+
+## Merge Closeout
+
+```text
+source branch: feature/agent-package-manifest-001
+feature commit: 7a5d4eaed9a7379b6a03e39c66c4ead15bbe4657
+merge commit: 453b1b6aa92c2beefe02e7e45bc34a8b5f332a61
+post-merge validation: PASS
+roadmap closeout state: CLOSED
 ```
 
 ## Field QA Decision
