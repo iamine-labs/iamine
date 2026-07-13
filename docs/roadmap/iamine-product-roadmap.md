@@ -60,7 +60,7 @@ development lifecycle. Only one next product feature should normally be
 | v0.9.x | Remote inference, observability, load, and private testnet release candidate |
 | v0.10.x | Pre-public infrastructure |
 | v0.11.x | Agent research, architecture, scope, permissions, and runtime baseline |
-| v0.12.x | Official P0 agents and internal tools for official agent creation |
+| v0.12.x | P0 official agent skeletons, P0 official agents, and internal tools for official agent creation |
 | v0.13.x | P1/P2 agents and Agent Network beta productization |
 | v1.0.0 | IAMINE Agent Network Public Beta |
 | v1.1.x | Validation, reputation, and trust |
@@ -68,7 +68,7 @@ development lifecycle. Only one next product feature should normally be
 | v1.3.x | Curated agent registry |
 | v1.4.x | Curated agent marketplace |
 | v1.5.x | Economic agent testnet using testnet units with no real-world value |
-| v2.0.x | Mainnet, settlement, open marketplace, and real economy |
+| v2.0.x | Advanced compute, distributed MoE, mainnet, settlement, open marketplace, and real economy |
 
 `LAN-INFERENCE-BETA-001` is not IAMINE v1. An inference-only public beta is
 not IAMINE v1. Mainnet is not part of v1.
@@ -101,6 +101,7 @@ or handed off to the orchestrator.
 | Feature | State | Owner | Goal |
 | --- | --- | --- | --- |
 | ROADMAP-OFFICIAL-AGENT-NETWORK-RECONCILIATION-001 | CLOSED | Architecture / product roadmap | Reconciled this repository roadmap with the official Agent Network roadmap while preserving closed feature evidence without reinterpreting it; merge `62761cb`, post-merge validation PASS. |
+| ROADMAP-AGENT-NETWORK-COMPLETE-RECONCILIATION-001 | ACTIVE | Architecture / product roadmap | Incorporate the complete Agent Network, agent creation architecture, developer platform, language policy, dependency policy, routing, and advanced compute roadmap update. |
 
 ## Milestone 0 - v0.7 Foundations
 
@@ -210,11 +211,11 @@ docs/roadmap/iamine-agent-network-roadmap.md
 
 | Release | State | Product focus |
 | --- | --- | --- |
-| v0.11.0 | ACTIVE | Agent research and product fit |
-| v0.11.1 | PROPOSED | Agent architecture foundation |
+| v0.11.0 | CLOSED | Agent research and product fit |
+| v0.11.1 | ACTIVE | Agent architecture foundation |
 | v0.11.2 | PROPOSED | Agent runtime baseline |
 | v0.11.3 | PROPOSED | Internal agent developer bootstrap |
-| v0.12.0 | PROPOSED | P0 official agents |
+| v0.12.0 | PROPOSED | P0 official agent skeletons and P0 official agents |
 | v0.12.1 | PROPOSED | P1 adoption agents |
 | v0.12.2 | PROPOSED | P2 experimental and technical agents |
 | v0.13.0 | PROPOSED | Agent beta productization |
@@ -224,7 +225,7 @@ docs/roadmap/iamine-agent-network-roadmap.md
 | v1.3.x | PROPOSED | Curated agent registry |
 | v1.4.x | PROPOSED | Curated agent marketplace |
 | v1.5.x | PROPOSED | Economic agent testnet |
-| v2.0.x | PROPOSED | Mainnet, settlement, open marketplace, and real economy |
+| v2.0.x | PROPOSED | Advanced compute, distributed MoE, mainnet, settlement, open marketplace, and real economy |
 
 Mainnet, settlement, an open marketplace, arbitrary third-party agents, and
 real payments remain blocked until the appropriate trust, registry,
