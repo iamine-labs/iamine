@@ -101,7 +101,7 @@ or handed off to the orchestrator.
 | Feature | State | Owner | Goal |
 | --- | --- | --- | --- |
 | ROADMAP-OFFICIAL-AGENT-NETWORK-RECONCILIATION-001 | CLOSED | Architecture / product roadmap | Reconciled this repository roadmap with the official Agent Network roadmap while preserving closed feature evidence without reinterpreting it; merge `62761cb`, post-merge validation PASS. |
-| ROADMAP-AGENT-NETWORK-COMPLETE-RECONCILIATION-001 | ACTIVE | Architecture / product roadmap | Incorporate the complete Agent Network, agent creation architecture, developer platform, language policy, dependency policy, routing, and advanced compute roadmap update. |
+| ROADMAP-AGENT-NETWORK-COMPLETE-RECONCILIATION-001 | CLOSED | Architecture / product roadmap | Incorporated the complete Agent Network, agent creation architecture, developer platform, language policy, dependency policy, routing, and advanced compute roadmap update; merge `7769cb2`, focused post-merge validation PASS. |
 
 ## Milestone 0 - v0.7 Foundations
 
