@@ -22,3 +22,11 @@ target
 
 # Runtime semantic feedback logs
 semantic_logs.json
+
+# Local OS and QA artifacts
+.DS_Store
+*.log
+*.log~
+*.ndjson
+/logs/
+/iamine-node/logs/
