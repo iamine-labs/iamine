@@ -58,12 +58,12 @@ rg -n "AGENT-BETA-PACK-SELECTION-001" docs/agents/official-beta-agent-pack-selec
 rg -n "IAMINE Local Readiness Beta Pack|Node Doctor|Privacy-Safe Support Reporter|LAN Readiness Reporter|Agent Manifest Wizard" docs/agents/official-beta-agent-pack-selection.md docs/architecture/agent-beta-pack-selection.md
 rg -n "does not authorize agent runtime|documentation-only|not executable|planning contract only|Do not implement runtime execution" docs/agents/official-beta-agent-pack-selection.md docs/architecture/agent-beta-pack-selection.md
 rg -n "credentials|destructive|host identifiers|MAC addresses|serials|machine IDs|scope-bound|blocked actions|refusal|handoff" docs/agents/official-beta-agent-pack-selection.md
-rg -n "AGENT-BETA-PACK-SELECTION-001 \\| ACTIVE|AGENT-PACKAGE-MANIFEST-001" docs/roadmap/iamine-agent-network-roadmap.md
+rg -n "AGENT-BETA-PACK-SELECTION-001 \\| CLOSED|AGENT-PACKAGE-MANIFEST-001" docs/roadmap/iamine-agent-network-roadmap.md
 ```
 
 Expected:
 
-- roadmap marks this feature active before merge closeout;
+- roadmap marks this feature closed after merge closeout;
 - first official beta pack is selected;
 - selected agents remain product targets, not executable agents;
 - selected agents include explicit blocked actions and required later gates;
@@ -90,6 +90,7 @@ official beta pack selection scan: PASS
 runtime boundary scan: PASS
 privacy and blocked-action scan: PASS
 roadmap ACTIVE state scan: PASS before closeout
+post-merge roadmap CLOSED state scan: PASS in closeout
 ```
 
 File-size check:
@@ -115,6 +116,16 @@ Reason:
 The recent full gate already passed all required checks before docs-only agent
 research changes. The local environment remains disk constrained, and this
 feature does not alter the Rust workspace.
+```
+
+## Merge Closeout
+
+```text
+source branch: feature/agent-beta-pack-selection-001
+feature commit: ce139aad3d20be6acb165e99f5a367c4ffd34b1b
+merge commit: 15949da05c22192f9189454685ea77efaac97d49
+post-merge validation: PASS
+roadmap closeout state: CLOSED
 ```
 
 ## Field QA Decision
