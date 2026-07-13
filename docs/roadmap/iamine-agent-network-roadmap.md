@@ -114,26 +114,40 @@ docs/agents/official-beta-agent-pack-selection.md
 ## v0.11.1 - Agent Architecture Foundation
 
 ```text
+AGENT-CREATION-ARCHITECTURE-001
+AGENT-SKELETON-STANDARD-001
 AGENT-PACKAGE-MANIFEST-001
-AGENT-SCOPE-MANIFEST-001
 AGENT-CAPABILITY-METADATA-001
+AGENT-EXPERTISE-METADATA-001
+AGENT-SCOPE-MANIFEST-001
 AGENT-RESOURCE-REQUIREMENTS-001
 AGENT-PERMISSION-MODEL-001
 AGENT-AUDIT-LOG-001
 AGENT-REGISTRY-LOCAL-001
 AGENT-SCOPE-BOUNDARY-EVALS-001
+AGENT-LANGUAGE-POLICY-001
+AGENT-DEPENDENCY-POLICY-001
+AGENT-RUNTIME-LANGUAGE-MATRIX-001
+AGENT-MANIFEST-SCHEMA-SOURCE-OF-TRUTH-001
 ```
 
 | Feature | State | Goal |
 | --- | --- | --- |
+| AGENT-CREATION-ARCHITECTURE-001 | PROPOSED | Define the end-to-end architecture for creating, reviewing, packaging, validating, and later executing IAMINE agents. |
+| AGENT-SKELETON-STANDARD-001 | PROPOSED | Define the canonical agent skeleton layout before generating or implementing agent code. |
 | AGENT-PACKAGE-MANIFEST-001 | CLOSED | Define the agent package manifest contract and required references before execution; merge `453b1b6`, focused post-merge validation PASS. |
-| AGENT-SCOPE-MANIFEST-001 | CLOSED | Define agent scope boundaries, blocked actions, handoff targets, and supported task types; merge `ca37818`, focused post-merge validation PASS. |
 | AGENT-CAPABILITY-METADATA-001 | PROPOSED | Define agent capability metadata without scheduler or reputation side effects. |
+| AGENT-EXPERTISE-METADATA-001 | PROPOSED | Define expertise metadata for agent selection without claiming distributed model MoE. |
+| AGENT-SCOPE-MANIFEST-001 | CLOSED | Define agent scope boundaries, blocked actions, handoff targets, and supported task types; merge `ca37818`, focused post-merge validation PASS. |
 | AGENT-RESOURCE-REQUIREMENTS-001 | PROPOSED | Define agent resource requirements before runtime placement or scheduling. |
 | AGENT-PERMISSION-MODEL-001 | PROPOSED | Define explicit permission categories and denial behavior. |
 | AGENT-AUDIT-LOG-001 | PROPOSED | Define privacy-safe audit evidence for agent review and execution. |
 | AGENT-REGISTRY-LOCAL-001 | PROPOSED | Define local registry behavior before public marketplace behavior. |
 | AGENT-SCOPE-BOUNDARY-EVALS-001 | PROPOSED | Define positive and negative boundary evals for scope enforcement. |
+| AGENT-LANGUAGE-POLICY-001 | PROPOSED | Define allowed implementation languages by layer and release phase. |
+| AGENT-DEPENDENCY-POLICY-001 | PROPOSED | Define dependency classes that are allowed, optional, deferred, or blocked for agent work. |
+| AGENT-RUNTIME-LANGUAGE-MATRIX-001 | PROPOSED | Define supported runtime language modes before execution features. |
+| AGENT-MANIFEST-SCHEMA-SOURCE-OF-TRUTH-001 | PROPOSED | Define the source of truth for agent manifest schemas and generated validation artifacts. |
 
 `AGENT-SCOPE-MANIFEST-001` must define what an agent does, what it does not
 do, required permissions, blocked actions, supported task types, handoff
@@ -145,6 +159,86 @@ tasks, ambiguous tasks, dangerous tasks, cross-domain tasks, permission
 escalation attempts, prompt injection attempts, role confusion attempts, and
 handoff to orchestrator.
 
+## Language and Dependency Policy
+
+Recommended language placement:
+
+```text
+Rust:
+- IAMINE core
+- node
+- runtime
+- CLI
+- contracts
+- validators
+- official P0 agents
+- audit
+- registry
+- file/network/system agents
+
+Python:
+- public SDK later
+- AI/dev tooling later
+- prototypes
+- OCR/classification future
+- heavy model integrations under sandbox
+
+TypeScript:
+- public SDK later
+- web/API integrations
+- dashboard/tooling
+- content connectors
+
+WASM/WASI:
+- preferred future sandbox for third-party lightweight agents
+
+Containers:
+- future heavy agents only after registry, sandbox, and permission model mature
+```
+
+Manifest format policy:
+
+```text
+Authoring: YAML
+Internal representation: Rust structs
+Validation: generated JSON Schema
+Runtime/API payloads: JSON
+Source of truth: Rust types
+```
+
+Expected minimal Rust dependency set for `AGENT-CAPABILITY-METADATA-001`:
+
+```text
+serde
+serde_json
+serde_yaml
+schemars
+jsonschema
+thiserror
+```
+
+Optional only if needed:
+
+```text
+clap
+anyhow
+tracing
+```
+
+Do not introduce yet:
+
+```text
+wasmtime
+python SDK
+typescript SDK
+containers
+LLM frameworks
+OCR frameworks
+social APIs
+router APIs
+Windows automation advanced dependencies
+```
+
 ## v0.11.2 - Agent Runtime Baseline
 
 ```text
@@ -155,6 +249,7 @@ AGENT-INPUT-OUTPUT-CONTRACT-001
 AGENT-TIMEOUT-CANCEL-001
 AGENT-HANDOFF-POLICY-001
 AGENT-OUT-OF-SCOPE-RESPONSE-001
+AGENT-ROUTING-CANDIDATE-SELECTION-001
 ```
 
 Minimum execution states:
@@ -172,9 +267,15 @@ timeout
 blocked
 ```
 
+`AGENT-ROUTING-CANDIDATE-SELECTION-001` must select candidate agents from
+declared task type, scope, permissions, resources, risk, execution mode, and
+node compatibility. It must not implement distributed model MoE.
+
 ## v0.11.3 - Internal Agent Developer Bootstrap
 
 ```text
+AGENT-SKELETON-GENERATOR-001
+AGENT-TEMPLATE-VALIDATION-001
 AGENT-FRAMEWORK-BASELINE-001
 AGENT-TEMPLATE-DIAGNOSTIC-001
 AGENT-TEMPLATE-FILE-READONLY-001
@@ -205,6 +306,19 @@ no bypassing manual validation
 
 ## v0.12.0 - P0 Official Agents
 
+First, IAMINE must define official P0 agent skeletons:
+
+```text
+NODE-DOCTOR-AGENT-001-SKELETON
+REPORTER-AGENT-001-SKELETON
+LAN-FILE-SHARE-ASSISTANT-AGENT-001-SKELETON
+PHOTO-LIBRARY-ORGANIZER-AGENT-001-SKELETON
+HOME-NETWORK-ASSISTANT-AGENT-001-SKELETON
+WINDOWS-OPTIMIZER-ASSISTANT-AGENT-001-SKELETON
+```
+
+Then IAMINE may implement functional P0 official agents:
+
 ```text
 NODE-DOCTOR-AGENT-001
 REPORTER-AGENT-001
@@ -213,6 +327,11 @@ PHOTO-LIBRARY-ORGANIZER-AGENT-001
 HOME-NETWORK-ASSISTANT-AGENT-001
 WINDOWS-OPTIMIZER-ASSISTANT-AGENT-001
 ```
+
+Not all functional P0 agents should be implemented in parallel at the start.
+`NODE-DOCTOR-AGENT-001` is the recommended complete reference vertical. After
+that, `REPORTER-AGENT-001` should be the next functional agent, followed by
+P0 skeletons and implementation waves.
 
 Each P0 agent must pass positive capability tests, negative capability tests,
 scope boundary tests, permission boundary tests, handoff tests, unsafe action
@@ -263,7 +382,14 @@ AGENT-PERMISSION-DISPLAY-001
 AGENT-SCOPE-DISPLAY-001
 AGENT-RISK-LABELING-001
 AGENT-LOCAL-ONLY-MODE-001
+AGENT-EXPERT-ROUTING-001
 ```
+
+`AGENT-EXPERT-ROUTING-001` is the practical MoE concept for IAMINE v1:
+the orchestrator selects the specialized agent by task type, scope,
+permissions, resources, risk, execution mode, and node compatibility.
+
+This is not distributed model MoE or model-expert sharding.
 
 Catalog states:
 
@@ -297,6 +423,23 @@ HOME-NETWORK-ASSISTANT-AGENT-001
 WINDOWS-OPTIMIZER-ASSISTANT-AGENT-001
 ```
 
+Ideal v1.0 official pack:
+
+```text
+NODE-DOCTOR-AGENT-001
+REPORTER-AGENT-001
+LAN-FILE-SHARE-ASSISTANT-AGENT-001
+PHOTO-LIBRARY-ORGANIZER-AGENT-001
+HOME-NETWORK-ASSISTANT-AGENT-001
+WINDOWS-OPTIMIZER-ASSISTANT-AGENT-001
+PRINTER-DOCTOR-AGENT-001
+DOCUMENT-ORGANIZER-AGENT-001
+CONTENT-POST-DRAFT-AGENT-001
+CONTENT-CALENDAR-AGENT-001
+RECIPE-TEXT-AGENT-001
+HOMELAB-DOCTOR-AGENT-001
+```
+
 v1.0 must not include real payments, mainnet, an open marketplace, or arbitrary
 third-party agents.
 
@@ -315,6 +458,17 @@ NODE-PERFORMANCE-ATTESTATION-001
 AGENT-RESULT-VALIDATION-001
 AGENT-QUALITY-SIGNAL-001
 AGENT-SCOPE-ADHERENCE-SCORE-001
+AGENT-ROUTING-QUALITY-SCORE-001
+AGENT-ROUTING-FEEDBACK-LOOP-001
+```
+
+Minimum trust metrics:
+
+```text
+unsafe_action_block_rate = 100%
+permission_violation_rate = 0%
+scope_adherence_rate tracked
+wrong_handoff_rate tracked
 ```
 
 Rule:
@@ -324,6 +478,11 @@ Performance certification != behavioral reputation != reward eligibility.
 ```
 
 ## v1.2.x - Public Agent Developer Platform
+
+Public developer tools must not allow automatic publication or bypass manual
+validation.
+
+## v1.2.0 - Developer Platform Foundation
 
 ```text
 AGENT-SDK-PYTHON-001
@@ -336,6 +495,26 @@ AGENT-LOCAL-SIMULATOR-001
 AGENT-DEVELOPER-DOCS-001
 AGENT-FRAMEWORK-BASELINE-001
 AGENT-SCOPE-TEST-HARNESS-001
+AGENT-EXPERTISE-TEMPLATE-001
+```
+
+Initial public templates:
+
+```text
+AGENT-TEMPLATE-DIAGNOSTIC-001
+AGENT-TEMPLATE-FILE-READONLY-001
+AGENT-TEMPLATE-NETWORK-DIAGNOSTIC-001
+AGENT-TEMPLATE-REPORTER-001
+AGENT-TEMPLATE-TEXT-ASSISTANT-001
+AGENT-TEMPLATE-DOCUMENT-LOCAL-001
+AGENT-TEMPLATE-CONTENT-DRAFT-001
+AGENT-TEMPLATE-OS-DIAGNOSTIC-001
+AGENT-TEMPLATE-CONNECTOR-READONLY-001
+```
+
+## v1.2.1 - AI-Assisted Developer Experience
+
+```text
 IAMINE-DEV-SETUP-AGENT-001
 AGENT-BUILDER-ASSISTANT-AGENT-001
 AGENT-MANIFEST-WIZARD-AGENT-001
@@ -345,6 +524,24 @@ AGENT-TEST-GENERATOR-AGENT-001
 AGENT-BOUNDARY-TEST-GENERATOR-AGENT-001
 AGENT-LOCAL-SIMULATION-AGENT-001
 AGENT-PACKAGE-REVIEW-AGENT-001
+```
+
+Restrictions:
+
+```text
+no auto-publication
+no validation bypass
+no destructive permissions by default
+no generic scope
+no unrestricted shell
+no unrestricted filesystem
+no unrestricted network
+no agents that handle secrets without manual review
+```
+
+## v1.2.2 - Developer Onboarding E2E
+
+```text
 AGENT-DEVELOPER-ONBOARDING-FLOW-001
 AGENT-CREATOR-QUICKSTART-001
 AGENT-SAMPLE-PACK-001
@@ -352,8 +549,10 @@ AGENT-SDK-DOCS-SITE-001
 AGENT-SUBMISSION-DRY-RUN-001
 ```
 
-Public developer tools must not allow automatic publication or bypass manual
-validation.
+Closeout requires a new creator to install tools, create an agent from a
+template, run positive and negative tests, simulate execution, validate
+manifest, validate permissions, validate scope, package, and execute a dry-run
+submission without automatic publication.
 
 ## v1.3.x - Curated Agent Registry
 
@@ -420,6 +619,26 @@ DAILY-LIFE-COACH-AGENT-001
 MACOS-OPTIMIZER-ASSISTANT-AGENT-001
 LINUX-OPTIMIZER-ASSISTANT-AGENT-001
 ```
+
+## Advanced Compute and Distributed MoE
+
+```text
+MIXTURE-OF-EXPERTS-ROUTING-001
+DISTRIBUTED-MOE-INFERENCE-001
+MODEL-EXPERT-SHARDING-001
+EXPERT-ROUTER-NODE-PLACEMENT-001
+MODEL-SHARD-STORAGE-001
+MODEL-SHARD-INTEGRITY-001
+DISTRIBUTED-INFERENCE-PLAN-001
+DISTRIBUTED-TENSOR-TRANSPORT-001
+DISTRIBUTED-INFERENCE-ASSEMBLY-001
+DISTRIBUTED-TRAINING-BASELINE-001
+CHECKPOINT-DISTRIBUTION-001
+```
+
+MoE in v1 means Agent Expert Routing. Distributed model MoE, model-expert
+sharding, tensor transport, distributed training, and checkpoint distribution
+are deferred to v2.x / Advanced Compute.
 
 ## Mainnet and Solana
 
