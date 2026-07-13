@@ -124,6 +124,17 @@ AGENT-REGISTRY-LOCAL-001
 AGENT-SCOPE-BOUNDARY-EVALS-001
 ```
 
+| Feature | State | Goal |
+| --- | --- | --- |
+| AGENT-PACKAGE-MANIFEST-001 | ACTIVE | Define the agent package manifest contract and required references before execution. |
+| AGENT-SCOPE-MANIFEST-001 | PROPOSED | Define agent scope boundaries, blocked actions, handoff targets, and supported task types. |
+| AGENT-CAPABILITY-METADATA-001 | PROPOSED | Define agent capability metadata without scheduler or reputation side effects. |
+| AGENT-RESOURCE-REQUIREMENTS-001 | PROPOSED | Define agent resource requirements before runtime placement or scheduling. |
+| AGENT-PERMISSION-MODEL-001 | PROPOSED | Define explicit permission categories and denial behavior. |
+| AGENT-AUDIT-LOG-001 | PROPOSED | Define privacy-safe audit evidence for agent review and execution. |
+| AGENT-REGISTRY-LOCAL-001 | PROPOSED | Define local registry behavior before public marketplace behavior. |
+| AGENT-SCOPE-BOUNDARY-EVALS-001 | PROPOSED | Define positive and negative boundary evals for scope enforcement. |
+
 `AGENT-SCOPE-MANIFEST-001` must define what an agent does, what it does not
 do, required permissions, blocked actions, supported task types, handoff
 targets, confirmation boundaries, and when the task must return to the
