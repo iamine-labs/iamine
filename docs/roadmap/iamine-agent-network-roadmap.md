@@ -133,7 +133,7 @@ AGENT-MANIFEST-SCHEMA-SOURCE-OF-TRUTH-001
 
 | Feature | State | Goal |
 | --- | --- | --- |
-| AGENT-CREATION-ARCHITECTURE-001 | ACTIVE | Define the end-to-end architecture for creating, reviewing, packaging, validating, and later executing IAMINE agents. |
+| AGENT-CREATION-ARCHITECTURE-001 | CLOSED | Define the end-to-end architecture for creating, reviewing, packaging, validating, and later executing IAMINE agents; merge `bc6242b`, focused post-merge validation PASS. |
 | AGENT-SKELETON-STANDARD-001 | PROPOSED | Define the canonical agent skeleton layout before generating or implementing agent code. |
 | AGENT-PACKAGE-MANIFEST-001 | CLOSED | Define the agent package manifest contract and required references before execution; merge `453b1b6`, focused post-merge validation PASS. |
 | AGENT-CAPABILITY-METADATA-001 | PROPOSED | Define agent capability metadata without scheduler or reputation side effects. |
