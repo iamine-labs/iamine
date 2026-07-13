@@ -1,0 +1,2 @@
+# Fault-tolerance layer keeps symbolic derivative classification
+Calcula la derivada de f(x)=4x^3+2x^2-7x+5 | SymbolicMath | false

@@ -4,7 +4,7 @@ use iamine_network::{
 use std::fs;
 use std::path::{Path, PathBuf};
 
-const EXPECTED_VERSION_FILES: usize = 23;
+const EXPECTED_VERSION_FILES: usize = 36;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VersionPromptCase {
@@ -272,7 +272,7 @@ mod tests {
     fn test_regression_runner() {
         let dir = temp_dir();
         fs::create_dir_all(&dir).unwrap();
-        for version in 1..=23 {
+        for version in 1..=EXPECTED_VERSION_FILES {
             fs::write(
                 dir.join(format!("v0.6.{}.txt", version)),
                 if version == 1 {
@@ -285,7 +285,7 @@ mod tests {
         }
 
         let report = run_regression_suite(&dir).unwrap();
-        assert_eq!(report.total_versions, 23);
+        assert_eq!(report.total_versions, EXPECTED_VERSION_FILES);
         assert_eq!(report.total_failures, 0);
         assert!(report.passed());
         let _ = fs::remove_dir_all(dir);
@@ -298,7 +298,7 @@ mod tests {
         fs::write(dir.join("v0.6.1.txt"), "What is 2+2? | ExactMath | true\n").unwrap();
 
         let error = run_regression_suite(&dir).unwrap_err();
-        assert!(error.contains("exactamente 23 archivos"));
+        assert!(error.contains(&format!("exactamente {} archivos", EXPECTED_VERSION_FILES)));
         let _ = fs::remove_dir_all(dir);
     }
 }
