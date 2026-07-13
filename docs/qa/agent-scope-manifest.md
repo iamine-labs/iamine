@@ -61,12 +61,12 @@ rg -n "in_scope|out_of_scope|task_types|allowed_inputs|forbidden_inputs|allowed_
 rg -n "permission_requirements|confirmation_boundary|handoff|orchestrator_return|eval_requirements" docs/agents/agent-scope-manifest.md docs/architecture/agent-scope-manifest.md
 rg -n "does not authorize executable|documentation-only|does not implement TOML parsing|not executable|block install and execution" docs/agents/agent-scope-manifest.md docs/architecture/agent-scope-manifest.md
 rg -n "credentials|private_keys|wallet_keys|host identifiers|ip_addresses|mac_addresses|serial_numbers|machine_ids|private_paths|arbitrary_shell|unrestricted_filesystem|scope-bound" docs/agents/agent-scope-manifest.md docs/architecture/agent-scope-manifest.md
-rg -n "AGENT-SCOPE-MANIFEST-001 \\| ACTIVE|AGENT-CAPABILITY-METADATA-001 \\| PROPOSED" docs/roadmap/iamine-agent-network-roadmap.md
+rg -n "AGENT-SCOPE-MANIFEST-001 \\| CLOSED|AGENT-CAPABILITY-METADATA-001 \\| PROPOSED" docs/roadmap/iamine-agent-network-roadmap.md
 ```
 
 Expected:
 
-- roadmap marks this feature active before merge closeout;
+- roadmap marks this feature closed after merge closeout;
 - scope manifest draft schema is documented;
 - scope manifest does not authorize execution or enforcement;
 - in-scope, out-of-scope, blocked actions, handoff, orchestrator return, and
@@ -96,6 +96,7 @@ permission, confirmation, handoff, orchestrator return, and eval scan: PASS
 runtime boundary scan: PASS
 privacy and blocked-mode scan: PASS
 roadmap ACTIVE state scan: PASS before closeout
+post-merge roadmap CLOSED state scan: PASS in closeout
 ```
 
 File-size check:
@@ -121,6 +122,16 @@ Reason:
 The recent full gate already passed all required checks before docs-only agent
 research changes. The local environment remains disk constrained, and this
 feature does not alter the Rust workspace.
+```
+
+## Merge Closeout
+
+```text
+source branch: feature/agent-scope-manifest-001
+feature commit: 4e8dec5b8506e57de65503f3650a17cad0f8e4d1
+merge commit: ca3781880df41d88f4ee07eb94e9e9b4ada8e129
+post-merge validation: PASS
+roadmap closeout state: CLOSED
 ```
 
 ## Field QA Decision
