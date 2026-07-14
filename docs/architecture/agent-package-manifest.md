@@ -109,6 +109,8 @@ The manifest contract must guarantee:
   canonical skeleton path;
 - audit references must use `metadata/agent-audit.toml` to match the canonical
   skeleton path;
+- boundary-test references must use `evals/agent-boundary-tests.toml` to match
+  the canonical skeleton path;
 - public beta, marketplace, and third-party publication disabled;
 - no credentials, destructive actions, arbitrary shell, or unrestricted
   filesystem access;
