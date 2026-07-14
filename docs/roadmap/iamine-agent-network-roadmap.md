@@ -321,7 +321,7 @@ no bypassing manual validation
 | AGENT-TEMPLATE-VALIDATION-001 | CLOSED | Define validation rules for generated templates. |
 | AGENT-FRAMEWORK-BASELINE-001 | CLOSED | Define the internal framework baseline for official agent templates. |
 | AGENT-TEMPLATE-DIAGNOSTIC-001 | CLOSED | Define diagnostic template boundaries. |
-| AGENT-TEMPLATE-FILE-READONLY-001 | PROPOSED | Define read-only file template boundaries. |
+| AGENT-TEMPLATE-FILE-READONLY-001 | ACTIVE | Define read-only file template boundaries. |
 | AGENT-TEMPLATE-NETWORK-DIAGNOSTIC-001 | PROPOSED | Define network diagnostic template boundaries. |
 | AGENT-TEMPLATE-REPORTER-001 | PROPOSED | Define reporter template boundaries. |
 | AGENT-TEMPLATE-TEXT-ASSISTANT-001 | PROPOSED | Define text assistant template boundaries. |
