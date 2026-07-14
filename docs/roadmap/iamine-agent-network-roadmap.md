@@ -324,7 +324,7 @@ no bypassing manual validation
 | AGENT-TEMPLATE-FILE-READONLY-001 | CLOSED | Define read-only file template boundaries. |
 | AGENT-TEMPLATE-NETWORK-DIAGNOSTIC-001 | CLOSED | Define network diagnostic template boundaries. |
 | AGENT-TEMPLATE-REPORTER-001 | CLOSED | Define reporter template boundaries. |
-| AGENT-TEMPLATE-TEXT-ASSISTANT-001 | PROPOSED | Define text assistant template boundaries. |
+| AGENT-TEMPLATE-TEXT-ASSISTANT-001 | ACTIVE | Define text assistant template boundaries. |
 | AGENT-TEMPLATE-OS-DIAGNOSTIC-001 | PROPOSED | Define OS diagnostic template boundaries. |
 | IAMINE-DEV-SETUP-AGENT-001-INTERNAL | PROPOSED | Define the internal development setup assistant. |
 | AGENT-BUILDER-ASSISTANT-AGENT-001-INTERNAL | PROPOSED | Define the internal agent builder assistant. |
