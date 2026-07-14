@@ -120,6 +120,7 @@ Examples:
 - unknown schema;
 - missing `scope_manifest`;
 - missing `expertise_metadata`;
+- missing `resource_requirements`;
 - missing `permission_model`;
 - missing `boundary_tests`;
 - `execution_authorized = true`;

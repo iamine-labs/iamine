@@ -200,7 +200,7 @@ The `references` section names required follow-on contracts:
 scope_manifest = "agent-scope.toml"
 capability_metadata = "agent-capabilities.toml"
 expertise_metadata = "agent-expertise.toml"
-resource_requirements = "agent-resources.toml"
+resource_requirements = "metadata/agent-resources.toml"
 permission_model = "agent-permissions.toml"
 audit_policy = "agent-audit.toml"
 boundary_tests = "agent-boundary-tests.toml"
@@ -288,7 +288,7 @@ task_class = "diagnostic_report"
 scope_manifest = "agent-scope.toml"
 capability_metadata = "agent-capabilities.toml"
 expertise_metadata = "agent-expertise.toml"
-resource_requirements = "agent-resources.toml"
+resource_requirements = "metadata/agent-resources.toml"
 permission_model = "agent-permissions.toml"
 audit_policy = "agent-audit.toml"
 boundary_tests = "agent-boundary-tests.toml"
@@ -337,6 +337,7 @@ The following conditions must block install and execution:
 - `execution_authorized = true`;
 - missing `scope_manifest`;
 - missing `expertise_metadata`;
+- missing `resource_requirements`;
 - missing `permission_model`;
 - missing `boundary_tests`;
 - `earliest_mode = "remote_execution"`;
