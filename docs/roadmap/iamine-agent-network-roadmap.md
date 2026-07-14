@@ -275,7 +275,7 @@ node compatibility. It must not implement distributed model MoE.
 | --- | --- | --- |
 | AGENT-RUNTIME-BASELINE-001 | CLOSED | Define the minimum runtime state vocabulary and prerequisite gates before execution. |
 | AGENT-RUNTIME-SANDBOX-001 | CLOSED | Define sandbox requirements before agent code can run. |
-| AGENT-EXECUTION-LIFECYCLE-001 | PROPOSED | Define runtime transition rules without worker side effects. |
+| AGENT-EXECUTION-LIFECYCLE-001 | ACTIVE | Define runtime transition rules without worker side effects. |
 | AGENT-INPUT-OUTPUT-CONTRACT-001 | PROPOSED | Define privacy-safe input and output boundaries. |
 | AGENT-TIMEOUT-CANCEL-001 | PROPOSED | Define timeout, cancellation, and cleanup expectations. |
 | AGENT-HANDOFF-POLICY-001 | PROPOSED | Define handoff behavior to orchestrator or human operator. |
