@@ -318,7 +318,7 @@ no bypassing manual validation
 | Feature | State | Goal |
 | --- | --- | --- |
 | AGENT-SKELETON-GENERATOR-001 | CLOSED | Define the bounded generated skeleton shape without generating files. |
-| AGENT-TEMPLATE-VALIDATION-001 | ACTIVE | Define validation rules for generated templates. |
+| AGENT-TEMPLATE-VALIDATION-001 | CLOSED | Define validation rules for generated templates. |
 | AGENT-FRAMEWORK-BASELINE-001 | PROPOSED | Define the internal framework baseline for official agent templates. |
 | AGENT-TEMPLATE-DIAGNOSTIC-001 | PROPOSED | Define diagnostic template boundaries. |
 | AGENT-TEMPLATE-FILE-READONLY-001 | PROPOSED | Define read-only file template boundaries. |
