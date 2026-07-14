@@ -66,14 +66,13 @@ rg -n "documentation-only|does not authorize executable|does not modify|runtime 
 rg -n "iamine-agent-package.toml|agent-scope.toml|metadata/agent-capabilities.toml|metadata/agent-expertise.toml|metadata/agent-resources.toml|metadata/agent-permissions.toml|metadata/agent-audit.toml|evals/agent-boundary-tests.toml" docs/agents/agent-skeleton-standard.md docs/architecture/agent-skeleton-standard.md
 rg -n "package-relative|absolute local paths|src/|non-executable placeholders|reserved" docs/agents/agent-skeleton-standard.md docs/architecture/agent-skeleton-standard.md
 rg -n "credentials|private keys|wallet keys|host identifiers|private paths|arbitrary shell|unrestricted filesystem|unrestricted network|service mutation" docs/agents/agent-skeleton-standard.md docs/architecture/agent-skeleton-standard.md
-rg -n "AGENT-SKELETON-STANDARD-001 \\| ACTIVE|AGENT-CAPABILITY-METADATA-001 \\| PROPOSED" docs/roadmap/iamine-agent-network-roadmap.md
+rg -n "AGENT-SKELETON-STANDARD-001 \\| CLOSED|AGENT-CAPABILITY-METADATA-001 \\| PROPOSED" docs/roadmap/iamine-agent-network-roadmap.md
 git diff --name-only origin/develop..HEAD
 ```
 
 Expected:
 
-- roadmap marks this feature active while implementation evidence is being
-  prepared;
+- roadmap marks this feature closed after merge closeout;
 - skeleton layout is documented;
 - package, scope, metadata, permission, audit, eval, review, and runtime
   responsibilities remain separate;
@@ -98,7 +97,8 @@ runtime boundary scan: PASS
 skeleton layout scan: PASS
 package-relative and src policy scan: PASS
 privacy and blocked-mode scan: PASS
-roadmap ACTIVE state scan: PASS
+roadmap ACTIVE state scan: PASS before closeout
+post-merge roadmap CLOSED state scan: PASS in closeout
 ```
 
 File-size check:
@@ -106,9 +106,34 @@ File-size check:
 ```text
 docs/architecture/agent-skeleton-standard.md: 206 lines
 docs/agents/agent-skeleton-standard.md: 150 lines
-docs/qa/agent-skeleton-standard.md: 133 lines after result entry
+docs/qa/agent-skeleton-standard.md: 158 lines after closeout entry
 iamine-node/src/main.rs: 4929 lines
 iamine-node/src/cluster_registry.rs: 862 lines
+```
+
+Full quality gate:
+
+```text
+./scripts/quality-gate.sh: NOT RERUN FOR THIS DOCS-ONLY CLOSEOUT
+classification: redundant broad gate
+```
+
+Reason:
+
+```text
+The controlled merge post-merge validation already passed focused checks for
+this documentation-only feature. This closeout changes only roadmap and QA
+evidence text and does not alter the Rust workspace.
+```
+
+## Merge Closeout
+
+```text
+source branch: feature/agent-skeleton-standard-001
+feature commit: ace38f0ebbcb9839b58acbbfd0f635182ef7a935
+merge commit: be57a4cb5e25e23816a1f3e1f1d8be41b2583db8
+post-merge validation: PASS
+roadmap closeout state: CLOSED
 ```
 
 ## Field QA Decision
