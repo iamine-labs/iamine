@@ -107,6 +107,8 @@ The manifest contract must guarantee:
   permission, audit, and boundary-test contracts;
 - permission references must use `metadata/agent-permissions.toml` to match the
   canonical skeleton path;
+- audit references must use `metadata/agent-audit.toml` to match the canonical
+  skeleton path;
 - public beta, marketplace, and third-party publication disabled;
 - no credentials, destructive actions, arbitrary shell, or unrestricted
   filesystem access;
