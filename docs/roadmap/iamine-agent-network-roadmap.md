@@ -329,7 +329,7 @@ no bypassing manual validation
 | IAMINE-DEV-SETUP-AGENT-001-INTERNAL | CLOSED | Define the internal development setup assistant. |
 | AGENT-BUILDER-ASSISTANT-AGENT-001-INTERNAL | CLOSED | Define the internal agent builder assistant. |
 | AGENT-MANIFEST-WIZARD-AGENT-001-INTERNAL | CLOSED | Define the internal manifest wizard assistant. |
-| AGENT-PERMISSION-REVIEW-AGENT-001-INTERNAL | ACTIVE | Define the internal permission review assistant. |
+| AGENT-PERMISSION-REVIEW-AGENT-001-INTERNAL | CLOSED | Define the internal permission review assistant. |
 | AGENT-SCOPE-REVIEW-AGENT-001-INTERNAL | PROPOSED | Define the internal scope review assistant. |
 | AGENT-BOUNDARY-TEST-GENERATOR-AGENT-001-INTERNAL | PROPOSED | Define the internal boundary-test generator assistant. |
 
