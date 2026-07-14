@@ -145,7 +145,7 @@ AGENT-MANIFEST-SCHEMA-SOURCE-OF-TRUTH-001
 | AGENT-REGISTRY-LOCAL-001 | CLOSED | Define local registry behavior before public marketplace behavior. |
 | AGENT-SCOPE-BOUNDARY-EVALS-001 | CLOSED | Define positive and negative boundary evals for scope enforcement. |
 | AGENT-LANGUAGE-POLICY-001 | CLOSED | Define allowed implementation languages by layer and release phase. |
-| AGENT-DEPENDENCY-POLICY-001 | ACTIVE | Define dependency classes that are allowed, optional, deferred, or blocked for agent work. |
+| AGENT-DEPENDENCY-POLICY-001 | CLOSED | Define dependency classes that are allowed, optional, deferred, or blocked for agent work. |
 | AGENT-RUNTIME-LANGUAGE-MATRIX-001 | PROPOSED | Define supported runtime language modes before execution features. |
 | AGENT-MANIFEST-SCHEMA-SOURCE-OF-TRUTH-001 | PROPOSED | Define the source of truth for agent manifest schemas and generated validation artifacts. |
 
