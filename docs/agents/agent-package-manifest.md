@@ -202,7 +202,7 @@ capability_metadata = "agent-capabilities.toml"
 expertise_metadata = "agent-expertise.toml"
 resource_requirements = "metadata/agent-resources.toml"
 permission_model = "metadata/agent-permissions.toml"
-audit_policy = "agent-audit.toml"
+audit_policy = "metadata/agent-audit.toml"
 boundary_tests = "agent-boundary-tests.toml"
 ```
 
@@ -290,7 +290,7 @@ capability_metadata = "agent-capabilities.toml"
 expertise_metadata = "agent-expertise.toml"
 resource_requirements = "metadata/agent-resources.toml"
 permission_model = "metadata/agent-permissions.toml"
-audit_policy = "agent-audit.toml"
+audit_policy = "metadata/agent-audit.toml"
 boundary_tests = "agent-boundary-tests.toml"
 
 [distribution]
