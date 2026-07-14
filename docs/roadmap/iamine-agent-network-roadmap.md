@@ -143,7 +143,7 @@ AGENT-MANIFEST-SCHEMA-SOURCE-OF-TRUTH-001
 | AGENT-PERMISSION-MODEL-001 | CLOSED | Define explicit permission categories and denial behavior. |
 | AGENT-AUDIT-LOG-001 | CLOSED | Define privacy-safe audit evidence for agent review and execution. |
 | AGENT-REGISTRY-LOCAL-001 | CLOSED | Define local registry behavior before public marketplace behavior. |
-| AGENT-SCOPE-BOUNDARY-EVALS-001 | PROPOSED | Define positive and negative boundary evals for scope enforcement. |
+| AGENT-SCOPE-BOUNDARY-EVALS-001 | ACTIVE | Define positive and negative boundary evals for scope enforcement. |
 | AGENT-LANGUAGE-POLICY-001 | PROPOSED | Define allowed implementation languages by layer and release phase. |
 | AGENT-DEPENDENCY-POLICY-001 | PROPOSED | Define dependency classes that are allowed, optional, deferred, or blocked for agent work. |
 | AGENT-RUNTIME-LANGUAGE-MATRIX-001 | PROPOSED | Define supported runtime language modes before execution features. |
