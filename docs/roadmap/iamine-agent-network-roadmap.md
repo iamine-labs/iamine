@@ -136,7 +136,7 @@ AGENT-MANIFEST-SCHEMA-SOURCE-OF-TRUTH-001
 | AGENT-CREATION-ARCHITECTURE-001 | CLOSED | Define the end-to-end architecture for creating, reviewing, packaging, validating, and later executing IAMINE agents; merge `bc6242b`, focused post-merge validation PASS. |
 | AGENT-SKELETON-STANDARD-001 | CLOSED | Define the canonical agent skeleton layout before generating or implementing agent code; merge `be57a4c`, focused post-merge validation PASS. |
 | AGENT-PACKAGE-MANIFEST-001 | CLOSED | Define the agent package manifest contract and required references before execution; merge `453b1b6`, focused post-merge validation PASS. |
-| AGENT-CAPABILITY-METADATA-001 | ACTIVE | Define agent capability metadata without scheduler or reputation side effects. |
+| AGENT-CAPABILITY-METADATA-001 | CLOSED | Define agent capability metadata without scheduler or reputation side effects. |
 | AGENT-EXPERTISE-METADATA-001 | PROPOSED | Define expertise metadata for agent selection without claiming distributed model MoE. |
 | AGENT-SCOPE-MANIFEST-001 | CLOSED | Define agent scope boundaries, blocked actions, handoff targets, and supported task types; merge `ca37818`, focused post-merge validation PASS. |
 | AGENT-RESOURCE-REQUIREMENTS-001 | PROPOSED | Define agent resource requirements before runtime placement or scheduling. |
