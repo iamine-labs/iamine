@@ -105,6 +105,8 @@ The manifest contract must guarantee:
 - bounded agent family and earliest mode;
 - required references to future scope, capability, expertise, resource,
   permission, audit, and boundary-test contracts;
+- permission references must use `metadata/agent-permissions.toml` to match the
+  canonical skeleton path;
 - public beta, marketplace, and third-party publication disabled;
 - no credentials, destructive actions, arbitrary shell, or unrestricted
   filesystem access;
