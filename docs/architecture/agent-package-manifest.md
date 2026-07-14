@@ -86,6 +86,7 @@ It feeds:
 ```text
 AGENT-SCOPE-MANIFEST-001
 AGENT-CAPABILITY-METADATA-001
+AGENT-EXPERTISE-METADATA-001
 AGENT-RESOURCE-REQUIREMENTS-001
 AGENT-PERMISSION-MODEL-001
 AGENT-AUDIT-LOG-001
@@ -102,8 +103,8 @@ The manifest contract must guarantee:
 - explicit official pack membership;
 - `execution_authorized = false` during this phase;
 - bounded agent family and earliest mode;
-- required references to future scope, capability, resource, permission, audit,
-  and boundary-test contracts;
+- required references to future scope, capability, expertise, resource,
+  permission, audit, and boundary-test contracts;
 - public beta, marketplace, and third-party publication disabled;
 - no credentials, destructive actions, arbitrary shell, or unrestricted
   filesystem access;
@@ -118,6 +119,7 @@ Examples:
 
 - unknown schema;
 - missing `scope_manifest`;
+- missing `expertise_metadata`;
 - missing `permission_model`;
 - missing `boundary_tests`;
 - `execution_authorized = true`;
