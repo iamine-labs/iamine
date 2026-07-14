@@ -280,7 +280,7 @@ node compatibility. It must not implement distributed model MoE.
 | AGENT-TIMEOUT-CANCEL-001 | CLOSED | Define timeout, cancellation, and cleanup expectations. |
 | AGENT-HANDOFF-POLICY-001 | CLOSED | Define handoff behavior to orchestrator or human operator. |
 | AGENT-OUT-OF-SCOPE-RESPONSE-001 | CLOSED | Define safe refusal, clarification, and out-of-scope responses. |
-| AGENT-ROUTING-CANDIDATE-SELECTION-001 | ACTIVE | Define candidate selection inputs without distributed model MoE. |
+| AGENT-ROUTING-CANDIDATE-SELECTION-001 | CLOSED | Define candidate selection inputs without distributed model MoE. |
 
 ## v0.11.3 - Internal Agent Developer Bootstrap
 
