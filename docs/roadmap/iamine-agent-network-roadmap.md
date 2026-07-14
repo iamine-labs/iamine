@@ -315,6 +315,24 @@ no unrestricted network
 no bypassing manual validation
 ```
 
+| Feature | State | Goal |
+| --- | --- | --- |
+| AGENT-SKELETON-GENERATOR-001 | ACTIVE | Define the bounded generated skeleton shape without generating files. |
+| AGENT-TEMPLATE-VALIDATION-001 | PROPOSED | Define validation rules for generated templates. |
+| AGENT-FRAMEWORK-BASELINE-001 | PROPOSED | Define the internal framework baseline for official agent templates. |
+| AGENT-TEMPLATE-DIAGNOSTIC-001 | PROPOSED | Define diagnostic template boundaries. |
+| AGENT-TEMPLATE-FILE-READONLY-001 | PROPOSED | Define read-only file template boundaries. |
+| AGENT-TEMPLATE-NETWORK-DIAGNOSTIC-001 | PROPOSED | Define network diagnostic template boundaries. |
+| AGENT-TEMPLATE-REPORTER-001 | PROPOSED | Define reporter template boundaries. |
+| AGENT-TEMPLATE-TEXT-ASSISTANT-001 | PROPOSED | Define text assistant template boundaries. |
+| AGENT-TEMPLATE-OS-DIAGNOSTIC-001 | PROPOSED | Define OS diagnostic template boundaries. |
+| IAMINE-DEV-SETUP-AGENT-001-INTERNAL | PROPOSED | Define the internal development setup assistant. |
+| AGENT-BUILDER-ASSISTANT-AGENT-001-INTERNAL | PROPOSED | Define the internal agent builder assistant. |
+| AGENT-MANIFEST-WIZARD-AGENT-001-INTERNAL | PROPOSED | Define the internal manifest wizard assistant. |
+| AGENT-PERMISSION-REVIEW-AGENT-001-INTERNAL | PROPOSED | Define the internal permission review assistant. |
+| AGENT-SCOPE-REVIEW-AGENT-001-INTERNAL | PROPOSED | Define the internal scope review assistant. |
+| AGENT-BOUNDARY-TEST-GENERATOR-AGENT-001-INTERNAL | PROPOSED | Define the internal boundary-test generator assistant. |
+
 ## v0.12.0 - P0 Official Agents
 
 First, IAMINE must define official P0 agent skeletons:
