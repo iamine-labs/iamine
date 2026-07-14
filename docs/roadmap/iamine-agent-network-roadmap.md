@@ -146,7 +146,7 @@ AGENT-MANIFEST-SCHEMA-SOURCE-OF-TRUTH-001
 | AGENT-SCOPE-BOUNDARY-EVALS-001 | CLOSED | Define positive and negative boundary evals for scope enforcement. |
 | AGENT-LANGUAGE-POLICY-001 | CLOSED | Define allowed implementation languages by layer and release phase. |
 | AGENT-DEPENDENCY-POLICY-001 | CLOSED | Define dependency classes that are allowed, optional, deferred, or blocked for agent work. |
-| AGENT-RUNTIME-LANGUAGE-MATRIX-001 | PROPOSED | Define supported runtime language modes before execution features. |
+| AGENT-RUNTIME-LANGUAGE-MATRIX-001 | ACTIVE | Define supported runtime language modes before execution features. |
 | AGENT-MANIFEST-SCHEMA-SOURCE-OF-TRUTH-001 | PROPOSED | Define the source of truth for agent manifest schemas and generated validation artifacts. |
 
 `AGENT-SCOPE-MANIFEST-001` must define what an agent does, what it does not
