@@ -330,7 +330,7 @@ no bypassing manual validation
 | AGENT-BUILDER-ASSISTANT-AGENT-001-INTERNAL | CLOSED | Define the internal agent builder assistant. |
 | AGENT-MANIFEST-WIZARD-AGENT-001-INTERNAL | CLOSED | Define the internal manifest wizard assistant. |
 | AGENT-PERMISSION-REVIEW-AGENT-001-INTERNAL | CLOSED | Define the internal permission review assistant. |
-| AGENT-SCOPE-REVIEW-AGENT-001-INTERNAL | ACTIVE | Define the internal scope review assistant. |
+| AGENT-SCOPE-REVIEW-AGENT-001-INTERNAL | CLOSED | Define the internal scope review assistant. |
 | AGENT-BOUNDARY-TEST-GENERATOR-AGENT-001-INTERNAL | PROPOSED | Define the internal boundary-test generator assistant. |
 
 ## v0.12.0 - P0 Official Agents
