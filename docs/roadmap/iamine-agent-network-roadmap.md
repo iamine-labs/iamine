@@ -278,7 +278,7 @@ node compatibility. It must not implement distributed model MoE.
 | AGENT-EXECUTION-LIFECYCLE-001 | CLOSED | Define runtime transition rules without worker side effects. |
 | AGENT-INPUT-OUTPUT-CONTRACT-001 | CLOSED | Define privacy-safe input and output boundaries. |
 | AGENT-TIMEOUT-CANCEL-001 | CLOSED | Define timeout, cancellation, and cleanup expectations. |
-| AGENT-HANDOFF-POLICY-001 | PROPOSED | Define handoff behavior to orchestrator or human operator. |
+| AGENT-HANDOFF-POLICY-001 | ACTIVE | Define handoff behavior to orchestrator or human operator. |
 | AGENT-OUT-OF-SCOPE-RESPONSE-001 | PROPOSED | Define safe refusal, clarification, and out-of-scope responses. |
 | AGENT-ROUTING-CANDIDATE-SELECTION-001 | PROPOSED | Define candidate selection inputs without distributed model MoE. |
 
