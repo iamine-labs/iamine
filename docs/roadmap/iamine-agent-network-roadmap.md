@@ -140,7 +140,7 @@ AGENT-MANIFEST-SCHEMA-SOURCE-OF-TRUTH-001
 | AGENT-EXPERTISE-METADATA-001 | CLOSED | Define expertise metadata for agent selection without claiming distributed model MoE. |
 | AGENT-SCOPE-MANIFEST-001 | CLOSED | Define agent scope boundaries, blocked actions, handoff targets, and supported task types; merge `ca37818`, focused post-merge validation PASS. |
 | AGENT-RESOURCE-REQUIREMENTS-001 | CLOSED | Define agent resource requirements before runtime placement or scheduling. |
-| AGENT-PERMISSION-MODEL-001 | PROPOSED | Define explicit permission categories and denial behavior. |
+| AGENT-PERMISSION-MODEL-001 | ACTIVE | Define explicit permission categories and denial behavior. |
 | AGENT-AUDIT-LOG-001 | PROPOSED | Define privacy-safe audit evidence for agent review and execution. |
 | AGENT-REGISTRY-LOCAL-001 | PROPOSED | Define local registry behavior before public marketplace behavior. |
 | AGENT-SCOPE-BOUNDARY-EVALS-001 | PROPOSED | Define positive and negative boundary evals for scope enforcement. |
