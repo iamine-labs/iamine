@@ -147,7 +147,7 @@ AGENT-MANIFEST-SCHEMA-SOURCE-OF-TRUTH-001
 | AGENT-LANGUAGE-POLICY-001 | CLOSED | Define allowed implementation languages by layer and release phase. |
 | AGENT-DEPENDENCY-POLICY-001 | CLOSED | Define dependency classes that are allowed, optional, deferred, or blocked for agent work. |
 | AGENT-RUNTIME-LANGUAGE-MATRIX-001 | CLOSED | Define supported runtime language modes before execution features. |
-| AGENT-MANIFEST-SCHEMA-SOURCE-OF-TRUTH-001 | ACTIVE | Define the source of truth for agent manifest schemas and generated validation artifacts. |
+| AGENT-MANIFEST-SCHEMA-SOURCE-OF-TRUTH-001 | CLOSED | Define the source of truth for agent manifest schemas and generated validation artifacts. |
 
 `AGENT-SCOPE-MANIFEST-001` must define what an agent does, what it does not
 do, required permissions, blocked actions, supported task types, handoff
