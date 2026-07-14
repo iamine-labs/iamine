@@ -64,14 +64,13 @@ rg -n "documentation-only|does not authorize executable|does not modify|runtime 
 rg -n "package manifest|skeleton|scope manifest|capability metadata|expertise metadata|resource requirements|permission model|audit policy|boundary evals|local registry|runtime eligibility" docs/agents/agent-creation-architecture.md docs/architecture/agent-creation-architecture.md
 rg -n "scope-bound|out of scope|handoff|orchestrator|refuse|clarification" docs/agents/agent-creation-architecture.md docs/architecture/agent-creation-architecture.md
 rg -n "credentials|private keys|wallet keys|usernames|full hostnames|IP addresses|MAC addresses|serial numbers|machine IDs|private paths|unrestricted filesystem|arbitrary shell" docs/agents/agent-creation-architecture.md docs/architecture/agent-creation-architecture.md
-rg -n "AGENT-CREATION-ARCHITECTURE-001 \\| ACTIVE|AGENT-SKELETON-STANDARD-001 \\| PROPOSED" docs/roadmap/iamine-agent-network-roadmap.md
+rg -n "AGENT-CREATION-ARCHITECTURE-001 \\| CLOSED|AGENT-SKELETON-STANDARD-001 \\| PROPOSED" docs/roadmap/iamine-agent-network-roadmap.md
 git diff --name-only origin/develop..HEAD
 ```
 
 Expected:
 
-- roadmap marks this feature active while implementation evidence is being
-  prepared;
+- roadmap marks this feature closed after merge closeout;
 - agent creation pipeline is documented;
 - package, skeleton, scope, metadata, resource, permission, audit, eval,
   registry, and runtime eligibility gates remain separate;
@@ -94,7 +93,8 @@ runtime boundary scan: PASS
 agent gate separation scan: PASS
 scope-bound behavior scan: PASS
 privacy and blocked-mode scan: PASS
-roadmap ACTIVE state scan: PASS
+roadmap ACTIVE state scan: PASS before closeout
+post-merge roadmap CLOSED state scan: PASS in closeout
 ```
 
 File-size check:
@@ -102,9 +102,34 @@ File-size check:
 ```text
 docs/architecture/agent-creation-architecture.md: 207 lines
 docs/agents/agent-creation-architecture.md: 189 lines
-docs/qa/agent-creation-architecture.md: 128 lines after result entry
+docs/qa/agent-creation-architecture.md: 153 lines after closeout entry
 iamine-node/src/main.rs: 4929 lines
 iamine-node/src/cluster_registry.rs: 862 lines
+```
+
+Full quality gate:
+
+```text
+./scripts/quality-gate.sh: NOT RERUN FOR THIS DOCS-ONLY CLOSEOUT
+classification: redundant broad gate
+```
+
+Reason:
+
+```text
+The controlled merge post-merge validation already passed focused checks for
+this documentation-only feature. This closeout changes only roadmap and QA
+evidence text and does not alter the Rust workspace.
+```
+
+## Merge Closeout
+
+```text
+source branch: feature/agent-creation-architecture-001
+feature commit: b7f8a5331cfc45340e81be2cd299743cc86b9b07
+merge commit: bc6242b581cbb70cfffbc6a4fdb7681620a6bd1c
+post-merge validation: PASS
+roadmap closeout state: CLOSED
 ```
 
 ## Field QA Decision
