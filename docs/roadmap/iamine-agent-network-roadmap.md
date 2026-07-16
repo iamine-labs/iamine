@@ -335,6 +335,15 @@ no bypassing manual validation
 
 ## v0.12.0 - P0 Official Agents
 
+| Feature | State | Goal |
+| --- | --- | --- |
+| NODE-DOCTOR-AGENT-001-SKELETON | ACTIVE | Define the official P0 Node Doctor skeleton as a local-readonly, privacy-safe, scope-bound planning contract without execution. |
+| REPORTER-AGENT-001-SKELETON | PROPOSED | Define the official P0 Reporter skeleton after the Node Doctor skeleton. |
+| LAN-FILE-SHARE-ASSISTANT-AGENT-001-SKELETON | PROPOSED | Define the official P0 LAN file-share assistant skeleton. |
+| PHOTO-LIBRARY-ORGANIZER-AGENT-001-SKELETON | PROPOSED | Define the official P0 photo-library organizer skeleton. |
+| HOME-NETWORK-ASSISTANT-AGENT-001-SKELETON | PROPOSED | Define the official P0 home-network assistant skeleton. |
+| WINDOWS-OPTIMIZER-ASSISTANT-AGENT-001-SKELETON | PROPOSED | Define the official P0 Windows optimizer assistant skeleton. |
+
 First, IAMINE must define official P0 agent skeletons:
 
 ```text
