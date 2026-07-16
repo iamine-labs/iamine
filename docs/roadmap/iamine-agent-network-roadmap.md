@@ -339,7 +339,7 @@ no bypassing manual validation
 | --- | --- | --- |
 | NODE-DOCTOR-AGENT-001-SKELETON | CLOSED | Defined the official P0 Node Doctor skeleton as a local-readonly, privacy-safe, scope-bound planning contract without execution; merge `9b058bc`, post-merge quality gate PASS WITH WARNINGS. |
 | REPORTER-AGENT-001-SKELETON | CLOSED | Defined the official P0 Privacy-Safe Support Reporter skeleton as a local-readonly, evidence-limited, privacy-safe planning contract without collection, export, or execution; merge `ca163d6`, focused post-merge validation PASS. |
-| LAN-FILE-SHARE-ASSISTANT-AGENT-001-SKELETON | ACTIVE | Define the official P0 LAN File Share Assistant skeleton as a local-planning, privacy-safe contract without discovery, credentials, file access, or execution. |
+| LAN-FILE-SHARE-ASSISTANT-AGENT-001-SKELETON | CLOSED | Defined the official P0 LAN File Share Assistant skeleton as a local-planning, privacy-safe contract without discovery, credentials, file access, or execution; merge `1fd6709`, focused post-merge validation PASS. |
 | PHOTO-LIBRARY-ORGANIZER-AGENT-001-SKELETON | PROPOSED | Define the official P0 photo-library organizer skeleton. |
 | HOME-NETWORK-ASSISTANT-AGENT-001-SKELETON | PROPOSED | Define the official P0 home-network assistant skeleton. |
 | WINDOWS-OPTIMIZER-ASSISTANT-AGENT-001-SKELETON | PROPOSED | Define the official P0 Windows optimizer assistant skeleton. |
