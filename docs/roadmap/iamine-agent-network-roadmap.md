@@ -337,7 +337,7 @@ no bypassing manual validation
 
 | Feature | State | Goal |
 | --- | --- | --- |
-| NODE-DOCTOR-AGENT-001-SKELETON | ACTIVE | Define the official P0 Node Doctor skeleton as a local-readonly, privacy-safe, scope-bound planning contract without execution. |
+| NODE-DOCTOR-AGENT-001-SKELETON | CLOSED | Defined the official P0 Node Doctor skeleton as a local-readonly, privacy-safe, scope-bound planning contract without execution; merge `9b058bc`, post-merge quality gate PASS WITH WARNINGS. |
 | REPORTER-AGENT-001-SKELETON | PROPOSED | Define the official P0 Reporter skeleton after the Node Doctor skeleton. |
 | LAN-FILE-SHARE-ASSISTANT-AGENT-001-SKELETON | PROPOSED | Define the official P0 LAN file-share assistant skeleton. |
 | PHOTO-LIBRARY-ORGANIZER-AGENT-001-SKELETON | PROPOSED | Define the official P0 photo-library organizer skeleton. |
