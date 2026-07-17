@@ -117,6 +117,7 @@ docs/agents/official-beta-agent-pack-selection.md
 AGENT-CREATION-ARCHITECTURE-001
 AGENT-SKELETON-STANDARD-001
 AGENT-PACKAGE-MANIFEST-001
+AGENT-MANIFEST-PARSER-VALIDATOR-001
 AGENT-CAPABILITY-METADATA-001
 AGENT-EXPERTISE-METADATA-001
 AGENT-SCOPE-MANIFEST-001
@@ -136,6 +137,7 @@ AGENT-MANIFEST-SCHEMA-SOURCE-OF-TRUTH-001
 | AGENT-CREATION-ARCHITECTURE-001 | CLOSED | Define the end-to-end architecture for creating, reviewing, packaging, validating, and later executing IAMINE agents; merge `bc6242b`, focused post-merge validation PASS. |
 | AGENT-SKELETON-STANDARD-001 | CLOSED | Define the canonical agent skeleton layout before generating or implementing agent code; merge `be57a4c`, focused post-merge validation PASS. |
 | AGENT-PACKAGE-MANIFEST-001 | CLOSED | Define the agent package manifest contract and required references before execution; merge `453b1b6`, focused post-merge validation PASS. |
+| AGENT-MANIFEST-PARSER-VALIDATOR-001 | PROPOSED | Implement canonical manifest types, fixtures, parsing, schema validation, and negative tests without loading or executing agent packages. |
 | AGENT-CAPABILITY-METADATA-001 | CLOSED | Define agent capability metadata without scheduler or reputation side effects. |
 | AGENT-EXPERTISE-METADATA-001 | CLOSED | Define expertise metadata for agent selection without claiming distributed model MoE. |
 | AGENT-SCOPE-MANIFEST-001 | CLOSED | Define agent scope boundaries, blocked actions, handoff targets, and supported task types; merge `ca37818`, focused post-merge validation PASS. |
@@ -243,9 +245,13 @@ Windows automation advanced dependencies
 
 ```text
 AGENT-RUNTIME-BASELINE-001
-AGENT-RUNTIME-SANDBOX-001
+AGENT-PACKAGE-LOAD-GATE-001
 AGENT-EXECUTION-LIFECYCLE-001
 AGENT-INPUT-OUTPUT-CONTRACT-001
+AGENT-SCOPE-ENFORCEMENT-001
+AGENT-PERMISSION-ENFORCEMENT-001
+AGENT-AUDIT-EVENTS-001
+AGENT-RUNTIME-SANDBOX-001
 AGENT-TIMEOUT-CANCEL-001
 AGENT-HANDOFF-POLICY-001
 AGENT-OUT-OF-SCOPE-RESPONSE-001
@@ -274,9 +280,13 @@ node compatibility. It must not implement distributed model MoE.
 | Feature | State | Goal |
 | --- | --- | --- |
 | AGENT-RUNTIME-BASELINE-001 | CLOSED | Define the minimum runtime state vocabulary and prerequisite gates before execution. |
+| AGENT-PACKAGE-LOAD-GATE-001 | PROPOSED | Reject packages that have not passed canonical parsing, schema validation, scope, permission, audit, and compatibility gates. |
 | AGENT-RUNTIME-SANDBOX-001 | CLOSED | Define sandbox requirements before agent code can run. |
 | AGENT-EXECUTION-LIFECYCLE-001 | CLOSED | Define runtime transition rules without worker side effects. |
 | AGENT-INPUT-OUTPUT-CONTRACT-001 | CLOSED | Define privacy-safe input and output boundaries. |
+| AGENT-SCOPE-ENFORCEMENT-001 | PROPOSED | Enforce declared scope and deny tasks that are ambiguous, unsupported, or outside the package boundary. |
+| AGENT-PERMISSION-ENFORCEMENT-001 | PROPOSED | Enforce deny-by-default permissions independently from scope and user confirmation. |
+| AGENT-AUDIT-EVENTS-001 | PROPOSED | Emit bounded, redacted lifecycle, scope, permission, refusal, and handoff evidence. |
 | AGENT-TIMEOUT-CANCEL-001 | CLOSED | Define timeout, cancellation, and cleanup expectations. |
 | AGENT-HANDOFF-POLICY-001 | CLOSED | Define handoff behavior to orchestrator or human operator. |
 | AGENT-OUT-OF-SCOPE-RESPONSE-001 | CLOSED | Define safe refusal, clarification, and out-of-scope responses. |
@@ -337,12 +347,15 @@ no bypassing manual validation
 
 | Feature | State | Goal |
 | --- | --- | --- |
-| NODE-DOCTOR-AGENT-001-SKELETON | CLOSED | Defined the official P0 Node Doctor skeleton as a local-readonly, privacy-safe, scope-bound planning contract without execution; merge `9b058bc`, post-merge quality gate PASS WITH WARNINGS. |
+| NODE-DOCTOR-AGENT-001-SKELETON | CLOSED | Defined the official P0 Node Doctor skeleton as a local-readonly, privacy-safe, scope-bound, non-executable planning contract that is not user available; merge `9b058bc`, post-merge quality gate PASS WITH WARNINGS. |
 | REPORTER-AGENT-001-SKELETON | CLOSED | Defined the official P0 Privacy-Safe Support Reporter skeleton as a local-readonly, evidence-limited, privacy-safe planning contract without collection, export, or execution; merge `ca163d6`, focused post-merge validation PASS. |
 | LAN-FILE-SHARE-ASSISTANT-AGENT-001-SKELETON | CLOSED | Defined the official P0 LAN File Share Assistant skeleton as a local-planning, privacy-safe contract without discovery, credentials, file access, or execution; merge `1fd6709`, focused post-merge validation PASS. |
 | PHOTO-LIBRARY-ORGANIZER-AGENT-001-SKELETON | CLOSED | Defined the official P0 Photo Library Organizer skeleton as a local-planning, privacy-safe contract without library access, media analysis, or filesystem execution; merge `e379ced`, focused post-merge validation PASS. |
 | HOME-NETWORK-ASSISTANT-AGENT-001-SKELETON | CLOSED | Defined the official P0 Home Network Assistant skeleton as a local-planning, privacy-safe contract without discovery, router access, or network execution; merge `aa3ec2a`, focused post-merge validation PASS. |
 | WINDOWS-OPTIMIZER-ASSISTANT-AGENT-001-SKELETON | CLOSED | Defined the official P0 Windows Optimizer Assistant skeleton as a local-planning, privacy-safe contract without system inspection, configuration change, or execution; merge `f81072a`, focused post-merge validation PASS. |
+| NODE-DOCTOR-AGENT-001-DEPENDENCY-RECONCILIATION-001 | ACTIVE | Record the executable prerequisite chain and keep functional Node Doctor development blocked until every gate has implementation and validation evidence. |
+| NODE-DOCTOR-EVIDENCE-PROVIDER-001 | PROPOSED | Expose bounded, structured, redacted, read-only node evidence through a stable non-agent interface. |
+| NODE-DOCTOR-AGENT-001 | PROPOSED | Implement the first functional P0 reference agent only after the full executable prerequisite chain is implemented and validated. |
 
 First, IAMINE must define official P0 agent skeletons:
 
@@ -366,10 +379,60 @@ HOME-NETWORK-ASSISTANT-AGENT-001
 WINDOWS-OPTIMIZER-ASSISTANT-AGENT-001
 ```
 
+The closed skeletons have the following product status:
+
+```text
+skeleton
+non_executable
+not_user_available
+```
+
+Closing an architecture contract does not prove that its runtime or
+enforcement behavior exists. `NODE-DOCTOR-AGENT-001` remains in `PROPOSED`
+and development authorization is blocked until all of the following have
+executable implementation and validation evidence:
+
+```text
+AGENT-MANIFEST-PARSER-VALIDATOR-001
+AGENT-PACKAGE-LOAD-GATE-001
+AGENT-RUNTIME-BASELINE-001
+AGENT-EXECUTION-LIFECYCLE-001
+AGENT-SCOPE-ENFORCEMENT-001
+AGENT-PERMISSION-ENFORCEMENT-001
+AGENT-AUDIT-EVENTS-001
+AGENT-RUNTIME-SANDBOX-001
+AGENT-OUT-OF-SCOPE-RESPONSE-001
+AGENT-HANDOFF-POLICY-001
+NODE-DOCTOR-EVIDENCE-PROVIDER-001
+```
+
+`NODE-DOCTOR-EVIDENCE-PROVIDER-001` is not an agent. It may expose structured,
+redacted, read-only node status, hardware profile, configuration status, model
+readiness, peer/network status, and remote-inference readiness. It must not
+execute commands, invoke a shell, dump raw logs, expose private identifiers,
+modify node state, or produce user-facing agent behavior.
+
+The existing `iamine-node lan doctor` command is not an agent adapter. The
+Node Doctor skeleton must not invoke or wrap it. A later evidence provider may
+reuse only owner-module data behind a dedicated typed and redacted interface.
+
+The immediate next implementation feature after this documentation-only
+reconciliation is:
+
+```text
+AGENT-MANIFEST-PARSER-VALIDATOR-001
+```
+
+That feature must reconcile the canonical YAML authoring and Rust type
+source-of-truth policy with older TOML planning contracts before it chooses a
+parser surface. It may add schemas, types, fixtures, validators, and tests; it
+must not load or execute an agent package.
+
 Not all functional P0 agents should be implemented in parallel at the start.
-`NODE-DOCTOR-AGENT-001` is the recommended complete reference vertical. After
-that, `REPORTER-AGENT-001` should be the next functional agent, followed by
-P0 skeletons and implementation waves.
+After every prerequisite gate above passes, `NODE-DOCTOR-AGENT-001` remains
+the recommended complete reference vertical. `REPORTER-AGENT-001` should then
+be the next functional agent, followed by the remaining P0 implementation
+waves.
 
 Each P0 agent must pass positive capability tests, negative capability tests,
 scope boundary tests, permission boundary tests, handoff tests, unsafe action

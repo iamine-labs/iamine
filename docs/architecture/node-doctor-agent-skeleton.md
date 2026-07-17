@@ -17,8 +17,9 @@ docs/architecture/node-doctor-agent-skeleton.md
 docs/qa/node-doctor-agent-skeleton.md
 ```
 
-It adds the v0.12.0 state table and marks
-`NODE-DOCTOR-AGENT-001-SKELETON` as `ACTIVE`.
+It originally added the v0.12.0 state table. The roadmap now records
+`NODE-DOCTOR-AGENT-001-SKELETON` as `CLOSED`, which closes only the planning
+contract and does not authorize execution or user availability.
 
 ## Architecture Boundary
 
@@ -53,6 +54,11 @@ It provides a bounded product-specific contract for a later functional Node
 Doctor implementation. That later feature must own package artifacts, concrete
 input adaptation, redaction, permission enforcement, audit emission, sandbox
 integration, lifecycle wiring, and any CLI or runtime surface it requires.
+
+The functional feature remains blocked until the manifest parser, package load
+gate, executable runtime lifecycle, scope enforcement, permission enforcement,
+audit events, sandbox, handoff, out-of-scope response, and dedicated Node
+Doctor evidence provider all have implementation and validation evidence.
 
 The skeleton must not treat the existing `iamine-node lan doctor` CLI as an
 agent runtime adapter. Any future use of its data requires a dedicated,
