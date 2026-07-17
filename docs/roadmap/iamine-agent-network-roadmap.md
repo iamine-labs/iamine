@@ -341,7 +341,7 @@ no bypassing manual validation
 | REPORTER-AGENT-001-SKELETON | CLOSED | Defined the official P0 Privacy-Safe Support Reporter skeleton as a local-readonly, evidence-limited, privacy-safe planning contract without collection, export, or execution; merge `ca163d6`, focused post-merge validation PASS. |
 | LAN-FILE-SHARE-ASSISTANT-AGENT-001-SKELETON | CLOSED | Defined the official P0 LAN File Share Assistant skeleton as a local-planning, privacy-safe contract without discovery, credentials, file access, or execution; merge `1fd6709`, focused post-merge validation PASS. |
 | PHOTO-LIBRARY-ORGANIZER-AGENT-001-SKELETON | CLOSED | Defined the official P0 Photo Library Organizer skeleton as a local-planning, privacy-safe contract without library access, media analysis, or filesystem execution; merge `e379ced`, focused post-merge validation PASS. |
-| HOME-NETWORK-ASSISTANT-AGENT-001-SKELETON | ACTIVE | Define the official P0 Home Network Assistant skeleton as a local-planning, privacy-safe contract without discovery, router access, or network execution. |
+| HOME-NETWORK-ASSISTANT-AGENT-001-SKELETON | CLOSED | Defined the official P0 Home Network Assistant skeleton as a local-planning, privacy-safe contract without discovery, router access, or network execution; merge `aa3ec2a`, focused post-merge validation PASS. |
 | WINDOWS-OPTIMIZER-ASSISTANT-AGENT-001-SKELETON | PROPOSED | Define the official P0 Windows optimizer assistant skeleton. |
 
 First, IAMINE must define official P0 agent skeletons:
