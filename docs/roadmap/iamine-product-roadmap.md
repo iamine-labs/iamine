@@ -88,6 +88,12 @@ The official roadmap now requires IAMINE to continue through pre-public
 infrastructure and Agent Network foundations before v1.0. The next product
 line is not an inference-only public testnet. It is the IAMINE Agent Network.
 
+All six v0.12.0 P0 skeleton contracts are closed, but they are non-executable
+and not user available. Functional `NODE-DOCTOR-AGENT-001` development is
+blocked while the manifest parser, package load gate, runtime enforcement,
+audit events, sandbox implementation, and dedicated redacted evidence provider
+remain without executable validation evidence.
+
 The broader v0.9 operational stability claim still requires the operational
 target: 10-50 nodes, 3-10 operators, multiple physical networks, and two to
 four weeks of stable operation.
@@ -102,6 +108,7 @@ or handed off to the orchestrator.
 | --- | --- | --- | --- |
 | ROADMAP-OFFICIAL-AGENT-NETWORK-RECONCILIATION-001 | CLOSED | Architecture / product roadmap | Reconciled this repository roadmap with the official Agent Network roadmap while preserving closed feature evidence without reinterpreting it; merge `62761cb`, post-merge validation PASS. |
 | ROADMAP-AGENT-NETWORK-COMPLETE-RECONCILIATION-001 | CLOSED | Architecture / product roadmap | Incorporated the complete Agent Network, agent creation architecture, developer platform, language policy, dependency policy, routing, and advanced compute roadmap update; merge `7769cb2`, focused post-merge validation PASS. |
+| NODE-DOCTOR-AGENT-001-DEPENDENCY-RECONCILIATION-001 | ACTIVE | Architecture / product roadmap | Keep functional Node Doctor implementation blocked and place its executable prerequisite chain before development authorization. |
 
 ## Milestone 0 - v0.7 Foundations
 
@@ -214,8 +221,8 @@ docs/roadmap/iamine-agent-network-roadmap.md
 | v0.11.0 | CLOSED | Agent research and product fit |
 | v0.11.1 | ACTIVE | Agent architecture foundation |
 | v0.11.2 | PROPOSED | Agent runtime baseline |
-| v0.11.3 | PROPOSED | Internal agent developer bootstrap |
-| v0.12.0 | PROPOSED | P0 official agent skeletons and P0 official agents |
+| v0.11.3 | CLOSED | Internal agent developer bootstrap contracts |
+| v0.12.0 | ACTIVE | P0 skeletons closed; functional P0 agents blocked on executable runtime prerequisites |
 | v0.12.1 | PROPOSED | P1 adoption agents |
 | v0.12.2 | PROPOSED | P2 experimental and technical agents |
 | v0.13.0 | PROPOSED | Agent beta productization |

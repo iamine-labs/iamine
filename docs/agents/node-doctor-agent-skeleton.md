@@ -17,6 +17,20 @@ This feature does not create an agent package, TOML manifest, executable code,
 CLI command, agent runtime, model dependency, sandbox, audit emitter, registry
 entry, or public beta listing.
 
+## Status
+
+```text
+skeleton
+non_executable
+not_user_available
+execution_authorized: false
+```
+
+The skeleton feature is closed as a planning contract. Functional
+`NODE-DOCTOR-AGENT-001` development remains blocked until every executable
+runtime and enforcement prerequisite has implementation and validation
+evidence.
+
 ## Product Boundary
 
 Node Doctor serves the following documented personas:
@@ -228,8 +242,18 @@ skeleton neither invokes nor wraps that command, and it does not change the
 command's checks, output contract, or runtime boundary. A later implementation
 may consume only an approved, redacted summary through its dedicated contracts.
 
+That dedicated source is `NODE-DOCTOR-EVIDENCE-PROVIDER-001`. It is a
+separate, non-agent feature and must expose only typed, redacted, read-only
+evidence. It cannot authorize command execution, raw log access, node mutation,
+or direct user-facing agent behavior.
+
 ## Next Roadmap Step
 
 ```text
-REPORTER-AGENT-001-SKELETON
+AGENT-MANIFEST-PARSER-VALIDATOR-001
 ```
+
+The parser/validator feature may create canonical types, schemas, fixtures,
+validators, and tests. It must not load or execute agent packages. The
+functional Node Doctor feature remains blocked until the complete prerequisite
+chain in `docs/roadmap/iamine-agent-network-roadmap.md` is satisfied.
