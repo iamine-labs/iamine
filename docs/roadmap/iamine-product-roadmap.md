@@ -100,6 +100,12 @@ validation crate without package loading or runtime wiring. Its closure
 satisfies only the parser prerequisite, not the remaining Node Doctor execution
 gates.
 
+`AGENT-PACKAGE-LOAD-GATE-001` is active in v0.11.2. It adds a typed in-memory
+assessment that remains structurally blocked while referenced metadata
+validators, policy reviews, compatibility decisions, and runtime enforcement
+gates are unavailable. It does not read package directories or authorize
+execution.
+
 The broader v0.9 operational stability claim still requires the operational
 target: 10-50 nodes, 3-10 operators, multiple physical networks, and two to
 four weeks of stable operation.

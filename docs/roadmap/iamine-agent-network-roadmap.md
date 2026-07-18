@@ -291,7 +291,7 @@ node compatibility. It must not implement distributed model MoE.
 | Feature | State | Goal |
 | --- | --- | --- |
 | AGENT-RUNTIME-BASELINE-001 | CLOSED | Define the minimum runtime state vocabulary and prerequisite gates before execution. |
-| AGENT-PACKAGE-LOAD-GATE-001 | PROPOSED | Reject packages that have not passed canonical parsing, schema validation, scope, permission, audit, and compatibility gates. |
+| AGENT-PACKAGE-LOAD-GATE-001 | ACTIVE | Consume canonical root parsing and emit a typed blocked package-load assessment while scope, permission, audit, policy, compatibility, and enforcement prerequisites remain unavailable; no filesystem or runtime loading. |
 | AGENT-RUNTIME-SANDBOX-001 | CLOSED | Define sandbox requirements before agent code can run. |
 | AGENT-EXECUTION-LIFECYCLE-001 | CLOSED | Define runtime transition rules without worker side effects. |
 | AGENT-INPUT-OUTPUT-CONTRACT-001 | CLOSED | Define privacy-safe input and output boundaries. |
@@ -438,9 +438,10 @@ The next package lifecycle feature is:
 AGENT-PACKAGE-LOAD-GATE-001
 ```
 
-That feature must consume the root parser and fail closed while referenced
-metadata parsers or enforcement gates remain unavailable. It must not authorize
-agent execution.
+That feature is active in `iamine-agents`. It consumes the root parser and emits
+only a typed blocked report while referenced metadata parsers or enforcement
+gates remain unavailable. It does not authorize package loading or agent
+execution.
 
 Not all functional P0 agents should be implemented in parallel at the start.
 After every prerequisite gate above passes, `NODE-DOCTOR-AGENT-001` remains
