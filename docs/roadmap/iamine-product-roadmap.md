@@ -90,9 +90,9 @@ line is not an inference-only public testnet. It is the IAMINE Agent Network.
 
 All six v0.12.0 P0 skeleton contracts are closed, but they are non-executable
 and not user available. Functional `NODE-DOCTOR-AGENT-001` development is
-blocked while the manifest parser, package load gate, runtime enforcement,
-audit events, sandbox implementation, and dedicated redacted evidence provider
-remain without executable validation evidence.
+blocked while referenced metadata validation, runtime scope and permission
+enforcement, audit events, sandbox implementation, compatibility decisions,
+and the dedicated redacted evidence provider remain unavailable.
 
 `AGENT-MANIFEST-PARSER-VALIDATOR-001` closed in v0.11.1 through merge
 `c849d98`. It introduces the isolated `iamine-agents` root-manifest parser and
@@ -100,11 +100,11 @@ validation crate without package loading or runtime wiring. Its closure
 satisfies only the parser prerequisite, not the remaining Node Doctor execution
 gates.
 
-`AGENT-PACKAGE-LOAD-GATE-001` is active in v0.11.2. It adds a typed in-memory
-assessment that remains structurally blocked while referenced metadata
-validators, policy reviews, compatibility decisions, and runtime enforcement
-gates are unavailable. It does not read package directories or authorize
-execution.
+`AGENT-PACKAGE-LOAD-GATE-001` closed in v0.11.2 through merge `d56cbce`. It adds
+a typed in-memory assessment that remains structurally blocked while referenced
+metadata validators, policy reviews, compatibility decisions, and runtime
+enforcement gates are unavailable. It does not read package directories or
+authorize execution.
 
 The broader v0.9 operational stability claim still requires the operational
 target: 10-50 nodes, 3-10 operators, multiple physical networks, and two to

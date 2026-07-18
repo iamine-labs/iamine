@@ -148,7 +148,7 @@ This feature consumes the closed package-manifest, schema-source, language,
 dependency, capability, expertise, scope, resource, permission, audit, and
 boundary-eval contracts.
 
-It now feeds the active package-load assessment:
+It now feeds the closed fail-closed package-load assessment:
 
 ```text
 AGENT-PACKAGE-LOAD-GATE-001

@@ -291,7 +291,7 @@ node compatibility. It must not implement distributed model MoE.
 | Feature | State | Goal |
 | --- | --- | --- |
 | AGENT-RUNTIME-BASELINE-001 | CLOSED | Define the minimum runtime state vocabulary and prerequisite gates before execution. |
-| AGENT-PACKAGE-LOAD-GATE-001 | ACTIVE | Consume canonical root parsing and emit a typed blocked package-load assessment while scope, permission, audit, policy, compatibility, and enforcement prerequisites remain unavailable; no filesystem or runtime loading. |
+| AGENT-PACKAGE-LOAD-GATE-001 | CLOSED | Consume canonical root parsing and emit a typed blocked package-load assessment while scope, permission, audit, policy, compatibility, and enforcement prerequisites remain unavailable; merge `d56cbce`, no filesystem or runtime loading. |
 | AGENT-RUNTIME-SANDBOX-001 | CLOSED | Define sandbox requirements before agent code can run. |
 | AGENT-EXECUTION-LIFECYCLE-001 | CLOSED | Define runtime transition rules without worker side effects. |
 | AGENT-INPUT-OUTPUT-CONTRACT-001 | CLOSED | Define privacy-safe input and output boundaries. |
@@ -432,16 +432,21 @@ the root format as YAML with Rust types as source of truth, generated JSON
 Schema, bounded parsing, fixtures, and semantic validation. It does not load or
 execute packages.
 
-The next package lifecycle feature is:
+The package-load assessment closed in merge `d56cbce`:
 
 ```text
 AGENT-PACKAGE-LOAD-GATE-001
 ```
 
-That feature is active in `iamine-agents`. It consumes the root parser and emits
-only a typed blocked report while referenced metadata parsers or enforcement
-gates remain unavailable. It does not authorize package loading or agent
-execution.
+It consumes the root parser and emits only a typed blocked report while
+referenced metadata validators or enforcement gates remain unavailable. It
+does not authorize package loading or agent execution.
+
+The next unresolved runtime feature in canonical roadmap order is:
+
+```text
+AGENT-SCOPE-ENFORCEMENT-001
+```
 
 Not all functional P0 agents should be implemented in parallel at the start.
 After every prerequisite gate above passes, `NODE-DOCTOR-AGENT-001` remains

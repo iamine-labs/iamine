@@ -132,6 +132,32 @@ Local QA result:
 PASS WITH ACCEPTED BASELINE / ENVIRONMENT EXCEPTIONS
 ```
 
+## Merge And Post-Merge Closure
+
+```text
+implementation commit: 6e4da1392e986ea8728aa1cd9209a313573b54a2
+implementation tree: c047cb7183dcd28699eea32942a6fb07fa8639c1
+develop merge: d56cbceb09e5b44514d06128115eb54743cb5b6b
+develop tree: c047cb7183dcd28699eea32942a6fb07fa8639c1
+source branch preserved: origin/feature/agent-package-load-gate-001
+```
+
+Post-merge validation on the merge commit:
+
+- merge tree equals the approved implementation tree;
+- `cargo fmt --all -- --check`: pass;
+- `cargo test -p iamine-agents`: pass, 31 tests;
+- `cargo clippy -p iamine-agents --all-targets`: pass, no warnings;
+- quality-gate repository and architecture guards: pass;
+- `git diff --check`: pass;
+- remote `origin/develop` identity and tree: exact match.
+
+Closure state:
+
+```text
+MERGED / VALIDATED / CLOSED
+```
+
 ## Field QA Decision
 
 TS140 and Proxmox QA are not required because the gate is an in-memory library
