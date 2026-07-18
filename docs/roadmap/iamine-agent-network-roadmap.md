@@ -36,6 +36,47 @@ v1.5.x   -> economic agent testnet
 v2.0.x   -> mainnet, settlement, open marketplace, real economy
 ```
 
+## Canonical Milestone Closure Gate Registry
+
+Every milestone that was not historically closed before this registry must
+have a named QA gate before it can transition to `CLOSED`. Gate registration
+does not authorize product work or change the required sequence above.
+
+The gate is executed after the final in-scope feature merges. Architecture may
+close the milestone only after exhaustive evidence for the exact milestone
+HEAD and tree is merged and post-merge validated.
+
+| Milestone | Closure gate | Gate state |
+| --- | --- | --- |
+| v0.10.0 | IAMINE-PREPUBLIC-READINESS-GATE-001 | CLOSED / historical release gate |
+| v0.11.0 | Historical closure predating this registry | CLOSED / not reopened |
+| v0.11.1 | V0.11.1-AGENT-ARCHITECTURE-FOUNDATION-MILESTONE-QA-001 | PROPOSED / ready for QA authorization |
+| v0.11.2 | V0.11.2-AGENT-RUNTIME-BASELINE-MILESTONE-QA-001 | PROPOSED / blocked on milestone features and executable evidence |
+| v0.11.3 | V0.11.3-AGENT-CREATION-ASSISTANTS-MILESTONE-QA-001 | CLOSED / documentation-only scope |
+| v0.12.0 | V0.12.0-P0-OFFICIAL-AGENTS-MILESTONE-QA-001 | PROPOSED / blocked on functional P0 agents |
+| v0.12.1 | V0.12.1-P1-ADOPTION-AGENTS-MILESTONE-QA-001 | PROPOSED |
+| v0.12.2 | V0.12.2-P2-EXPERIMENTAL-AGENTS-MILESTONE-QA-001 | PROPOSED |
+| v0.13.0 | V0.13.0-AGENT-BETA-PRODUCTIZATION-MILESTONE-QA-001 | PROPOSED |
+| v1.0.0 | IAMINE-V1-RELEASE-GATE-001 | PROPOSED / must satisfy exhaustive milestone policy |
+| v1.1.x | V1.1-VALIDATION-REPUTATION-TRUST-MILESTONE-QA-001 | PROPOSED |
+| v1.2.0 | V1.2.0-DEVELOPER-PLATFORM-FOUNDATION-MILESTONE-QA-001 | PROPOSED |
+| v1.2.1 | V1.2.1-AI-DEVELOPER-EXPERIENCE-MILESTONE-QA-001 | PROPOSED |
+| v1.2.2 | V1.2.2-DEVELOPER-ONBOARDING-E2E-MILESTONE-QA-001 | PROPOSED |
+| v1.3.x | V1.3-CURATED-AGENT-REGISTRY-MILESTONE-QA-001 | PROPOSED |
+| v1.4.x | V1.4-CURATED-AGENT-MARKETPLACE-MILESTONE-QA-001 | PROPOSED |
+| v1.5.x | V1.5-ECONOMIC-AGENT-TESTNET-MILESTONE-QA-001 | PROPOSED |
+| v2.0.x | V2.0-ADVANCED-COMPUTE-MAINNET-MILESTONE-QA-001 | PROPOSED; MAINNET-READINESS-GATE-001 remains a required security prerequisite |
+
+The v1.2.x product line remains open until the v1.2.0, v1.2.1, and v1.2.2
+gates are each closed. A sub-milestone gate cannot substitute for another.
+
+Future milestone QA documents must consume:
+
+```text
+docs/process/iamine-canonical-workflow.md#phase-15a---milestone-qa-gate
+docs/qa/agent-milestone-qa-gates.md
+```
+
 ## Scope-Bound Agent Rule
 
 Every IAMINE agent must be scope-bound.
@@ -150,6 +191,17 @@ AGENT-MANIFEST-SCHEMA-SOURCE-OF-TRUTH-001
 | AGENT-DEPENDENCY-POLICY-001 | CLOSED | Define dependency classes that are allowed, optional, deferred, or blocked for agent work. |
 | AGENT-RUNTIME-LANGUAGE-MATRIX-001 | CLOSED | Define supported runtime language modes before execution features. |
 | AGENT-MANIFEST-SCHEMA-SOURCE-OF-TRUTH-001 | CLOSED | Define the source of truth for agent manifest schemas and generated validation artifacts. |
+
+Closure gate:
+
+```text
+V0.11.1-AGENT-ARCHITECTURE-FOUNDATION-MILESTONE-QA-001
+state: PROPOSED / ready for QA authorization
+```
+
+All feature rows are closed, but v0.11.1 remains `ACTIVE` until exhaustive QA
+validates the current milestone scope and Architecture merges its closure
+evidence.
 
 `AGENT-SCOPE-MANIFEST-001` must define what an agent does, what it does not
 do, required permissions, blocked actions, supported task types, handoff
@@ -303,7 +355,30 @@ node compatibility. It must not implement distributed model MoE.
 | AGENT-OUT-OF-SCOPE-RESPONSE-001 | CLOSED | Define safe refusal, clarification, and out-of-scope responses. |
 | AGENT-ROUTING-CANDIDATE-SELECTION-001 | CLOSED | Define candidate selection inputs without distributed model MoE. |
 
+Closure gate:
+
+```text
+V0.11.2-AGENT-RUNTIME-BASELINE-MILESTONE-QA-001
+state: PROPOSED / blocked
+```
+
+The historical documentation-only v0.11.2 QA snapshot does not close the
+current expanded milestone. Scope enforcement, permission enforcement, audit
+events, and every runtime claim must have executable validation evidence before
+Architecture may authorize this gate.
+
 ## v0.11.3 - Internal Agent Developer Bootstrap
+
+Closure gate:
+
+```text
+V0.11.3-AGENT-CREATION-ASSISTANTS-MILESTONE-QA-001
+state: CLOSED
+evidence: docs/qa/v0.11.3-agent-creation-assistants-milestone.md
+```
+
+This closure covers documentation-only internal assistant contracts. It does
+not validate functional agents or agent runtime execution.
 
 ```text
 AGENT-SKELETON-GENERATOR-001
@@ -367,6 +442,17 @@ no bypassing manual validation
 | NODE-DOCTOR-AGENT-001-DEPENDENCY-RECONCILIATION-001 | CLOSED | Recorded the executable prerequisite chain and kept functional Node Doctor development blocked until every gate has implementation and validation evidence; merge `7588e09`, focused post-merge validation PASS. |
 | NODE-DOCTOR-EVIDENCE-PROVIDER-001 | PROPOSED | Expose bounded, structured, redacted, read-only node evidence through a stable non-agent interface. |
 | NODE-DOCTOR-AGENT-001 | PROPOSED | Implement the first functional P0 reference agent only after the full executable prerequisite chain is implemented and validated. |
+
+Closure gate:
+
+```text
+V0.12.0-P0-OFFICIAL-AGENTS-MILESTONE-QA-001
+state: PROPOSED / blocked
+```
+
+Closed skeletons do not satisfy this gate. It requires exhaustive per-agent,
+cross-agent, runtime, privacy, safety, regression, and field evidence for the
+functional P0 official agents promised by the milestone.
 
 First, IAMINE must define official P0 agent skeletons:
 

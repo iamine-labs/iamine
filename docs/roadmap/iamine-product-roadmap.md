@@ -228,6 +228,12 @@ v0.11 through v2.0 are maintained in:
 docs/roadmap/iamine-agent-network-roadmap.md
 ```
 
+Milestone closure is controlled by the named gate registry in that document.
+Any milestone not already historically closed when
+`AGENT-MILESTONE-QA-GATES-001` is adopted must keep its current state until its
+registered exhaustive QA gate is merged, post-merge validated, and closed by
+Architecture. Feature-local QA is insufficient for milestone closure.
+
 | Release | State | Product focus |
 | --- | --- | --- |
 | v0.11.0 | CLOSED | Agent research and product fit |
@@ -289,6 +295,7 @@ features.
 | Feature | State | Owner | Scheduling |
 | --- | --- | --- | --- |
 | PROCESS-QA-LOCAL-GATE-001 | CLOSED | `scripts`, `docs/process` | Merged in `2dd9132` |
+| AGENT-MILESTONE-QA-GATES-001 | ACTIVE | Architecture / QA / roadmap | Formalize named exhaustive QA gates before Agent Network milestone closure; does not count as a product feature. |
 | PROCESS-QA-HARDWARE-SMOKE-001 | DEFERRED | `scripts`, hardware QA | Required by the official v0.9.x QA/process plan; promote before any feature that depends on standardized hardware smoke evidence. |
 | PROCESS-QA-SIZE-GUARD-001 | DEFERRED | `scripts`, Architecture QA | Required by the official v0.9.2 QA/process plan; promote before large or architecture-sensitive changes. |
 | PROCESS-QA-PROXMOX-PREFLIGHT-001 | DEFERRED | `scripts`, remote QA | Required by the official v0.9.x QA/process plan; promote before remote field QA standardization. |
@@ -299,16 +306,17 @@ features.
 ## Immediate Sequence
 
 ```text
-ROADMAP-OFFICIAL-AGENT-NETWORK-RECONCILIATION-001
--> V0.9-BETA-FRESH-INSTALL-E2E-001
--> PUBLIC-TESTNET-ADMISSION-001
--> SIGNED-AUTOUPDATE-001
--> USER-DIAGNOSTICS-SUPPORT-001
--> V1-SUPPLY-CHAIN-SECURITY-001
--> NODE-UPGRADE-ROLLBACK-001
--> PUBLIC-TESTNET-DOCUMENTATION-001
--> IAMINE-PREPUBLIC-READINESS-GATE-001
--> AGENT-MARKET-FIT-RESEARCH-001
+AGENT-MILESTONE-QA-GATES-001
+-> V0.11.1-AGENT-ARCHITECTURE-FOUNDATION-MILESTONE-QA-001
+-> AGENT-SCOPE-ENFORCEMENT-001
+-> AGENT-PERMISSION-ENFORCEMENT-001
+-> AGENT-AUDIT-EVENTS-001
+-> remaining executable v0.11.2 runtime prerequisites
+-> V0.11.2-AGENT-RUNTIME-BASELINE-MILESTONE-QA-001
+-> NODE-DOCTOR-EVIDENCE-PROVIDER-001
+-> NODE-DOCTOR-AGENT-001
+-> remaining functional P0 official agents
+-> V0.12.0-P0-OFFICIAL-AGENTS-MILESTONE-QA-001
 ```
 
 Each arrow still requires the complete canonical feature lifecycle. A roadmap
