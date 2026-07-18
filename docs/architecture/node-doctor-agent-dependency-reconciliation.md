@@ -83,13 +83,14 @@ PubSub, model policy, inference, hardware profiling, persistence, installer,
 updater, registry storage, marketplace behavior, rewards, wallet, settlement,
 mainnet, or distributed model MoE behavior.
 
-## Next Feature
+## Active Feature
 
 ```text
 AGENT-PACKAGE-LOAD-GATE-001
 ```
 
-`AGENT-MANIFEST-PARSER-VALIDATOR-001` adds the root Rust types, YAML parser,
+`AGENT-MANIFEST-PARSER-VALIDATOR-001` provides the root Rust types, YAML parser,
 generated JSON Schema, validators, fixtures, and tests without package loading
-or execution. The load gate must consume that parser and remain fail-closed
-until every referenced metadata and enforcement prerequisite is available.
+or execution. The active load gate consumes that parser and emits only a typed
+blocked assessment until every referenced metadata and enforcement prerequisite
+is available.

@@ -356,14 +356,20 @@ The following conditions must block install and execution:
 - summaries that claim automatic repair, broad device control, rewards,
   settlement, or mainnet behavior.
 
-## Recommendation
+## Package Load Status
 
-The next package lifecycle feature is:
+`AGENT-PACKAGE-LOAD-GATE-001` consumes this root parser contract and emits a
+typed blocked report while referenced metadata validators and runtime
+enforcement prerequisites remain unavailable. It does not open references or
+load the package.
+
+The next positive package-load decision remains blocked on:
 
 ```text
-AGENT-PACKAGE-LOAD-GATE-001
+scope, capability, expertise, resource, permission, audit, and boundary parsers
+local registry and policy review
+runtime compatibility and enforcement gates
 ```
 
-It must not load a package until every referenced scope, capability, expertise,
-resource, permission, audit, and boundary-eval contract has its own validated
-parser and the runtime enforcement gates exist.
+No package may load until every referenced contract has its own validated parser
+and the runtime enforcement gates exist.

@@ -79,7 +79,8 @@ YAML root: agent.yaml
 generated JSON Schema: available through manifest_json_schema
 bounded parser: available through parse_and_validate_yaml
 semantic validator: available through validate_manifest
-package loading: unavailable
+package-load assessment: available through assess_package_load_yaml
+package loading: blocked and unavailable
 runtime execution: unavailable
 ```
 

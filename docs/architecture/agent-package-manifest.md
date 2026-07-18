@@ -105,14 +105,10 @@ The manifest contract must guarantee:
 - explicit official pack membership;
 - `execution_authorized = false` during this phase;
 - bounded agent family and earliest mode;
-- required references to future scope, capability, expertise, resource,
-  permission, audit, and boundary-test contracts;
-- permission references must use `metadata/agent-permissions.toml` to match the
-  canonical skeleton path;
-- audit references must use `metadata/agent-audit.toml` to match the canonical
-  skeleton path;
-- boundary-test references must use `evals/agent-boundary-tests.toml` to match
-  the canonical skeleton path;
+- required package-relative references to future scope, capability, expertise,
+  resource, permission, audit, and boundary-test contracts;
+- child reference extensions and formats remain owned by their respective
+  parser features and are not inferred by the root manifest or load gate;
 - public beta, marketplace, and third-party publication disabled;
 - no credentials, destructive actions, arbitrary shell, or unrestricted
   filesystem access;

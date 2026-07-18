@@ -148,10 +148,15 @@ This feature consumes the closed package-manifest, schema-source, language,
 dependency, capability, expertise, scope, resource, permission, audit, and
 boundary-eval contracts.
 
-It feeds:
+It now feeds the active package-load assessment:
 
 ```text
 AGENT-PACKAGE-LOAD-GATE-001
+```
+
+It also feeds future enforcement features:
+
+```text
 AGENT-SCOPE-ENFORCEMENT-001
 AGENT-PERMISSION-ENFORCEMENT-001
 AGENT-AUDIT-EVENTS-001
