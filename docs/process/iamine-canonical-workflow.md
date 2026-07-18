@@ -732,22 +732,75 @@ POST-MERGE FAILURE
 NEXT FEATURES BLOCKED
 ```
 
-## Phase 15A - Milestone QA
+## Phase 15A - Milestone QA Gate
 
-After the final feature of any product milestone merges, run an exhaustive
-milestone QA pass before declaring the milestone closed.
+Every product milestone that is not already historically closed must have a
+named milestone QA gate in the canonical roadmap. Register the gate when the
+milestone becomes `ACTIVE`, or before its final feature begins at the latest.
+Registration does not authorize QA and does not count as a product feature.
 
-The milestone QA pass must cover:
+After the final milestone feature reaches `MERGED / VALIDATED / CLOSED`, run
+the registered exhaustive QA gate before declaring the milestone closed.
 
-- every feature delivered inside the milestone;
-- existing behavior that those features depend on;
-- install, upgrade, rollback, diagnostics, runtime, and field paths promised
-  by the milestone gate;
-- regression checks against the prior milestone baseline;
-- local, TS140, and Proxmox/R5500 evidence when the milestone touches runtime,
-  workers, networking, inference, packaging, or operations.
+Milestone QA lifecycle:
 
-Do not mark a milestone closed from feature-local validation alone.
+```text
+MILESTONE QA PROPOSED
+-> MILESTONE QA AUTHORIZED
+-> MILESTONE QA IN PROGRESS
+-> READY FOR MILESTONE CLOSURE REVIEW
+-> MILESTONE CLOSED
+```
+
+Failure states:
+
+```text
+MILESTONE QA BLOCKED
+MILESTONE CHANGES REQUIRED
+MILESTONE POST-MERGE FAILURE
+```
+
+### Entry Criteria
+
+Architecture may authorize the gate only when:
+
+- every in-scope feature has an exact implementation commit, merge commit,
+  resulting tree, QA result, and closure state;
+- no milestone feature remains `PROPOSED`, `ACTIVE`, blocked, or only locally
+  validated unless Architecture first moves it out of the milestone explicitly;
+- contracts that promise runtime or enforcement have executable evidence and
+  are not represented only by documentation;
+- the prior milestone baseline and current `origin/develop` identity are exact;
+- unresolved defects, test gaps, and accepted exceptions are listed;
+- the QA contract names required local and field environments.
+
+### Coverage And Evidence
+
+Every gate must follow `docs/qa/agent-milestone-qa-gates.md` plus its
+milestone-specific contract. At minimum it covers the feature closure matrix,
+prior-baseline regression, promised E2E paths, privacy and safety boundaries,
+resource and cleanup behavior, repository guards, and all required field
+environments.
+
+Feature-local evidence may be reused only when its commit and tree are still
+ancestors of the authorized milestone HEAD and its environment-sensitive claim
+remains current. The gate must rerun milestone-level regression and E2E paths.
+
+Accepted baseline exceptions require exact-base reproduction. They cannot hide
+a failure in a contract owned by the milestone or replace missing field QA.
+
+QA may recommend only:
+
+```text
+READY FOR ARCHITECTURE MILESTONE CLOSURE REVIEW
+```
+
+QA does not close the milestone. Architecture may move the roadmap milestone
+to `CLOSED` only after the gate evidence merges and its post-merge validation
+passes. Do not mark a milestone closed from feature-local validation alone.
+
+Milestones already closed before this rule are not reopened silently. Any
+retroactive audit must be a separately authorized corrective feature.
 
 ## Phase 16 - Operational Normalization
 

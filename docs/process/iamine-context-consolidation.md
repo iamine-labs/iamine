@@ -19,6 +19,8 @@ Use `AGENTS.md` for stable operating rules:
 - list CLI smoke commands;
 - define size guards;
 - define canonical feature states;
+- require a named exhaustive milestone QA gate before any non-historical
+  milestone transitions to `CLOSED`;
 - define Git precheck and merge-control checks;
 - define completion report format;
 - forbid declaring `MERGED`, `CLOSED`, or `QA PASS` without evidence.
@@ -54,6 +56,7 @@ Keep long procedure and evidence in documentation:
 - `docs/architecture/hardware-profiler.md`
 - `docs/architecture/model-gates.md`
 - `docs/qa/templates/checkpoint-report.md`
+- `docs/qa/agent-milestone-qa-gates.md`
 - `docs/process/iamine-canonical-workflow.md`
 
 Do not put full logs or run evidence in `AGENTS.md`.
@@ -63,6 +66,8 @@ Do not put full logs or run evidence in `AGENTS.md`.
 - Canonical integration branch: `develop`.
 - Product sequence and reconciled feature states live only in
   `docs/roadmap/iamine-product-roadmap.md`.
+- Agent Network milestone closure gate IDs and states live in
+  `docs/roadmap/iamine-agent-network-roadmap.md`.
 - This context document must not duplicate roadmap state or select the next
   product feature.
 - Before opening a feature branch, Architecture must still record the exact
