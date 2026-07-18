@@ -353,7 +353,7 @@ no bypassing manual validation
 | PHOTO-LIBRARY-ORGANIZER-AGENT-001-SKELETON | CLOSED | Defined the official P0 Photo Library Organizer skeleton as a local-planning, privacy-safe contract without library access, media analysis, or filesystem execution; merge `e379ced`, focused post-merge validation PASS. |
 | HOME-NETWORK-ASSISTANT-AGENT-001-SKELETON | CLOSED | Defined the official P0 Home Network Assistant skeleton as a local-planning, privacy-safe contract without discovery, router access, or network execution; merge `aa3ec2a`, focused post-merge validation PASS. |
 | WINDOWS-OPTIMIZER-ASSISTANT-AGENT-001-SKELETON | CLOSED | Defined the official P0 Windows Optimizer Assistant skeleton as a local-planning, privacy-safe contract without system inspection, configuration change, or execution; merge `f81072a`, focused post-merge validation PASS. |
-| NODE-DOCTOR-AGENT-001-DEPENDENCY-RECONCILIATION-001 | ACTIVE | Record the executable prerequisite chain and keep functional Node Doctor development blocked until every gate has implementation and validation evidence. |
+| NODE-DOCTOR-AGENT-001-DEPENDENCY-RECONCILIATION-001 | CLOSED | Recorded the executable prerequisite chain and kept functional Node Doctor development blocked until every gate has implementation and validation evidence; merge `7588e09`, focused post-merge validation PASS. |
 | NODE-DOCTOR-EVIDENCE-PROVIDER-001 | PROPOSED | Expose bounded, structured, redacted, read-only node evidence through a stable non-agent interface. |
 | NODE-DOCTOR-AGENT-001 | PROPOSED | Implement the first functional P0 reference agent only after the full executable prerequisite chain is implemented and validated. |
 

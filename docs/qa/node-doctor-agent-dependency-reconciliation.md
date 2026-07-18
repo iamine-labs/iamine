@@ -122,6 +122,32 @@ Field QA:
 not required; documentation-only feature
 ```
 
+## Post-Merge Validation
+
+Merge identity:
+
+```text
+Target: origin/develop
+Merge commit: 7588e0976e32acbf5450e7b6b5a29cdc031599bc
+Merge tree: 2314259035bb4ad61a925779f74fedd9a04d6672
+Parents: 32c041c5888359fedc19efe28f784cee13a07f42 8ec6fc9d8b43c9cc4c6e5f3b576c268eb6b00161
+```
+
+Observed after the remote merge:
+
+```text
+origin/develop identity: PASS
+git diff --check origin/develop^1..origin/develop: PASS
+cargo fmt --all -- --check: PASS
+roadmap dependency and next-feature scan: PASS
+Runtime behavior changed: no
+```
+
+The merge preserves the `PROPOSED` state for the executable prerequisites,
+`NODE-DOCTOR-EVIDENCE-PROVIDER-001`, and functional
+`NODE-DOCTOR-AGENT-001`. It does not authorize implementation of the
+functional agent.
+
 ## Recommendation Boundary
 
 Successful local validation may recommend this feature for Architecture merge
