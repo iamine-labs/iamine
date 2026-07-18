@@ -50,7 +50,7 @@ HEAD and tree is merged and post-merge validated.
 | --- | --- | --- |
 | v0.10.0 | IAMINE-PREPUBLIC-READINESS-GATE-001 | CLOSED / historical release gate |
 | v0.11.0 | Historical closure predating this registry | CLOSED / not reopened |
-| v0.11.1 | V0.11.1-AGENT-ARCHITECTURE-FOUNDATION-MILESTONE-QA-001 | PROPOSED / ready for QA authorization |
+| v0.11.1 | V0.11.1-AGENT-ARCHITECTURE-FOUNDATION-MILESTONE-QA-001 | READY FOR ARCHITECTURE MILESTONE CLOSURE REVIEW |
 | v0.11.2 | V0.11.2-AGENT-RUNTIME-BASELINE-MILESTONE-QA-001 | PROPOSED / blocked on milestone features and executable evidence |
 | v0.11.3 | V0.11.3-AGENT-CREATION-ASSISTANTS-MILESTONE-QA-001 | CLOSED / documentation-only scope |
 | v0.12.0 | V0.12.0-P0-OFFICIAL-AGENTS-MILESTONE-QA-001 | PROPOSED / blocked on functional P0 agents |
@@ -196,7 +196,7 @@ Closure gate:
 
 ```text
 V0.11.1-AGENT-ARCHITECTURE-FOUNDATION-MILESTONE-QA-001
-state: PROPOSED / ready for QA authorization
+state: READY FOR ARCHITECTURE MILESTONE CLOSURE REVIEW
 ```
 
 All feature rows are closed, but v0.11.1 remains `ACTIVE` until exhaustive QA
