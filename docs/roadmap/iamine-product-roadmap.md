@@ -237,7 +237,7 @@ Architecture. Feature-local QA is insufficient for milestone closure.
 | Release | State | Product focus |
 | --- | --- | --- |
 | v0.11.0 | CLOSED | Agent research and product fit |
-| v0.11.1 | ACTIVE | Agent architecture foundation |
+| v0.11.1 | CLOSED | Agent architecture foundation; exhaustive gate merge `0bdff4b`, post-merge validation PASS |
 | v0.11.2 | PROPOSED | Agent runtime baseline |
 | v0.11.3 | CLOSED | Internal agent developer bootstrap contracts |
 | v0.12.0 | ACTIVE | P0 skeletons closed; functional P0 agents blocked on executable runtime prerequisites |
@@ -306,8 +306,7 @@ features.
 ## Immediate Sequence
 
 ```text
-V0.11.1-AGENT-ARCHITECTURE-FOUNDATION-MILESTONE-QA-001
--> AGENT-SCOPE-ENFORCEMENT-001
+AGENT-SCOPE-ENFORCEMENT-001
 -> AGENT-PERMISSION-ENFORCEMENT-001
 -> AGENT-AUDIT-EVENTS-001
 -> remaining executable v0.11.2 runtime prerequisites

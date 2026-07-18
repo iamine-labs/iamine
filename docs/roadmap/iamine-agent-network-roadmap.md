@@ -50,7 +50,7 @@ HEAD and tree is merged and post-merge validated.
 | --- | --- | --- |
 | v0.10.0 | IAMINE-PREPUBLIC-READINESS-GATE-001 | CLOSED / historical release gate |
 | v0.11.0 | Historical closure predating this registry | CLOSED / not reopened |
-| v0.11.1 | V0.11.1-AGENT-ARCHITECTURE-FOUNDATION-MILESTONE-QA-001 | READY FOR ARCHITECTURE MILESTONE CLOSURE REVIEW |
+| v0.11.1 | V0.11.1-AGENT-ARCHITECTURE-FOUNDATION-MILESTONE-QA-001 | CLOSED / merge `0bdff4b` / post-merge PASS |
 | v0.11.2 | V0.11.2-AGENT-RUNTIME-BASELINE-MILESTONE-QA-001 | PROPOSED / blocked on milestone features and executable evidence |
 | v0.11.3 | V0.11.3-AGENT-CREATION-ASSISTANTS-MILESTONE-QA-001 | CLOSED / documentation-only scope |
 | v0.12.0 | V0.12.0-P0-OFFICIAL-AGENTS-MILESTONE-QA-001 | PROPOSED / blocked on functional P0 agents |
@@ -196,12 +196,16 @@ Closure gate:
 
 ```text
 V0.11.1-AGENT-ARCHITECTURE-FOUNDATION-MILESTONE-QA-001
-state: READY FOR ARCHITECTURE MILESTONE CLOSURE REVIEW
+state: CLOSED
+QA evidence: 412e093a9beabb9861d40fc30febfe7a1755e68e
+develop merge: 0bdff4b46adad82b094c8106669194425e4a24ab
+tree: e7109bca0a4ec4f35968660f3a253725b57dbec2
 ```
 
-All feature rows are closed, but v0.11.1 remains `ACTIVE` until exhaustive QA
-validates the current milestone scope and Architecture merges its closure
-evidence.
+All feature rows and the exhaustive QA gate are closed. Architecture closed
+v0.11.1 only after the QA evidence merged and post-merge validation passed on
+the exact remote commit and tree. v0.11.2 remains `PROPOSED`; closing this
+milestone does not independently authorize a runtime feature.
 
 `AGENT-SCOPE-MANIFEST-001` must define what an agent does, what it does not
 do, required permissions, blocked actions, supported task types, handoff
