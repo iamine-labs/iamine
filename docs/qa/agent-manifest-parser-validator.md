@@ -141,3 +141,64 @@ result.
 Passing QA can recommend this parser feature for Architecture merge review. It
 must not authorize package loading, agent execution, or functional Node Doctor
 development.
+
+## Post-Merge Validation and Closure
+
+Merge identity:
+
+```text
+source branch: feature/agent-manifest-parser-validator-001
+source commit: 67fbf35ef1784f99235c71c393d92bc741f5ae7c
+target branch: develop
+merge commit: c849d98c6861d0f8a9821608e84a779b9c857d3f
+tree: d3aa677cf8733b3cf6bf22289857aacc55938929
+origin/develop: c849d98c6861d0f8a9821608e84a779b9c857d3f
+```
+
+The merge tree exactly matches the locally validated feature tree. The
+post-merge quality gate stopped in the existing `iamine-models` real-inference
+integration suite, as required by the first-failure policy. Four tests returned
+`success=false` after loading the installed TinyLlama model through Metal:
+
+```text
+test_concurrency_limit
+test_inference_queue
+test_real_inference
+test_token_streaming
+```
+
+`test_real_inference` reproduced with the same result on the exact pre-feature
+base `825df894e59fe6413e79544564a392ee35be8bee`. The feature does not modify
+`iamine-models`, inference code, model storage, Metal selection, or runtime
+wiring. The failure family is therefore classified as a baseline/environment
+condition and is accepted only for this parser closeout; the quality gate itself
+is not reported as PASS for the post-merge run.
+
+Focused post-merge evidence:
+
+```text
+cargo test -p iamine-agents: PASS, 22 passed, 0 failed
+cargo clippy -p iamine-agents --all-targets: PASS, no warnings
+cargo fmt --all -- --check: PASS
+git diff --check: PASS
+main.rs delta: 0
+cluster_registry.rs delta: 0
+field QA: not required
+```
+
+Pre-merge full-workspace evidence remains valid for the identical tree: 885
+tests passed, workspace clippy passed, and the quality gate completed with zero
+required failures before merge. Optional `cargo audit`, `cargo deny`, and
+`gitleaks` were skipped because they were unavailable.
+
+Closure:
+
+```text
+MERGED / VALIDATED WITH ACCEPTED BASELINE EXCEPTION / CLOSED
+```
+
+The next package lifecycle feature remains:
+
+```text
+AGENT-PACKAGE-LOAD-GATE-001
+```

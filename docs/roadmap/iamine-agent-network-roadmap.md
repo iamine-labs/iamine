@@ -137,7 +137,7 @@ AGENT-MANIFEST-SCHEMA-SOURCE-OF-TRUTH-001
 | AGENT-CREATION-ARCHITECTURE-001 | CLOSED | Define the end-to-end architecture for creating, reviewing, packaging, validating, and later executing IAMINE agents; merge `bc6242b`, focused post-merge validation PASS. |
 | AGENT-SKELETON-STANDARD-001 | CLOSED | Define the canonical agent skeleton layout before generating or implementing agent code; merge `be57a4c`, focused post-merge validation PASS. |
 | AGENT-PACKAGE-MANIFEST-001 | CLOSED | Define the agent package manifest contract and required references before execution; merge `453b1b6`, focused post-merge validation PASS. |
-| AGENT-MANIFEST-PARSER-VALIDATOR-001 | ACTIVE | Implement canonical root manifest types, generated JSON Schema, bounded YAML parsing, semantic validation, fixtures, and negative tests in `iamine-agents` without loading or executing agent packages. |
+| AGENT-MANIFEST-PARSER-VALIDATOR-001 | CLOSED | Canonical root manifest types, generated JSON Schema, bounded YAML parsing, semantic validation, fixtures, and negative tests are implemented in `iamine-agents` without package loading or execution; merge `c849d98`, focused post-merge validation PASS with accepted baseline/environment exception in real Metal inference tests. |
 | AGENT-CAPABILITY-METADATA-001 | CLOSED | Define agent capability metadata without scheduler or reputation side effects. |
 | AGENT-EXPERTISE-METADATA-001 | CLOSED | Define expertise metadata for agent selection without claiming distributed model MoE. |
 | AGENT-SCOPE-MANIFEST-001 | CLOSED | Define agent scope boundaries, blocked actions, handoff targets, and supported task types; merge `ca37818`, focused post-merge validation PASS. |
@@ -427,9 +427,10 @@ The existing `iamine-node lan doctor` command is not an agent adapter. The
 Node Doctor skeleton must not invoke or wrap it. A later evidence provider may
 reuse only owner-module data behind a dedicated typed and redacted interface.
 
-`AGENT-MANIFEST-PARSER-VALIDATOR-001` reconciles the root format as YAML with
-Rust types as source of truth, generated JSON Schema, bounded parsing, fixtures,
-and semantic validation. It does not load or execute packages.
+`AGENT-MANIFEST-PARSER-VALIDATOR-001` closed in merge `c849d98`. It reconciles
+the root format as YAML with Rust types as source of truth, generated JSON
+Schema, bounded parsing, fixtures, and semantic validation. It does not load or
+execute packages.
 
 The next package lifecycle feature is:
 
