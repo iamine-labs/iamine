@@ -1,5 +1,18 @@
 # AGENT-PACKAGE-LOAD-GATE-001
 
+## State
+
+```text
+CLOSED
+implementation: 6e4da1392e986ea8728aa1cd9209a313573b54a2
+develop merge: d56cbceb09e5b44514d06128115eb54743cb5b6b
+tree: c047cb7183dcd28699eea32942a6fb07fa8639c1
+```
+
+Closure confirms only the fail-closed in-memory assessment described below.
+It does not close any referenced metadata validator, enforcement gate, package
+filesystem loader, or agent execution path.
+
 ## Objective
 
 Implement the first executable package-load decision boundary after root
