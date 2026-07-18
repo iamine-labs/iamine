@@ -295,7 +295,7 @@ features.
 | Feature | State | Owner | Scheduling |
 | --- | --- | --- | --- |
 | PROCESS-QA-LOCAL-GATE-001 | CLOSED | `scripts`, `docs/process` | Merged in `2dd9132` |
-| AGENT-MILESTONE-QA-GATES-001 | ACTIVE | Architecture / QA / roadmap | Formalize named exhaustive QA gates before Agent Network milestone closure; does not count as a product feature. |
+| AGENT-MILESTONE-QA-GATES-001 | CLOSED | Architecture / QA / roadmap | Named exhaustive QA gates formalized before Agent Network milestone closure; merge `03632e8`, docs-only post-merge validation PASS. |
 | PROCESS-QA-HARDWARE-SMOKE-001 | DEFERRED | `scripts`, hardware QA | Required by the official v0.9.x QA/process plan; promote before any feature that depends on standardized hardware smoke evidence. |
 | PROCESS-QA-SIZE-GUARD-001 | DEFERRED | `scripts`, Architecture QA | Required by the official v0.9.2 QA/process plan; promote before large or architecture-sensitive changes. |
 | PROCESS-QA-PROXMOX-PREFLIGHT-001 | DEFERRED | `scripts`, remote QA | Required by the official v0.9.x QA/process plan; promote before remote field QA standardization. |
@@ -306,8 +306,7 @@ features.
 ## Immediate Sequence
 
 ```text
-AGENT-MILESTONE-QA-GATES-001
--> V0.11.1-AGENT-ARCHITECTURE-FOUNDATION-MILESTONE-QA-001
+V0.11.1-AGENT-ARCHITECTURE-FOUNDATION-MILESTONE-QA-001
 -> AGENT-SCOPE-ENFORCEMENT-001
 -> AGENT-PERMISSION-ENFORCEMENT-001
 -> AGENT-AUDIT-EVENTS-001
