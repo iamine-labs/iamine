@@ -94,6 +94,11 @@ blocked while the manifest parser, package load gate, runtime enforcement,
 audit events, sandbox implementation, and dedicated redacted evidence provider
 remain without executable validation evidence.
 
+`AGENT-MANIFEST-PARSER-VALIDATOR-001` is now active in v0.11.1. It introduces
+the isolated `iamine-agents` root-manifest parser and validation crate without
+package loading or runtime wiring. Closing it will satisfy only the parser
+prerequisite, not the remaining Node Doctor execution gates.
+
 The broader v0.9 operational stability claim still requires the operational
 target: 10-50 nodes, 3-10 operators, multiple physical networks, and two to
 four weeks of stable operation.

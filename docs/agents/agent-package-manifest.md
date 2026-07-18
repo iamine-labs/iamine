@@ -10,7 +10,8 @@ AGENT-PACKAGE-MANIFEST-001
 
 Define the documentation contract for an IAMINE agent package manifest.
 
-This document is an architecture artifact. It does not authorize executable
+This contract is now represented by canonical Rust types and an in-memory YAML
+parser in `iamine-agents`. Parsing a manifest does not authorize executable
 agents, agent runtime, permission enforcement, sandboxing, audit logs, registry
 publication, marketplace publication, third-party agents, or public beta launch.
 
@@ -42,11 +43,13 @@ iamine.agent.package.draft-0.1
 The default manifest file name is:
 
 ```text
-iamine-agent-package.toml
+agent.yaml
 ```
 
-This feature does not implement TOML parsing. The file name and schema are a
-planning contract for later implementation.
+`AGENT-MANIFEST-PARSER-VALIDATOR-001` accepts YAML only for the root manifest.
+The earlier `iamine-agent-package.toml` name was a non-executable planning
+contract and is not an accepted parser surface. Referenced child metadata is
+not opened or parsed by the root parser.
 
 ## Required Top-Level Fields
 
@@ -147,19 +150,20 @@ This field must be:
 false
 ```
 
-For this phase, any package manifest that sets `execution_authorized = true`
+For this phase, any package manifest that sets `execution_authorized: true`
 must be treated as invalid.
 
 ## Agent Section
 
 The `agent` section declares product identity only:
 
-```toml
-[agent]
-family = "node_doctor"
-personas = ["home_troubleshooter"]
-earliest_mode = "local_readonly"
-task_class = "diagnostic_report"
+```yaml
+agent:
+  family: node_doctor
+  personas:
+    - home_troubleshooter
+  earliest_mode: local_readonly
+  task_class: diagnostic_report
 ```
 
 Rules:
@@ -195,15 +199,15 @@ unrestricted_filesystem
 
 The `references` section names required follow-on contracts:
 
-```toml
-[references]
-scope_manifest = "agent-scope.toml"
-capability_metadata = "agent-capabilities.toml"
-expertise_metadata = "agent-expertise.toml"
-resource_requirements = "metadata/agent-resources.toml"
-permission_model = "metadata/agent-permissions.toml"
-audit_policy = "metadata/agent-audit.toml"
-boundary_tests = "evals/agent-boundary-tests.toml"
+```yaml
+references:
+  scope_manifest: agent-scope.yaml
+  capability_metadata: metadata/agent-capabilities.yaml
+  expertise_metadata: metadata/agent-expertise.yaml
+  resource_requirements: metadata/agent-resources.yaml
+  permission_model: metadata/agent-permissions.yaml
+  audit_policy: metadata/agent-audit.yaml
+  boundary_tests: evals/agent-boundary-tests.yaml
 ```
 
 Rules:
@@ -213,18 +217,22 @@ Rules:
 - references must be package-relative, not absolute local paths;
 - references must not point to user home directories or private machine paths;
 - the package manifest must not inline broad scope, permissions, or tests.
+- the root parser validates reference path safety but does not open files,
+  require an extension, or validate child metadata contents.
 
 ## Distribution Section
 
 The `distribution` section declares where a package may be reviewed:
 
-```toml
-[distribution]
-allowed_channels = ["local_dev"]
-allowed_install_modes = ["manual_review"]
-public_beta = false
-marketplace = false
-third_party_publication = false
+```yaml
+distribution:
+  allowed_channels:
+    - local_dev
+  allowed_install_modes:
+    - manual_review
+  public_beta: false
+  marketplace: false
+  third_party_publication: false
 ```
 
 For this phase, public beta, marketplace publication, and third-party
@@ -234,14 +242,14 @@ publication must remain `false`.
 
 The `security` section declares privacy and safety constraints:
 
-```toml
-[security]
-collects_credentials = false
-collects_host_identifiers = false
-requires_network = false
-allows_destructive_actions = false
-allows_arbitrary_shell = false
-allows_unrestricted_filesystem = false
+```yaml
+security:
+  collects_credentials: false
+  collects_host_identifiers: false
+  requires_network: false
+  allows_destructive_actions: false
+  allows_arbitrary_shell: false
+  allows_unrestricted_filesystem: false
 ```
 
 Rules:
@@ -255,65 +263,64 @@ Rules:
 
 The `review` section records evidence requirements:
 
-```toml
-[review]
-requires_human_review = true
-requires_scope_manifest = true
-requires_permission_review = true
-requires_audit_policy = true
-requires_boundary_tests = true
+```yaml
+review:
+  requires_human_review: true
+  requires_scope_manifest: true
+  requires_permission_review: true
+  requires_audit_policy: true
+  requires_boundary_tests: true
 ```
 
 The package manifest cannot self-approve these gates.
 
 ## Minimal Draft Example
 
-```toml
-schema = "iamine.agent.package.draft-0.1"
-package_id = "iamine.beta.node-doctor"
-package_version = "0.1.0"
-display_name = "Node Doctor"
-summary = "Explain IAMINE node readiness and safe next steps."
-official_pack = "iamine-local-readiness-beta-pack"
-status = "planning"
-execution_authorized = false
-
-[agent]
-family = "node_doctor"
-personas = ["home_troubleshooter", "non_technical_caretaker"]
-earliest_mode = "local_readonly"
-task_class = "diagnostic_report"
-
-[references]
-scope_manifest = "agent-scope.toml"
-capability_metadata = "agent-capabilities.toml"
-expertise_metadata = "agent-expertise.toml"
-resource_requirements = "metadata/agent-resources.toml"
-permission_model = "metadata/agent-permissions.toml"
-audit_policy = "metadata/agent-audit.toml"
-boundary_tests = "evals/agent-boundary-tests.toml"
-
-[distribution]
-allowed_channels = ["local_dev"]
-allowed_install_modes = ["manual_review"]
-public_beta = false
-marketplace = false
-third_party_publication = false
-
-[security]
-collects_credentials = false
-collects_host_identifiers = false
-requires_network = false
-allows_destructive_actions = false
-allows_arbitrary_shell = false
-allows_unrestricted_filesystem = false
-
-[review]
-requires_human_review = true
-requires_scope_manifest = true
-requires_permission_review = true
-requires_audit_policy = true
-requires_boundary_tests = true
+```yaml
+schema: iamine.agent.package.draft-0.1
+package_id: iamine.beta.node-doctor
+package_version: 0.1.0
+display_name: Node Doctor
+summary: Explain IAMINE node readiness and safe next steps.
+official_pack: iamine-local-readiness-beta-pack
+status: planning
+execution_authorized: false
+agent:
+  family: node_doctor
+  personas:
+    - home_troubleshooter
+    - non_technical_caretaker
+  earliest_mode: local_readonly
+  task_class: diagnostic_report
+references:
+  scope_manifest: agent-scope.yaml
+  capability_metadata: metadata/agent-capabilities.yaml
+  expertise_metadata: metadata/agent-expertise.yaml
+  resource_requirements: metadata/agent-resources.yaml
+  permission_model: metadata/agent-permissions.yaml
+  audit_policy: metadata/agent-audit.yaml
+  boundary_tests: evals/agent-boundary-tests.yaml
+distribution:
+  allowed_channels:
+    - local_dev
+  allowed_install_modes:
+    - manual_review
+  public_beta: false
+  marketplace: false
+  third_party_publication: false
+security:
+  collects_credentials: false
+  collects_host_identifiers: false
+  requires_network: false
+  allows_destructive_actions: false
+  allows_arbitrary_shell: false
+  allows_unrestricted_filesystem: false
+review:
+  requires_human_review: true
+  requires_scope_manifest: true
+  requires_permission_review: true
+  requires_audit_policy: true
+  requires_boundary_tests: true
 ```
 
 ## Official Beta Pack Draft IDs
@@ -334,30 +341,29 @@ feature.
 
 The following conditions must block install and execution:
 
-- `execution_authorized = true`;
+- `execution_authorized: true`;
 - missing `scope_manifest`;
 - missing `expertise_metadata`;
 - missing `resource_requirements`;
 - missing `permission_model`;
 - missing `boundary_tests`;
-- `earliest_mode = "remote_execution"`;
-- `allowed_channels = ["public_marketplace"]`;
-- `allows_arbitrary_shell = true`;
-- `allows_unrestricted_filesystem = true`;
-- `collects_credentials = true`;
+- `earliest_mode: remote_execution`;
+- `allowed_channels: [public_marketplace]`;
+- `allows_arbitrary_shell: true`;
+- `allows_unrestricted_filesystem: true`;
+- `collects_credentials: true`;
 - package IDs containing local host identity or private paths;
 - summaries that claim automatic repair, broad device control, rewards,
   settlement, or mainnet behavior.
 
 ## Recommendation
 
-Proceed to:
+The next package lifecycle feature is:
 
 ```text
-AGENT-SCOPE-MANIFEST-001
-AGENT-CAPABILITY-METADATA-001
-AGENT-RESOURCE-REQUIREMENTS-001
+AGENT-PACKAGE-LOAD-GATE-001
 ```
 
-Do not implement executable manifests or runtime loading before scope,
-permissions, audit logs, and boundary evals are defined.
+It must not load a package until every referenced scope, capability, expertise,
+resource, permission, audit, and boundary-eval contract has its own validated
+parser and the runtime enforcement gates exist.

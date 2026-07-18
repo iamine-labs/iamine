@@ -13,7 +13,7 @@ local-planning, privacy-safe contract. It reserves a future boundary for
 explaining an operator-selected, redacted Windows status summary and its
 declared optimization constraints.
 
-This feature does not create an agent package, TOML manifest, executable code,
+This feature does not create an agent package, root manifest, executable code,
 system probe, shell adapter, PowerShell command, registry reader, process or
 service inspector, filesystem reader, system mutator, runtime adapter, sandbox,
 audit emitter, registry entry, or public beta listing.
@@ -46,17 +46,17 @@ Later package creation must follow the closed skeleton standard:
 
 ```text
 <windows-optimizer-assistant-package>/
-  iamine-agent-package.toml
-  agent-scope.toml
+  agent.yaml
+  agent-scope.yaml
   README.md
   metadata/
-    agent-capabilities.toml
-    agent-expertise.toml
-    agent-resources.toml
-    agent-permissions.toml
-    agent-audit.toml
+    agent-capabilities.yaml
+    agent-expertise.yaml
+    agent-resources.yaml
+    agent-permissions.yaml
+    agent-audit.yaml
   evals/
-    agent-boundary-tests.toml
+    agent-boundary-tests.yaml
   src/
     README.md
   review/

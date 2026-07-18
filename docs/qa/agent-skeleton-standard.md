@@ -63,7 +63,7 @@ git diff --cached --check
 cargo fmt --all -- --check
 rg -n "AGENT-SKELETON-STANDARD-001" docs/agents/agent-skeleton-standard.md docs/architecture/agent-skeleton-standard.md docs/qa/agent-skeleton-standard.md docs/roadmap/iamine-agent-network-roadmap.md
 rg -n "documentation-only|does not authorize executable|does not modify|runtime behavior change" docs/agents/agent-skeleton-standard.md docs/architecture/agent-skeleton-standard.md docs/qa/agent-skeleton-standard.md
-rg -n "iamine-agent-package.toml|agent-scope.toml|metadata/agent-capabilities.toml|metadata/agent-expertise.toml|metadata/agent-resources.toml|metadata/agent-permissions.toml|metadata/agent-audit.toml|evals/agent-boundary-tests.toml" docs/agents/agent-skeleton-standard.md docs/architecture/agent-skeleton-standard.md
+rg -n "agent.yaml|agent-scope.yaml|metadata/agent-capabilities.yaml|metadata/agent-expertise.yaml|metadata/agent-resources.yaml|metadata/agent-permissions.yaml|metadata/agent-audit.yaml|evals/agent-boundary-tests.yaml" docs/agents/agent-skeleton-standard.md docs/architecture/agent-skeleton-standard.md
 rg -n "package-relative|absolute local paths|src/|non-executable placeholders|reserved" docs/agents/agent-skeleton-standard.md docs/architecture/agent-skeleton-standard.md
 rg -n "credentials|private keys|wallet keys|host identifiers|private paths|arbitrary shell|unrestricted filesystem|unrestricted network|service mutation" docs/agents/agent-skeleton-standard.md docs/architecture/agent-skeleton-standard.md
 rg -n "AGENT-SKELETON-STANDARD-001 \\| CLOSED|AGENT-CAPABILITY-METADATA-001 \\| PROPOSED" docs/roadmap/iamine-agent-network-roadmap.md

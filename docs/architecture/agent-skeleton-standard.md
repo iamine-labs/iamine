@@ -42,6 +42,11 @@ This feature is documentation-only. It intentionally does not modify:
 - Rust source, tests, scripts, service definitions, release artifacts, or
   package generation.
 
+`AGENT-MANIFEST-PARSER-VALIDATOR-001` later added the root `agent.yaml` parser
+without changing this feature's historical documentation-only boundary. Child
+metadata parsers, skeleton generation, package loading, and execution remain
+separate.
+
 ## Skeleton Role
 
 The skeleton standard defines where reviewable agent metadata belongs. It does
@@ -70,17 +75,17 @@ The canonical future package layout is:
 
 ```text
 <agent-package>/
-  iamine-agent-package.toml
-  agent-scope.toml
+  agent.yaml
+  agent-scope.yaml
   README.md
   metadata/
-    agent-capabilities.toml
-    agent-expertise.toml
-    agent-resources.toml
-    agent-permissions.toml
-    agent-audit.toml
+    agent-capabilities.yaml
+    agent-expertise.yaml
+    agent-resources.yaml
+    agent-permissions.yaml
+    agent-audit.yaml
   evals/
-    agent-boundary-tests.toml
+    agent-boundary-tests.yaml
     README.md
   src/
     README.md
@@ -99,14 +104,14 @@ registry or runtime review:
 
 | Path | Owner contract | Required before execution |
 | --- | --- | --- |
-| `iamine-agent-package.toml` | `AGENT-PACKAGE-MANIFEST-001` | yes |
-| `agent-scope.toml` | `AGENT-SCOPE-MANIFEST-001` | yes |
-| `metadata/agent-capabilities.toml` | `AGENT-CAPABILITY-METADATA-001` | yes |
-| `metadata/agent-expertise.toml` | `AGENT-EXPERTISE-METADATA-001` | yes |
-| `metadata/agent-resources.toml` | `AGENT-RESOURCE-REQUIREMENTS-001` | yes |
-| `metadata/agent-permissions.toml` | `AGENT-PERMISSION-MODEL-001` | yes |
-| `metadata/agent-audit.toml` | `AGENT-AUDIT-LOG-001` | yes |
-| `evals/agent-boundary-tests.toml` | `AGENT-SCOPE-BOUNDARY-EVALS-001` | yes |
+| `agent.yaml` | `AGENT-PACKAGE-MANIFEST-001` | yes |
+| `agent-scope.yaml` | `AGENT-SCOPE-MANIFEST-001` | yes |
+| `metadata/agent-capabilities.yaml` | `AGENT-CAPABILITY-METADATA-001` | yes |
+| `metadata/agent-expertise.yaml` | `AGENT-EXPERTISE-METADATA-001` | yes |
+| `metadata/agent-resources.yaml` | `AGENT-RESOURCE-REQUIREMENTS-001` | yes |
+| `metadata/agent-permissions.yaml` | `AGENT-PERMISSION-MODEL-001` | yes |
+| `metadata/agent-audit.yaml` | `AGENT-AUDIT-LOG-001` | yes |
+| `evals/agent-boundary-tests.yaml` | `AGENT-SCOPE-BOUNDARY-EVALS-001` | yes |
 | `review/human-review.md` | Architecture / QA | yes |
 | `review/qa-evidence.md` | QA | yes |
 

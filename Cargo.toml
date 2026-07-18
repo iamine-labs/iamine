@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "iamine-agents",
     "iamine-core",
     "iamine-hardware",
     "iamine-node",

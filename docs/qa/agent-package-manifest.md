@@ -56,9 +56,9 @@ git diff --check
 git diff --cached --check
 cargo fmt --all -- --check
 rg -n "AGENT-PACKAGE-MANIFEST-001" docs/agents/agent-package-manifest.md docs/architecture/agent-package-manifest.md docs/qa/agent-package-manifest.md docs/roadmap/iamine-agent-network-roadmap.md
-rg -n "iamine.agent.package.draft-0.1|iamine-agent-package.toml|execution_authorized = false|iamine-local-readiness-beta-pack" docs/agents/agent-package-manifest.md docs/architecture/agent-package-manifest.md
+rg -n "iamine.agent.package.draft-0.1|agent.yaml|execution_authorized: false|iamine-local-readiness-beta-pack" docs/agents/agent-package-manifest.md docs/architecture/agent-package-manifest.md
 rg -n "scope_manifest|capability_metadata|resource_requirements|permission_model|audit_policy|boundary_tests" docs/agents/agent-package-manifest.md docs/architecture/agent-package-manifest.md
-rg -n "does not authorize executable|documentation-only|does not implement TOML parsing|not executable|block install and execution" docs/agents/agent-package-manifest.md docs/architecture/agent-package-manifest.md
+rg -n "does not authorize executable|not executable|block install and execution|package loading.*blocked|runtime integration" docs/agents/agent-package-manifest.md docs/architecture/agent-package-manifest.md
 rg -n "credentials|host identifiers|MAC addresses|serial|machine IDs|private paths|arbitrary_shell|unrestricted_filesystem|scope-bound" docs/agents/agent-package-manifest.md docs/architecture/agent-package-manifest.md
 rg -n "AGENT-PACKAGE-MANIFEST-001 \\| CLOSED|AGENT-SCOPE-MANIFEST-001 \\| PROPOSED" docs/roadmap/iamine-agent-network-roadmap.md
 ```

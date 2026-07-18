@@ -12,7 +12,7 @@ Define the official P0 LAN File Share Assistant skeleton as a reviewable,
 local-planning, read-only contract. It reserves a future boundary for explaining
 an operator-approved, redacted file-share inventory and its declared limits.
 
-This feature does not create an agent package, TOML manifest, executable code,
+This feature does not create an agent package, root manifest, executable code,
 file reader, SMB or NFS client, mount, share discovery probe, network transfer,
 runtime adapter, sandbox, audit emitter, registry entry, or public beta listing.
 
@@ -44,17 +44,17 @@ Later package creation must follow the closed skeleton standard:
 
 ```text
 <lan-file-share-assistant-package>/
-  iamine-agent-package.toml
-  agent-scope.toml
+  agent.yaml
+  agent-scope.yaml
   README.md
   metadata/
-    agent-capabilities.toml
-    agent-expertise.toml
-    agent-resources.toml
-    agent-permissions.toml
-    agent-audit.toml
+    agent-capabilities.yaml
+    agent-expertise.yaml
+    agent-resources.yaml
+    agent-permissions.yaml
+    agent-audit.yaml
   evals/
-    agent-boundary-tests.toml
+    agent-boundary-tests.yaml
   src/
     README.md
   review/

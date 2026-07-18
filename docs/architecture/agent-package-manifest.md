@@ -67,11 +67,13 @@ iamine.agent.package.draft-0.1
 Default file name:
 
 ```text
-iamine-agent-package.toml
+agent.yaml
 ```
 
-This schema is not executable until a later implementation feature adds parser,
-validation, and runtime integration.
+`AGENT-MANIFEST-PARSER-VALIDATOR-001` now provides the root YAML parser and
+metadata validation in `iamine-agents`. The schema remains non-executable:
+package loading, referenced-contract validation, and runtime integration are
+still separate blocked features.
 
 ## Integration
 

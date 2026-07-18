@@ -69,11 +69,11 @@ CLI command.
 
 The newer schema source-of-truth contract specifies YAML authoring, Rust types
 as the source of truth, generated JSON Schema for validation, and JSON runtime
-payloads. Older package and skeleton planning contracts still name TOML files.
+payloads. Earlier package and skeleton planning contracts named TOML files.
 
-`AGENT-MANIFEST-PARSER-VALIDATOR-001` must reconcile that divergence before
-selecting or implementing a parser surface. This feature does not silently
-rewrite package formats or create two competing manifest formats.
+`AGENT-MANIFEST-PARSER-VALIDATOR-001` resolves the root surface as YAML-only
+`agent.yaml` and does not create a competing TOML parser. Referenced child
+metadata remains separately owned and is not opened by the root parser.
 
 ## Integration Boundary
 
@@ -86,9 +86,10 @@ mainnet, or distributed model MoE behavior.
 ## Next Feature
 
 ```text
-AGENT-MANIFEST-PARSER-VALIDATOR-001
+AGENT-PACKAGE-LOAD-GATE-001
 ```
 
-That feature may add canonical Rust types, YAML fixtures, generated-schema
-contracts, validators, and positive and negative tests. It must not load or
-execute an agent package.
+`AGENT-MANIFEST-PARSER-VALIDATOR-001` adds the root Rust types, YAML parser,
+generated JSON Schema, validators, fixtures, and tests without package loading
+or execution. The load gate must consume that parser and remain fail-closed
+until every referenced metadata and enforcement prerequisite is available.

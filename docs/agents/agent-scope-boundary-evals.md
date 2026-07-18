@@ -185,7 +185,7 @@ behavior, permission checks, sandboxing, or routing.
 
 Boundary eval metadata must align with:
 
-- `iamine-agent-package.toml`;
+- `agent.yaml`;
 - `agent-scope.toml`;
 - `metadata/agent-capabilities.toml`;
 - `metadata/agent-expertise.toml`;

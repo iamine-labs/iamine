@@ -60,7 +60,7 @@ sandbox startup, registry advancement, publication, or runtime loading.
 
 | Class | Status | Notes |
 | --- | --- | --- |
-| `rust_core_metadata` | allowed | `serde`, `serde_json`, `serde_yaml`, `schemars`, `jsonschema`, `thiserror` for future IAMINE-owned schema work. |
+| `rust_core_metadata` | allowed | `serde`, `serde_json`, `serde_yaml`, `schemars`, `jsonschema`, `thiserror`, and `semver` for IAMINE-owned schema and version-validation work. |
 | `rust_cli_support` | optional | `clap`, `anyhow`, `tracing` only when an implementation feature needs them. |
 | `python_sdk` | deferred | Public SDK work belongs to v1.2.x developer-platform gates. |
 | `typescript_sdk` | deferred | Public SDK and dashboard/tooling work belongs to later gates. |

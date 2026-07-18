@@ -8,9 +8,10 @@ AGENT-SKELETON-STANDARD-001
 
 ## Purpose
 
-Define the canonical file layout for IAMINE agent packages before any
-skeleton generator, package validator, runtime, sandbox, or registry behavior
-exists.
+Define the canonical file layout for IAMINE agent packages. The root
+`agent.yaml` parser now exists in `iamine-agents`; skeleton generation,
+referenced-metadata parsing, package loading, runtime, sandbox, and registry
+behavior remain unavailable.
 
 This document is an architecture artifact. It does not authorize executable
 agents, runtime execution, permission enforcement, sandboxing, registry
@@ -39,17 +40,17 @@ Future packages must use this layout:
 
 ```text
 <agent-package>/
-  iamine-agent-package.toml
-  agent-scope.toml
+  agent.yaml
+  agent-scope.yaml
   README.md
   metadata/
-    agent-capabilities.toml
-    agent-expertise.toml
-    agent-resources.toml
-    agent-permissions.toml
-    agent-audit.toml
+    agent-capabilities.yaml
+    agent-expertise.yaml
+    agent-resources.yaml
+    agent-permissions.yaml
+    agent-audit.yaml
   evals/
-    agent-boundary-tests.toml
+    agent-boundary-tests.yaml
     README.md
   src/
     README.md
@@ -64,14 +65,14 @@ All paths are package-relative. Absolute local paths are blocked.
 
 | Path | Responsibility |
 | --- | --- |
-| `iamine-agent-package.toml` | Package identity and references. |
-| `agent-scope.toml` | In-scope, out-of-scope, handoff, and blocked action boundary. |
-| `metadata/agent-capabilities.toml` | Future capability metadata. |
-| `metadata/agent-expertise.toml` | Future expertise metadata. |
-| `metadata/agent-resources.toml` | Future resource requirements. |
-| `metadata/agent-permissions.toml` | Future permission categories and denial behavior. |
-| `metadata/agent-audit.toml` | Future privacy-safe audit policy. |
-| `evals/agent-boundary-tests.toml` | Future positive and negative boundary evals. |
+| `agent.yaml` | Package identity and references. |
+| `agent-scope.yaml` | In-scope, out-of-scope, handoff, and blocked action boundary. |
+| `metadata/agent-capabilities.yaml` | Future capability metadata. |
+| `metadata/agent-expertise.yaml` | Future expertise metadata. |
+| `metadata/agent-resources.yaml` | Future resource requirements. |
+| `metadata/agent-permissions.yaml` | Future permission categories and denial behavior. |
+| `metadata/agent-audit.yaml` | Future privacy-safe audit policy. |
+| `evals/agent-boundary-tests.yaml` | Future positive and negative boundary evals. |
 | `src/` | Future implementation area only. |
 | `review/` | Human review and QA evidence. |
 

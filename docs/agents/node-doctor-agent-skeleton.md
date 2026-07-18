@@ -13,7 +13,7 @@ read-only planning contract. It describes the narrow future package boundary
 for explaining IAMINE node readiness from already approved, redacted IAMINE
 evidence.
 
-This feature does not create an agent package, TOML manifest, executable code,
+This feature does not create an agent package, root manifest, executable code,
 CLI command, agent runtime, model dependency, sandbox, audit emitter, registry
 entry, or public beta listing.
 
@@ -66,17 +66,17 @@ agent skeleton standard and remain inside one package root:
 
 ```text
 <node-doctor-package>/
-  iamine-agent-package.toml
-  agent-scope.toml
+  agent.yaml
+  agent-scope.yaml
   README.md
   metadata/
-    agent-capabilities.toml
-    agent-expertise.toml
-    agent-resources.toml
-    agent-permissions.toml
-    agent-audit.toml
+    agent-capabilities.yaml
+    agent-expertise.yaml
+    agent-resources.yaml
+    agent-permissions.yaml
+    agent-audit.yaml
   evals/
-    agent-boundary-tests.toml
+    agent-boundary-tests.yaml
     README.md
   src/
     README.md
@@ -250,10 +250,10 @@ or direct user-facing agent behavior.
 ## Next Roadmap Step
 
 ```text
-AGENT-MANIFEST-PARSER-VALIDATOR-001
+AGENT-PACKAGE-LOAD-GATE-001
 ```
 
-The parser/validator feature may create canonical types, schemas, fixtures,
-validators, and tests. It must not load or execute agent packages. The
-functional Node Doctor feature remains blocked until the complete prerequisite
-chain in `docs/roadmap/iamine-agent-network-roadmap.md` is satisfied.
+The root parser/validator is implemented without package loading or execution.
+The functional Node Doctor feature remains blocked until the package load gate
+and the complete prerequisite chain in
+`docs/roadmap/iamine-agent-network-roadmap.md` are satisfied.
