@@ -112,7 +112,7 @@ This example is not executable. It only shows the intended metadata shape.
 
 Capability metadata must align with:
 
-- `iamine-agent-package.toml`;
+- `agent.yaml`;
 - `agent-scope.toml`;
 - `metadata/agent-permissions.toml` once defined;
 - `metadata/agent-resources.toml` once defined;

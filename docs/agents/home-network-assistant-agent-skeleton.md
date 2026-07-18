@@ -13,7 +13,7 @@ local-planning, privacy-safe contract. It reserves a future boundary for
 explaining an operator-selected, redacted home-network status summary and its
 declared connectivity constraints.
 
-This feature does not create an agent package, TOML manifest, executable code,
+This feature does not create an agent package, root manifest, executable code,
 network probe, scanner, socket, listener, packet capture, router client,
 configuration mutator, runtime adapter, sandbox, audit emitter, registry entry,
 or public beta listing.
@@ -46,17 +46,17 @@ Later package creation must follow the closed skeleton standard:
 
 ```text
 <home-network-assistant-package>/
-  iamine-agent-package.toml
-  agent-scope.toml
+  agent.yaml
+  agent-scope.yaml
   README.md
   metadata/
-    agent-capabilities.toml
-    agent-expertise.toml
-    agent-resources.toml
-    agent-permissions.toml
-    agent-audit.toml
+    agent-capabilities.yaml
+    agent-expertise.yaml
+    agent-resources.yaml
+    agent-permissions.yaml
+    agent-audit.yaml
   evals/
-    agent-boundary-tests.toml
+    agent-boundary-tests.yaml
   src/
     README.md
   review/

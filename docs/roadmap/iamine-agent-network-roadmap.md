@@ -137,7 +137,7 @@ AGENT-MANIFEST-SCHEMA-SOURCE-OF-TRUTH-001
 | AGENT-CREATION-ARCHITECTURE-001 | CLOSED | Define the end-to-end architecture for creating, reviewing, packaging, validating, and later executing IAMINE agents; merge `bc6242b`, focused post-merge validation PASS. |
 | AGENT-SKELETON-STANDARD-001 | CLOSED | Define the canonical agent skeleton layout before generating or implementing agent code; merge `be57a4c`, focused post-merge validation PASS. |
 | AGENT-PACKAGE-MANIFEST-001 | CLOSED | Define the agent package manifest contract and required references before execution; merge `453b1b6`, focused post-merge validation PASS. |
-| AGENT-MANIFEST-PARSER-VALIDATOR-001 | PROPOSED | Implement canonical manifest types, fixtures, parsing, schema validation, and negative tests without loading or executing agent packages. |
+| AGENT-MANIFEST-PARSER-VALIDATOR-001 | ACTIVE | Implement canonical root manifest types, generated JSON Schema, bounded YAML parsing, semantic validation, fixtures, and negative tests in `iamine-agents` without loading or executing agent packages. |
 | AGENT-CAPABILITY-METADATA-001 | CLOSED | Define agent capability metadata without scheduler or reputation side effects. |
 | AGENT-EXPERTISE-METADATA-001 | CLOSED | Define expertise metadata for agent selection without claiming distributed model MoE. |
 | AGENT-SCOPE-MANIFEST-001 | CLOSED | Define agent scope boundaries, blocked actions, handoff targets, and supported task types; merge `ca37818`, focused post-merge validation PASS. |
@@ -208,6 +208,16 @@ Runtime/API payloads: JSON
 Source of truth: Rust types
 ```
 
+Root manifest parser ownership:
+
+```text
+Crate: iamine-agents
+Input: agent.yaml content in memory
+Filesystem access: none
+Referenced metadata loading: none
+Agent execution: none
+```
+
 Expected minimal Rust dependency set for `AGENT-CAPABILITY-METADATA-001`:
 
 ```text
@@ -217,6 +227,7 @@ serde_yaml
 schemars
 jsonschema
 thiserror
+semver
 ```
 
 Optional only if needed:
@@ -416,17 +427,19 @@ The existing `iamine-node lan doctor` command is not an agent adapter. The
 Node Doctor skeleton must not invoke or wrap it. A later evidence provider may
 reuse only owner-module data behind a dedicated typed and redacted interface.
 
-The immediate next implementation feature after this documentation-only
-reconciliation is:
+`AGENT-MANIFEST-PARSER-VALIDATOR-001` reconciles the root format as YAML with
+Rust types as source of truth, generated JSON Schema, bounded parsing, fixtures,
+and semantic validation. It does not load or execute packages.
+
+The next package lifecycle feature is:
 
 ```text
-AGENT-MANIFEST-PARSER-VALIDATOR-001
+AGENT-PACKAGE-LOAD-GATE-001
 ```
 
-That feature must reconcile the canonical YAML authoring and Rust type
-source-of-truth policy with older TOML planning contracts before it chooses a
-parser surface. It may add schemas, types, fixtures, validators, and tests; it
-must not load or execute an agent package.
+That feature must consume the root parser and fail closed while referenced
+metadata parsers or enforcement gates remain unavailable. It must not authorize
+agent execution.
 
 Not all functional P0 agents should be implemented in parallel at the start.
 After every prerequisite gate above passes, `NODE-DOCTOR-AGENT-001` remains

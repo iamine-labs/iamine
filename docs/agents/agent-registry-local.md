@@ -160,7 +160,7 @@ cannot become executable or public.
 
 Local registry metadata must align with:
 
-- `iamine-agent-package.toml`;
+- `agent.yaml`;
 - `agent-scope.toml`;
 - `metadata/agent-capabilities.toml`;
 - `metadata/agent-expertise.toml`;

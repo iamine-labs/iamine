@@ -68,6 +68,25 @@ Rust types are the future source of truth. YAML authoring files, generated JSON
 Schema, JSON payloads, and docs are derived or review surfaces; they must not
 silently diverge.
 
+## Implementation Status
+
+`AGENT-MANIFEST-PARSER-VALIDATOR-001` implements this derivation for the root
+`package_manifest` family only:
+
+```text
+Rust source: iamine-agents
+YAML root: agent.yaml
+generated JSON Schema: available through manifest_json_schema
+bounded parser: available through parse_and_validate_yaml
+semantic validator: available through validate_manifest
+package loading: unavailable
+runtime execution: unavailable
+```
+
+Other schema families remain contract-only until their owner features add
+canonical types and validators. The root parser treats their references as
+opaque package-relative paths and does not open or validate them.
+
 ## Schema Families
 
 Future schema source-of-truth work must cover:
@@ -154,8 +173,8 @@ Human review must confirm:
 
 ## Next Roadmap Step
 
-The next architecture feature after this contract is:
+The next package lifecycle feature after the root parser is:
 
 ```text
-AGENT-RUNTIME-BASELINE-001
+AGENT-PACKAGE-LOAD-GATE-001
 ```

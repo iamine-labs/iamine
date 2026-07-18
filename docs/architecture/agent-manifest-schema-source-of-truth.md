@@ -30,6 +30,11 @@ sandboxing, registry storage, scheduler behavior, worker startup, model
 loading, inference, installer, updater, rewards, wallet, marketplace, public
 beta, mainnet, or service definitions.
 
+`AGENT-MANIFEST-PARSER-VALIDATOR-001` later implements the root
+`package_manifest` source chain in `iamine-agents`. This historical feature
+remains documentation-only, and every non-root schema family remains separately
+owned.
+
 ## Source Of Truth Role
 
 The source-of-truth contract defines ownership and derivation order:

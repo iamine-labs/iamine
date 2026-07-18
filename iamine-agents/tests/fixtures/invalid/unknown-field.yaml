@@ -1,0 +1,41 @@
+schema: iamine.agent.package.draft-0.1
+package_id: iamine.beta.node-doctor
+package_version: 0.1.0
+display_name: Node Doctor
+summary: Explain IAMINE node readiness and safe next steps.
+official_pack: iamine-local-readiness-beta-pack
+status: planning
+execution_authorized: false
+unexpected_field: blocked
+agent:
+  family: node_doctor
+  personas: [home_troubleshooter]
+  earliest_mode: local_readonly
+  task_class: diagnostic_report
+references:
+  scope_manifest: agent-scope.yaml
+  capability_metadata: metadata/agent-capabilities.yaml
+  expertise_metadata: metadata/agent-expertise.yaml
+  resource_requirements: metadata/agent-resources.yaml
+  permission_model: metadata/agent-permissions.yaml
+  audit_policy: metadata/agent-audit.yaml
+  boundary_tests: evals/agent-boundary-tests.yaml
+distribution:
+  allowed_channels: [local_dev]
+  allowed_install_modes: [manual_review]
+  public_beta: false
+  marketplace: false
+  third_party_publication: false
+security:
+  collects_credentials: false
+  collects_host_identifiers: false
+  requires_network: false
+  allows_destructive_actions: false
+  allows_arbitrary_shell: false
+  allows_unrestricted_filesystem: false
+review:
+  requires_human_review: true
+  requires_scope_manifest: true
+  requires_permission_review: true
+  requires_audit_policy: true
+  requires_boundary_tests: true

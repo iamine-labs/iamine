@@ -127,7 +127,7 @@ This example is not executable. It only shows the intended metadata shape.
 
 Audit metadata must align with:
 
-- `iamine-agent-package.toml`;
+- `agent.yaml`;
 - `agent-scope.toml`;
 - `metadata/agent-capabilities.toml`;
 - `metadata/agent-expertise.toml`;
