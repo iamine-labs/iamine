@@ -2,10 +2,11 @@ use std::collections::HashSet;
 use std::hash::Hash;
 use std::path::{Component, Path};
 
+use crate::identifiers::{is_package_identifier, is_snake_identifier, MAX_IDENTIFIER_BYTES};
+
 use super::error::{ManifestViolation, ManifestViolationCode, ManifestViolations};
 use super::schema::{AgentPackageManifest, MANIFEST_SCHEMA_ID};
 
-const MAX_IDENTIFIER_BYTES: usize = 128;
 const MAX_SHORT_TEXT_BYTES: usize = 80;
 const MAX_SUMMARY_BYTES: usize = 280;
 const MAX_REFERENCE_BYTES: usize = 240;
@@ -124,17 +125,7 @@ fn validate_package_identifier(
     field: &'static str,
     value: &str,
 ) {
-    let valid = !value.is_empty()
-        && value.len() <= MAX_IDENTIFIER_BYTES
-        && value.is_ascii()
-        && value.split(['.', '-']).all(|segment| {
-            !segment.is_empty()
-                && segment
-                    .chars()
-                    .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit())
-        });
-
-    if !valid {
+    if !is_package_identifier(value) {
         collector.push(
             ManifestViolationCode::InvalidIdentifier,
             field,
@@ -144,17 +135,7 @@ fn validate_package_identifier(
 }
 
 fn validate_snake_identifier(collector: &mut ViolationCollector, field: &'static str, value: &str) {
-    let valid = !value.is_empty()
-        && value.len() <= MAX_IDENTIFIER_BYTES
-        && value.is_ascii()
-        && !value.starts_with('_')
-        && !value.ends_with('_')
-        && !value.contains("__")
-        && value
-            .chars()
-            .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '_');
-
-    if !valid {
+    if !is_snake_identifier(value) {
         collector.push(
             ManifestViolationCode::InvalidIdentifier,
             field,

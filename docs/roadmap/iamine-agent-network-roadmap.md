@@ -351,7 +351,7 @@ node compatibility. It must not implement distributed model MoE.
 | AGENT-RUNTIME-SANDBOX-001 | CLOSED | Define sandbox requirements before agent code can run. |
 | AGENT-EXECUTION-LIFECYCLE-001 | CLOSED | Define runtime transition rules without worker side effects. |
 | AGENT-INPUT-OUTPUT-CONTRACT-001 | CLOSED | Define privacy-safe input and output boundaries. |
-| AGENT-SCOPE-ENFORCEMENT-001 | PROPOSED | Enforce declared scope and deny tasks that are ambiguous, unsupported, or outside the package boundary. |
+| AGENT-SCOPE-ENFORCEMENT-001 | ACTIVE | Implement a typed fail-closed scope decision engine; package/runtime integration and execution authorization remain blocked. |
 | AGENT-PERMISSION-ENFORCEMENT-001 | PROPOSED | Enforce deny-by-default permissions independently from scope and user confirmation. |
 | AGENT-AUDIT-EVENTS-001 | PROPOSED | Emit bounded, redacted lifecycle, scope, permission, refusal, and handoff evidence. |
 | AGENT-TIMEOUT-CANCEL-001 | CLOSED | Define timeout, cancellation, and cleanup expectations. |
