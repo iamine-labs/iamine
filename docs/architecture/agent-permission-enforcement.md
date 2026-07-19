@@ -179,8 +179,8 @@ AGENT-AUDIT-EVENTS-001
 future trusted package/runtime integration
 ```
 
-Audit events remain an independent gate and are the next feature in canonical
-roadmap order after this feature closes.
+Audit events remain an independent gate. `AGENT-AUDIT-EVENTS-001` later closed
+in merge `5a505d8` without changing this Permission boundary.
 
 ## Closure Evidence
 
@@ -198,7 +198,8 @@ and one daemon socket test; focused unrestricted reruns passed `59/59` and
 Those results are classified as harness restrictions, not product regressions.
 
 This closure does not remove the package-load blockers or authorize agent
-execution. `AGENT-AUDIT-EVENTS-001` is the next unresolved runtime feature.
+execution. Audit Events also preserves those blockers; the canonical roadmap
+does not yet name the next executable v0.11.2 prerequisite.
 
 ## Risks
 

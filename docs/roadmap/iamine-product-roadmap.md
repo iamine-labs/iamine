@@ -90,9 +90,11 @@ line is not an inference-only public testnet. It is the IAMINE Agent Network.
 
 All six v0.12.0 P0 skeleton contracts are closed, but they are non-executable
 and not user available. Functional `NODE-DOCTOR-AGENT-001` development is
-blocked while referenced metadata validation, runtime scope and permission
-enforcement, audit events, sandbox implementation, compatibility decisions,
-and the dedicated redacted evidence provider remain unavailable.
+blocked while referenced metadata validation, trusted package/runtime
+integration, sandbox implementation, remaining executable runtime gates,
+compatibility decisions, and the dedicated redacted evidence provider remain
+unavailable. The closed Scope, Permission, and Audit Events in-memory
+boundaries do not by themselves authorize package loading or execution.
 
 `AGENT-MANIFEST-PARSER-VALIDATOR-001` closed in v0.11.1 through merge
 `c849d98`. It introduces the isolated `iamine-agents` root-manifest parser and
@@ -306,14 +308,17 @@ features.
 ## Immediate Sequence
 
 ```text
-AGENT-AUDIT-EVENTS-001
--> remaining executable v0.11.2 runtime prerequisites
+remaining executable v0.11.2 runtime prerequisites
 -> V0.11.2-AGENT-RUNTIME-BASELINE-MILESTONE-QA-001
 -> NODE-DOCTOR-EVIDENCE-PROVIDER-001
 -> NODE-DOCTOR-AGENT-001
 -> remaining functional P0 official agents
 -> V0.12.0-P0-OFFICIAL-AGENTS-MILESTONE-QA-001
 ```
+
+`AGENT-AUDIT-EVENTS-001` closed in merge `5a505d8`. No subsequent executable
+feature ID is registered for the first line above; Architecture must reconcile
+and name the remaining prerequisite sequence before development continues.
 
 Each arrow still requires the complete canonical feature lifecycle. A roadmap
 position is not development authorization.

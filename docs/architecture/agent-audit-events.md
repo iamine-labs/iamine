@@ -3,14 +3,16 @@
 ## State
 
 ```text
-READY FOR MERGE REVIEW
+MERGED / VALIDATED / CLOSED
 branch: feature/agent-audit-events-001
 base: 247cbd08ea329c8f031ab9a898f1ca37f1468ad8
 base tree: 8e48e8eab0c3daf73e41acfcc2506697b7ef97c8
 commit: df80dad96a8eb540a4dce67fc2a6402bef2977b1
 tree: 048d56d7081b0a8aa2fcf4fe47e56c1012c211fe
 field QA: PASS on Mac, TS140, and four Proxmox guests
-recommendation: READY FOR ARCHITECTURE MERGE REVIEW
+merge: 5a505d831284ece8666f2c7d0119bb32d5891a2d
+merge tree: 4d9484ecfb795cd18edc116b10075c040937a813
+post-merge: PASS WITH WARNINGS, required_failures=0
 ```
 
 ## Objective
