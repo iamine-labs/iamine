@@ -172,5 +172,5 @@ temporary environment. Neither failing path is owned or changed by this
 feature. Focused post-merge tests, Clippy, repository guards, and diff checks
 passed.
 
-Permission enforcement remains an independent gate and is the next feature in
-canonical roadmap order after this feature closes.
+Permission enforcement closed independently in merge `2a84543`. Audit events
+remain the next unresolved gate in canonical roadmap order.

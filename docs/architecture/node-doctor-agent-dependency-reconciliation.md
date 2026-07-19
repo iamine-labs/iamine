@@ -88,6 +88,7 @@ mainnet, or distributed model MoE behavior.
 ```text
 AGENT-PACKAGE-LOAD-GATE-001
 AGENT-SCOPE-ENFORCEMENT-001
+AGENT-PERMISSION-ENFORCEMENT-001
 ```
 
 `AGENT-MANIFEST-PARSER-VALIDATOR-001` provides the root Rust types, YAML parser,
@@ -97,10 +98,12 @@ consumes that parser and emits only a typed blocked assessment until every
 referenced metadata validator and enforcement prerequisite is available.
 `AGENT-SCOPE-ENFORCEMENT-001` closed in merge `48cb6b2`; it adds a typed,
 fail-closed in-memory scope decision engine without authorizing package loading
-or runtime execution.
+or runtime execution. `AGENT-PERMISSION-ENFORCEMENT-001` closed in merge
+`2a84543`; it adds a typed, deny-by-default in-memory permission gate after
+Scope without removing package-load blockers or authorizing execution.
 
 The next unresolved runtime feature in canonical roadmap order is:
 
 ```text
-AGENT-PERMISSION-ENFORCEMENT-001
+AGENT-AUDIT-EVENTS-001
 ```
