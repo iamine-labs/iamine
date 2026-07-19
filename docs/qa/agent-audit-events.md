@@ -118,8 +118,37 @@ Quality gate detail:
 - largest new production file: `event.rs`, 187 lines;
 - `cargo audit`, `cargo deny`, and `gitleaks`: skipped, unavailable.
 
-Exact implementation identity, field QA, final Architecture review, merge, and
-post-merge evidence remain pending.
+Exact implementation identity:
+
+```text
+branch: feature/agent-audit-events-001
+commit: df80dad96a8eb540a4dce67fc2a6402bef2977b1
+tree: 048d56d7081b0a8aa2fcf4fe47e56c1012c211fe
+merge base: 247cbd08ea329c8f031ab9a898f1ca37f1468ad8
+tracked clean: yes
+staging clean: yes
+untracked feature artifacts: none
+```
+
+Field QA evidence:
+
+```text
+Mac: PASS, 10/10 and Clippy -D warnings
+TS140: PASS, 10/10 and Clippy -D warnings
+iamine-ctrl: PASS, 10/10 and Clippy -D warnings
+iamine-wrk1: PASS, 10/10 and Clippy -D warnings
+iamine-wrk2: PASS, 10/10 and Clippy -D warnings
+iamine-heavy: PASS, 10/10 and Clippy -D warnings
+field total: PASS, 60/60 focused test executions
+```
+
+All remote runs retained the exact implementation commit and tree and finished
+with clean disposable QA copies. The TS140 canonical working copy and all four
+historical Proxmox copies retained their preflight branch, tree, staging state,
+untracked inventory, and artifact hashes. No runtime, package loader, worker,
+P2P, model, inference, or service was started.
+
+Final Architecture review, merge, and post-merge evidence remain pending.
 
 ## Recommendation Boundary
 
