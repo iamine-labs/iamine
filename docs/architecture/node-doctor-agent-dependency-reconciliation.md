@@ -89,6 +89,7 @@ mainnet, or distributed model MoE behavior.
 AGENT-PACKAGE-LOAD-GATE-001
 AGENT-SCOPE-ENFORCEMENT-001
 AGENT-PERMISSION-ENFORCEMENT-001
+AGENT-AUDIT-EVENTS-001
 ```
 
 `AGENT-MANIFEST-PARSER-VALIDATOR-001` provides the root Rust types, YAML parser,
@@ -101,9 +102,12 @@ fail-closed in-memory scope decision engine without authorizing package loading
 or runtime execution. `AGENT-PERMISSION-ENFORCEMENT-001` closed in merge
 `2a84543`; it adds a typed, deny-by-default in-memory permission gate after
 Scope without removing package-load blockers or authorizing execution.
+`AGENT-AUDIT-EVENTS-001` closed in merge `5a505d8`; it adds bounded, redacted,
+deterministic in-memory evidence without persistence, package integration, or
+runtime authorization.
 
-The next unresolved runtime feature in canonical roadmap order is:
-
-```text
-AGENT-AUDIT-EVENTS-001
-```
+The canonical roadmap does not yet name the next executable feature for the
+remaining v0.11.2 runtime prerequisites. Architecture reconciliation is
+required before implementation continues; the closed sandbox, lifecycle,
+input/output, timeout, handoff, out-of-scope, and routing contracts do not by
+themselves provide executable evidence.

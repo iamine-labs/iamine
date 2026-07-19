@@ -353,7 +353,7 @@ node compatibility. It must not implement distributed model MoE.
 | AGENT-INPUT-OUTPUT-CONTRACT-001 | CLOSED | Define privacy-safe input and output boundaries. |
 | AGENT-SCOPE-ENFORCEMENT-001 | CLOSED | Implemented a typed fail-closed scope decision engine without package/runtime integration or execution authorization; merge `48cb6b2`, exact-tree field QA PASS on Mac, TS140, and four Proxmox guests, post-merge PASS WITH ACCEPTED BASELINE / ENVIRONMENT EXCEPTIONS. |
 | AGENT-PERMISSION-ENFORCEMENT-001 | CLOSED | Implemented a typed deny-by-default permission gate after Scope without package/runtime integration or execution authorization; implementation `11a1dfb`, merge `2a84543`, exact-tree field QA PASS on Mac, TS140, and four Proxmox guests, unrestricted post-merge quality gate PASS WITH WARNINGS. |
-| AGENT-AUDIT-EVENTS-001 | ACTIVE | Implement bounded, redacted in-memory lifecycle, scope, permission, refusal, and handoff event projections without persistence or runtime authorization. |
+| AGENT-AUDIT-EVENTS-001 | CLOSED | Implemented bounded, redacted in-memory lifecycle, scope, permission, refusal, and handoff event projections without persistence or runtime authorization; implementation `df80dad`, merge `5a505d8`, exact-commit field QA PASS on Mac, TS140, and four Proxmox guests, post-merge quality gate PASS WITH WARNINGS. |
 | AGENT-TIMEOUT-CANCEL-001 | CLOSED | Define timeout, cancellation, and cleanup expectations. |
 | AGENT-HANDOFF-POLICY-001 | CLOSED | Define handoff behavior to orchestrator or human operator. |
 | AGENT-OUT-OF-SCOPE-RESPONSE-001 | CLOSED | Define safe refusal, clarification, and out-of-scope responses. |
@@ -367,9 +367,10 @@ state: PROPOSED / blocked
 ```
 
 The historical documentation-only v0.11.2 QA snapshot does not close the
-current expanded milestone. Scope enforcement, permission enforcement, audit
-events, and every runtime claim must have executable validation evidence before
-Architecture may authorize this gate.
+current expanded milestone. Scope enforcement, permission enforcement, and
+audit event boundaries now have executable validation evidence, but every
+remaining runtime claim still requires a named implementation feature and
+executable validation evidence before Architecture may authorize this gate.
 
 ## v0.11.3 - Internal Agent Developer Bootstrap
 
@@ -532,11 +533,11 @@ It consumes the root parser and emits only a typed blocked report while
 referenced metadata validators or enforcement gates remain unavailable. It
 does not authorize package loading or agent execution.
 
-The next unresolved runtime feature in canonical roadmap order is:
-
-```text
-AGENT-AUDIT-EVENTS-001
-```
+`AGENT-AUDIT-EVENTS-001` closed in merge `5a505d8`. The roadmap does not yet
+register a subsequent executable feature ID for the remaining v0.11.2 runtime
+prerequisites. Architecture must reconcile and name that sequence before more
+runtime development is authorized; an architecture-only `CLOSED` row is not
+executable evidence.
 
 Not all functional P0 agents should be implemented in parallel at the start.
 After every prerequisite gate above passes, `NODE-DOCTOR-AGENT-001` remains

@@ -148,15 +148,44 @@ historical Proxmox copies retained their preflight branch, tree, staging state,
 untracked inventory, and artifact hashes. No runtime, package loader, worker,
 P2P, model, inference, or service was started.
 
-Final Architecture review, merge, and post-merge evidence remain pending.
+Final Architecture and merge evidence:
+
+```text
+Architecture review: PASS
+source commit: c9cbc65d7985accd069a31b9f337baab440c889e
+source tree: 4d9484ecfb795cd18edc116b10075c040937a813
+merge commit: 5a505d831284ece8666f2c7d0119bb32d5891a2d
+merge tree: 4d9484ecfb795cd18edc116b10075c040937a813
+target: develop
+remote identity: verified
+```
+
+Post-merge evidence on the exact merge commit:
+
+```text
+scripts/quality-gate.sh: PASS WITH WARNINGS
+iamine-models: PASS, 158/158 including real Metal inference
+iamine-network: PASS, 167/167
+iamine-node: PASS, 480/480 and build PASS
+iamine-agents: PASS, 73/73 within workspace
+workspace: PASS, 936/936
+workspace Clippy: PASS with historical warnings only
+required_failures: 0
+warnings: 0
+skipped optional tools: 3
+```
+
+The skipped optional tools were `cargo audit`, `cargo deny`, and `gitleaks`,
+which were unavailable. No warning originated in the new audit event module.
 
 ## Recommendation Boundary
 
-QA may recommend:
+QA recommended before merge:
 
 ```text
 READY FOR ARCHITECTURE MERGE REVIEW
 ```
 
 QA must not emit execution authorization or treat an audit event as proof of a
-runtime side effect.
+runtime side effect. Architecture and the Merge Owner consumed that
+recommendation separately; the feature is now `MERGED / VALIDATED / CLOSED`.
