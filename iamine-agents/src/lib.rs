@@ -1,6 +1,7 @@
 mod identifiers;
 pub mod manifest;
 mod package_load;
+mod permission_enforcement;
 mod scope_enforcement;
 
 pub use manifest::{
@@ -12,6 +13,11 @@ pub use manifest::{
 };
 pub use package_load::{
     assess_package_load_yaml, PackageLoadBlockerCode, PackageLoadReport, PackageLoadStatus,
+};
+pub use permission_enforcement::{
+    evaluate_permissions, PermissionConfirmation, PermissionDecision, PermissionDefaultPolicy,
+    PermissionEvaluation, PermissionPolicy, PermissionPolicyError, PermissionPolicyErrorCode,
+    PermissionPolicySpec, PermissionReasonCode, PermissionRequestRef,
 };
 pub use scope_enforcement::{
     evaluate_scope, ScopeDecision, ScopeEvaluation, ScopePolicy, ScopePolicyError,
