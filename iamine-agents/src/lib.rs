@@ -1,9 +1,15 @@
+mod audit_events;
 mod identifiers;
 pub mod manifest;
 mod package_load;
 mod permission_enforcement;
 mod scope_enforcement;
 
+pub use audit_events::{
+    audit_lifecycle_state, audit_permission_evaluation, audit_scope_evaluation, AgentAuditEvent,
+    AuditEventClass, AuditEventSet, AuditEventSource, AuditLifecycleState, AuditOutcome,
+    AuditReasonCode, AUDIT_EVENT_SCHEMA_VERSION, MAX_AUDIT_EVENTS_PER_PROJECTION,
+};
 pub use manifest::{
     manifest_json_schema, parse_and_validate_yaml, validate_manifest, AgentMetadata,
     AgentPackageManifest, DistributionChannel, DistributionPolicy, ExecutionMode, InstallMode,
