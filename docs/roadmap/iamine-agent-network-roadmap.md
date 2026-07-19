@@ -353,7 +353,7 @@ node compatibility. It must not implement distributed model MoE.
 | AGENT-INPUT-OUTPUT-CONTRACT-001 | CLOSED | Define privacy-safe input and output boundaries. |
 | AGENT-SCOPE-ENFORCEMENT-001 | CLOSED | Implemented a typed fail-closed scope decision engine without package/runtime integration or execution authorization; merge `48cb6b2`, exact-tree field QA PASS on Mac, TS140, and four Proxmox guests, post-merge PASS WITH ACCEPTED BASELINE / ENVIRONMENT EXCEPTIONS. |
 | AGENT-PERMISSION-ENFORCEMENT-001 | CLOSED | Implemented a typed deny-by-default permission gate after Scope without package/runtime integration or execution authorization; implementation `11a1dfb`, merge `2a84543`, exact-tree field QA PASS on Mac, TS140, and four Proxmox guests, unrestricted post-merge quality gate PASS WITH WARNINGS. |
-| AGENT-AUDIT-EVENTS-001 | PROPOSED | Emit bounded, redacted lifecycle, scope, permission, refusal, and handoff evidence. |
+| AGENT-AUDIT-EVENTS-001 | ACTIVE | Implement bounded, redacted in-memory lifecycle, scope, permission, refusal, and handoff event projections without persistence or runtime authorization. |
 | AGENT-TIMEOUT-CANCEL-001 | CLOSED | Define timeout, cancellation, and cleanup expectations. |
 | AGENT-HANDOFF-POLICY-001 | CLOSED | Define handoff behavior to orchestrator or human operator. |
 | AGENT-OUT-OF-SCOPE-RESPONSE-001 | CLOSED | Define safe refusal, clarification, and out-of-scope responses. |
