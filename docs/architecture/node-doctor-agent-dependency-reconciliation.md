@@ -83,10 +83,11 @@ PubSub, model policy, inference, hardware profiling, persistence, installer,
 updater, registry storage, marketplace behavior, rewards, wallet, settlement,
 mainnet, or distributed model MoE behavior.
 
-## Closed Prerequisite
+## Closed Prerequisites
 
 ```text
 AGENT-PACKAGE-LOAD-GATE-001
+AGENT-SCOPE-ENFORCEMENT-001
 ```
 
 `AGENT-MANIFEST-PARSER-VALIDATOR-001` provides the root Rust types, YAML parser,
@@ -94,9 +95,12 @@ generated JSON Schema, validators, fixtures, and tests without package loading
 or execution. `AGENT-PACKAGE-LOAD-GATE-001` closed in merge `d56cbce`; it
 consumes that parser and emits only a typed blocked assessment until every
 referenced metadata validator and enforcement prerequisite is available.
+`AGENT-SCOPE-ENFORCEMENT-001` closed in merge `48cb6b2`; it adds a typed,
+fail-closed in-memory scope decision engine without authorizing package loading
+or runtime execution.
 
 The next unresolved runtime feature in canonical roadmap order is:
 
 ```text
-AGENT-SCOPE-ENFORCEMENT-001
+AGENT-PERMISSION-ENFORCEMENT-001
 ```

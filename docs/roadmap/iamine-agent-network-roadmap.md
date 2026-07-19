@@ -351,7 +351,7 @@ node compatibility. It must not implement distributed model MoE.
 | AGENT-RUNTIME-SANDBOX-001 | CLOSED | Define sandbox requirements before agent code can run. |
 | AGENT-EXECUTION-LIFECYCLE-001 | CLOSED | Define runtime transition rules without worker side effects. |
 | AGENT-INPUT-OUTPUT-CONTRACT-001 | CLOSED | Define privacy-safe input and output boundaries. |
-| AGENT-SCOPE-ENFORCEMENT-001 | ACTIVE | Implement a typed fail-closed scope decision engine; package/runtime integration and execution authorization remain blocked. |
+| AGENT-SCOPE-ENFORCEMENT-001 | CLOSED | Implemented a typed fail-closed scope decision engine without package/runtime integration or execution authorization; merge `48cb6b2`, exact-tree field QA PASS on Mac, TS140, and four Proxmox guests, post-merge PASS WITH ACCEPTED BASELINE / ENVIRONMENT EXCEPTIONS. |
 | AGENT-PERMISSION-ENFORCEMENT-001 | PROPOSED | Enforce deny-by-default permissions independently from scope and user confirmation. |
 | AGENT-AUDIT-EVENTS-001 | PROPOSED | Emit bounded, redacted lifecycle, scope, permission, refusal, and handoff evidence. |
 | AGENT-TIMEOUT-CANCEL-001 | CLOSED | Define timeout, cancellation, and cleanup expectations. |
@@ -535,7 +535,7 @@ does not authorize package loading or agent execution.
 The next unresolved runtime feature in canonical roadmap order is:
 
 ```text
-AGENT-SCOPE-ENFORCEMENT-001
+AGENT-PERMISSION-ENFORCEMENT-001
 ```
 
 Not all functional P0 agents should be implemented in parallel at the start.
