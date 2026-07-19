@@ -102,7 +102,17 @@ tree: 4c11938e613784af86e795e65eceb43ede488cfe
 cargo test -p iamine-agents: PASS, 46 tests
 ```
 
-Implementation checks completed so far:
+Exact implementation identity:
+
+```text
+branch: feature/agent-permission-enforcement-001
+commit: 11a1dfbbe4cf184634aca2e63def4909b40c7646
+tree: 6ca8261bf0ba423c2e6c712a9a2bdf58fe96135d
+merge base: 5e61fedc21cc67ef209a770f767e89d7c56ad592
+merge commit: 2a8454369307af75cbbf46f6b2dc324cd7b4ddb8
+```
+
+Implementation and local checks:
 
 ```text
 cargo check -p iamine-agents: PASS
@@ -116,6 +126,21 @@ scripts/quality-gate.sh: PASS WITH WARNINGS, required_failures=0
 git diff --check: PASS
 side-effect API scan: PASS, no matches
 ```
+
+Field QA on the exact implementation tree:
+
+| Platform | Focused tests | Clippy `-D warnings` | Git identity / cleanliness |
+| --- | --- | --- | --- |
+| Mac | PASS, 17/17 | PASS | exact commit and tree; clean |
+| Dell TS140 | PASS, 17/17 | PASS | exact commit and tree; isolated worktree clean |
+| `iamine-ctrl` | PASS, 17/17 | PASS | exact commit and tree; QA copy clean |
+| `iamine-wrk1` | PASS, 17/17 | PASS | exact commit and tree; QA copy clean |
+| `iamine-wrk2` | PASS, 17/17 | PASS | exact commit and tree; QA copy clean |
+| `iamine-heavy` | PASS, 17/17 | PASS | exact commit and tree; QA copy clean |
+
+The TS140 canonical copy and each Proxmox historical `CANDIDATE_2` retained
+their original branch, staged WAN work, untracked file list, and hashes. QA did
+not start a package loader, runtime, worker, P2P, model, inference, or service.
 
 Quality gate detail:
 
@@ -131,15 +156,30 @@ Quality gate detail:
 - workspace Clippy warnings are historical and occur only in unchanged crates;
 - `cargo audit`, `cargo deny`, and `gitleaks`: skipped, unavailable.
 
-Exact implementation commit identity, Architecture review, field QA, merge,
-and post-merge validation remain pending.
+Post-merge validation on merge `2a8454369307af75cbbf46f6b2dc324cd7b4ddb8`:
+
+- focused `iamine-agents`: PASS, 63/63;
+- focused permission tests and Clippy with warnings denied: PASS;
+- complete unrestricted quality gate: PASS WITH WARNINGS;
+- required failures: 0;
+- gate warnings: 0;
+- optional tools skipped: 3 (`cargo audit`, `cargo deny`, `gitleaks`);
+- repository, architecture, size, sensitive-file, and generated-artifact
+  guards: PASS.
+
+The first post-merge gate attempt ran in a restricted harness. Four real Metal
+inference tests returned unsuccessful results and the daemon socket test failed
+with `Operation not permitted`. Unrestricted focused reruns passed `59/59` and
+`1/1`; the unrestricted full gate then passed. The initial failures are
+classified as harness restrictions and were not reproduced as product defects.
 
 ## Recommendation Boundary
 
-QA may recommend:
+Final state after Architecture review, controlled merge, and post-merge
+validation:
 
 ```text
-READY FOR ARCHITECTURE MERGE REVIEW
+MERGED / VALIDATED / CLOSED
 ```
 
 QA must not treat a permission `Allow` decision as an operating-system grant,

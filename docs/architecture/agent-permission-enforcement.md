@@ -3,11 +3,15 @@
 ## State
 
 ```text
-LOCAL VALIDATION PASSED
+MERGED / VALIDATED / CLOSED
 branch: feature/agent-permission-enforcement-001
 base: 5e61fedc21cc67ef209a770f767e89d7c56ad592
 base tree: 4c11938e613784af86e795e65eceb43ede488cfe
-field QA: pending exact implementation commit
+implementation commit: 11a1dfbbe4cf184634aca2e63def4909b40c7646
+implementation tree: 6ca8261bf0ba423c2e6c712a9a2bdf58fe96135d
+merge commit: 2a8454369307af75cbbf46f6b2dc324cd7b4ddb8
+field QA: PASS on Mac, TS140, and four Proxmox guests
+post-merge quality gate: PASS WITH WARNINGS, required_failures=0
 ```
 
 ## Objective
@@ -177,6 +181,24 @@ future trusted package/runtime integration
 
 Audit events remain an independent gate and are the next feature in canonical
 roadmap order after this feature closes.
+
+## Closure Evidence
+
+The exact implementation commit and tree passed the 17 focused permission
+tests and Clippy with warnings denied on Mac, TS140, `iamine-ctrl`,
+`iamine-wrk1`, `iamine-wrk2`, and `iamine-heavy`. Every remote QA copy remained
+clean after validation, and the historical working copies with staged WAN work
+and local logs were preserved unchanged.
+
+The controlled merge preserved the implementation tree exactly. The complete
+post-merge quality gate passed outside the restricted sandbox with all required
+checks green. An earlier restricted run failed four real Metal inference tests
+and one daemon socket test; focused unrestricted reruns passed `59/59` and
+`1/1`, and the unrestricted complete gate did not reproduce either failure.
+Those results are classified as harness restrictions, not product regressions.
+
+This closure does not remove the package-load blockers or authorize agent
+execution. `AGENT-AUDIT-EVENTS-001` is the next unresolved runtime feature.
 
 ## Risks
 
