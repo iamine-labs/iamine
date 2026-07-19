@@ -3,10 +3,14 @@
 ## State
 
 ```text
-LOCAL VALIDATION PASSED
+MERGED / VALIDATED / CLOSED
 branch: feature/agent-scope-enforcement-001
 base: 435b391ccf9b3fd71c914426c09c4148f54252c7
-field QA: pending exact implementation commit
+implementation commit: 0a7201912b49da76b539a4b08158490c8a796320
+develop merge: 48cb6b28fd3401ffa05b520d8043ed6984e3f1e3
+implementation tree: c7f81846cfaa5a79d24c3542e397fb909cb1e744
+field QA: PASS on Mac, TS140, and four Proxmox/R5500 guests
+post-merge: PASS WITH ACCEPTED BASELINE / ENVIRONMENT EXCEPTIONS
 ```
 
 ## Objective
@@ -153,6 +157,20 @@ AGENT-PERMISSION-ENFORCEMENT-001
 AGENT-AUDIT-EVENTS-001
 future trusted package/runtime integration
 ```
+
+## Closure Evidence
+
+The exact implementation tree passed the focused `iamine-agents` tests and
+Clippy with warnings denied on Mac, TS140, `iamine-ctrl`, `iamine-wrk1`,
+`iamine-wrk2`, and `iamine-heavy`. The tree was preserved exactly by the
+controlled merge into `develop`.
+
+Post-merge validation reproduced the two unrelated broad-gate failure families
+on the exact base: real TinyLlama inference returned unsuccessful results under
+Metal, and the daemon test could not create its Unix socket in the restricted
+temporary environment. Neither failing path is owned or changed by this
+feature. Focused post-merge tests, Clippy, repository guards, and diff checks
+passed.
 
 Permission enforcement remains an independent gate and is the next feature in
 canonical roadmap order after this feature closes.

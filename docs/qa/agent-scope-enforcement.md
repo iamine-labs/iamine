@@ -100,7 +100,7 @@ tree: 53a7efc8a334b8cd07399d31ed2ccd973889bb86
 cargo test -p iamine-agents: PASS, 31 tests
 ```
 
-Implementation checks completed so far:
+Implementation and pre-merge checks:
 
 ```text
 cargo test -p iamine-agents --test scope_enforcement: PASS, 15 tests
@@ -128,8 +128,64 @@ Quality gate detail:
 - workspace Clippy warnings are historical and occur only in unchanged crates;
 - `cargo audit`, `cargo deny`, and `gitleaks`: skipped, unavailable.
 
-Exact implementation commit identity, field QA, final Architecture review,
-merge, and post-merge validation remain pending.
+Exact implementation identity:
+
+```text
+branch: feature/agent-scope-enforcement-001
+commit: 0a7201912b49da76b539a4b08158490c8a796320
+tree: c7f81846cfaa5a79d24c3542e397fb909cb1e744
+base: 435b391ccf9b3fd71c914426c09c4148f54252c7
+```
+
+Field QA results:
+
+- Mac, TS140, `iamine-ctrl`, `iamine-wrk1`, `iamine-wrk2`, and
+  `iamine-heavy` validated the exact implementation commit and tree;
+- `cargo test -p iamine-agents --test scope_enforcement`: PASS, 15 tests on
+  every platform;
+- `cargo clippy -p iamine-agents --all-targets -- -D warnings`: PASS on every
+  platform;
+- tracked worktree and staging remained clean on every disposable QA copy;
+- the TS140 canonical working copy and Proxmox `CANDIDATE_2` were not touched;
+- pre-existing untracked Proxmox evidence files were preserved with matching
+  before/after hashes;
+- the first TS140 invocation omitted Cargo from the non-interactive SSH `PATH`;
+  rerunning with the configured Cargo path passed and was classified as a
+  harness issue, not a product failure;
+- no runtime, worker, P2P, model, download, or inference path was started.
+
+Controlled merge identity:
+
+```text
+develop merge: 48cb6b28fd3401ffa05b520d8043ed6984e3f1e3
+tree: c7f81846cfaa5a79d24c3542e397fb909cb1e744
+source branch preserved: yes
+```
+
+Post-merge validation:
+
+- `cargo test -p iamine-agents`: PASS, 46 tests;
+- `cargo clippy -p iamine-agents --all-targets -- -D warnings`: PASS;
+- `git diff --check` and `git diff --cached --check`: PASS;
+- repository and architecture guards: PASS;
+- workspace Clippy: PASS with historical warnings in unchanged crates;
+- raw `scripts/quality-gate.sh`: FAIL, `required_failures=3`, because
+  `iamine-models` had 55 passes and 4 real TinyLlama/Metal failures,
+  `iamine-node` had 479 passes and 1 daemon-socket failure, and the workspace
+  suite repeated the model failures;
+- exact-base comparison at `435b391ccf9b3fd71c914426c09c4148f54252c7`
+  reproduced `test_real_inference` and `test_daemon_start_stop` with the same
+  failure signatures;
+- the implementation does not touch `iamine-models`, `iamine-node`, model
+  inference, daemon runtime, or Unix socket handling;
+- `cargo audit`, `cargo deny`, and `gitleaks`: skipped, unavailable.
+
+Post-merge QA classification:
+
+```text
+PASS WITH ACCEPTED BASELINE / ENVIRONMENT EXCEPTIONS
+MERGED / VALIDATED / CLOSED
+```
 
 ## Recommendation Boundary
 
