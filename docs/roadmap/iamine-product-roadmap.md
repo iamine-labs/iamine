@@ -108,9 +108,10 @@ metadata validators, policy reviews, compatibility decisions, and runtime
 enforcement gates are unavailable. It does not read package directories or
 authorize execution.
 
-`V0.11.2-EXECUTABLE-RUNTIME-PREREQUISITE-RECONCILIATION-001` is active to map
-those explicit blockers and the remaining architecture-only runtime claims to
-independently owned implementation features. It changes roadmap state only.
+`V0.11.2-EXECUTABLE-RUNTIME-PREREQUISITE-RECONCILIATION-001` closed in merge
+`2380baa` after mapping those explicit blockers and remaining
+architecture-only runtime claims to independently owned implementation
+features. It changed roadmap state only.
 
 The broader v0.9 operational stability claim still requires the operational
 target: 10-50 nodes, 3-10 operators, multiple physical networks, and two to
@@ -293,11 +294,11 @@ Examples already present in `develop` include:
 These features preserve the roadmap objective; they do not silently redefine
 release gates.
 
-Current corrective feature:
+Latest corrective feature:
 
 | Feature | State | Owner | Release impact |
 | --- | --- | --- | --- |
-| V0.11.2-EXECUTABLE-RUNTIME-PREREQUISITE-RECONCILIATION-001 | ACTIVE | Architecture / QA / roadmap | Blocks the next v0.11.2 implementation until all missing executable prerequisites have canonical IDs and order. |
+| V0.11.2-EXECUTABLE-RUNTIME-PREREQUISITE-RECONCILIATION-001 | CLOSED | Architecture / QA / roadmap | Registered the missing executable prerequisites and their canonical order; it did not authorize them in bulk. |
 
 ## Process Automation Backlog
 
