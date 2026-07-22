@@ -363,7 +363,8 @@ node compatibility. It must not implement distributed model MoE.
 
 `V0.11.2-EXECUTABLE-RUNTIME-PREREQUISITE-RECONCILIATION-001` records the
 implementation work still required by the closed contracts and the 19 static
-package-load blockers. It does not reopen those contracts or authorize any row.
+package-load blockers. It closed in merge `2380baa`; it does not reopen those
+contracts or authorize any row.
 
 Required implementation order:
 
