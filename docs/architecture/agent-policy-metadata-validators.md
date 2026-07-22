@@ -3,13 +3,16 @@
 ## State
 
 ```text
-READY FOR MERGE REVIEW
-branch: feature/agent-policy-metadata-validators-001
+MERGED / VALIDATED / CLOSED
+source branch: feature/agent-policy-metadata-validators-001
 base: 69e9f223924c0a41d90dd18e7585db475777a599
 base tree: 7283ccd59e7284185b9b1a0664e1e4262de4b992
+feature commit: 987bf269ea56627931abe9b00dad7df9487e9af4
+merge commit: 238dfe2140f82d5bdcf86403a6944c7fea87324c
+tree: a1dda4ddcd8f4133b8f1f74ddf30eb6f96b0307b
 runtime behavior change: none
 field QA: not required; pure in-memory parsing and validation only
-recommendation: READY FOR ARCHITECTURE MERGE REVIEW
+post-merge validation: passed
 ```
 
 ## Objective
