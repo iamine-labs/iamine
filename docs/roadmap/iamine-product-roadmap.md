@@ -345,9 +345,9 @@ AGENT-POLICY-METADATA-VALIDATORS-001
 -> V0.12.0-P0-OFFICIAL-AGENTS-MILESTONE-QA-001
 ```
 
-`AGENT-AUDIT-EVENTS-001` closed in merge `5a505d8`. The 19 implementation rows
-above are `PROPOSED`; their order is registered, but this reconciliation does
-not authorize them in bulk.
+`AGENT-POLICY-METADATA-VALIDATORS-001` closed in merge `238dfe2`. One of the 19
+implementation rows is now `CLOSED`; the remaining 18 stay `PROPOSED`. Their
+order is registered, but no later row is authorized in bulk.
 
 Each arrow still requires the complete canonical feature lifecycle. A roadmap
 position is not development authorization.

@@ -392,7 +392,7 @@ AGENT-POLICY-METADATA-VALIDATORS-001
 
 | Feature | State | Owner boundary |
 | --- | --- | --- |
-| AGENT-POLICY-METADATA-VALIDATORS-001 | PROPOSED | Scope, Permission, and Audit child-policy validators in separate `iamine-agents` modules. |
+| AGENT-POLICY-METADATA-VALIDATORS-001 | CLOSED | Scope, Permission, and Audit child-policy validators in separate `iamine-agents` modules; merged in `238dfe2`. |
 | AGENT-DESCRIPTIVE-METADATA-VALIDATORS-001 | PROPOSED | Capability, Expertise, and Resource child-metadata validators in separate `iamine-agents` modules. |
 | AGENT-BOUNDARY-EVAL-VALIDATOR-001 | PROPOSED | Typed positive and negative boundary eval validation in `iamine-agents`. |
 | AGENT-RUNTIME-CORE-001 | PROPOSED | Dedicated `iamine-agent-runtime` crate and owner-module boundaries; no execution. |
@@ -586,11 +586,11 @@ It consumes the root parser and emits only a typed blocked report while
 referenced metadata validators or enforcement gates remain unavailable. It
 does not authorize package loading or agent execution.
 
-`AGENT-AUDIT-EVENTS-001` closed in merge `5a505d8`. The next executable feature
-registered by the v0.11.2 reconciliation is:
+`AGENT-POLICY-METADATA-VALIDATORS-001` closed in merge `238dfe2`. The next
+executable feature registered by the v0.11.2 reconciliation is:
 
 ```text
-AGENT-POLICY-METADATA-VALIDATORS-001
+AGENT-DESCRIPTIVE-METADATA-VALIDATORS-001
 ```
 
 It remains `PROPOSED` until its own Architecture and development authorization
