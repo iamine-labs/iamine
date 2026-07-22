@@ -43,6 +43,20 @@ NODE-DOCTOR-EVIDENCE-PROVIDER-001
 Existing `CLOSED` labels for architecture-only contracts remain historically
 valid. They do not satisfy this executable gate by themselves.
 
+The implementation form of the runtime portion above is now registered by:
+
+```text
+V0.11.2-EXECUTABLE-RUNTIME-PREREQUISITE-RECONCILIATION-001
+-> 19 independently owned executable prerequisite features
+-> V0.11.2-AGENT-RUNTIME-BASELINE-MILESTONE-QA-001
+-> NODE-DOCTOR-EVIDENCE-PROVIDER-001
+```
+
+Functional Node Doctor implementation cannot start until that milestone gate
+closes. The exact 19-feature order lives in
+`docs/roadmap/iamine-agent-network-roadmap.md` and must not be collapsed into a
+single runtime or `iamine-node/src/main.rs` change.
+
 ## Evidence Provider Boundary
 
 `NODE-DOCTOR-EVIDENCE-PROVIDER-001` is an owner-module data interface, not an
@@ -106,8 +120,12 @@ Scope without removing package-load blockers or authorizing execution.
 deterministic in-memory evidence without persistence, package integration, or
 runtime authorization.
 
-The canonical roadmap does not yet name the next executable feature for the
-remaining v0.11.2 runtime prerequisites. Architecture reconciliation is
-required before implementation continues; the closed sandbox, lifecycle,
-input/output, timeout, handoff, out-of-scope, and routing contracts do not by
-themselves provide executable evidence.
+The next executable feature in canonical roadmap order is:
+
+```text
+AGENT-POLICY-METADATA-VALIDATORS-001
+```
+
+It remains `PROPOSED`. The closed sandbox, lifecycle, input/output, timeout,
+handoff, out-of-scope, and routing contracts still do not by themselves provide
+executable evidence.

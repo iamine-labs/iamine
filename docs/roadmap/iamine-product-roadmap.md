@@ -108,6 +108,10 @@ metadata validators, policy reviews, compatibility decisions, and runtime
 enforcement gates are unavailable. It does not read package directories or
 authorize execution.
 
+`V0.11.2-EXECUTABLE-RUNTIME-PREREQUISITE-RECONCILIATION-001` is active to map
+those explicit blockers and the remaining architecture-only runtime claims to
+independently owned implementation features. It changes roadmap state only.
+
 The broader v0.9 operational stability claim still requires the operational
 target: 10-50 nodes, 3-10 operators, multiple physical networks, and two to
 four weeks of stable operation.
@@ -289,6 +293,12 @@ Examples already present in `develop` include:
 These features preserve the roadmap objective; they do not silently redefine
 release gates.
 
+Current corrective feature:
+
+| Feature | State | Owner | Release impact |
+| --- | --- | --- | --- |
+| V0.11.2-EXECUTABLE-RUNTIME-PREREQUISITE-RECONCILIATION-001 | ACTIVE | Architecture / QA / roadmap | Blocks the next v0.11.2 implementation until all missing executable prerequisites have canonical IDs and order. |
+
 ## Process Automation Backlog
 
 Process features support delivery but do not count as product milestone
@@ -308,7 +318,25 @@ features.
 ## Immediate Sequence
 
 ```text
-remaining executable v0.11.2 runtime prerequisites
+AGENT-POLICY-METADATA-VALIDATORS-001
+-> AGENT-DESCRIPTIVE-METADATA-VALIDATORS-001
+-> AGENT-BOUNDARY-EVAL-VALIDATOR-001
+-> AGENT-RUNTIME-CORE-001
+-> AGENT-PACKAGE-REFERENCE-RESOLVER-001
+-> AGENT-PACKAGE-REVIEW-EVIDENCE-001
+-> AGENT-RUNTIME-COMPATIBILITY-GATE-001
+-> AGENT-INPUT-OUTPUT-ENFORCEMENT-001
+-> AGENT-RUNTIME-SANDBOX-ENFORCEMENT-001
+-> AGENT-EXECUTION-LIFECYCLE-ENGINE-001
+-> AGENT-TIMEOUT-CANCEL-ENFORCEMENT-001
+-> AGENT-HANDOFF-ENFORCEMENT-001
+-> AGENT-OUT-OF-SCOPE-RESPONSE-ENFORCEMENT-001
+-> AGENT-ROUTING-CANDIDATE-SELECTOR-001
+-> AGENT-AUDIT-EVENT-ENFORCEMENT-001
+-> AGENT-EXECUTION-AUTHORIZATION-001
+-> AGENT-PACKAGE-LOAD-EVIDENCE-INTEGRATION-001
+-> AGENT-PACKAGE-LOADER-001
+-> AGENT-RUNTIME-EXECUTOR-001
 -> V0.11.2-AGENT-RUNTIME-BASELINE-MILESTONE-QA-001
 -> NODE-DOCTOR-EVIDENCE-PROVIDER-001
 -> NODE-DOCTOR-AGENT-001
@@ -316,9 +344,9 @@ remaining executable v0.11.2 runtime prerequisites
 -> V0.12.0-P0-OFFICIAL-AGENTS-MILESTONE-QA-001
 ```
 
-`AGENT-AUDIT-EVENTS-001` closed in merge `5a505d8`. No subsequent executable
-feature ID is registered for the first line above; Architecture must reconcile
-and name the remaining prerequisite sequence before development continues.
+`AGENT-AUDIT-EVENTS-001` closed in merge `5a505d8`. The 19 implementation rows
+above are `PROPOSED`; their order is registered, but this reconciliation does
+not authorize them in bulk.
 
 Each arrow still requires the complete canonical feature lifecycle. A roadmap
 position is not development authorization.

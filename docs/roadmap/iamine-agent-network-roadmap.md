@@ -359,6 +359,58 @@ node compatibility. It must not implement distributed model MoE.
 | AGENT-OUT-OF-SCOPE-RESPONSE-001 | CLOSED | Define safe refusal, clarification, and out-of-scope responses. |
 | AGENT-ROUTING-CANDIDATE-SELECTION-001 | CLOSED | Define candidate selection inputs without distributed model MoE. |
 
+### Executable Completion Registry
+
+`V0.11.2-EXECUTABLE-RUNTIME-PREREQUISITE-RECONCILIATION-001` records the
+implementation work still required by the closed contracts and the 19 static
+package-load blockers. It does not reopen those contracts or authorize any row.
+
+Required implementation order:
+
+```text
+AGENT-POLICY-METADATA-VALIDATORS-001
+-> AGENT-DESCRIPTIVE-METADATA-VALIDATORS-001
+-> AGENT-BOUNDARY-EVAL-VALIDATOR-001
+-> AGENT-RUNTIME-CORE-001
+-> AGENT-PACKAGE-REFERENCE-RESOLVER-001
+-> AGENT-PACKAGE-REVIEW-EVIDENCE-001
+-> AGENT-RUNTIME-COMPATIBILITY-GATE-001
+-> AGENT-INPUT-OUTPUT-ENFORCEMENT-001
+-> AGENT-RUNTIME-SANDBOX-ENFORCEMENT-001
+-> AGENT-EXECUTION-LIFECYCLE-ENGINE-001
+-> AGENT-TIMEOUT-CANCEL-ENFORCEMENT-001
+-> AGENT-HANDOFF-ENFORCEMENT-001
+-> AGENT-OUT-OF-SCOPE-RESPONSE-ENFORCEMENT-001
+-> AGENT-ROUTING-CANDIDATE-SELECTOR-001
+-> AGENT-AUDIT-EVENT-ENFORCEMENT-001
+-> AGENT-EXECUTION-AUTHORIZATION-001
+-> AGENT-PACKAGE-LOAD-EVIDENCE-INTEGRATION-001
+-> AGENT-PACKAGE-LOADER-001
+-> AGENT-RUNTIME-EXECUTOR-001
+```
+
+| Feature | State | Owner boundary |
+| --- | --- | --- |
+| AGENT-POLICY-METADATA-VALIDATORS-001 | PROPOSED | Scope, Permission, and Audit child-policy validators in separate `iamine-agents` modules. |
+| AGENT-DESCRIPTIVE-METADATA-VALIDATORS-001 | PROPOSED | Capability, Expertise, and Resource child-metadata validators in separate `iamine-agents` modules. |
+| AGENT-BOUNDARY-EVAL-VALIDATOR-001 | PROPOSED | Typed positive and negative boundary eval validation in `iamine-agents`. |
+| AGENT-RUNTIME-CORE-001 | PROPOSED | Dedicated `iamine-agent-runtime` crate and owner-module boundaries; no execution. |
+| AGENT-PACKAGE-REFERENCE-RESOLVER-001 | PROPOSED | Bounded package-root I/O, containment, symlink, size, and privacy policy in the runtime crate. |
+| AGENT-PACKAGE-REVIEW-EVIDENCE-001 | PROPOSED | Typed local-registry, language, dependency, and human-review evidence. |
+| AGENT-RUNTIME-COMPATIBILITY-GATE-001 | PROPOSED | Runtime-language and resource compatibility decisions. |
+| AGENT-INPUT-OUTPUT-ENFORCEMENT-001 | PROPOSED | Bounded classified and redacted input/output enforcement. |
+| AGENT-RUNTIME-SANDBOX-ENFORCEMENT-001 | PROPOSED | Cross-platform sandbox restrictions, limits, and cleanup ownership. |
+| AGENT-EXECUTION-LIFECYCLE-ENGINE-001 | PROPOSED | Authoritative canonical-state transition engine. |
+| AGENT-TIMEOUT-CANCEL-ENFORCEMENT-001 | PROPOSED | Timers, cancellation, cleanup, and terminal evidence. |
+| AGENT-HANDOFF-ENFORCEMENT-001 | PROPOSED | Typed handoff dispatch without permission expansion. |
+| AGENT-OUT-OF-SCOPE-RESPONSE-ENFORCEMENT-001 | PROPOSED | Deterministic refusal, clarification, blocked, and handoff responses. |
+| AGENT-ROUTING-CANDIDATE-SELECTOR-001 | PROPOSED | Bounded agent candidate selection without distributed model MoE. |
+| AGENT-AUDIT-EVENT-ENFORCEMENT-001 | PROPOSED | Authoritative gate/lifecycle audit integration without authorization semantics. |
+| AGENT-EXECUTION-AUTHORIZATION-001 | PROPOSED | Final typed decision consuming all independent gates; no side effects. |
+| AGENT-PACKAGE-LOAD-EVIDENCE-INTEGRATION-001 | PROPOSED | Typed package-load assessment consuming non-forgeable owner evidence. |
+| AGENT-PACKAGE-LOADER-001 | PROPOSED | Load an eligible package through the bounded resolver; no execution. |
+| AGENT-RUNTIME-EXECUTOR-001 | PROPOSED | Execute only authorized loaded packages through every runtime owner. |
+
 Closure gate:
 
 ```text
@@ -368,9 +420,9 @@ state: PROPOSED / blocked
 
 The historical documentation-only v0.11.2 QA snapshot does not close the
 current expanded milestone. Scope enforcement, permission enforcement, and
-audit event boundaries now have executable validation evidence, but every
-remaining runtime claim still requires a named implementation feature and
-executable validation evidence before Architecture may authorize this gate.
+audit event boundaries now have executable validation evidence. Every row in
+the executable completion registry must close independently before Architecture
+may authorize the exhaustive milestone gate.
 
 ## v0.11.3 - Internal Agent Developer Bootstrap
 
@@ -533,11 +585,15 @@ It consumes the root parser and emits only a typed blocked report while
 referenced metadata validators or enforcement gates remain unavailable. It
 does not authorize package loading or agent execution.
 
-`AGENT-AUDIT-EVENTS-001` closed in merge `5a505d8`. The roadmap does not yet
-register a subsequent executable feature ID for the remaining v0.11.2 runtime
-prerequisites. Architecture must reconcile and name that sequence before more
-runtime development is authorized; an architecture-only `CLOSED` row is not
-executable evidence.
+`AGENT-AUDIT-EVENTS-001` closed in merge `5a505d8`. The next executable feature
+registered by the v0.11.2 reconciliation is:
+
+```text
+AGENT-POLICY-METADATA-VALIDATORS-001
+```
+
+It remains `PROPOSED` until its own Architecture and development authorization
+checks complete.
 
 Not all functional P0 agents should be implemented in parallel at the start.
 After every prerequisite gate above passes, `NODE-DOCTOR-AGENT-001` remains
