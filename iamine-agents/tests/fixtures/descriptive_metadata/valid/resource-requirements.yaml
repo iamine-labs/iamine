@@ -1,0 +1,56 @@
+schema: iamine.agent.resources.draft-0.1
+package_id: iamine.beta.node-doctor
+resource_profile_id: node_doctor_local_readonly_resources
+resource_profile_version: 0.1.0
+operating_modes:
+  - local_readonly
+cpu:
+  local_readonly:
+    min_logical_cores: 1
+    recommended_logical_cores: 2
+    max_background_threads: 1
+memory:
+  local_readonly:
+    min_ram_mb: 256
+    recommended_ram_mb: 512
+    max_working_set_mb: 512
+storage:
+  local_readonly:
+    package_size_mb: 20
+    temp_workspace_mb: 64
+    cache_budget_mb: 0
+network:
+  local_readonly:
+    mode: none
+    opens_ports: false
+    downloads_artifacts: false
+model_dependencies:
+  requires_model_download: false
+  requires_model_load: false
+  backend_class: none
+accelerators:
+  required: none
+  optional: []
+constraints:
+  runs_dynamic_hardware_probe: false
+  allows_unrestricted_filesystem: false
+  starts_background_download: false
+  loads_models: false
+  restarts_services: false
+  mutates_vm_or_container: false
+  starts_worker: false
+  overrides_scheduler: false
+  claims_runtime_priority: false
+degradation:
+  on_insufficient_resources: require_human_review
+privacy:
+  stores_raw_hardware_inventory: false
+  stores_permanent_hardware_fingerprint: false
+  stores_private_paths: false
+  stores_host_identifiers: false
+  stores_credentials: false
+review:
+  requires_human_review: true
+  self_approval_allowed: false
+  evidence:
+    - review/resource-review.md
