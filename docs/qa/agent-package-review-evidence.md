@@ -3,10 +3,12 @@
 ## State
 
 ```text
-FIELD QA AUTHORIZED
+READY FOR ARCHITECTURE MERGE REVIEW
 branch: feature/agent-package-review-evidence-001
 base: cfeec6f83e80b9a34a224cb1863d3e260d9f1e20
 base tree: 3e8fa823d9e06e80a4e49ead8d442e35bc271f39
+source commit: fbf1a8428f8095e80f37c22c293d0cbc2524602c
+source tree: f1c577bf14343207c29b2932c305711305f4f4ad
 ```
 
 ## Scope
@@ -59,12 +61,12 @@ Required because the runtime crate changes:
 
 | Host | Identity | Focused build/tests | Side effects | Result |
 | --- | --- | --- | --- | --- |
-| Mac | pending | pending | pending | pending |
-| TS140 | pending | pending | pending | pending |
-| iamine-ctrl | pending | pending | pending | pending |
-| iamine-wrk1 | pending | pending | pending | pending |
-| iamine-wrk2 | pending | pending | pending | pending |
-| iamine-heavy | pending | pending | pending | pending |
+| Mac | exact commit/tree/base | 18/18 | process count 0 -> 0; clean | PASS |
+| TS140 | exact commit/tree/base | 18/18 | process count 0 -> 0; canonical staged/untracked preserved | PASS |
+| iamine-ctrl | exact commit/tree/base | 18/18 | process count 0 -> 0; CANDIDATE_1 clean | PASS |
+| iamine-wrk1 | exact commit/tree/base | 18/18 | process count 0 -> 0; CANDIDATE_1 clean | PASS |
+| iamine-wrk2 | exact commit/tree/base | 18/18 | process count 0 -> 0; CANDIDATE_1 clean | PASS |
+| iamine-heavy | exact commit/tree/base | 18/18 | process count 0 -> 0; CANDIDATE_1 clean | PASS |
 
 QA must use the exact authorized source commit and stop on the first
 unclassified failure. Successful checks are not repeated unless commit, tree,
@@ -103,3 +105,37 @@ gitleaks: SKIPPED, unavailable
 The first implementation compile found one private-module import error. It was
 corrected before the validation ladder; no product behavior or contract changed
 as part of that correction.
+
+## Field QA Results
+
+```text
+hosts: 6/6 PASS
+runtime test executions: 108/108 PASS
+feature test executions: 36/36 PASS
+negative decision variant executions: 78/78 PASS
+product failures: 0
+environment failures: 0
+harness failures: 0
+iamine-node process changes: 0
+tracked/staged contamination: 0
+```
+
+TS140 canonical state was recorded before QA. Its existing eight staged feature
+files and every untracked artifact hash remained unchanged after QA. The
+feature ran from `/tmp/iamine-agent-package-review-evidence-qa` with an explicit
+Cargo path.
+
+Each Proxmox guest used the previously authorized clean `CANDIDATE_1` only to
+fetch the exact source ref and create an isolated detached worktree. The
+candidate remained clean. `CANDIDATE_2` was not inspected or modified.
+
+No test started or stopped `iamine-node`, loaded a model, opened a network
+runtime, installed a package, or changed package-load blockers.
+
+## QA Recommendation
+
+```text
+READY FOR ARCHITECTURE MERGE REVIEW
+```
+
+QA does not authorize merge. Architecture owns the final merge decision.

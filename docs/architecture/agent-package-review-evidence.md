@@ -3,13 +3,17 @@
 ## State
 
 ```text
-FIELD QA AUTHORIZED
+APPROVED FOR MERGE
 branch: feature/agent-package-review-evidence-001
 base: cfeec6f83e80b9a34a224cb1863d3e260d9f1e20
 base tree: 3e8fa823d9e06e80a4e49ead8d442e35bc271f39
+source commit: fbf1a8428f8095e80f37c22c293d0cbc2524602c
+source tree: f1c577bf14343207c29b2932c305711305f4f4ad
 runtime behavior change: passive in-memory review evidence
 local validation: passed
 architecture checkpoint: passed
+field QA: passed on Mac, TS140, and Proxmox/R5500
+final architecture review: passed
 ```
 
 ## Objective
@@ -180,3 +184,23 @@ Architecture notes one required integration invariant for later consumers:
 they must verify evidence against the operator-configured authority. Accepting
 an authority supplied alongside package content would discard the provenance
 boundary and is forbidden.
+
+## Final Architecture Review
+
+```text
+exact source identity: PASS
+local validation and quality gate: PASS
+Mac field QA: PASS
+TS140 field QA: PASS
+Proxmox/R5500 field QA: PASS, 4/4 guests
+canonical remote work preservation: PASS
+runtime side effects: none observed
+product failures: none
+merge conflicts evaluated: pending merge owner
+decision: APPROVED FOR MERGE
+```
+
+The source establishes an in-memory evidence type but keeps load and execution
+false. The existing static package-load blockers remain unchanged. No package
+filesystem value, manifest self-claim, or caller-selected authority can replace
+verification against the operator-configured authority.
