@@ -4,4 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+cap-fs-ext = "4.0.2"
+cap-std = "4.0.2"
 iamine-agents = { path = "../iamine-agents" }
+
+[dev-dependencies]
+tempfile = "3.27"
