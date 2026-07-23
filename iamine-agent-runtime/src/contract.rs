@@ -9,14 +9,16 @@ use iamine_agents::AgentPackageManifest;
 #[derive(Clone, Copy)]
 #[must_use]
 pub struct DeclaredAgentPackage<'a> {
-    _manifest: &'a AgentPackageManifest,
+    manifest: &'a AgentPackageManifest,
 }
 
 impl<'a> DeclaredAgentPackage<'a> {
     pub const fn from_manifest(manifest: &'a AgentPackageManifest) -> Self {
-        Self {
-            _manifest: manifest,
-        }
+        Self { manifest }
+    }
+
+    pub(crate) fn same_manifest(self, other: Self) -> bool {
+        std::ptr::eq(self.manifest, other.manifest)
     }
 }
 

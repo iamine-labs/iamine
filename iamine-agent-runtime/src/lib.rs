@@ -5,6 +5,7 @@ mod limits;
 mod owner;
 mod reference;
 mod resolver;
+mod review_evidence;
 
 pub use contract::DeclaredAgentPackage;
 pub use error::{ResolverError, ResolverErrorCode};
@@ -19,3 +20,9 @@ pub use limits::{
 pub use owner::{RuntimeOwner, RuntimeOwnerState, RuntimeOwnerStatus};
 pub use reference::{PackageReferenceKind, ResolvedPackageReferences, ResolvedReference};
 pub use resolver::PackageReferenceResolver;
+pub use review_evidence::{
+    DependencyPolicyReviewDecision, HumanReviewDecision, LanguagePolicyReviewDecision,
+    LocalRegistryReviewDecision, PackageReviewAuthority, PackageReviewDecisions,
+    PackageReviewEvidence, PackageReviewEvidenceStatus, PackageReviewRequirement,
+    PackageReviewSubject, ReviewEvidenceError, ReviewEvidenceErrorCode,
+};
