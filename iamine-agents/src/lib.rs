@@ -1,4 +1,5 @@
 mod audit_events;
+mod boundary_eval;
 mod descriptive_metadata;
 mod identifiers;
 pub mod manifest;
@@ -12,6 +13,14 @@ pub use audit_events::{
     audit_lifecycle_state, audit_permission_evaluation, audit_scope_evaluation, AgentAuditEvent,
     AuditEventClass, AuditEventSet, AuditEventSource, AuditLifecycleState, AuditOutcome,
     AuditReasonCode, AUDIT_EVENT_SCHEMA_VERSION, MAX_AUDIT_EVENTS_PER_PROJECTION,
+};
+pub use boundary_eval::{
+    boundary_eval_json_schema, parse_boundary_eval_yaml, BoundaryBlockPolicy, BoundaryEvalCase,
+    BoundaryEvalClass, BoundaryEvalError, BoundaryEvalErrorCode, BoundaryEvalReview,
+    BoundaryEvalRoute, BoundaryEvalSuite, BoundaryEvalViolation, BoundaryEvalViolationCode,
+    BoundaryEvalViolations, BoundaryExpectedAction, BoundaryFailurePolicy,
+    BoundaryForbiddenSuccesses, BoundaryRedactionPolicy, BOUNDARY_EVAL_SCHEMA_ID,
+    MAX_BOUNDARY_EVAL_BYTES,
 };
 pub use descriptive_metadata::{
     capability_metadata_json_schema, expertise_metadata_json_schema,
