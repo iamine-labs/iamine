@@ -153,3 +153,44 @@ Field harness findings:
 
 These were environment or harness blockers. No product failure was observed
 and no source code changed during field QA.
+
+## Controlled Merge And Post-Merge Validation
+
+```text
+source closeout: 77342969c7561ecd461d83c8a51396e51ab1c9a1
+target: develop
+merge: c013f10f267ea13451ea205b8cb3a56b9ac12246
+merged tree: 6084e7b3ea05df19471ec96292d7b7bc0e75a35f
+merge conflicts: none
+runtime behavior changed after field QA: no
+```
+
+Post-merge results:
+
+- `cargo test -p iamine-agent-runtime`: PASS, 12 tests
+- strict `iamine-agent-runtime` clippy: PASS
+- repository and architecture guards: PASS
+- format and diff checks: PASS
+- `cargo test -p iamine-network`: PASS
+- `cargo build -p iamine-node`: PASS
+- workspace clippy: PASS with historical warnings
+- `cargo audit`, `cargo deny`, and `gitleaks`: SKIPPED, unavailable
+- full quality gate: FAIL with accepted baseline/environment exceptions
+
+Failure classification:
+
+| Failure | Base comparison | Classification |
+| --- | --- | --- |
+| Four TinyLlama integration assertions returned unsuccessful generated output | `origin/develop` reproduced `test_real_inference`; `iamine-models` diff is empty | stochastic baseline |
+| Daemon Unix socket returned `Operation not permitted` | `origin/develop` reproduced it inside the sandbox; merge passed outside the sandbox | harness restriction |
+| Workspace command repeated the four TinyLlama failures | same unchanged model test surface | stochastic baseline |
+
+No resolver failure occurred. Architecture accepted these explicit exceptions
+without changing unrelated model, daemon, or test code.
+
+Final state:
+
+```text
+MERGED / VALIDATED / CLOSED
+next feature: AGENT-PACKAGE-REVIEW-EVIDENCE-001 (PROPOSED)
+```

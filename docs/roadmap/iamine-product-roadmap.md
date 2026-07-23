@@ -345,9 +345,10 @@ AGENT-POLICY-METADATA-VALIDATORS-001
 -> V0.12.0-P0-OFFICIAL-AGENTS-MILESTONE-QA-001
 ```
 
-`AGENT-RUNTIME-CORE-001` closed in merge `5bcbcf4`. Four of the 19
-implementation rows are now `CLOSED`; the remaining 15 stay `PROPOSED`.
-Their order is registered, but no later row is authorized in bulk.
+`AGENT-PACKAGE-REFERENCE-RESOLVER-001` closed in merge `c013f10`. Five of the
+19 implementation rows are now `CLOSED`; the remaining 14 stay `PROPOSED`.
+`AGENT-PACKAGE-REVIEW-EVIDENCE-001` is next. Their order is registered, but no
+later row is authorized in bulk.
 
 Each arrow still requires the complete canonical feature lifecycle. A roadmap
 position is not development authorization.
