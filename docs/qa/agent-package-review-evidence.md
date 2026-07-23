@@ -3,12 +3,16 @@
 ## State
 
 ```text
-READY FOR ARCHITECTURE MERGE REVIEW
+MERGED / VALIDATED / CLOSED
 branch: feature/agent-package-review-evidence-001
 base: cfeec6f83e80b9a34a224cb1863d3e260d9f1e20
 base tree: 3e8fa823d9e06e80a4e49ead8d442e35bc271f39
 source commit: fbf1a8428f8095e80f37c22c293d0cbc2524602c
 source tree: f1c577bf14343207c29b2932c305711305f4f4ad
+QA evidence commit: 63f9e8d73c82066be3d1c04093b8d67fd636e109
+QA evidence tree: fe77ce05e2ed4ebb626c3f0cb7aea15b074b636c
+merge commit: ad1d2816f17e6d725e153ab38b3107eb810c1431
+merge tree: fe77ce05e2ed4ebb626c3f0cb7aea15b074b636c
 ```
 
 ## Scope
@@ -139,3 +143,28 @@ READY FOR ARCHITECTURE MERGE REVIEW
 ```
 
 QA does not authorize merge. Architecture owns the final merge decision.
+
+## Post-Merge Validation
+
+The controlled merge completed without conflicts. `origin/develop`, the local
+integration HEAD, and merge commit `ad1d281` resolved to tree
+`fe77ce05e2ed4ebb626c3f0cb7aea15b074b636c`.
+
+```text
+scripts/quality-gate.sh: PASS WITH WARNINGS
+cargo test --workspace: PASS, 990/990
+cargo test -p iamine-models: PASS, 158/158
+cargo test -p iamine-network: PASS, 167/167
+cargo test -p iamine-node: PASS, 480/480
+cargo build -p iamine-node: PASS
+cargo clippy --workspace --all-targets: PASS with historical warnings
+git diff --check: PASS
+architecture and repository guards: PASS
+required failures: 0
+cargo audit: SKIPPED, unavailable
+cargo deny: SKIPPED, unavailable
+gitleaks: SKIPPED, unavailable
+```
+
+The feature is `MERGED / VALIDATED / CLOSED`. Its evidence does not authorize
+package loading or execution.

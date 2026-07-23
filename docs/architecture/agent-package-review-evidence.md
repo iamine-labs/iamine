@@ -3,17 +3,22 @@
 ## State
 
 ```text
-APPROVED FOR MERGE
+MERGED / VALIDATED / CLOSED
 branch: feature/agent-package-review-evidence-001
 base: cfeec6f83e80b9a34a224cb1863d3e260d9f1e20
 base tree: 3e8fa823d9e06e80a4e49ead8d442e35bc271f39
 source commit: fbf1a8428f8095e80f37c22c293d0cbc2524602c
 source tree: f1c577bf14343207c29b2932c305711305f4f4ad
+QA evidence commit: 63f9e8d73c82066be3d1c04093b8d67fd636e109
+QA evidence tree: fe77ce05e2ed4ebb626c3f0cb7aea15b074b636c
+merge commit: ad1d2816f17e6d725e153ab38b3107eb810c1431
+merge tree: fe77ce05e2ed4ebb626c3f0cb7aea15b074b636c
 runtime behavior change: passive in-memory review evidence
 local validation: passed
 architecture checkpoint: passed
 field QA: passed on Mac, TS140, and Proxmox/R5500
 final architecture review: passed
+post-merge validation: passed
 ```
 
 ## Objective
@@ -196,11 +201,31 @@ Proxmox/R5500 field QA: PASS, 4/4 guests
 canonical remote work preservation: PASS
 runtime side effects: none observed
 product failures: none
-merge conflicts evaluated: pending merge owner
-decision: APPROVED FOR MERGE
+merge conflicts evaluated: none
+decision: MERGED / VALIDATED / CLOSED
 ```
 
 The source establishes an in-memory evidence type but keeps load and execution
 false. The existing static package-load blockers remain unchanged. No package
 filesystem value, manifest self-claim, or caller-selected authority can replace
 verification against the operator-configured authority.
+
+## Closure
+
+The controlled no-fast-forward merge landed in `develop` as `ad1d281`. Its
+tree is identical to the reviewed QA evidence tree. Post-merge validation
+passed the full quality gate with no required failures:
+
+```text
+cargo test --workspace: PASS, 990/990
+cargo test -p iamine-models: PASS, 158/158
+cargo test -p iamine-network: PASS, 167/167
+cargo test -p iamine-node: PASS, 480/480
+cargo build -p iamine-node: PASS
+cargo clippy --workspace --all-targets: PASS with historical warnings
+required failures: 0
+optional tools skipped: cargo audit, cargo deny, gitleaks
+```
+
+The next independent executable feature is
+`AGENT-RUNTIME-COMPATIBILITY-GATE-001`.

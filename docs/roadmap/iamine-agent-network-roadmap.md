@@ -397,7 +397,7 @@ AGENT-POLICY-METADATA-VALIDATORS-001
 | AGENT-BOUNDARY-EVAL-VALIDATOR-001 | CLOSED | Typed fail-closed boundary eval declarations in dedicated `iamine-agents` modules; merged in `329d1da`. |
 | AGENT-RUNTIME-CORE-001 | CLOSED | Dedicated fail-closed `iamine-agent-runtime` foundation and typed owner boundaries; merged in `5bcbcf4`. |
 | AGENT-PACKAGE-REFERENCE-RESOLVER-001 | CLOSED | Bounded capability-relative package I/O with traversal, symlink, hardlink, size, race, and privacy controls; merged in `c013f10`. |
-| AGENT-PACKAGE-REVIEW-EVIDENCE-001 | PROPOSED | Typed local-registry, language, dependency, and human-review evidence. |
+| AGENT-PACKAGE-REVIEW-EVIDENCE-001 | CLOSED | Typed authority-bound local-registry, language, dependency, and human-review evidence; merged in `ad1d281`. |
 | AGENT-RUNTIME-COMPATIBILITY-GATE-001 | PROPOSED | Runtime-language and resource compatibility decisions. |
 | AGENT-INPUT-OUTPUT-ENFORCEMENT-001 | PROPOSED | Bounded classified and redacted input/output enforcement. |
 | AGENT-RUNTIME-SANDBOX-ENFORCEMENT-001 | PROPOSED | Cross-platform sandbox restrictions, limits, and cleanup ownership. |
@@ -586,16 +586,16 @@ It consumes the root parser and emits only a typed blocked report while
 referenced metadata validators or enforcement gates remain unavailable. It
 does not authorize package loading or agent execution.
 
-`AGENT-PACKAGE-REFERENCE-RESOLVER-001` closed in merge `c013f10`. The next
+`AGENT-PACKAGE-REVIEW-EVIDENCE-001` closed in merge `ad1d281`. The next
 executable feature registered by the v0.11.2 reconciliation is:
 
 ```text
-AGENT-PACKAGE-REVIEW-EVIDENCE-001
+AGENT-RUNTIME-COMPATIBILITY-GATE-001
 ```
 
 It remains `PROPOSED` until its own Architecture and development authorization
-checks complete. Five of the 19 implementation rows are now `CLOSED`; the
-remaining 14 stay `PROPOSED`.
+checks complete. Six of the 19 implementation rows are now `CLOSED`; the
+remaining 13 stay `PROPOSED`.
 
 Not all functional P0 agents should be implemented in parallel at the start.
 After every prerequisite gate above passes, `NODE-DOCTOR-AGENT-001` remains
