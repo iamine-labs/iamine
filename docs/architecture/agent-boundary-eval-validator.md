@@ -3,14 +3,17 @@
 ## State
 
 ```text
-READY FOR MERGE REVIEW
-branch: feature/agent-boundary-eval-validator-001
+MERGED / VALIDATED / CLOSED
+source branch: feature/agent-boundary-eval-validator-001
 base: 20c070c75dadc80febc2494c85eadd03138f0c59
 base tree: 3c2d0e04423c63c796af6163eb6fc58a1742fdf6
+feature commits: 3a3db1724ce5a7ed20dc55b50741b8e2e4562a89, 6b31746b135366bc486464ee86b9296190a63328
+merge commit: 329d1dafd4c28ea6a6914a0d31303befba79e864
+tree: 0164e22629f5897743511005798ebef4098d220a
 runtime behavior change: none
 field QA: not required; pure in-memory declaration validation only
-quality gate: PASS WITH WARNINGS
-recommendation: READY FOR ARCHITECTURE MERGE REVIEW
+quality gate: PASS WITH ACCEPTED BASELINE EXCEPTIONS
+post-merge validation: passed
 ```
 
 ## Objective

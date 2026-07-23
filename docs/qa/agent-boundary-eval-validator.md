@@ -3,9 +3,12 @@
 ## Identity
 
 ```text
-branch: feature/agent-boundary-eval-validator-001
+source branch: feature/agent-boundary-eval-validator-001
 base: 20c070c75dadc80febc2494c85eadd03138f0c59
 base tree: 3c2d0e04423c63c796af6163eb6fc58a1742fdf6
+feature commits: 3a3db1724ce5a7ed20dc55b50741b8e2e4562a89, 6b31746b135366bc486464ee86b9296190a63328
+merge commit: 329d1dafd4c28ea6a6914a0d31303befba79e864
+tree: 0164e22629f5897743511005798ebef4098d220a
 tracked clean before implementation: yes
 staging clean before implementation: yes
 untracked baseline before implementation: empty
@@ -71,17 +74,19 @@ cargo fmt --all -- --check: PASS
 boundary eval tests: PASS, 13/13
 iamine-agents regression: PASS, 109/109
 iamine-agents clippy with -D warnings: PASS
-quality gate required checks: PASS
-cargo test -p iamine-models: PASS, 158/158
+feature pre-merge quality gate: PASS WITH WARNINGS, required_failures 0
+feature pre-merge cargo test -p iamine-models: PASS, 158/158
 cargo test -p iamine-network: PASS, 167/167
 cargo test -p iamine-node: PASS, 480/480
 cargo build -p iamine-node: PASS
 cargo test --workspace: PASS
 cargo clippy --workspace --all-targets: PASS with historical warnings
 git diff --check: PASS
-quality gate result: PASS WITH WARNINGS
-quality gate required_failures: 0
-quality gate warnings: 0
+post-merge cargo test -p iamine-models: BASELINE EXCEPTION, 55/59
+base cargo test -p iamine-models: identical result, 55/59
+post-merge daemon socket test outside sandbox: PASS, 1/1
+post-merge focused feature validation: PASS
+quality gate result: PASS WITH ACCEPTED BASELINE EXCEPTIONS
 largest new Rust owner module: validation.rs, 385 lines
 main.rs: 4929 lines, delta 0
 cluster_registry.rs: 862 lines, delta 0
@@ -95,6 +100,19 @@ import, deprecation, argument-count, and type-complexity warnings in
 the feature diff. The focused `iamine-agents` Clippy run with warnings denied
 passed, so these warnings are classified as historical baseline and not as a
 new regression.
+
+A post-merge quality-gate run reproduced four TinyLlama/Metal integration
+failures in `test_concurrency_limit`, `test_inference_queue`,
+`test_real_inference`, and `test_token_streaming`. The exact base commit,
+executed with the same model and target environment, produced the same `55/59`
+result and the same four failures. The feature does not modify
+`iamine-models`, `iamine-node`, model loading, or inference, so these failures
+are accepted as a baseline environment/model-output exception.
+
+The same gate encountered an `EPERM` socket-creation failure in
+`daemon_runtime::tests::test_daemon_start_stop` under the restricted sandbox.
+The exact test passed `1/1` outside that sandbox on the merged tree. This is
+classified as a harness environment exception, not a product regression.
 
 A first pre-push integration gate exposed a harness visibility gap: while the
 test file was untracked, the new-marker guard did not include it in its Git
@@ -140,8 +158,11 @@ Proxmox/R5500 field QA becomes mandatory when a later feature resolves package
 paths, executes evals, integrates trusted review evidence, or starts runtime
 behavior.
 
-## Recommendation
+## Post-Merge Result
 
 ```text
-READY FOR ARCHITECTURE MERGE REVIEW
+MERGED / VALIDATED / CLOSED
+develop merge: 329d1dafd4c28ea6a6914a0d31303befba79e864
+tree: 0164e22629f5897743511005798ebef4098d220a
+next feature: AGENT-RUNTIME-CORE-001 (PROPOSED)
 ```

@@ -123,10 +123,10 @@ runtime authorization.
 The next executable feature in canonical roadmap order is:
 
 ```text
-AGENT-BOUNDARY-EVAL-VALIDATOR-001
+AGENT-RUNTIME-CORE-001
 ```
 
-`AGENT-DESCRIPTIVE-METADATA-VALIDATORS-001` closed in merge `b2ae7f2`; the next
-feature remains `PROPOSED`. The closed metadata, sandbox, lifecycle,
+`AGENT-BOUNDARY-EVAL-VALIDATOR-001` closed in merge `329d1da`; the next feature
+remains `PROPOSED`. The closed metadata, sandbox, lifecycle,
 input/output, timeout, handoff, out-of-scope, and routing contracts still do
 not by themselves provide executable evidence.
