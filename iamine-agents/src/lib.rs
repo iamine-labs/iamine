@@ -1,6 +1,8 @@
 mod audit_events;
+mod descriptive_metadata;
 mod identifiers;
 pub mod manifest;
+mod metadata_parser;
 mod package_load;
 mod permission_enforcement;
 mod policy_metadata;
@@ -10,6 +12,21 @@ pub use audit_events::{
     audit_lifecycle_state, audit_permission_evaluation, audit_scope_evaluation, AgentAuditEvent,
     AuditEventClass, AuditEventSet, AuditEventSource, AuditLifecycleState, AuditOutcome,
     AuditReasonCode, AUDIT_EVENT_SCHEMA_VERSION, MAX_AUDIT_EVENTS_PER_PROJECTION,
+};
+pub use descriptive_metadata::{
+    capability_metadata_json_schema, expertise_metadata_json_schema,
+    parse_capability_metadata_yaml, parse_expertise_metadata_yaml,
+    parse_resource_requirements_yaml, resource_requirements_json_schema, AcceleratorClass,
+    AcceleratorRequirements, CapabilityExecutionMode, CapabilityMetadata, CapabilityReview,
+    CapabilityRiskProfile, CpuRequirements, DescriptiveMetadataError, DescriptiveMetadataErrorCode,
+    DescriptiveMetadataViolation, DescriptiveMetadataViolationCode, DescriptiveMetadataViolations,
+    ExpertiseEvaluationRequirement, ExpertiseEvidence, ExpertiseEvidenceType, ExpertiseFreshness,
+    ExpertiseMetadata, ExpertiseReview, ExpertiseStaleBehavior, MemoryRequirements,
+    ModelDependencies, NetworkMode, NetworkRequirements, ResourceConstraints, ResourceDegradation,
+    ResourceDegradationBehavior, ResourceOperatingMode, ResourcePrivacy,
+    ResourceRequirementsMetadata, ResourceReview, StorageRequirements,
+    CAPABILITY_METADATA_SCHEMA_ID, EXPERTISE_METADATA_SCHEMA_ID, MAX_DESCRIPTIVE_METADATA_BYTES,
+    RESOURCE_REQUIREMENTS_SCHEMA_ID,
 };
 pub use manifest::{
     manifest_json_schema, parse_and_validate_yaml, validate_manifest, AgentMetadata,
