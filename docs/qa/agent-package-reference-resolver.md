@@ -92,7 +92,8 @@ No code changes are allowed during field QA.
 ```text
 implementation: complete
 local validation: passed
-field QA: pending
+field QA: passed
+recommendation: READY FOR ARCHITECTURE MERGE REVIEW
 ```
 
 Local evidence before the source commit:
@@ -115,5 +116,40 @@ Historical `dead_code`, unused Solana client, `too_many_arguments`, and
 `type_complexity` warnings remain outside this feature. Strict clippy for the
 new runtime crate is clean.
 
-Mac, TS140, and Proxmox/R5500 field results remain pending until an immutable
-source commit and tree are available.
+Field identity:
+
+```text
+commit: 47b0d3ecbb599b81cc8e97129f275028a8d87176
+tree: 7f6c42373df9781046ae1fefceddee293bcaec74
+base: c018e4a25aa054c23f2f5818f0f946eace47922f
+branch: feature/agent-package-reference-resolver-001
+```
+
+Field results:
+
+| Environment | Build | Adversarial tests | Side effects | Result |
+| --- | --- | ---: | --- | --- |
+| Mac | PASS | 8/8 | none observed | PASS |
+| TS140 | PASS | 8/8 | none observed | PASS |
+| iamine-ctrl | PASS | 8/8 | none observed | PASS |
+| iamine-wrk1 | PASS | 8/8 | none observed | PASS |
+| iamine-wrk2 | PASS | 8/8 | none observed | PASS |
+| iamine-heavy | PASS | 8/8 | none observed | PASS |
+
+Every environment preserved tracked/staged/untracked state after testing,
+cleaned its isolated temporary fixtures, and kept IAMINE process, service, and
+state snapshots unchanged.
+
+Field harness findings:
+
+- The TS140 canonical copy contained staged work for another feature. QA
+  stopped before synchronization and resumed in an isolated worktree; all 8
+  staged and 34 untracked artifacts remained untouched.
+- TS140 non-login SSH did not expose Cargo on `PATH`. QA stopped before build,
+  confirmed the existing toolchain, and resumed with `~/.cargo/bin` explicit.
+- The initial assumed Proxmox repository path was absent. QA stopped before
+  fetch, rediscovered the previously authorized clean CANDIDATE_1, and used it
+  on all four guests. CANDIDATE_2 was not touched.
+
+These were environment or harness blockers. No product failure was observed
+and no source code changed during field QA.
