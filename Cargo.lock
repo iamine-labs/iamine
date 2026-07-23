@@ -2528,6 +2528,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "iamine-agent-runtime"
+version = "0.1.0"
+dependencies = [
+ "iamine-agents",
+]
+
+[[package]]
 name = "iamine-agents"
 version = "0.1.0"
 dependencies = [
