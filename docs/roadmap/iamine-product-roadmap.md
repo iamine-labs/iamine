@@ -345,8 +345,8 @@ AGENT-POLICY-METADATA-VALIDATORS-001
 -> V0.12.0-P0-OFFICIAL-AGENTS-MILESTONE-QA-001
 ```
 
-`AGENT-BOUNDARY-EVAL-VALIDATOR-001` closed in merge `329d1da`. Three of the 19
-implementation rows are now `CLOSED`; the remaining 16 stay `PROPOSED`.
+`AGENT-RUNTIME-CORE-001` closed in merge `5bcbcf4`. Four of the 19
+implementation rows are now `CLOSED`; the remaining 15 stay `PROPOSED`.
 Their order is registered, but no later row is authorized in bulk.
 
 Each arrow still requires the complete canonical feature lifecycle. A roadmap

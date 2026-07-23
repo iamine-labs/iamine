@@ -3,14 +3,17 @@
 ## State
 
 ```text
-READY FOR MERGE REVIEW
-branch: feature/agent-runtime-core-001
+MERGED / VALIDATED / CLOSED
+source branch: feature/agent-runtime-core-001
 base: bcec6f5c806fae11cc40a9b3f049f3e029a512ec
 base tree: a8d1650d41c75536f8720f12814408a77d2915c7
+feature commit: f74076f98f72be71dbbb8712c440839b30747821
+merge commit: 5bcbcf47137dafebf377d3d3a18aa3284258c239
+tree: cedf58eb5accc0a30ba816599073173fa2135546
 runtime behavior change: none
 field QA: not required; passive in-memory foundation only
 quality gate: PASS WITH WARNINGS
-recommendation: READY FOR ARCHITECTURE MERGE REVIEW
+post-merge validation: passed
 ```
 
 ## Objective
