@@ -181,8 +181,8 @@ Failure classification:
 
 | Failure | Base comparison | Classification |
 | --- | --- | --- |
-| Four TinyLlama integration assertions returned unsuccessful generated output | `origin/develop` reproduced `test_real_inference`; `iamine-models` diff is empty | stochastic baseline |
-| Daemon Unix socket returned `Operation not permitted` | `origin/develop` reproduced it inside the sandbox; merge passed outside the sandbox | harness restriction |
+| Four TinyLlama integration assertions returned unsuccessful generated output | Exact base `c018e4a` reproduced `test_real_inference`; `iamine-models` diff is empty | stochastic baseline |
+| Daemon Unix socket returned `Operation not permitted` | Exact base `c018e4a` reproduced it inside the sandbox; merge passed outside the sandbox | harness restriction |
 | Workspace command repeated the four TinyLlama failures | same unchanged model test surface | stochastic baseline |
 
 No resolver failure occurred. Architecture accepted these explicit exceptions

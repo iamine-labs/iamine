@@ -162,11 +162,12 @@ feature.
 
 Architecture accepted the post-merge result because:
 
-- `origin/develop` reproduced `test_real_inference` with the same
+- the exact base `c018e4a25aa054c23f2f5818f0f946eace47922f`
+  reproduced `test_real_inference` with the same
   `result.success == false` assertion;
 - both base and merge have an empty diff for all `iamine-models` files;
-- `origin/develop` reproduced the daemon socket `Operation not permitted`
-  failure inside the sandbox;
+- the exact base reproduced the daemon socket `Operation not permitted` failure
+  inside the sandbox;
 - the daemon test passed on the merge when executed outside that sandbox;
 - repository, architecture, format, diff, network, build, and clippy checks
   passed;
