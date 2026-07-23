@@ -96,6 +96,14 @@ the feature diff. The focused `iamine-agents` Clippy run with warnings denied
 passed, so these warnings are classified as historical baseline and not as a
 new regression.
 
+A first pre-push integration gate exposed a harness visibility gap: while the
+test file was untracked, the new-marker guard did not include it in its Git
+diff. Once committed, the guard correctly reported test-only `expect` and
+`panic` markers. The test suite was refactored to propagate typed test errors,
+then passed `13/13`, focused Clippy with warnings denied, and a direct marker
+scan with no matches. The first local integration merge was not pushed and was
+superseded by a fresh merge from `origin/develop`.
+
 Optional tools:
 
 ```text
