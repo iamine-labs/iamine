@@ -1,0 +1,7 @@
+[package]
+name = "iamine-agent-runtime"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+iamine-agents = { path = "../iamine-agents" }
