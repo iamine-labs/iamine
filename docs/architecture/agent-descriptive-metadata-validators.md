@@ -3,14 +3,17 @@
 ## State
 
 ```text
-READY FOR MERGE REVIEW
-branch: feature/agent-descriptive-metadata-validators-001
+MERGED / VALIDATED / CLOSED
+source branch: feature/agent-descriptive-metadata-validators-001
 base: 4d854add37f11329bcb5519b32db3ab5cdeca07b
 base tree: c3fdd27e9246516ff6b0fff398651063becfcafa
+feature commit: ee8bd3baef2c95e8371397f64b2fd68d3000dce1
+merge commit: b2ae7f2a3bb9f142541402346e6fe22be272f18b
+tree: 942b69451487349ed4314c3e05ecb0e021a89cbc
 runtime behavior change: none
 field QA: not required; pure in-memory parsing and validation only
 quality gate: PASS WITH ACCEPTED HARNESS EXCEPTION
-recommendation: READY FOR ARCHITECTURE MERGE REVIEW
+post-merge validation: passed
 ```
 
 ## Objective
