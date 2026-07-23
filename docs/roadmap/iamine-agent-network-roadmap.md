@@ -396,7 +396,7 @@ AGENT-POLICY-METADATA-VALIDATORS-001
 | AGENT-DESCRIPTIVE-METADATA-VALIDATORS-001 | CLOSED | Capability, Expertise, and Resource child-metadata validators in separate `iamine-agents` modules; merged in `b2ae7f2`. |
 | AGENT-BOUNDARY-EVAL-VALIDATOR-001 | CLOSED | Typed fail-closed boundary eval declarations in dedicated `iamine-agents` modules; merged in `329d1da`. |
 | AGENT-RUNTIME-CORE-001 | CLOSED | Dedicated fail-closed `iamine-agent-runtime` foundation and typed owner boundaries; merged in `5bcbcf4`. |
-| AGENT-PACKAGE-REFERENCE-RESOLVER-001 | PROPOSED | Bounded package-root I/O, containment, symlink, size, and privacy policy in the runtime crate. |
+| AGENT-PACKAGE-REFERENCE-RESOLVER-001 | CLOSED | Bounded capability-relative package I/O with traversal, symlink, hardlink, size, race, and privacy controls; merged in `c013f10`. |
 | AGENT-PACKAGE-REVIEW-EVIDENCE-001 | PROPOSED | Typed local-registry, language, dependency, and human-review evidence. |
 | AGENT-RUNTIME-COMPATIBILITY-GATE-001 | PROPOSED | Runtime-language and resource compatibility decisions. |
 | AGENT-INPUT-OUTPUT-ENFORCEMENT-001 | PROPOSED | Bounded classified and redacted input/output enforcement. |
@@ -586,15 +586,16 @@ It consumes the root parser and emits only a typed blocked report while
 referenced metadata validators or enforcement gates remain unavailable. It
 does not authorize package loading or agent execution.
 
-`AGENT-RUNTIME-CORE-001` closed in merge `5bcbcf4`. The next
+`AGENT-PACKAGE-REFERENCE-RESOLVER-001` closed in merge `c013f10`. The next
 executable feature registered by the v0.11.2 reconciliation is:
 
 ```text
-AGENT-PACKAGE-REFERENCE-RESOLVER-001
+AGENT-PACKAGE-REVIEW-EVIDENCE-001
 ```
 
 It remains `PROPOSED` until its own Architecture and development authorization
-checks complete.
+checks complete. Five of the 19 implementation rows are now `CLOSED`; the
+remaining 14 stay `PROPOSED`.
 
 Not all functional P0 agents should be implemented in parallel at the start.
 After every prerequisite gate above passes, `NODE-DOCTOR-AGENT-001` remains

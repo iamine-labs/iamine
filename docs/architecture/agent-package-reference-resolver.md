@@ -3,14 +3,18 @@
 ## State
 
 ```text
-APPROVED FOR MERGE
+MERGED / VALIDATED / CLOSED
 branch: feature/agent-package-reference-resolver-001
 base: c018e4a25aa054c23f2f5818f0f946eace47922f
 base tree: 94a3a734e8d79b287af093765ccd0f9043487d0d
 source commit: 47b0d3ecbb599b81cc8e97129f275028a8d87176
 source tree: 7f6c42373df9781046ae1fefceddee293bcaec74
+QA closeout commit: 77342969c7561ecd461d83c8a51396e51ab1c9a1
+merge commit: c013f10f267ea13451ea205b8cb3a56b9ac12246
+merged tree: 6084e7b3ea05df19471ec96292d7b7bc0e75a35f
 runtime behavior change: bounded package filesystem reads
 field QA: passed on Mac, TS140, and Proxmox/R5500
+post-merge validation: accepted with explicit baseline exceptions
 ```
 
 ## Objective
@@ -148,3 +152,26 @@ untrusted bounded bytes and does not parse them, establish review evidence,
 change the package-load blockers, or authorize execution. The source commit
 received exact-identity field coverage on macOS and Linux before this
 documentation-only closeout.
+
+## Post-Merge Architecture Decision
+
+The integrated resolver passed 12 crate tests and strict crate clippy. The full
+quality gate reported failures in four stochastic TinyLlama inference
+assertions and one daemon socket test. None of those files changed in this
+feature.
+
+Architecture accepted the post-merge result because:
+
+- `origin/develop` reproduced `test_real_inference` with the same
+  `result.success == false` assertion;
+- both base and merge have an empty diff for all `iamine-models` files;
+- `origin/develop` reproduced the daemon socket `Operation not permitted`
+  failure inside the sandbox;
+- the daemon test passed on the merge when executed outside that sandbox;
+- repository, architecture, format, diff, network, build, and clippy checks
+  passed;
+- the resolver passed every local and field assertion without source changes
+  after QA.
+
+These are accepted baseline/environment exceptions, not hidden passes. They
+remain maintenance inputs outside this feature's ownership.
