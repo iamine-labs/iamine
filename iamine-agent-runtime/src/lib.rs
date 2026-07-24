@@ -6,6 +6,7 @@ mod owner;
 mod reference;
 mod resolver;
 mod review_evidence;
+mod runtime_compatibility;
 
 pub use contract::DeclaredAgentPackage;
 pub use error::{ResolverError, ResolverErrorCode};
@@ -25,4 +26,12 @@ pub use review_evidence::{
     LocalRegistryReviewDecision, PackageReviewAuthority, PackageReviewDecisions,
     PackageReviewEvidence, PackageReviewEvidenceStatus, PackageReviewRequirement,
     PackageReviewSubject, ReviewEvidenceError, ReviewEvidenceErrorCode,
+};
+pub use runtime_compatibility::{
+    RuntimeCompatibilityAuthority, RuntimeCompatibilityConfigurationError,
+    RuntimeCompatibilityConfigurationErrorCode, RuntimeCompatibilityError,
+    RuntimeCompatibilityErrorCode, RuntimeCompatibilityEvidence,
+    RuntimeCompatibilityEvidenceStatus, RuntimeCompatibilityRequirement,
+    RuntimeLanguageAvailability, RuntimeLanguageDecision, RuntimeLanguageMode,
+    RuntimeNetworkAvailability, RuntimeResourceEnvelope,
 };

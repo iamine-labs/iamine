@@ -17,6 +17,10 @@ impl<'a> DeclaredAgentPackage<'a> {
         Self { manifest }
     }
 
+    pub(crate) const fn manifest(self) -> &'a AgentPackageManifest {
+        self.manifest
+    }
+
     pub(crate) fn same_manifest(self, other: Self) -> bool {
         std::ptr::eq(self.manifest, other.manifest)
     }

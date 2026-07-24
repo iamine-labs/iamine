@@ -28,6 +28,14 @@ impl<'a> PackageReviewSubject<'a> {
         self.references.total_bytes()
     }
 
+    pub(crate) const fn package(self) -> DeclaredAgentPackage<'a> {
+        self.package
+    }
+
+    pub(crate) const fn references(self) -> &'a ResolvedPackageReferences {
+        self.references
+    }
+
     pub(crate) fn same_as(self, other: Self) -> bool {
         self.package.same_manifest(other.package) && std::ptr::eq(self.references, other.references)
     }
