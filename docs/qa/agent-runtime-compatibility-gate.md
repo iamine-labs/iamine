@@ -3,13 +3,13 @@
 ## State
 
 ```text
-FIELD QA AUTHORIZED
+READY FOR ARCHITECTURE MERGE REVIEW
 branch: feature/agent-runtime-compatibility-gate-001
 base: a83e08effdb5c67ec8a0ac411f7c489fb44f466e
 base tree: 884b6f921094fbc4e41fad5484ae304b11437311
-source commit: pending
-source tree: pending
-field QA: pending
+source commit: 933f15fa41395fe4d18bd8cc4b4c7a3fe95dea7e
+source tree: 5182dd9faab77d4b943d1b20b18f9536b2f34c3f
+field QA: passed, 6/6 hosts
 ```
 
 ## Scope
@@ -102,21 +102,54 @@ and no Clippy diagnostic from changed source preceded the storage error.
 
 | Host | Identity | Focused tests | Side effects | Result |
 | --- | --- | --- | --- | --- |
-| Mac | exact commit/tree/base | pending | process count and worktree | pending |
-| TS140 | exact commit/tree/base | pending | canonical state preservation | pending |
-| iamine-ctrl | exact commit/tree/base | pending | CANDIDATE_1 preservation | pending |
-| iamine-wrk1 | exact commit/tree/base | pending | CANDIDATE_1 preservation | pending |
-| iamine-wrk2 | exact commit/tree/base | pending | CANDIDATE_1 preservation | pending |
-| iamine-heavy | exact commit/tree/base | pending | CANDIDATE_1 preservation | pending |
+| Mac | exact commit/tree/base | 25/25 | clean; current process count 0 | PASS |
+| TS140 | exact commit/tree/base | 25/25 | process 0 -> 0; canonical staged/untracked preserved | PASS |
+| iamine-ctrl | exact commit/tree/base | 25/25 | process 0 -> 0; CANDIDATE_1 clean | PASS |
+| iamine-wrk1 | exact commit/tree/base | 25/25 | process 0 -> 0; CANDIDATE_1 clean | PASS |
+| iamine-wrk2 | exact commit/tree/base | 25/25 | process 0 -> 0; CANDIDATE_1 clean | PASS |
+| iamine-heavy | exact commit/tree/base | 25/25 | process 0 -> 0; CANDIDATE_1 clean | PASS |
 
 QA must use the exact source commit and stop at the first unclassified failure.
 Successful checks are not repeated unless commit, tree, scope, or Architecture
 direction changes.
 
+## Field QA Results
+
+```text
+hosts: 6/6 PASS
+runtime test executions: 150/150 PASS
+feature test executions: 42/42 PASS
+product failures: 0
+environment findings: 1 classified
+harness findings: 2 classified
+iamine-node process changes on remotes: 0
+tracked/staged contamination: 0
+```
+
+Mac used the exact clean source commit with a shared temporary Cargo target.
+The app sandbox prevented the initial process-list read, then an escalated
+read confirmed zero `iamine-node` processes after the test. The focused tests
+do not spawn the node binary.
+
+TS140 QA used
+`/tmp/iamine-agent-runtime-compatibility-gate-qa-933f15f`. The first command
+stopped before tests because the non-login SSH shell did not load Cargo.
+Loading `$HOME/.cargo/env` corrected the harness and the exact checkout passed.
+The canonical `/home/ts140/iamine` branch, HEAD, tree, eight staged files, and
+every untracked artifact hash remained unchanged.
+
+Each Proxmox guest used an isolated checkout with the exact source commit.
+The authorized `CANDIDATE_1` remained clean at its original commit and tree.
+`CANDIDATE_2` was not inspected or modified.
+
+No test started or stopped `iamine-node`, inspected real hardware, loaded a
+model, opened a network runtime, installed a package, or changed package-load
+blockers.
+
 ## QA Recommendation
 
 ```text
-FIELD QA AUTHORIZED
+READY FOR ARCHITECTURE MERGE REVIEW
 ```
 
 QA does not authorize merge. Architecture owns the final merge decision.
