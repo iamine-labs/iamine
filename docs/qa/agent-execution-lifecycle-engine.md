@@ -3,13 +3,13 @@
 ## State
 
 ```text
-FIELD QA AUTHORIZED
+READY FOR MERGE REVIEW
 branch: feature/agent-execution-lifecycle-engine-001
 base: 0db1c0930c73655a75c2111599d32b24f08f58ef
 base tree: 10f5845272a4f4558f3dfaccf0d7abbf03f21e4a
-source commit: pending
-source tree: pending
-field QA: pending on Mac, TS140, and Proxmox/R5500
+source commit: 9520bf244695daa790a4c0119f75312a64dc8379
+source tree: 23648aa6264866ea4927d960eba3c2977fe9fa91
+field QA: passed, 6/6 hosts
 ```
 
 ## Scope
@@ -52,7 +52,8 @@ audit-emission, Cargo dependency, or static blocker behavior may change.
    closed without mutation.
 6. Confirm records bind the exact lifecycle authority, package subject,
    sandbox authority, sandbox evidence, and execution identity.
-7. Run the focused lifecycle suite on Mac, TS140, and four Proxmox guests.
+7. Run the focused lifecycle suite on macOS, one physical Linux host, and four
+   Linux VM guests.
 8. Confirm no `iamine-node` process, socket, timer, persistent state, package
    load, model load, worker, or network runtime is created by field QA.
 
@@ -113,19 +114,47 @@ checks, and the full quality gate all passed afterward.
 
 | Host | Exact identity | Focused tests | Side effects | Result |
 | --- | --- | --- | --- | --- |
-| Mac | pending source commit/tree/base | pending | pending | PENDING |
-| TS140 | pending source commit/tree/base | pending | pending | PENDING |
-| iamine-ctrl | pending source commit/tree/base | pending | pending | PENDING |
-| iamine-wrk1 | pending source commit/tree/base | pending | pending | PENDING |
-| iamine-wrk2 | pending source commit/tree/base | pending | pending | PENDING |
-| iamine-heavy | pending source commit/tree/base | pending | pending | PENDING |
-
-## Current Recommendation
+| macOS development host | source commit/tree/base | 9/9 | process 0 -> 0; worktree clean | PASS |
+| physical Linux host | source commit/tree/base | 9/9 | process 0 -> 0; isolated worktree clean | PASS |
+| Linux VM guest 1 | source commit/tree/base | 9/9 | process 0 -> 0; selected copy clean | PASS |
+| Linux VM guest 2 | source commit/tree/base | 9/9 | process 0 -> 0; selected copy clean | PASS |
+| Linux VM guest 3 | source commit/tree/base | 9/9 | process 0 -> 0; selected copy clean | PASS |
+| Linux VM guest 4 | source commit/tree/base | 9/9 | process 0 -> 0; selected copy clean | PASS |
 
 ```text
-CREATE SOURCE COMMIT
-PUSH AUTHORIZATION REQUIRED
-FIELD QA PENDING
+hosts: 6/6 PASS
+feature test executions: 54/54 PASS
+product failures: 0
+environment findings: 0
+harness findings: 2 classified
+iamine-node process changes: 0
+tracked/staged/untracked contamination in QA copies: 0
 ```
 
-QA does not authorize merge.
+The macOS app sandbox initially denied process-list inspection. The same check
+ran outside the app sandbox before and after the focused suite and confirmed
+zero matching `iamine-node` processes.
+
+The physical Linux host's canonical copy retained historical staged work and
+local artifacts, so QA preserved it unchanged. A detached temporary worktree
+was created from the exact remote source commit with an isolated Cargo target.
+It remained clean after the focused suite.
+
+Each Linux VM guest used its preselected clean QA copy. The feature ref was
+fetched explicitly, a tracking branch was created without force, and the
+exact source commit, tree, and base were verified before testing. Historical
+copies with preserved work were not modified.
+
+The focused suite creates only isolated Cargo build output. It does not start
+`iamine-node`, open a product runtime, register a timer, load a package or
+model, activate a sandbox, dispatch a handoff, persist lifecycle state, or
+emit product audit events.
+
+## QA Recommendation
+
+```text
+READY FOR ARCHITECTURE MERGE REVIEW
+```
+
+QA does not authorize merge. Final Architecture review owns the merge
+decision.

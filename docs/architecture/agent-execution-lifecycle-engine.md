@@ -3,13 +3,13 @@
 ## State
 
 ```text
-FIELD QA AUTHORIZED
+ARCHITECTURE REVIEW REQUIRED
 branch: feature/agent-execution-lifecycle-engine-001
 base: 0db1c0930c73655a75c2111599d32b24f08f58ef
 base tree: 10f5845272a4f4558f3dfaccf0d7abbf03f21e4a
 local validation: passed
 runtime behavior change: authoritative in-memory lifecycle records
-field QA: required on Mac, TS140, and Proxmox/R5500
+field QA: passed on macOS, physical Linux, and four Linux VM guests
 ```
 
 ## Objective
@@ -236,8 +236,8 @@ Local validation:
 Field QA:
 
 - Mac validates the in-memory state engine on the macOS build;
-- TS140 validates the same contract on Linux/x86_64;
-- four Proxmox guests validate Linux VM/cgroup environments;
+- one physical Linux/x86_64 host validates the same contract;
+- four Linux VM guests validate VM/cgroup environments;
 - every host confirms no `iamine-node` process, socket, persistent file,
   package load, model load, worker, timer, or network runtime is created.
 
@@ -262,6 +262,6 @@ process, timer, socket, or sandbox startup: forbidden
 package-load blocker change: forbidden
 field QA: required
 decision: DEVELOPMENT AUTHORIZED
-checkpoint: ARCHITECTURE REVIEW PASSED
-next state: FIELD QA AUTHORIZED
+checkpoint: FIELD QA PASSED
+next state: ARCHITECTURE REVIEW REQUIRED
 ```
