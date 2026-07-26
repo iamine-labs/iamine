@@ -6,8 +6,10 @@
 LOCAL VALIDATION PASSED
 FIELD QA PASSED
 APPROVED FOR MERGE
+MERGED / VALIDATED / CLOSED
 final Architecture review: PASS
-merge: pending
+merge: 2dbb7602a113bc37312cd4c2651a7081a3de6abe
+post-merge validation: PASS
 ```
 
 ## Identity
@@ -18,6 +20,8 @@ base: 740ef674213cc892e349169c75dbd8eeb2086b20
 base tree: 92c993e549491a0c43d9705cf46a1eeb20c7489c
 source commit: 98256990a3c50c8eb594b630263aefb71a1ddd0f
 source tree: 8750700df1cf82dfb41ca2396f2ef9488060a902
+merge commit: 2dbb7602a113bc37312cd4c2651a7081a3de6abe
+merge tree: 7942138557858685c474b1ab2e00c2c2fb78af26
 ```
 
 ## Expected Scope
@@ -200,6 +204,12 @@ main.rs: 4929 lines, delta 0
 cluster_registry.rs: 862 lines, delta 0
 largest new production module: 623 lines
 Cargo changes: none
+post-merge focused runtime tests: PASS, 62/62
+post-merge agent tests: PASS, 109/109
+post-merge quality gate: PASS WITH WARNINGS
+post-merge required failures: 0
+post-merge gate warnings: 0
+post-merge optional tools skipped: 3
 ```
 
 ## Current Result
@@ -212,5 +222,7 @@ field QA: PASS, six platform roles
 product failures: none
 harness findings: one corrected login-shell environment issue
 final Architecture review: PASS
-recommendation: APPROVED FOR MERGE
+merge: 2dbb7602a113bc37312cd4c2651a7081a3de6abe
+post-merge validation: PASS
+recommendation: MERGED / VALIDATED / CLOSED
 ```

@@ -10,11 +10,16 @@ LOCAL VALIDATION PASSED
 FIELD QA AUTHORIZED
 FIELD QA PASSED
 APPROVED FOR MERGE
+MERGED
+POST-MERGE VALIDATION
+MERGED / VALIDATED / CLOSED
 branch: feature/agent-timeout-cancel-enforcement-001
 base: 740ef674213cc892e349169c75dbd8eeb2086b20
 base tree: 92c993e549491a0c43d9705cf46a1eeb20c7489c
 source commit: 98256990a3c50c8eb594b630263aefb71a1ddd0f
 source tree: 8750700df1cf82dfb41ca2396f2ef9488060a902
+merge commit: 2dbb7602a113bc37312cd4c2651a7081a3de6abe
+merge tree: 7942138557858685c474b1ab2e00c2c2fb78af26
 runtime behavior change: bounded in-memory timeout and cancellation enforcement
 execution availability change: none
 ```
@@ -258,7 +263,10 @@ filesystem mutation or persistence: forbidden
 execution authorization: false
 package-load blocker change: forbidden
 field QA: required
-decision: APPROVED FOR MERGE
+decision: MERGED / VALIDATED / CLOSED
 checkpoint: FIELD QA PASSED
-recommendation: APPROVED FOR MERGE
+post-merge quality gate: PASS WITH WARNINGS
+required failures: 0
+optional tools skipped: 3
+recommendation: CLOSED
 ```

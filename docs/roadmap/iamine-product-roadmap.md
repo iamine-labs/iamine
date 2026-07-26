@@ -345,12 +345,12 @@ AGENT-POLICY-METADATA-VALIDATORS-001
 -> V0.12.0-P0-OFFICIAL-AGENTS-MILESTONE-QA-001
 ```
 
-`AGENT-EXECUTION-LIFECYCLE-ENGINE-001` closed in merge `827ceb7`.
-Ten of the 19 implementation rows are now `CLOSED`.
-`AGENT-TIMEOUT-CANCEL-ENFORCEMENT-001` is active at
-`APPROVED FOR MERGE` after Architecture, implementation, local validation,
-exact-tree field QA, and final Architecture review. The remaining eight rows
-stay `PROPOSED`; no later row is authorized in bulk.
+`AGENT-TIMEOUT-CANCEL-ENFORCEMENT-001` closed in merge `2dbb760` after
+Architecture, implementation, local validation, exact-tree field QA, final
+Architecture review, and post-merge validation. Eleven of the 19 implementation
+rows are now `CLOSED`. The next sequential row,
+`AGENT-HANDOFF-ENFORCEMENT-001`, and the other seven rows stay `PROPOSED`; no
+later row is authorized in bulk.
 
 Each arrow still requires the complete canonical feature lifecycle. A roadmap
 position is not development authorization.
