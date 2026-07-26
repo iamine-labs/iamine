@@ -400,7 +400,7 @@ AGENT-POLICY-METADATA-VALIDATORS-001
 | AGENT-PACKAGE-REVIEW-EVIDENCE-001 | CLOSED | Typed authority-bound local-registry, language, dependency, and human-review evidence; merged in `ad1d281`. |
 | AGENT-RUNTIME-COMPATIBILITY-GATE-001 | CLOSED | Typed authority-bound runtime-language and resource compatibility evidence; merged in `40a9a80`, exact-tree field QA PASS on Mac, TS140, and four Proxmox guests. |
 | AGENT-INPUT-OUTPUT-ENFORCEMENT-001 | CLOSED | Typed authority-bound, per-record operator-attested bounded input/output enforcement; merged in `1ec2938`, local and post-merge QA PASS; field QA not required for this in-memory boundary. |
-| AGENT-RUNTIME-SANDBOX-ENFORCEMENT-001 | PROPOSED | Cross-platform sandbox restrictions, limits, and cleanup ownership. |
+| AGENT-RUNTIME-SANDBOX-ENFORCEMENT-001 | CLOSED | Typed platform-bound sandbox restriction and cleanup plan; merged in `54e4721`, exact-tree field QA PASS on Mac, TS140, and four Proxmox guests. No active OS sandbox is claimed. |
 | AGENT-EXECUTION-LIFECYCLE-ENGINE-001 | PROPOSED | Authoritative canonical-state transition engine. |
 | AGENT-TIMEOUT-CANCEL-ENFORCEMENT-001 | PROPOSED | Timers, cancellation, cleanup, and terminal evidence. |
 | AGENT-HANDOFF-ENFORCEMENT-001 | PROPOSED | Typed handoff dispatch without permission expansion. |
@@ -586,16 +586,16 @@ It consumes the root parser and emits only a typed blocked report while
 referenced metadata validators or enforcement gates remain unavailable. It
 does not authorize package loading or agent execution.
 
-`AGENT-INPUT-OUTPUT-ENFORCEMENT-001` closed in merge `1ec2938`. The next
+`AGENT-RUNTIME-SANDBOX-ENFORCEMENT-001` closed in merge `54e4721`. The next
 executable feature registered by the v0.11.2 reconciliation is:
 
 ```text
-AGENT-RUNTIME-SANDBOX-ENFORCEMENT-001
+AGENT-EXECUTION-LIFECYCLE-ENGINE-001
 ```
 
 It remains `PROPOSED` until its own Architecture and development authorization
-checks complete. Eight of the 19 implementation rows are now `CLOSED`; the
-remaining 11 stay `PROPOSED`.
+checks complete. Nine of the 19 implementation rows are now `CLOSED`; the
+remaining 10 stay `PROPOSED`.
 
 Not all functional P0 agents should be implemented in parallel at the start.
 After every prerequisite gate above passes, `NODE-DOCTOR-AGENT-001` remains

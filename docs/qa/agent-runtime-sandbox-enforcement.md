@@ -3,13 +3,18 @@
 ## State
 
 ```text
-READY FOR MERGE REVIEW
+MERGED / VALIDATED / CLOSED
 branch: feature/agent-runtime-sandbox-enforcement-001
 base: c97dcf66047683e99937a05ebd2b63b8349a5195
 base tree: c118fe9a35fc589d186d3dd1e55b9158b47b748f
 source commit: 0a57870873adfef716a56904aa84e92913bc3dbb
 source tree: 41f7dc8c7e5f78c91204878130dd89412325f675
+QA evidence commit: 875be7f5665d1423f311352397c22e30f3fb9861
+QA evidence tree: fee769843370d8e760ec8fd8f65cd53c5dff4fbc
+merge commit: 54e4721f89b4b5cc8bf697c8c29834ccaf3a26a4
+merge tree: fee769843370d8e760ec8fd8f65cd53c5dff4fbc
 field QA: passed, 6/6 hosts
+post-merge: PASS WITH ACCEPTED BASELINE / ENVIRONMENT EXCEPTIONS
 ```
 
 ## Scope
@@ -150,3 +155,51 @@ READY FOR ARCHITECTURE MERGE REVIEW
 
 QA does not authorize merge. Final Architecture review owns the merge
 decision.
+
+## Post-Merge Validation
+
+The controlled merge completed without conflicts. The merge tree is identical
+to the approved QA evidence tree.
+
+```text
+cargo fmt --all -- --check: PASS
+cargo test -p iamine-agent-runtime: PASS, 42/42
+cargo test -p iamine-agents: PASS, 109/109
+cargo clippy -p iamine-agent-runtime --all-targets -- -D warnings: PASS
+git diff --check: PASS
+scripts/quality-gate.sh: FAIL, required_failures=3
+cargo test -p iamine-network: PASS, 167/167
+cargo build -p iamine-node: PASS
+cargo clippy --workspace --all-targets: PASS with historical warnings
+cargo audit: SKIPPED, unavailable
+cargo deny: SKIPPED, unavailable
+gitleaks: SKIPPED, unavailable
+```
+
+The three broad command failures are accepted baseline or environment
+exceptions:
+
+1. `iamine-models` failed `test_concurrency_limit`, `test_inference_queue`,
+   `test_real_inference`, and `test_token_streaming` under the real Metal
+   backend. The exact base reproduced the same four failures with `55/59`
+   integration tests passing.
+2. The `iamine-models` subtree object, workspace `Cargo.toml`, and `Cargo.lock`
+   are identical between base and merge. `iamine-node` does not depend on
+   `iamine-agent-runtime`.
+3. The workspace command repeated the same four model failures and stopped
+   before completing the remaining workspace binaries.
+4. `iamine-node` passed `479/480` tests inside the app sandbox. Its only
+   failure was `daemon_runtime::tests::test_daemon_start_stop`, where creation
+   of the temporary Unix socket was denied. The exact test passed `1/1`
+   outside the sandbox.
+5. The daemon source blob is identical between base and merge. No changed
+   source participated in either failure family.
+
+No sandbox-enforcement, runtime-compatibility, input/output, package-review,
+scope, permission, package-load, node, network, scheduler, model, or execution
+behavior regressed because of this feature. Final Architecture classification:
+
+```text
+PASS WITH ACCEPTED BASELINE / ENVIRONMENT EXCEPTIONS
+MERGED / VALIDATED / CLOSED
+```
