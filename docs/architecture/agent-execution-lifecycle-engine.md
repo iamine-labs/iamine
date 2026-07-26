@@ -3,13 +3,18 @@
 ## State
 
 ```text
-ARCHITECTURE REVIEW REQUIRED
+MERGED / VALIDATED / CLOSED
 branch: feature/agent-execution-lifecycle-engine-001
 base: 0db1c0930c73655a75c2111599d32b24f08f58ef
 base tree: 10f5845272a4f4558f3dfaccf0d7abbf03f21e4a
+source commit: 9520bf244695daa790a4c0119f75312a64dc8379
+QA evidence commit: 1a01308648fa6a5ab7c3a962e22efd62c9d10d1a
+merge commit: 827ceb7eecfbdac4908f17f7128279a791ed095f
+merge tree: 1848808525a582c2c5ffc60dab5834a6b6016480
 local validation: passed
 runtime behavior change: authoritative in-memory lifecycle records
 field QA: passed on macOS, physical Linux, and four Linux VM guests
+post-merge: PASS WITH ACCEPTED BASELINE / ENVIRONMENT EXCEPTIONS
 ```
 
 ## Objective
@@ -263,5 +268,7 @@ package-load blocker change: forbidden
 field QA: required
 decision: DEVELOPMENT AUTHORIZED
 checkpoint: FIELD QA PASSED
-next state: ARCHITECTURE REVIEW REQUIRED
+final review: APPROVED FOR MERGE
+merge: 827ceb7eecfbdac4908f17f7128279a791ed095f
+closure: MERGED / VALIDATED / CLOSED
 ```

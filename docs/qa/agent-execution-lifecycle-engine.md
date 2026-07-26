@@ -3,13 +3,18 @@
 ## State
 
 ```text
-READY FOR MERGE REVIEW
+MERGED / VALIDATED / CLOSED
 branch: feature/agent-execution-lifecycle-engine-001
 base: 0db1c0930c73655a75c2111599d32b24f08f58ef
 base tree: 10f5845272a4f4558f3dfaccf0d7abbf03f21e4a
 source commit: 9520bf244695daa790a4c0119f75312a64dc8379
 source tree: 23648aa6264866ea4927d960eba3c2977fe9fa91
+QA evidence commit: 1a01308648fa6a5ab7c3a962e22efd62c9d10d1a
+QA evidence tree: 1848808525a582c2c5ffc60dab5834a6b6016480
+merge commit: 827ceb7eecfbdac4908f17f7128279a791ed095f
+merge tree: 1848808525a582c2c5ffc60dab5834a6b6016480
 field QA: passed, 6/6 hosts
+post-merge: PASS WITH ACCEPTED BASELINE / ENVIRONMENT EXCEPTIONS
 ```
 
 ## Scope
@@ -158,3 +163,47 @@ READY FOR ARCHITECTURE MERGE REVIEW
 
 QA does not authorize merge. Final Architecture review owns the merge
 decision.
+
+## Post-Merge Validation
+
+The controlled merge completed without conflicts. The merge tree is identical
+to the approved QA evidence tree.
+
+```text
+cargo fmt --all -- --check: PASS
+cargo test -p iamine-agent-runtime: PASS, 51/51
+cargo test -p iamine-agents: PASS, 109/109
+cargo clippy -p iamine-agent-runtime --all-targets -- -D warnings: PASS
+cargo test -p iamine-network: PASS, 167/167
+cargo build -p iamine-node: PASS
+cargo clippy --workspace --all-targets: PASS with historical warnings
+git diff --check: PASS
+scripts/quality-gate.sh: FAIL, required_failures=3
+cargo audit: SKIPPED, unavailable
+cargo deny: SKIPPED, unavailable
+gitleaks: SKIPPED, unavailable
+```
+
+The three broad command failures are accepted baseline or environment
+exceptions:
+
+1. `iamine-models` failed the four real Metal integration cases for
+   concurrency, queueing, direct inference, and token streaming. The same
+   historical family is documented on the integrated base.
+2. The complete model, core, hardware, network, and node surfaces, together
+   with workspace dependency declarations, are Git-identical between base and
+   merge.
+3. The workspace command repeated the same four Metal failures.
+4. `iamine-node` passed 479/480 tests inside the app sandbox. Its only failure
+   was the daemon socket test, where temporary socket creation was denied.
+5. The exact daemon test passed 1/1 outside the app sandbox, and its source
+   blob is identical between base and merge.
+
+No lifecycle-engine, sandbox-evidence, package-review, package-load, agent
+policy, node, network, scheduler, model, or execution regression is attributed
+to this feature. Final Architecture classification:
+
+```text
+PASS WITH ACCEPTED BASELINE / ENVIRONMENT EXCEPTIONS
+MERGED / VALIDATED / CLOSED
+```

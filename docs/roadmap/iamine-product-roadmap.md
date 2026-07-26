@@ -345,10 +345,11 @@ AGENT-POLICY-METADATA-VALIDATORS-001
 -> V0.12.0-P0-OFFICIAL-AGENTS-MILESTONE-QA-001
 ```
 
-`AGENT-RUNTIME-SANDBOX-ENFORCEMENT-001` closed in merge `54e4721`.
-`AGENT-EXECUTION-LIFECYCLE-ENGINE-001` is now `ACTIVE` from base `0db1c093`.
-Nine of the 19 implementation rows are `CLOSED`, one is `ACTIVE`, and the
-remaining nine stay `PROPOSED`. No later row is authorized in bulk.
+`AGENT-EXECUTION-LIFECYCLE-ENGINE-001` closed in merge `827ceb7`.
+Ten of the 19 implementation rows are now `CLOSED`; the remaining nine stay
+`PROPOSED`. `AGENT-TIMEOUT-CANCEL-ENFORCEMENT-001` is next, but remains
+`PROPOSED` until its own Architecture and development authorization checks
+complete. No later row is authorized in bulk.
 
 Each arrow still requires the complete canonical feature lifecycle. A roadmap
 position is not development authorization.
