@@ -3,18 +3,23 @@
 ## State
 
 ```text
-APPROVED FOR MERGE
+MERGED / VALIDATED / CLOSED
 branch: feature/agent-runtime-compatibility-gate-001
 base: a83e08effdb5c67ec8a0ac411f7c489fb44f466e
 base tree: 884b6f921094fbc4e41fad5484ae304b11437311
 feature commit: 933f15fa41395fe4d18bd8cc4b4c7a3fe95dea7e
 feature tree: 5182dd9faab77d4b943d1b20b18f9536b2f34c3f
+QA evidence commit: b4f50b12dcc1e3030a2700f990ffa4265785c068
+QA evidence tree: 5f6f15eee580875fadd1e6862116b5431e8fea18
+merge commit: 40a9a8074d8138204b6f4c1dd4c787d1d97fb219
+merge tree: 5f6f15eee580875fadd1e6862116b5431e8fea18
 runtime behavior change: passive in-memory compatibility evidence
 local focused validation: passed
 quality gate: PASS WITH WARNINGS
 architecture checkpoint: passed
 field QA: passed on Mac, TS140, and Proxmox/R5500
 final architecture review: passed
+post-merge validation: passed with accepted baseline and environment exceptions
 ```
 
 ## Objective
@@ -243,8 +248,8 @@ runtime side effects: none observed
 product failures: none
 environment findings: Mac temporary target disk exhaustion
 harness findings: Mac process inspection sandbox; TS140 Cargo shell initialization
-merge conflicts evaluated: pending merge owner
-decision: APPROVED FOR MERGE
+merge conflicts evaluated: none
+decision: MERGED / VALIDATED / CLOSED
 ```
 
 The environmental and harness findings do not weaken the product evidence.
@@ -252,3 +257,34 @@ Mac reported no `iamine-node` process after the focused run; every remote host
 reported `0 -> 0`. All six hosts ran the exact source commit and tree. No test
 read local hardware, started a runtime, opened network services, loaded a
 model, or changed package-load behavior.
+
+## Closure
+
+The controlled no-fast-forward merge landed in `develop` as `40a9a80`. Its
+tree is identical to the reviewed QA evidence tree. Post-merge focused
+validation passed:
+
+```text
+cargo fmt --all -- --check: PASS
+cargo test -p iamine-agent-runtime: PASS, 25/25
+cargo test -p iamine-agents: PASS, 109/109
+cargo clippy -p iamine-agent-runtime --all-targets -- -D warnings: PASS
+git diff --check: PASS
+```
+
+The broad quality-gate script reported three required command failures. They
+are accepted baseline and environment exceptions, not product regressions:
+
+- the base and merge contain identical `iamine-models` source, manifest, and
+  lock data; the base suite reproduced four real Metal inference failures;
+- all four affected real-inference tests passed in isolated processes on the
+  merge, and the merge also produced a complete `158/158` package pass;
+- the only node failure was the Codex sandbox denying creation of a Unix
+  daemon socket; the exact test passed outside the sandbox.
+
+Workspace Clippy passed with historical warnings. `cargo audit`, `cargo deny`,
+and `gitleaks` remained unavailable. No production file changed after the
+reviewed merge.
+
+The next independent executable feature is
+`AGENT-INPUT-OUTPUT-ENFORCEMENT-001`.

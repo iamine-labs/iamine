@@ -3,12 +3,16 @@
 ## State
 
 ```text
-READY FOR ARCHITECTURE MERGE REVIEW
+MERGED / VALIDATED / CLOSED
 branch: feature/agent-runtime-compatibility-gate-001
 base: a83e08effdb5c67ec8a0ac411f7c489fb44f466e
 base tree: 884b6f921094fbc4e41fad5484ae304b11437311
 source commit: 933f15fa41395fe4d18bd8cc4b4c7a3fe95dea7e
 source tree: 5182dd9faab77d4b943d1b20b18f9536b2f34c3f
+QA evidence commit: b4f50b12dcc1e3030a2700f990ffa4265785c068
+QA evidence tree: 5f6f15eee580875fadd1e6862116b5431e8fea18
+merge commit: 40a9a8074d8138204b6f4c1dd4c787d1d97fb219
+merge tree: 5f6f15eee580875fadd1e6862116b5431e8fea18
 field QA: passed, 6/6 hosts
 ```
 
@@ -153,3 +157,47 @@ READY FOR ARCHITECTURE MERGE REVIEW
 ```
 
 QA does not authorize merge. Architecture owns the final merge decision.
+
+## Post-Merge Validation
+
+The controlled merge completed without conflicts. `origin/develop`, the local
+integration HEAD, and merge commit `40a9a80` resolved to tree
+`5f6f15eee580875fadd1e6862116b5431e8fea18`.
+
+```text
+cargo fmt --all -- --check: PASS
+cargo test -p iamine-agent-runtime: PASS, 25/25
+cargo test -p iamine-agents: PASS, 109/109
+cargo clippy -p iamine-agent-runtime --all-targets -- -D warnings: PASS
+git diff --check: PASS
+scripts/quality-gate.sh: FAIL, required_failures=3
+cargo clippy --workspace --all-targets: PASS with historical warnings
+cargo audit: SKIPPED, unavailable
+cargo deny: SKIPPED, unavailable
+gitleaks: SKIPPED, unavailable
+```
+
+The broad script failures are classified as accepted baseline and environment
+exceptions:
+
+1. `iamine-models` has the same subtree object
+   `0bfec98804f2cb81fca6e9597e383e0825738ad6` in base and merge. Its
+   `Cargo.toml` and the workspace `Cargo.lock` are also identical.
+2. The merge produced one complete `158/158` package pass. The exact base then
+   reproduced failures in `test_concurrency_limit`, `test_inference_queue`,
+   `test_real_inference`, and `test_token_streaming` during a long Metal suite.
+3. Each of those four tests passed in an isolated process on the merge. This
+   proves a historical real-backend harness instability, not a feature diff.
+4. The node package failed only
+   `daemon_runtime::tests::test_daemon_start_stop` because the Codex sandbox
+   denied its Unix socket. The exact test passed outside the sandbox.
+5. The workspace command repeated the same four unchanged Metal failures.
+
+No runtime-compatibility, package-review, scope, permission, package-load,
+node, network, scheduler, model, or execution behavior failed because of the
+feature. The final Architecture decision is:
+
+```text
+PASS WITH ACCEPTED BASELINE / ENVIRONMENT EXCEPTIONS
+MERGED / VALIDATED / CLOSED
+```
