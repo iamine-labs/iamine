@@ -8,6 +8,7 @@ mod reference;
 mod resolver;
 mod review_evidence;
 mod runtime_compatibility;
+mod sandbox_enforcement;
 
 pub use contract::DeclaredAgentPackage;
 pub use error::{ResolverError, ResolverErrorCode};
@@ -43,4 +44,12 @@ pub use runtime_compatibility::{
     RuntimeCompatibilityEvidenceStatus, RuntimeCompatibilityRequirement,
     RuntimeLanguageAvailability, RuntimeLanguageDecision, RuntimeLanguageMode,
     RuntimeNetworkAvailability, RuntimeResourceEnvelope,
+};
+pub use sandbox_enforcement::{
+    SandboxCleanupOwner, SandboxCleanupTrigger, SandboxConfigurationError,
+    SandboxConfigurationErrorCode, SandboxEnforcementAuthority, SandboxEnforcementError,
+    SandboxEnforcementErrorCode, SandboxEnforcementEvidence, SandboxEnforcementEvidenceStatus,
+    SandboxEnforcementPolicy, SandboxEnforcementRequirement, SandboxFilesystemPolicy,
+    SandboxNetworkPolicy, SandboxPlatform, SandboxResourceLimits, SandboxRestrictionProfile,
+    MAX_SANDBOX_OPEN_FILES, MAX_SANDBOX_WALL_TIME_MS, SANDBOX_ENFORCEMENT_SCHEMA_VERSION,
 };

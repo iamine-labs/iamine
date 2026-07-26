@@ -15,22 +15,55 @@ pub(super) struct CompatibilityResult {
     pub operating_mode: ResourceOperatingMode,
 }
 
+pub(crate) struct CompatibleResourceProfile {
+    minimum_logical_cores: u16,
+    recommended_logical_cores: u16,
+    max_background_threads: u16,
+    max_working_set_mb: u64,
+    total_storage_mb: u64,
+    writable_storage_mb: u64,
+    network: NetworkMode,
+}
+
+impl CompatibleResourceProfile {
+    pub(crate) const fn minimum_logical_cores(&self) -> u16 {
+        self.minimum_logical_cores
+    }
+
+    pub(crate) const fn recommended_logical_cores(&self) -> u16 {
+        self.recommended_logical_cores
+    }
+
+    pub(crate) const fn max_background_threads(&self) -> u16 {
+        self.max_background_threads
+    }
+
+    pub(crate) const fn max_working_set_mb(&self) -> u64 {
+        self.max_working_set_mb
+    }
+
+    pub(crate) const fn total_storage_mb(&self) -> u64 {
+        self.total_storage_mb
+    }
+
+    pub(crate) const fn writable_storage_mb(&self) -> u64 {
+        self.writable_storage_mb
+    }
+
+    pub(crate) const fn network(&self) -> NetworkMode {
+        self.network
+    }
+}
+
 pub(super) fn evaluate_subject(
     subject: PackageReviewSubject<'_>,
     language: RuntimeLanguageDecision,
     resources: RuntimeResourceEnvelope,
 ) -> Result<CompatibilityResult, RuntimeCompatibilityError> {
     validate_language(language)?;
-    let metadata = parse_resource_metadata(subject)?;
-    if metadata.package_id != subject.package().manifest().package_id {
-        return Err(RuntimeCompatibilityError::new(
-            RuntimeCompatibilityErrorCode::ResourcePackageMismatch,
-            RuntimeCompatibilityRequirement::ResourceMetadata,
-        ));
-    }
-
     let operating_mode = map_operating_mode(subject.package().manifest().agent.earliest_mode);
-    validate_resources(&metadata, operating_mode, resources)?;
+    let profile = resolve_compatible_resource_profile(subject, operating_mode)?;
+    validate_resources(&profile, resources)?;
     Ok(CompatibilityResult { operating_mode })
 }
 
@@ -82,25 +115,24 @@ fn parse_resource_metadata(
     })
 }
 
-fn map_operating_mode(mode: ExecutionMode) -> ResourceOperatingMode {
-    match mode {
-        ExecutionMode::LocalReadonly => ResourceOperatingMode::LocalReadonly,
-        ExecutionMode::LocalPlanning => ResourceOperatingMode::LocalPlanning,
-        ExecutionMode::LanReadonly => ResourceOperatingMode::LanReadonly,
-    }
-}
-
-fn validate_resources(
-    metadata: &ResourceRequirementsMetadata,
+pub(crate) fn resolve_compatible_resource_profile(
+    subject: PackageReviewSubject<'_>,
     operating_mode: ResourceOperatingMode,
-    resources: RuntimeResourceEnvelope,
-) -> Result<(), RuntimeCompatibilityError> {
+) -> Result<CompatibleResourceProfile, RuntimeCompatibilityError> {
+    let metadata = parse_resource_metadata(subject)?;
+    if metadata.package_id != subject.package().manifest().package_id {
+        return Err(RuntimeCompatibilityError::new(
+            RuntimeCompatibilityErrorCode::ResourcePackageMismatch,
+            RuntimeCompatibilityRequirement::ResourceMetadata,
+        ));
+    }
     if !metadata.operating_modes.contains(&operating_mode) {
         return Err(RuntimeCompatibilityError::new(
             RuntimeCompatibilityErrorCode::OperatingModeMissing,
             RuntimeCompatibilityRequirement::OperatingMode,
         ));
     }
+
     let key = operating_mode.as_str();
     let cpu = metadata
         .cpu
@@ -118,31 +150,57 @@ fn validate_resources(
         .network
         .get(key)
         .ok_or_else(invalid_resource_metadata)?;
+    let writable_storage_mb = storage
+        .temp_workspace_mb
+        .checked_add(storage.cache_budget_mb)
+        .ok_or_else(invalid_resource_metadata)?;
+    let total_storage_mb = storage
+        .package_size_mb
+        .checked_add(writable_storage_mb)
+        .ok_or_else(invalid_resource_metadata)?;
 
-    if resources.logical_cores() < cpu.min_logical_cores {
+    Ok(CompatibleResourceProfile {
+        minimum_logical_cores: cpu.min_logical_cores,
+        recommended_logical_cores: cpu.recommended_logical_cores,
+        max_background_threads: cpu.max_background_threads,
+        max_working_set_mb: memory.max_working_set_mb,
+        total_storage_mb,
+        writable_storage_mb,
+        network: network.mode,
+    })
+}
+
+fn map_operating_mode(mode: ExecutionMode) -> ResourceOperatingMode {
+    match mode {
+        ExecutionMode::LocalReadonly => ResourceOperatingMode::LocalReadonly,
+        ExecutionMode::LocalPlanning => ResourceOperatingMode::LocalPlanning,
+        ExecutionMode::LanReadonly => ResourceOperatingMode::LanReadonly,
+    }
+}
+
+fn validate_resources(
+    profile: &CompatibleResourceProfile,
+    resources: RuntimeResourceEnvelope,
+) -> Result<(), RuntimeCompatibilityError> {
+    if resources.logical_cores() < profile.minimum_logical_cores() {
         return Err(RuntimeCompatibilityError::new(
             RuntimeCompatibilityErrorCode::CpuInsufficient,
             RuntimeCompatibilityRequirement::Cpu,
         ));
     }
-    if resources.memory_limit_mb() < memory.max_working_set_mb {
+    if resources.memory_limit_mb() < profile.max_working_set_mb() {
         return Err(RuntimeCompatibilityError::new(
             RuntimeCompatibilityErrorCode::MemoryInsufficient,
             RuntimeCompatibilityRequirement::Memory,
         ));
     }
-    let required_storage = storage
-        .package_size_mb
-        .checked_add(storage.temp_workspace_mb)
-        .and_then(|value| value.checked_add(storage.cache_budget_mb))
-        .ok_or_else(invalid_resource_metadata)?;
-    if resources.storage_limit_mb() < required_storage {
+    if resources.storage_limit_mb() < profile.total_storage_mb() {
         return Err(RuntimeCompatibilityError::new(
             RuntimeCompatibilityErrorCode::StorageInsufficient,
             RuntimeCompatibilityRequirement::Storage,
         ));
     }
-    if !network_available(resources.network(), network.mode) {
+    if !network_available(resources.network(), profile.network()) {
         return Err(RuntimeCompatibilityError::new(
             RuntimeCompatibilityErrorCode::NetworkInsufficient,
             RuntimeCompatibilityRequirement::Network,

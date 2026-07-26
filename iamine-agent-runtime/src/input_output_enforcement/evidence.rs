@@ -1,6 +1,9 @@
 use std::{fmt, sync::Arc};
 
-use crate::PackageReviewSubject;
+use crate::{
+    runtime_compatibility::RuntimeCompatibilityAuthorityIdentity, PackageReviewSubject,
+    RuntimeCompatibilityEvidence,
+};
 
 use super::{InputOutputRecordContext, InputOutputRequirement};
 
@@ -26,6 +29,7 @@ const ESTABLISHED_REQUIREMENTS: [InputOutputRequirement; 3] = [
 pub struct InputOutputEnforcementEvidence<'a> {
     authority: Arc<InputOutputAuthorityIdentity>,
     identity: Arc<InputOutputEvidenceIdentity>,
+    compatibility_authority: Arc<RuntimeCompatibilityAuthorityIdentity>,
     subject: PackageReviewSubject<'a>,
     context: InputOutputRecordContext,
 }
@@ -33,12 +37,14 @@ pub struct InputOutputEnforcementEvidence<'a> {
 impl<'a> InputOutputEnforcementEvidence<'a> {
     pub(crate) fn new(
         authority: Arc<InputOutputAuthorityIdentity>,
+        compatibility_authority: Arc<RuntimeCompatibilityAuthorityIdentity>,
         subject: PackageReviewSubject<'a>,
         context: InputOutputRecordContext,
     ) -> Self {
         Self {
             authority,
             identity: Arc::new(InputOutputEvidenceIdentity),
+            compatibility_authority,
             subject,
             context,
         }
@@ -80,6 +86,13 @@ impl<'a> InputOutputEnforcementEvidence<'a> {
         &self.identity
     }
 
+    pub(crate) fn bound_to_compatibility(
+        &self,
+        evidence: &RuntimeCompatibilityEvidence<'_>,
+    ) -> bool {
+        Arc::ptr_eq(&self.compatibility_authority, evidence.authority())
+    }
+
     pub(crate) const fn subject(&self) -> PackageReviewSubject<'a> {
         self.subject
     }
@@ -97,6 +110,7 @@ impl fmt::Debug for InputOutputEnforcementEvidence<'_> {
             .field("requirements", &self.requirements())
             .field("authority", &"[redacted]")
             .field("identity", &"[redacted]")
+            .field("compatibility_authority", &"[redacted]")
             .field("subject", &"[redacted]")
             .field("context", &"[redacted]")
             .field("load_allowed", &false)

@@ -41,6 +41,7 @@ impl InputOutputEnforcementAuthority {
         let context = derive_record_context(subject)?;
         Ok(InputOutputEnforcementEvidence::new(
             Arc::clone(&self.identity),
+            Arc::clone(compatibility_evidence.authority()),
             subject,
             context,
         ))
