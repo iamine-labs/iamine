@@ -122,6 +122,10 @@ impl ExecutionLifecycleAuthority {
             && Arc::ptr_eq(evidence.execution(), record.execution())
             && evidence.revision() <= record.revision()
     }
+
+    pub(crate) fn verifies_record_identity(&self, record: &ExecutionLifecycleRecord<'_>) -> bool {
+        Arc::ptr_eq(&self.identity, record.authority())
+    }
 }
 
 impl Default for ExecutionLifecycleAuthority {

@@ -402,7 +402,7 @@ AGENT-POLICY-METADATA-VALIDATORS-001
 | AGENT-INPUT-OUTPUT-ENFORCEMENT-001 | CLOSED | Typed authority-bound, per-record operator-attested bounded input/output enforcement; merged in `1ec2938`, local and post-merge QA PASS; field QA not required for this in-memory boundary. |
 | AGENT-RUNTIME-SANDBOX-ENFORCEMENT-001 | CLOSED | Typed platform-bound sandbox restriction and cleanup plan; merged in `54e4721`, exact-tree field QA PASS on Mac, TS140, and four Proxmox guests. No active OS sandbox is claimed. |
 | AGENT-EXECUTION-LIFECYCLE-ENGINE-001 | CLOSED | Authority-bound canonical-state transition engine; merged in `827ceb7`, exact-tree field QA PASS across six platform roles. It does not authorize or execute agents. |
-| AGENT-TIMEOUT-CANCEL-ENFORCEMENT-001 | PROPOSED | Timers, cancellation, cleanup, and terminal evidence. |
+| AGENT-TIMEOUT-CANCEL-ENFORCEMENT-001 | APPROVED FOR MERGE | Authority-bound monotonic timers, one-shot cancellation handles, canonical terminal transitions, and sandbox-owned cleanup-pending evidence; exact-tree field QA and final Architecture review passed. |
 | AGENT-HANDOFF-ENFORCEMENT-001 | PROPOSED | Typed handoff dispatch without permission expansion. |
 | AGENT-OUT-OF-SCOPE-RESPONSE-ENFORCEMENT-001 | PROPOSED | Deterministic refusal, clarification, blocked, and handoff responses. |
 | AGENT-ROUTING-CANDIDATE-SELECTOR-001 | PROPOSED | Bounded agent candidate selection without distributed model MoE. |
@@ -586,16 +586,17 @@ It consumes the root parser and emits only a typed blocked report while
 referenced metadata validators or enforcement gates remain unavailable. It
 does not authorize package loading or agent execution.
 
-`AGENT-EXECUTION-LIFECYCLE-ENGINE-001` closed in merge `827ceb7`. The next
+`AGENT-EXECUTION-LIFECYCLE-ENGINE-001` closed in merge `827ceb7`. The active
 executable feature registered by the v0.11.2 reconciliation is:
 
 ```text
 AGENT-TIMEOUT-CANCEL-ENFORCEMENT-001
 ```
 
-It remains `PROPOSED` until its own Architecture and development authorization
-checks complete. Ten of the 19 implementation rows are now `CLOSED`; the
-remaining nine stay `PROPOSED`.
+Its Architecture, development, implementation, local validation, exact-tree
+field QA, and final Architecture review checks are complete. It is
+`APPROVED FOR MERGE`. Ten of the 19 implementation rows are `CLOSED`; this row
+is active and the remaining eight stay `PROPOSED`.
 
 Not all functional P0 agents should be implemented in parallel at the start.
 After every prerequisite gate above passes, `NODE-DOCTOR-AGENT-001` remains
