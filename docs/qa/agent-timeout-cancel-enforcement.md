@@ -4,8 +4,9 @@
 
 ```text
 LOCAL VALIDATION PASSED
-FIELD QA AUTHORIZED
-final Architecture review: pending
+FIELD QA PASSED
+APPROVED FOR MERGE
+final Architecture review: PASS
 merge: pending
 ```
 
@@ -15,8 +16,8 @@ merge: pending
 branch: feature/agent-timeout-cancel-enforcement-001
 base: 740ef674213cc892e349169c75dbd8eeb2086b20
 base tree: 92c993e549491a0c43d9705cf46a1eeb20c7489c
-source commit: pending checkpoint commit
-source tree: pending checkpoint commit
+source commit: 98256990a3c50c8eb594b630263aefb71a1ddd0f
+source tree: 8750700df1cf82dfb41ca2396f2ef9488060a902
 ```
 
 ## Expected Scope
@@ -146,6 +147,29 @@ Confirm after execution:
 On first failure, stop and classify it as product, environment, harness, or
 baseline before continuing.
 
+Observed:
+
+| Platform role | Identity | Focused result | Worktree |
+| --- | --- | --- | --- |
+| macOS development | exact | PASS, 11/11 | clean |
+| physical Linux | exact | PASS, 11/11 | clean |
+| Linux VM control | exact | PASS, 11/11 | clean |
+| Linux VM worker A | exact | PASS, 11/11 | clean |
+| Linux VM worker B | exact | PASS, 11/11 | clean |
+| Linux VM heavy | exact | PASS, 11/11 | clean |
+
+All roles used source commit `98256990a3c50c8eb594b630263aefb71a1ddd0f`
+and tree `8750700df1cf82dfb41ca2396f2ef9488060a902`.
+
+The first physical-Linux command did not find Cargo because the non-login SSH
+shell did not load the toolchain environment. QA stopped, classified the
+failure as harness/environment, loaded the normal login shell, and repeated
+the same check successfully before advancing. No product failure occurred.
+
+No field command started a node daemon, worker, socket, sandbox, model load, or
+package load. The test worktrees remained clean; no cleanup action, process
+termination, persistent profile, or runtime artifact was created.
+
 ## Check 6: Broader Gate
 
 Before merge review:
@@ -174,7 +198,7 @@ cargo deny: SKIPPED, unavailable
 gitleaks: SKIPPED, unavailable
 main.rs: 4929 lines, delta 0
 cluster_registry.rs: 862 lines, delta 0
-largest new production module: 611 lines
+largest new production module: 623 lines
 Cargo changes: none
 ```
 
@@ -184,6 +208,9 @@ Cargo changes: none
 implementation: complete
 local focused QA: PASS
 Architecture checkpoint: PASS
-field QA: authorized, pending exact source commit
-recommendation: FIELD QA AUTHORIZED
+field QA: PASS, six platform roles
+product failures: none
+harness findings: one corrected login-shell environment issue
+final Architecture review: PASS
+recommendation: APPROVED FOR MERGE
 ```
