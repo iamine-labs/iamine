@@ -4,7 +4,7 @@ use iamine_agents::ResourceOperatingMode;
 
 use crate::PackageReviewSubject;
 
-use super::{RuntimeCompatibilityRequirement, RuntimeLanguageMode};
+use super::{RuntimeCompatibilityRequirement, RuntimeLanguageMode, RuntimeResourceEnvelope};
 
 #[derive(Debug)]
 pub(crate) struct RuntimeCompatibilityAuthorityIdentity;
@@ -32,6 +32,7 @@ pub struct RuntimeCompatibilityEvidence<'a> {
     subject: PackageReviewSubject<'a>,
     runtime_mode: RuntimeLanguageMode,
     operating_mode: ResourceOperatingMode,
+    resources: RuntimeResourceEnvelope,
 }
 
 impl<'a> RuntimeCompatibilityEvidence<'a> {
@@ -40,12 +41,14 @@ impl<'a> RuntimeCompatibilityEvidence<'a> {
         subject: PackageReviewSubject<'a>,
         runtime_mode: RuntimeLanguageMode,
         operating_mode: ResourceOperatingMode,
+        resources: RuntimeResourceEnvelope,
     ) -> Self {
         Self {
             authority,
             subject,
             runtime_mode,
             operating_mode,
+            resources,
         }
     }
 
@@ -80,6 +83,10 @@ impl<'a> RuntimeCompatibilityEvidence<'a> {
     pub(crate) const fn subject(&self) -> PackageReviewSubject<'a> {
         self.subject
     }
+
+    pub(crate) const fn resources(&self) -> RuntimeResourceEnvelope {
+        self.resources
+    }
 }
 
 impl fmt::Debug for RuntimeCompatibilityEvidence<'_> {
@@ -90,6 +97,7 @@ impl fmt::Debug for RuntimeCompatibilityEvidence<'_> {
             .field("requirements", &self.requirements())
             .field("runtime_mode", &self.runtime_mode)
             .field("operating_mode", &self.operating_mode.as_str())
+            .field("resources", &"[redacted]")
             .field("authority", &"[redacted]")
             .field("subject", &"[redacted]")
             .field("load_allowed", &false)

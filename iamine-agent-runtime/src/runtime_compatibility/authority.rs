@@ -49,6 +49,7 @@ impl RuntimeCompatibilityAuthority {
             subject,
             self.language.mode(),
             result.operating_mode,
+            self.resources,
         ))
     }
 

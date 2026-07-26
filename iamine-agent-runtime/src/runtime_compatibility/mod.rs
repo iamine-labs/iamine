@@ -13,4 +13,6 @@ pub use configuration::{
 pub use error::{
     RuntimeCompatibilityError, RuntimeCompatibilityErrorCode, RuntimeCompatibilityRequirement,
 };
+pub(crate) use evaluation::resolve_compatible_resource_profile;
+pub(crate) use evidence::RuntimeCompatibilityAuthorityIdentity;
 pub use evidence::{RuntimeCompatibilityEvidence, RuntimeCompatibilityEvidenceStatus};
