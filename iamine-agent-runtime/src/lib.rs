@@ -1,6 +1,7 @@
 mod contract;
 mod error;
 mod foundation;
+mod input_output_enforcement;
 mod limits;
 mod owner;
 mod reference;
@@ -12,6 +13,14 @@ pub use contract::DeclaredAgentPackage;
 pub use error::{ResolverError, ResolverErrorCode};
 pub use foundation::{
     inspect_runtime_foundation, RuntimeFoundationReport, RuntimeFoundationStatus,
+};
+pub use input_output_enforcement::{
+    EnforcedInputRecord, EnforcedOutputRecord, InputClassification, InputOutputConfigurationError,
+    InputOutputConfigurationErrorCode, InputOutputEnforcementAuthority,
+    InputOutputEnforcementError, InputOutputEnforcementErrorCode, InputOutputEnforcementEvidence,
+    InputOutputEnforcementEvidenceStatus, InputOutputPolicy, InputOutputRequirement,
+    OperatorRedactedInput, OperatorRedactedOutput, OutputClassification, RedactionState,
+    INPUT_OUTPUT_ENFORCEMENT_SCHEMA_VERSION, MAX_INPUT_OUTPUT_RECORD_BYTES,
 };
 pub use limits::{
     ResolverLimits, MAX_PACKAGE_REFERENCE_BYTES, MAX_PACKAGE_REFERENCE_COMPONENTS,
