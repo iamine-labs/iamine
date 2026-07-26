@@ -3,15 +3,18 @@
 ## State
 
 ```text
-APPROVED FOR MERGE
+MERGED / VALIDATED / CLOSED
 branch: feature/agent-runtime-sandbox-enforcement-001
 base: c97dcf66047683e99937a05ebd2b63b8349a5195
 base tree: c118fe9a35fc589d186d3dd1e55b9158b47b748f
 source commit: 0a57870873adfef716a56904aa84e92913bc3dbb
 source tree: 41f7dc8c7e5f78c91204878130dd89412325f675
+QA evidence commit: 875be7f5665d1423f311352397c22e30f3fb9861
+merge commit: 54e4721f89b4b5cc8bf697c8c29834ccaf3a26a4
+merge tree: fee769843370d8e760ec8fd8f65cd53c5dff4fbc
 runtime behavior change: passive platform-bound sandbox enforcement plan
 field QA: passed on Mac, TS140, and four Proxmox/R5500 guests
-QA recommendation: READY FOR ARCHITECTURE MERGE REVIEW
+post-merge: PASS WITH ACCEPTED BASELINE / ENVIRONMENT EXCEPTIONS
 ```
 
 ## Objective
@@ -211,6 +214,6 @@ process or sandbox startup: forbidden
 package-load blocker change: forbidden
 field QA: required
 field QA result: PASS, 6/6 hosts
-decision: APPROVED FOR MERGE
-merge authority: final Architecture review complete
+decision: MERGED / VALIDATED / CLOSED
+next feature: AGENT-EXECUTION-LIFECYCLE-ENGINE-001 remains PROPOSED
 ```
