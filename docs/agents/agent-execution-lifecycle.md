@@ -27,14 +27,16 @@ Which state transitions are allowed for future agent execution records?
 
 It does not answer whether execution records or transitions are implemented.
 
-## Draft Schema
+## Historical Draft Schema
 
 ```text
 iamine.agent.execution_lifecycle.draft-0.1
 ```
 
-This feature does not implement parsers, persistence, event emission, workers,
-queues, state transitions, retries, cancellation, timeout handling, or cleanup.
+This original feature did not implement parsers, persistence, event emission,
+workers, queues, state transitions, retries, cancellation, timeout handling,
+or cleanup. `AGENT-EXECUTION-LIFECYCLE-ENGINE-001` is the later executable
+owner for bounded in-memory transitions.
 
 ## Allowed Transition Shape
 
@@ -53,8 +55,6 @@ running -> completed
 running -> failed
 running -> timeout
 running -> cancelled
-timeout -> failed
-cancelled -> failed
 ```
 
 `running` is not available until sandbox, permission, input/output, timeout,
@@ -71,7 +71,9 @@ blocked
 ```
 
 Future implementations must make terminal-state behavior explicit. This
-feature does not define retries.
+feature does not define retries. The executable engine resolves the historical
+draft ambiguity fail-closed: terminal states have no outgoing transitions, so
+`timeout -> failed` and `cancelled -> failed` are not valid.
 
 ## Blocked Claims
 

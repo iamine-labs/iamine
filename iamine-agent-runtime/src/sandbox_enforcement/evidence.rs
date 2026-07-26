@@ -10,6 +10,9 @@ use super::{
 #[derive(Debug)]
 pub(crate) struct SandboxAuthorityIdentity;
 
+#[derive(Debug)]
+pub(crate) struct SandboxEvidenceIdentity;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum SandboxEnforcementEvidenceStatus {
@@ -36,6 +39,7 @@ const ESTABLISHED_REQUIREMENTS: [SandboxEnforcementRequirement; 12] = [
 #[must_use]
 pub struct SandboxEnforcementEvidence<'a> {
     authority: Arc<SandboxAuthorityIdentity>,
+    identity: Arc<SandboxEvidenceIdentity>,
     subject: PackageReviewSubject<'a>,
     platform: SandboxPlatform,
     limits: SandboxResourceLimits,
@@ -52,6 +56,7 @@ impl<'a> SandboxEnforcementEvidence<'a> {
     ) -> Self {
         Self {
             authority,
+            identity: Arc::new(SandboxEvidenceIdentity),
             subject,
             platform,
             limits,
@@ -119,6 +124,10 @@ impl<'a> SandboxEnforcementEvidence<'a> {
         &self.authority
     }
 
+    pub(crate) const fn identity(&self) -> &Arc<SandboxEvidenceIdentity> {
+        &self.identity
+    }
+
     pub(crate) const fn subject(&self) -> PackageReviewSubject<'a> {
         self.subject
     }
@@ -132,6 +141,7 @@ impl fmt::Debug for SandboxEnforcementEvidence<'_> {
             .field("status", &self.status())
             .field("requirements", &self.requirements())
             .field("authority", &"[redacted]")
+            .field("identity", &"[redacted]")
             .field("subject", &"[redacted]")
             .field("platform", &self.platform.as_str())
             .field("limits", &"[redacted]")
