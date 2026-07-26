@@ -1,5 +1,6 @@
 mod contract;
 mod error;
+mod execution_lifecycle;
 mod foundation;
 mod input_output_enforcement;
 mod limits;
@@ -12,6 +13,13 @@ mod sandbox_enforcement;
 
 pub use contract::DeclaredAgentPackage;
 pub use error::{ResolverError, ResolverErrorCode};
+pub use execution_lifecycle::{
+    ExecutionLifecycleAuthority, ExecutionLifecycleError, ExecutionLifecycleErrorCode,
+    ExecutionLifecycleRecord, ExecutionLifecycleRequirement, ExecutionLifecycleState,
+    ExecutionLifecycleTransitionEvidence, ExecutionLifecycleTransitionEvidenceStatus,
+    EXECUTION_LIFECYCLE_RECORD_SCHEMA_VERSION, EXECUTION_LIFECYCLE_STATES,
+    EXECUTION_LIFECYCLE_TRANSITION_SCHEMA_VERSION, MAX_EXECUTION_LIFECYCLE_TRANSITIONS,
+};
 pub use foundation::{
     inspect_runtime_foundation, RuntimeFoundationReport, RuntimeFoundationStatus,
 };

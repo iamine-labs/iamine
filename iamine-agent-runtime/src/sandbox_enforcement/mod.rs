@@ -13,7 +13,7 @@ pub use configuration::{
 pub use error::{
     SandboxEnforcementError, SandboxEnforcementErrorCode, SandboxEnforcementRequirement,
 };
-pub(crate) use evidence::SandboxAuthorityIdentity;
+pub(crate) use evidence::{SandboxAuthorityIdentity, SandboxEvidenceIdentity};
 pub use evidence::{
     SandboxEnforcementEvidence, SandboxEnforcementEvidenceStatus,
     SANDBOX_ENFORCEMENT_SCHEMA_VERSION,
