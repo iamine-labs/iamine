@@ -10,6 +10,7 @@ mod resolver;
 mod review_evidence;
 mod runtime_compatibility;
 mod sandbox_enforcement;
+mod timeout_cancel_enforcement;
 
 pub use contract::DeclaredAgentPackage;
 pub use error::{ResolverError, ResolverErrorCode};
@@ -60,4 +61,14 @@ pub use sandbox_enforcement::{
     SandboxEnforcementPolicy, SandboxEnforcementRequirement, SandboxFilesystemPolicy,
     SandboxNetworkPolicy, SandboxPlatform, SandboxResourceLimits, SandboxRestrictionProfile,
     MAX_SANDBOX_OPEN_FILES, MAX_SANDBOX_WALL_TIME_MS, SANDBOX_ENFORCEMENT_SCHEMA_VERSION,
+};
+pub use timeout_cancel_enforcement::{
+    AgentTimeoutClass, AgentTimeoutHandle, CancellationHandle, CancellationRequestEvidence,
+    CancellationRequestEvidenceStatus, CancellationSource, CleanupTimeoutEvidence,
+    CleanupTimeoutEvidenceStatus, SandboxCleanupResult, TimeoutCancelAuthority,
+    TimeoutCancelConfigurationError, TimeoutCancelConfigurationErrorCode, TimeoutCancelControl,
+    TimeoutCancelError, TimeoutCancelErrorCode, TimeoutCancelEvent, TimeoutCancelPolicy,
+    TimeoutCancelRequirement, TimeoutCancelTerminalEvidence, TimeoutCancelTerminalEvidenceStatus,
+    AGENT_TIMEOUT_CLASSES, CANCELLATION_REQUEST_SCHEMA_VERSION, CANCELLATION_SOURCES,
+    CLEANUP_TIMEOUT_SCHEMA_VERSION, MAX_AGENT_TIMEOUT_MS, TIMEOUT_CANCEL_TERMINAL_SCHEMA_VERSION,
 };
