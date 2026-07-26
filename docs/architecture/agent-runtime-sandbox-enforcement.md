@@ -3,12 +3,15 @@
 ## State
 
 ```text
-DEVELOPMENT AUTHORIZED
+APPROVED FOR MERGE
 branch: feature/agent-runtime-sandbox-enforcement-001
 base: c97dcf66047683e99937a05ebd2b63b8349a5195
 base tree: c118fe9a35fc589d186d3dd1e55b9158b47b748f
+source commit: 0a57870873adfef716a56904aa84e92913bc3dbb
+source tree: 41f7dc8c7e5f78c91204878130dd89412325f675
 runtime behavior change: passive platform-bound sandbox enforcement plan
-field QA: required on Mac, TS140, and Proxmox/R5500
+field QA: passed on Mac, TS140, and four Proxmox/R5500 guests
+QA recommendation: READY FOR ARCHITECTURE MERGE REVIEW
 ```
 
 ## Objective
@@ -207,5 +210,7 @@ new Cargo dependency: forbidden
 process or sandbox startup: forbidden
 package-load blocker change: forbidden
 field QA: required
-decision: DEVELOPMENT AUTHORIZED
+field QA result: PASS, 6/6 hosts
+decision: APPROVED FOR MERGE
+merge authority: final Architecture review complete
 ```
