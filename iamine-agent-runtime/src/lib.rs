@@ -2,6 +2,7 @@ mod contract;
 mod error;
 mod execution_lifecycle;
 mod foundation;
+mod handoff_enforcement;
 mod input_output_enforcement;
 mod limits;
 mod owner;
@@ -23,6 +24,12 @@ pub use execution_lifecycle::{
 };
 pub use foundation::{
     inspect_runtime_foundation, RuntimeFoundationReport, RuntimeFoundationStatus,
+};
+pub use handoff_enforcement::{
+    HandoffBlockedAction, HandoffControl, HandoffDispatchEvidence, HandoffDispatchEvidenceStatus,
+    HandoffEnforcementAuthority, HandoffError, HandoffErrorCode, HandoffOperatorSummary,
+    HandoffReason, HandoffRequest, HandoffRequirement, HandoffTarget,
+    HANDOFF_DISPATCH_SCHEMA_VERSION, HANDOFF_REASONS, HANDOFF_TARGETS,
 };
 pub use input_output_enforcement::{
     EnforcedInputRecord, EnforcedOutputRecord, InputClassification, InputOutputConfigurationError,

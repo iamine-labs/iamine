@@ -403,7 +403,7 @@ AGENT-POLICY-METADATA-VALIDATORS-001
 | AGENT-RUNTIME-SANDBOX-ENFORCEMENT-001 | CLOSED | Typed platform-bound sandbox restriction and cleanup plan; merged in `54e4721`, exact-tree field QA PASS on Mac, TS140, and four Proxmox guests. No active OS sandbox is claimed. |
 | AGENT-EXECUTION-LIFECYCLE-ENGINE-001 | CLOSED | Authority-bound canonical-state transition engine; merged in `827ceb7`, exact-tree field QA PASS across six platform roles. It does not authorize or execute agents. |
 | AGENT-TIMEOUT-CANCEL-ENFORCEMENT-001 | CLOSED | Authority-bound monotonic timers, one-shot cancellation handles, canonical terminal transitions, and sandbox-owned cleanup-pending evidence; merged in `2dbb760`, exact-tree field QA and post-merge validation passed. |
-| AGENT-HANDOFF-ENFORCEMENT-001 | PROPOSED | Typed handoff dispatch without permission expansion. |
+| AGENT-HANDOFF-ENFORCEMENT-001 | FIELD QA AUTHORIZED | Typed authority-bound handoff controls and local dispatch evidence without permission expansion, target selection, transport, or implicit execution; local gate and Architecture checkpoint passed. |
 | AGENT-OUT-OF-SCOPE-RESPONSE-ENFORCEMENT-001 | PROPOSED | Deterministic refusal, clarification, blocked, and handoff responses. |
 | AGENT-ROUTING-CANDIDATE-SELECTOR-001 | PROPOSED | Bounded agent candidate selection without distributed model MoE. |
 | AGENT-AUDIT-EVENT-ENFORCEMENT-001 | PROPOSED | Authoritative gate/lifecycle audit integration without authorization semantics. |
@@ -586,16 +586,18 @@ It consumes the root parser and emits only a typed blocked report while
 referenced metadata validators or enforcement gates remain unavailable. It
 does not authorize package loading or agent execution.
 
-`AGENT-TIMEOUT-CANCEL-ENFORCEMENT-001` closed in merge `2dbb760`. The next
+`AGENT-TIMEOUT-CANCEL-ENFORCEMENT-001` closed in merge `2dbb760`. The active
 sequential executable feature registered by the v0.11.2 reconciliation is:
 
 ```text
 AGENT-HANDOFF-ENFORCEMENT-001
 ```
 
-Eleven of the 19 implementation rows are `CLOSED`; the remaining eight stay
-`PROPOSED`. The next row is not authorized until its own Architecture and
-development gates run.
+Eleven of the 19 implementation rows are `CLOSED`.
+`AGENT-HANDOFF-ENFORCEMENT-001` is `FIELD QA AUTHORIZED` after its
+implementation, local validation, and Architecture checkpoint. Exact-tree
+field QA, final review, merge, and post-merge validation remain pending. The
+other seven rows stay `PROPOSED`.
 
 Not all functional P0 agents should be implemented in parallel at the start.
 After every prerequisite gate above passes, `NODE-DOCTOR-AGENT-001` remains
