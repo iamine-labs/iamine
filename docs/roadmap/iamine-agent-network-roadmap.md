@@ -398,7 +398,7 @@ AGENT-POLICY-METADATA-VALIDATORS-001
 | AGENT-RUNTIME-CORE-001 | CLOSED | Dedicated fail-closed `iamine-agent-runtime` foundation and typed owner boundaries; merged in `5bcbcf4`. |
 | AGENT-PACKAGE-REFERENCE-RESOLVER-001 | CLOSED | Bounded capability-relative package I/O with traversal, symlink, hardlink, size, race, and privacy controls; merged in `c013f10`. |
 | AGENT-PACKAGE-REVIEW-EVIDENCE-001 | CLOSED | Typed authority-bound local-registry, language, dependency, and human-review evidence; merged in `ad1d281`. |
-| AGENT-RUNTIME-COMPATIBILITY-GATE-001 | PROPOSED | Runtime-language and resource compatibility decisions. |
+| AGENT-RUNTIME-COMPATIBILITY-GATE-001 | CLOSED | Typed authority-bound runtime-language and resource compatibility evidence; merged in `40a9a80`, exact-tree field QA PASS on Mac, TS140, and four Proxmox guests. |
 | AGENT-INPUT-OUTPUT-ENFORCEMENT-001 | PROPOSED | Bounded classified and redacted input/output enforcement. |
 | AGENT-RUNTIME-SANDBOX-ENFORCEMENT-001 | PROPOSED | Cross-platform sandbox restrictions, limits, and cleanup ownership. |
 | AGENT-EXECUTION-LIFECYCLE-ENGINE-001 | PROPOSED | Authoritative canonical-state transition engine. |
@@ -586,16 +586,16 @@ It consumes the root parser and emits only a typed blocked report while
 referenced metadata validators or enforcement gates remain unavailable. It
 does not authorize package loading or agent execution.
 
-`AGENT-PACKAGE-REVIEW-EVIDENCE-001` closed in merge `ad1d281`. The next
+`AGENT-RUNTIME-COMPATIBILITY-GATE-001` closed in merge `40a9a80`. The next
 executable feature registered by the v0.11.2 reconciliation is:
 
 ```text
-AGENT-RUNTIME-COMPATIBILITY-GATE-001
+AGENT-INPUT-OUTPUT-ENFORCEMENT-001
 ```
 
 It remains `PROPOSED` until its own Architecture and development authorization
-checks complete. Six of the 19 implementation rows are now `CLOSED`; the
-remaining 13 stay `PROPOSED`.
+checks complete. Seven of the 19 implementation rows are now `CLOSED`; the
+remaining 12 stay `PROPOSED`.
 
 Not all functional P0 agents should be implemented in parallel at the start.
 After every prerequisite gate above passes, `NODE-DOCTOR-AGENT-001` remains
