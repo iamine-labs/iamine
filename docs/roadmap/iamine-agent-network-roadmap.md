@@ -404,7 +404,7 @@ AGENT-POLICY-METADATA-VALIDATORS-001
 | AGENT-EXECUTION-LIFECYCLE-ENGINE-001 | CLOSED | Authority-bound canonical-state transition engine; merged in `827ceb7`, exact-tree field QA PASS across six platform roles. It does not authorize or execute agents. |
 | AGENT-TIMEOUT-CANCEL-ENFORCEMENT-001 | CLOSED | Authority-bound monotonic timers, one-shot cancellation handles, canonical terminal transitions, and sandbox-owned cleanup-pending evidence; merged in `2dbb760`, exact-tree field QA and post-merge validation passed. |
 | AGENT-HANDOFF-ENFORCEMENT-001 | CLOSED | Typed authority-bound handoff controls and local dispatch evidence without permission expansion, target selection, transport, or implicit execution; merged in `9e42136`, exact-tree six-role field QA and post-merge validation passed. |
-| AGENT-OUT-OF-SCOPE-RESPONSE-ENFORCEMENT-001 | FIELD QA AUTHORIZED | Authority-bound deterministic refusal, clarification, blocked, and handoff response evidence; local validation and Architecture checkpoint passed. |
+| AGENT-OUT-OF-SCOPE-RESPONSE-ENFORCEMENT-001 | APPROVED FOR MERGE | Authority-bound deterministic refusal, clarification, blocked, and handoff response evidence; local validation, six-role field QA, and final Architecture review passed. |
 | AGENT-ROUTING-CANDIDATE-SELECTOR-001 | PROPOSED | Bounded agent candidate selection without distributed model MoE. |
 | AGENT-AUDIT-EVENT-ENFORCEMENT-001 | PROPOSED | Authoritative gate/lifecycle audit integration without authorization semantics. |
 | AGENT-EXECUTION-AUTHORIZATION-001 | PROPOSED | Final typed decision consuming all independent gates; no side effects. |
@@ -598,8 +598,8 @@ Twelve of the 19 implementation rows are `CLOSED`.
 local validation, Architecture checkpoints, exact-tree field QA on six
 required platform roles, and post-merge validation. The other seven rows stay
 open. `AGENT-OUT-OF-SCOPE-RESPONSE-ENFORCEMENT-001` is
-`FIELD QA AUTHORIZED`; exact-source field QA, final review, merge, and
-post-merge validation remain pending. The other six rows stay `PROPOSED`.
+`APPROVED FOR MERGE`; merge and post-merge validation remain pending. The
+other six rows stay `PROPOSED`.
 
 Not all functional P0 agents should be implemented in parallel at the start.
 After every prerequisite gate above passes, `NODE-DOCTOR-AGENT-001` remains

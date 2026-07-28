@@ -6,11 +6,12 @@
 IMPLEMENTATION COMPLETE
 LOCAL VALIDATION PASSED
 FIELD QA AUTHORIZED
+READY FOR MERGE REVIEW
 focused integration tests: PASS
 strict crate clippy: PASS
 broad local validation: PASS WITH WARNINGS
 Architecture checkpoint: PASS
-field QA: authorized
+field QA: PASS, 6/6 platform roles
 merge: pending
 ```
 
@@ -20,8 +21,8 @@ merge: pending
 branch: feature/agent-out-of-scope-response-enforcement-001
 base: d246f68f4f419e3aa034c20f733304bd8057109b
 base tree: 5bda26a4f07a0be8a1ff1761f9282fca68d2192b
-source commit: pending
-source tree: pending
+source commit: e357d15fdfe6459976d7b501263c4b5c72eac0f5
+source tree: dd84bc904984f84b9bf3a837fc0b75c740557915
 ```
 
 ## Expected Scope
@@ -150,14 +151,14 @@ strict crate clippy: PASS
 
 Run on the exact source commit and tree:
 
-| Platform role | Required |
-| --- | --- |
-| macOS development | yes |
-| physical Linux | yes |
-| Linux VM control | yes |
-| Linux VM worker A | yes |
-| Linux VM worker B | yes |
-| Linux VM heavy | yes |
+| Platform role | Required | Result |
+| --- | --- | --- |
+| macOS development | yes | PASS, 10/10 + 4/4 |
+| physical Linux | yes | PASS, 10/10 + 4/4 |
+| Linux VM control | yes | PASS, 10/10 + 4/4 |
+| Linux VM worker A | yes | PASS, 10/10 + 4/4 |
+| Linux VM worker B | yes | PASS, 10/10 + 4/4 |
+| Linux VM heavy | yes | PASS, 10/10 + 4/4 |
 
 For each role:
 
@@ -178,6 +179,11 @@ runtime side effects: none
 On the first failure, stop, classify product/environment/harness/baseline, do
 not modify code during QA, and do not continue later roles.
 
+The physical Linux non-interactive SSH environment did not initially expose
+Cargo in `PATH`. The sequence stopped, classified the failure as harness-only,
+then repeated the failed check with an explicit user Rust toolchain path.
+No source, Git identity, or test expectation changed.
+
 ## Current Result
 
 ```text
@@ -187,7 +193,9 @@ product defects corrected: one private module import path
 known compatibility decision: direct identity fields omitted from evidence
 broad local gate: PASS WITH WARNINGS
 Architecture checkpoint: PASS
-field QA: pending exact source commit
+field QA: PASS, 6/6 platform roles, 60/60 focused + 24/24 library
+field product failures: none
+field harness findings: one corrected non-interactive Cargo PATH
 optional tools skipped: cargo-audit, cargo-deny, gitleaks
-recommendation: FIELD QA AUTHORIZED
+recommendation: READY FOR ARCHITECTURE MERGE REVIEW
 ```

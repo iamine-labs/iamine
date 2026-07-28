@@ -8,6 +8,8 @@ DEVELOPMENT AUTHORIZED
 IMPLEMENTATION COMPLETE
 LOCAL VALIDATION PASSED
 FIELD QA AUTHORIZED
+READY FOR MERGE REVIEW
+APPROVED FOR MERGE
 branch: feature/agent-out-of-scope-response-enforcement-001
 base: d246f68f4f419e3aa034c20f733304bd8057109b
 base tree: 5bda26a4f07a0be8a1ff1761f9282fca68d2192b
@@ -209,11 +211,15 @@ socket, sandbox, model, package, transport, or inference process.
 ## Architecture Decision
 
 ```text
-decision: FIELD QA AUTHORIZED
+decision: APPROVED FOR MERGE
 implementation checkpoint: IMPLEMENTATION COMPLETE
 focused validation: PASS
 broad local validation: PASS WITH WARNINGS
 Architecture checkpoint: PASS
-field QA: authorized on the exact source commit
-merge: not authorized
+field QA: PASS on source commit e357d15fdfe6459976d7b501263c4b5c72eac0f5
+field QA matrix: 6/6 platform roles, 84/84 tests
+scope review: PASS, no node, scheduler, transport, package-load, or Cargo changes
+size review: PASS, largest production file 337 lines
+final Architecture review: PASS
+merge: authorized into develop
 ```
