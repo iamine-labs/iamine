@@ -1,3 +1,4 @@
+mod audit_event_enforcement;
 mod contract;
 mod error;
 mod execution_lifecycle;
@@ -15,6 +16,12 @@ mod runtime_compatibility;
 mod sandbox_enforcement;
 mod timeout_cancel_enforcement;
 
+pub use audit_event_enforcement::{
+    AuditEventEnforcementAuthority, AuditEventEnforcementBlockedAction, AuditEventEnforcementError,
+    AuditEventEnforcementErrorCode, AuditEventEnforcementEvidence,
+    AuditEventEnforcementEvidenceStatus, AuditEventEnforcementRequirement,
+    AUDIT_EVENT_ENFORCEMENT_SCHEMA_VERSION,
+};
 pub use contract::DeclaredAgentPackage;
 pub use error::{ResolverError, ResolverErrorCode};
 pub use execution_lifecycle::{
