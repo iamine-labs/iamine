@@ -8,9 +8,15 @@ DEVELOPMENT AUTHORIZED
 IMPLEMENTATION COMPLETE
 LOCAL VALIDATION PASSED
 FIELD QA AUTHORIZED
+FIELD QA PASSED
+READY FOR MERGE REVIEW
+APPROVED FOR MERGE
 branch: feature/agent-handoff-enforcement-001
+closeout branch: feature/agent-handoff-enforcement-001-closeout-001
 base: 12d34a8030de541bc9a9a0e882b079f41fa7f343
 base tree: 4184677009c5c48fe16c4035f74fe62fec403cb4
+source commit: 6246904245c3108e4478c17284959597d96f01c4
+source tree: 1c35acfc300edbe7ffc6ec17c1091a69a1f99233
 runtime behavior change: bounded in-memory handoff dispatch recording
 execution availability change: none
 field QA: required
@@ -226,10 +232,11 @@ model, package, transport, or inference process.
 ## Architecture Decision
 
 ```text
-decision: FIELD QA AUTHORIZED
+decision: APPROVED FOR MERGE
 implementation checkpoint: IMPLEMENTATION COMPLETE
 local validation: PASS
 Architecture checkpoint: PASS
-field QA: authorized after exact source commit
-merge: not authorized
+field QA: PASS on six required platform roles
+final Architecture review: PASS
+merge: authorized through the controlled develop workflow
 ```

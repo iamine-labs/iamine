@@ -7,8 +7,8 @@ IMPLEMENTATION COMPLETE
 local focused validation: PASS
 broader local validation: PASS
 Architecture checkpoint: PASS
-field QA: AUTHORIZED
-merge: pending
+field QA: PASS
+recommendation: READY FOR ARCHITECTURE MERGE REVIEW
 ```
 
 ## Identity
@@ -17,8 +17,8 @@ merge: pending
 branch: feature/agent-handoff-enforcement-001
 base: 12d34a8030de541bc9a9a0e882b079f41fa7f343
 base tree: 4184677009c5c48fe16c4035f74fe62fec403cb4
-source commit: pending
-source tree: pending
+source commit: 6246904245c3108e4478c17284959597d96f01c4
+source tree: 1c35acfc300edbe7ffc6ec17c1091a69a1f99233
 ```
 
 ## Expected Scope
@@ -191,6 +191,24 @@ worktree: clean
 daemon/worker/socket/sandbox/model/package/transport execution: none
 ```
 
+Observed:
+
+| Platform role | Identity | Integration | Library | Result |
+| --- | --- | ---: | ---: | --- |
+| macOS development | exact | 9/9 | 4/4 | PASS |
+| physical Linux | exact | 9/9 | 4/4 | PASS |
+| Linux VM control | exact | 9/9 | 4/4 | PASS |
+| Linux VM worker A | exact | 9/9 | 4/4 | PASS |
+| Linux VM worker B | exact | 9/9 | 4/4 | PASS |
+| Linux VM heavy | exact | 9/9 | 4/4 | PASS |
+
+Every field run used a clean isolated QA worktree and preserved existing
+working copies. The physical Linux primary copy had pre-existing staged and
+untracked state. The control-role default-path preflight failed before testing;
+it was classified as a harness assumption and corrected by using an isolated
+feature clone. Neither condition changed source, test scope, or product
+behavior.
+
 On first failure:
 
 1. stop;
@@ -212,6 +230,8 @@ required failures: 0
 warnings: 0
 optional tools skipped: cargo audit, cargo deny, gitleaks
 Architecture checkpoint: PASS
-field QA: pending exact source commit
-recommendation: FIELD QA AUTHORIZED
+field QA: PASS on Mac, physical Linux, and four Linux VM roles
+product failures: 0
+environment or harness findings: 2 non-blocking, preserved or corrected
+recommendation: READY FOR ARCHITECTURE MERGE REVIEW
 ```
