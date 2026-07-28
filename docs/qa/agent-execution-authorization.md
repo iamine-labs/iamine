@@ -6,13 +6,14 @@
 IMPLEMENTATION COMPLETE
 LOCAL VALIDATION PASSED
 ARCHITECTURE CHECKPOINT PASSED
-FIELD QA AUTHORIZED
+FIELD QA PASSED
+READY FOR ARCHITECTURE MERGE REVIEW
 focused integration tests: PASS, 14/14
 runtime regression: PASS, 117/117
 agents regression: PASS, 109/109
 strict crate clippy: PASS
 quality gate: PASS WITH WARNINGS
-field QA: REQUIRED / NOT STARTED
+field QA: PASS, 6/6 roles
 ```
 
 ## Identity
@@ -21,8 +22,8 @@ field QA: REQUIRED / NOT STARTED
 branch: feature/agent-execution-authorization-001
 base: ff7ba1668ffdf61a71294ac3fa1921baf426ce43
 base tree: f38b05e44c635989fa1594803eee8d97ea45ec5a
-source commit: pending
-source tree: pending
+source commit: 125264ef77e9fad63a79474c6834be63ae86e5bf
+source tree: bbf11787fe76a4f24e20a287f5e7125830bb6a3b
 ```
 
 ## Expected Scope
@@ -183,12 +184,12 @@ Run on the exact source commit and tree:
 
 | Platform role | Required | Result |
 | --- | --- | --- |
-| macOS development | yes | PENDING |
-| physical Linux, TS140 | yes | PENDING |
-| Linux VM control, iamine-ctrl | yes | PENDING |
-| Linux VM worker A, iamine-wrk1 | yes | PENDING |
-| Linux VM worker B, iamine-wrk2 | yes | PENDING |
-| Linux VM heavy, iamine-heavy | yes | PENDING |
+| macOS development | yes | PASS, 14/14 + 4/4 |
+| physical Linux, TS140 | yes | PASS, 14/14 + 4/4 |
+| Linux VM control, iamine-ctrl | yes | PASS, 14/14 + 4/4 |
+| Linux VM worker A, iamine-wrk1 | yes | PASS, 14/14 + 4/4 |
+| Linux VM worker B, iamine-wrk2 | yes | PASS, 14/14 + 4/4 |
+| Linux VM heavy, iamine-heavy | yes | PASS, 14/14 + 4/4 |
 
 For each role:
 
@@ -209,3 +210,32 @@ runtime side effects: none
 
 Stop at the first failure, classify product/environment/harness/baseline, and
 do not modify code during QA.
+
+Actual field evidence:
+
+```text
+HEAD: 125264ef77e9fad63a79474c6834be63ae86e5bf
+TREE: bbf11787fe76a4f24e20a287f5e7125830bb6a3b
+BASE: ff7ba1668ffdf61a71294ac3fa1921baf426ce43
+ORIGIN: https://github.com/iamine-labs/iamine
+focused integration per role: 14/14 PASS
+runtime library per role: 4/4 PASS
+tracked worktree per role: clean
+staging per role: clean
+runtime side effects observed: none
+product failures: none
+```
+
+TS140's canonical checkout contained preserved staged changes from an older
+feature plus local log artifacts. QA did not modify that checkout. The exact
+source commit was transferred as a verified complete Git bundle and tested in
+an isolated clean clone under `/tmp`, as were the four Proxmox roles.
+
+The first TS140 invocation did not find `cargo` in the non-interactive SSH
+`PATH`; no test had started. This was classified as a harness issue and the
+sequence was restarted with the existing user-local Cargo directory in
+`PATH`. Both required checks then passed without source changes.
+
+```text
+Recommendation: READY FOR ARCHITECTURE MERGE REVIEW
+```
