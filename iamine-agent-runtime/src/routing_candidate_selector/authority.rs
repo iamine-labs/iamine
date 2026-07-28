@@ -1,6 +1,8 @@
 use std::{fmt, sync::Arc};
 
-use crate::{RuntimeCompatibilityAuthority, SandboxEnforcementAuthority};
+use crate::{
+    RuntimeCompatibilityAuthority, SandboxEnforcementAuthority, SandboxEnforcementEvidence,
+};
 
 use super::{
     evaluation::evaluate_candidates, RoutingCandidateRef, RoutingCandidateSelectionEvidence,
@@ -45,6 +47,17 @@ impl RoutingCandidateSelectionAuthority {
 
     pub fn verifies(&self, evidence: &RoutingCandidateSelectionEvidence) -> bool {
         Arc::ptr_eq(&self.identity, evidence.authority())
+    }
+
+    pub fn verifies_selected_sandbox(
+        &self,
+        evidence: &RoutingCandidateSelectionEvidence,
+        sandbox_evidence: &SandboxEnforcementEvidence<'_>,
+    ) -> bool {
+        self.verifies(evidence)
+            && evidence
+                .selected_sandbox()
+                .is_some_and(|selected| Arc::ptr_eq(selected, sandbox_evidence.identity()))
     }
 }
 

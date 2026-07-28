@@ -1,9 +1,10 @@
-use std::collections::HashSet;
+use std::{collections::HashSet, sync::Arc};
 
 use iamine_agents::{PermissionDecision, ScopeDecision};
 
 use crate::{
-    RuntimeCompatibilityAuthority, RuntimeNetworkAvailability, SandboxEnforcementAuthority,
+    sandbox_enforcement::SandboxEvidenceIdentity, RuntimeCompatibilityAuthority,
+    RuntimeNetworkAvailability, SandboxEnforcementAuthority,
 };
 
 use super::{
@@ -25,6 +26,7 @@ enum ExclusionDisposition {
 pub(crate) struct RoutingSelectionResult {
     pub(crate) outcome: RoutingCandidateSelectionOutcome,
     pub(crate) selected_candidate_id: Option<String>,
+    pub(crate) selected_sandbox: Option<Arc<SandboxEvidenceIdentity>>,
     pub(crate) candidate_count: u16,
     pub(crate) eligible_candidate_count: u16,
     pub(crate) excluded_candidate_count: u16,
@@ -52,6 +54,7 @@ pub(crate) fn evaluate_candidates(
     }
 
     let mut selected_candidate_id = None;
+    let mut selected_sandbox = None;
     let mut eligible_candidate_count = 0_u16;
     let mut excluded_candidate_count = 0_u16;
     let mut exclusion_counts = [0_u16; 8];
@@ -70,8 +73,17 @@ pub(crate) fn evaluate_candidates(
                 eligible_candidate_count += 1;
                 if eligible_candidate_count == 1 {
                     selected_candidate_id = Some(candidate.candidate_id().to_string());
+                    selected_sandbox = match candidate.sandbox() {
+                        RoutingCandidateSandbox::Prepared(evidence) => {
+                            Some(Arc::clone(evidence.identity()))
+                        }
+                        RoutingCandidateSandbox::Unavailable | RoutingCandidateSandbox::Unknown => {
+                            None
+                        }
+                    };
                 } else {
                     selected_candidate_id = None;
+                    selected_sandbox = None;
                 }
             }
         }
@@ -88,6 +100,7 @@ pub(crate) fn evaluate_candidates(
     Ok(RoutingSelectionResult {
         outcome,
         selected_candidate_id,
+        selected_sandbox,
         candidate_count: candidates.len() as u16,
         eligible_candidate_count,
         excluded_candidate_count,

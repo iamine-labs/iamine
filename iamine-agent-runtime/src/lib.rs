@@ -1,6 +1,7 @@
 mod audit_event_enforcement;
 mod contract;
 mod error;
+mod execution_authorization;
 mod execution_lifecycle;
 mod foundation;
 mod handoff_enforcement;
@@ -24,6 +25,12 @@ pub use audit_event_enforcement::{
 };
 pub use contract::DeclaredAgentPackage;
 pub use error::{ResolverError, ResolverErrorCode};
+pub use execution_authorization::{
+    ExecutionAuthorizationAuthority, ExecutionAuthorizationError, ExecutionAuthorizationErrorCode,
+    ExecutionAuthorizationEvidence, ExecutionAuthorizationEvidenceStatus,
+    ExecutionAuthorizationRequest, ExecutionAuthorizationRequirement,
+    EXECUTION_AUTHORIZATION_SCHEMA_VERSION,
+};
 pub use execution_lifecycle::{
     ExecutionLifecycleAuthority, ExecutionLifecycleError, ExecutionLifecycleErrorCode,
     ExecutionLifecycleRecord, ExecutionLifecycleRequirement, ExecutionLifecycleState,

@@ -68,6 +68,26 @@ impl AuditEventEnforcementAuthority {
         Arc::ptr_eq(&self.identity, evidence.authority())
     }
 
+    pub fn verifies_scope(
+        &self,
+        evidence: &AuditEventEnforcementEvidence,
+        evaluation: &ScopeEvaluation,
+    ) -> bool {
+        self.verifies(evidence)
+            && !evidence.upstream_authority_bound()
+            && evidence.events() == &audit_scope_evaluation(evaluation)
+    }
+
+    pub fn verifies_permission(
+        &self,
+        evidence: &AuditEventEnforcementEvidence,
+        evaluation: &PermissionEvaluation,
+    ) -> bool {
+        self.verifies(evidence)
+            && !evidence.upstream_authority_bound()
+            && evidence.events() == &audit_permission_evaluation(evaluation)
+    }
+
     pub fn verifies_lifecycle(
         &self,
         evidence: &AuditEventEnforcementEvidence,

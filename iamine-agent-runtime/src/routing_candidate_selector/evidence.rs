@@ -5,6 +5,7 @@ use super::{
     RoutingCandidateSelectionOutcome, RoutingCandidateSelectorRequirement,
     RoutingSelectionBlockedAction,
 };
+use crate::sandbox_enforcement::SandboxEvidenceIdentity;
 
 pub const ROUTING_CANDIDATE_SELECTION_SCHEMA_VERSION: &str =
     "iamine.agent.routing_candidate_selection.enforced-0.1";
@@ -32,6 +33,7 @@ pub struct RoutingCandidateSelectionEvidence {
     authority: Arc<RoutingCandidateSelectionAuthorityIdentity>,
     outcome: RoutingCandidateSelectionOutcome,
     selected_candidate_id: Option<String>,
+    selected_sandbox: Option<Arc<SandboxEvidenceIdentity>>,
     candidate_count: u16,
     eligible_candidate_count: u16,
     excluded_candidate_count: u16,
@@ -47,6 +49,7 @@ impl RoutingCandidateSelectionEvidence {
             authority,
             outcome: result.outcome,
             selected_candidate_id: result.selected_candidate_id,
+            selected_sandbox: result.selected_sandbox,
             candidate_count: result.candidate_count,
             eligible_candidate_count: result.eligible_candidate_count,
             excluded_candidate_count: result.excluded_candidate_count,
@@ -133,6 +136,10 @@ impl RoutingCandidateSelectionEvidence {
     pub(crate) const fn authority(&self) -> &Arc<RoutingCandidateSelectionAuthorityIdentity> {
         &self.authority
     }
+
+    pub(crate) const fn selected_sandbox(&self) -> Option<&Arc<SandboxEvidenceIdentity>> {
+        self.selected_sandbox.as_ref()
+    }
 }
 
 impl fmt::Debug for RoutingCandidateSelectionEvidence {
@@ -147,6 +154,10 @@ impl fmt::Debug for RoutingCandidateSelectionEvidence {
             .field(
                 "selected_candidate_id",
                 &self.selected_candidate_id.as_ref().map(|_| "[redacted]"),
+            )
+            .field(
+                "selected_sandbox",
+                &self.selected_sandbox.as_ref().map(|_| "[redacted]"),
             )
             .field("candidate_count", &self.candidate_count)
             .field("eligible_candidate_count", &self.eligible_candidate_count)

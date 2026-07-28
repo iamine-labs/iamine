@@ -10,6 +10,7 @@ type TestResult<T> = Result<T, Box<dyn Error>>;
 
 pub const PACKAGE_ID: &str = "iamine.beta.node-doctor";
 pub const TASK_TYPE: &str = "diagnostic_report";
+pub const INPUT_CLASSES: [&str; 1] = ["user_provided_text"];
 
 pub fn allowed_scope() -> TestResult<ScopeEvaluation> {
     scope_evaluation(ScopeRequestClassification::InScopeCandidate)
@@ -50,18 +51,42 @@ pub fn refused_permission(scope: &ScopeEvaluation) -> TestResult<PermissionEvalu
     )
 }
 
+pub fn scope_policy() -> TestResult<ScopePolicy> {
+    Ok(ScopePolicy::try_from(scope_policy_spec())?)
+}
+
+pub fn permission_policy() -> TestResult<PermissionPolicy> {
+    Ok(PermissionPolicy::try_from(permission_policy_spec())?)
+}
+
+pub fn scope_request(
+    package_id: &str,
+    classification: ScopeRequestClassification,
+) -> ScopeRequestRef<'_> {
+    ScopeRequestRef::new(
+        package_id,
+        TASK_TYPE,
+        "inspect_node_status",
+        "inspect_status",
+        &INPUT_CLASSES,
+        classification,
+    )
+}
+
+pub fn permission_request<'a>(
+    package_id: &'a str,
+    action: &'a str,
+    categories: &'a [&'a str],
+    confirmation: PermissionConfirmation,
+) -> PermissionRequestRef<'a> {
+    PermissionRequestRef::new(package_id, action, categories, confirmation)
+}
+
 fn scope_evaluation(classification: ScopeRequestClassification) -> TestResult<ScopeEvaluation> {
-    let policy = ScopePolicy::try_from(scope_policy_spec())?;
+    let policy = scope_policy()?;
     Ok(evaluate_scope(
         &policy,
-        ScopeRequestRef::new(
-            PACKAGE_ID,
-            TASK_TYPE,
-            "inspect_node_status",
-            "inspect_status",
-            &["user_provided_text"],
-            classification,
-        ),
+        scope_request(PACKAGE_ID, classification),
     ))
 }
 
@@ -71,11 +96,11 @@ fn permission_evaluation(
     categories: &[&str],
     confirmation: PermissionConfirmation,
 ) -> TestResult<PermissionEvaluation> {
-    let policy = PermissionPolicy::try_from(permission_policy_spec())?;
+    let policy = permission_policy()?;
     Ok(evaluate_permissions(
         &policy,
         scope,
-        PermissionRequestRef::new(PACKAGE_ID, action, categories, confirmation),
+        permission_request(PACKAGE_ID, action, categories, confirmation),
     ))
 }
 

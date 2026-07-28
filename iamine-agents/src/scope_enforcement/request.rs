@@ -55,6 +55,10 @@ impl<'a> ScopeRequestRef<'a> {
         self.package_id
     }
 
+    pub fn targets_package(&self, package_id: &str) -> bool {
+        self.package_id == package_id
+    }
+
     pub(crate) const fn task_type(&self) -> &str {
         self.task_type
     }
