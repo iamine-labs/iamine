@@ -8,7 +8,8 @@ local focused validation: PASS
 broader local validation: PASS
 Architecture checkpoint: PASS
 field QA: PASS
-recommendation: READY FOR ARCHITECTURE MERGE REVIEW
+final Architecture review: PASS
+MERGED / VALIDATED / CLOSED
 ```
 
 ## Identity
@@ -19,6 +20,8 @@ base: 12d34a8030de541bc9a9a0e882b079f41fa7f343
 base tree: 4184677009c5c48fe16c4035f74fe62fec403cb4
 source commit: 6246904245c3108e4478c17284959597d96f01c4
 source tree: 1c35acfc300edbe7ffc6ec17c1091a69a1f99233
+merge commit: 9e42136dedc9a90c13b2a353d6691607f156c38e
+merge tree: 1803135d03df6015ce1e63094b43848962d75790
 ```
 
 ## Expected Scope
@@ -233,5 +236,11 @@ Architecture checkpoint: PASS
 field QA: PASS on Mac, physical Linux, and four Linux VM roles
 product failures: 0
 environment or harness findings: 2 non-blocking, preserved or corrected
-recommendation: READY FOR ARCHITECTURE MERGE REVIEW
+controlled merge: PASS
+post-merge runtime tests: PASS, 73/73
+post-merge strict crate clippy: PASS
+post-merge quality gate: PASS WITH WARNINGS
+post-merge required failures: 0
+post-merge optional tools skipped: cargo audit, cargo deny, gitleaks
+recommendation: MERGED / VALIDATED / CLOSED
 ```
