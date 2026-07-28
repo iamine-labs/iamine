@@ -7,11 +7,13 @@ IMPLEMENTATION COMPLETE
 LOCAL VALIDATION PASSED
 FIELD QA AUTHORIZED
 READY FOR MERGE REVIEW
+POST-MERGE VALIDATION PASSED
 focused integration tests: PASS, 10/10
 runtime regression: PASS, 93/93
 strict crate clippy: PASS
 Architecture checkpoint: PASS
 field QA: PASS, 6/6 platform roles
+post-merge quality gate: PASS WITH WARNINGS
 ```
 
 ## Identity
@@ -22,6 +24,8 @@ base: a4fd73311009de46ebb434caf501888e3b2794d3
 base tree: 7d3f51ab76705df62a204612d7d8a76bf44cdb3f
 source commit: fbf91c419ed5b13d3351bbcf47f8d28c319c88cc
 source tree: 7561da0d1763a3e7afe37bd8473bac0359a485f6
+merge commit: 1efa9cf156bb79f6b7f7d1fc0377521b5dbc3421
+merge tree: 68af86b0a9bbe6ab007ef0b388db9141343a3c97
 ```
 
 ## Expected Scope
@@ -203,4 +207,20 @@ field harness failures: none
 known limitation: Scope/Permission evaluations are typed but not authority-bound
 execution/runtime availability change: none
 recommendation: READY FOR ARCHITECTURE MERGE REVIEW
+controlled merge: PASS, 1efa9cf156bb79f6b7f7d1fc0377521b5dbc3421
+post-merge runtime regression: PASS, 93/93
+post-merge strict crate clippy: PASS
+post-merge quality gate: PASS WITH WARNINGS, required_failures=0
+post-merge optional tools skipped: cargo-audit, cargo-deny, gitleaks
+sandbox finding: model and daemon failures reproduced on base
+unrestricted focused reruns: PASS
+closure recorded by Merge Owner: MERGED / VALIDATED / CLOSED
 ```
+
+The first post-merge quality-gate attempt ran under a restricted sandbox.
+Four Metal-backed model integration tests completed inference but reported
+failure, and the daemon lifecycle test could not open its Unix socket. The
+same focused failures reproduced on the exact base commit. The model and
+daemon tests then passed outside the sandbox, followed by the complete
+unrestricted quality gate. They are classified as baseline environment
+restrictions, not product regressions.

@@ -405,7 +405,7 @@ AGENT-POLICY-METADATA-VALIDATORS-001
 | AGENT-TIMEOUT-CANCEL-ENFORCEMENT-001 | CLOSED | Authority-bound monotonic timers, one-shot cancellation handles, canonical terminal transitions, and sandbox-owned cleanup-pending evidence; merged in `2dbb760`, exact-tree field QA and post-merge validation passed. |
 | AGENT-HANDOFF-ENFORCEMENT-001 | CLOSED | Typed authority-bound handoff controls and local dispatch evidence without permission expansion, target selection, transport, or implicit execution; merged in `9e42136`, exact-tree six-role field QA and post-merge validation passed. |
 | AGENT-OUT-OF-SCOPE-RESPONSE-ENFORCEMENT-001 | CLOSED | Authority-bound deterministic refusal, clarification, blocked, and handoff response evidence; merged in `0b9bdf0`, exact-tree six-role field QA and post-merge validation passed. |
-| AGENT-ROUTING-CANDIDATE-SELECTOR-001 | APPROVED FOR MERGE | Authority-bound bounded candidate-selection evidence without scoring, execution, scheduler mutation, transport, model selection, or distributed model MoE; exact-tree field QA passed on six platform roles. |
+| AGENT-ROUTING-CANDIDATE-SELECTOR-001 | CLOSED | Authority-bound bounded candidate-selection evidence without scoring, execution, scheduler mutation, transport, model selection, or distributed model MoE; merged in `1efa9cf`, exact-tree field QA passed on six platform roles, and unrestricted post-merge quality gate passed. |
 | AGENT-AUDIT-EVENT-ENFORCEMENT-001 | PROPOSED | Authoritative gate/lifecycle audit integration without authorization semantics. |
 | AGENT-EXECUTION-AUTHORIZATION-001 | PROPOSED | Final typed decision consuming all independent gates; no side effects. |
 | AGENT-PACKAGE-LOAD-EVIDENCE-INTEGRATION-001 | PROPOSED | Typed package-load assessment consuming non-forgeable owner evidence. |
@@ -586,25 +586,25 @@ It consumes the root parser and emits only a typed blocked report while
 referenced metadata validators or enforcement gates remain unavailable. It
 does not authorize package loading or agent execution.
 
-`AGENT-HANDOFF-ENFORCEMENT-001` closed in merge `9e42136`. The active
-sequential executable feature registered by the v0.11.2 reconciliation is:
+`AGENT-HANDOFF-ENFORCEMENT-001` closed in merge `9e42136`. The next sequential
+executable feature registered by the v0.11.2 reconciliation is:
 
 ```text
-AGENT-ROUTING-CANDIDATE-SELECTOR-001
+AGENT-AUDIT-EVENT-ENFORCEMENT-001
 ```
 
-Thirteen of the 19 implementation rows are `CLOSED`.
+Fourteen of the 19 implementation rows are `CLOSED`.
 `AGENT-HANDOFF-ENFORCEMENT-001` closed in merge `9e42136` after implementation,
 local validation, Architecture checkpoints, exact-tree field QA on six
 required platform roles, and post-merge validation.
 `AGENT-OUT-OF-SCOPE-RESPONSE-ENFORCEMENT-001` closed in merge `0b9bdf0`
 after local validation, final Architecture review, exact-tree field QA on six
 platform roles, and post-merge validation.
-`AGENT-ROUTING-CANDIDATE-SELECTOR-001` is `APPROVED FOR MERGE` after local
+`AGENT-ROUTING-CANDIDATE-SELECTOR-001` closed in merge `1efa9cf` after local
 implementation, 10 focused tests, the 93-test runtime regression, strict
 crate clippy, scope review, size review, exact-tree field QA on six platform
-roles, and final Architecture review passed. The other five rows stay
-`PROPOSED`.
+roles, final Architecture review, and unrestricted post-merge validation
+passed. The other five rows stay `PROPOSED`.
 
 Not all functional P0 agents should be implemented in parallel at the start.
 After every prerequisite gate above passes, `NODE-DOCTOR-AGENT-001` remains

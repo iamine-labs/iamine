@@ -10,6 +10,9 @@ LOCAL VALIDATION PASSED
 FIELD QA AUTHORIZED
 READY FOR MERGE REVIEW
 APPROVED FOR MERGE
+MERGED
+POST-MERGE VALIDATION
+MERGED / VALIDATED / CLOSED
 branch: feature/agent-routing-candidate-selector-001
 base: a4fd73311009de46ebb434caf501888e3b2794d3
 base tree: 7d3f51ab76705df62a204612d7d8a76bf44cdb3f
@@ -18,6 +21,9 @@ execution availability change: none
 source commit: fbf91c419ed5b13d3351bbcf47f8d28c319c88cc
 source tree: 7561da0d1763a3e7afe37bd8473bac0359a485f6
 field QA: PASS, 6/6 platform roles
+merge commit: 1efa9cf156bb79f6b7f7d1fc0377521b5dbc3421
+merge tree: 68af86b0a9bbe6ab007ef0b388db9141343a3c97
+post-merge validation: PASS WITH WARNINGS
 ```
 
 ## Objective
@@ -226,7 +232,7 @@ sandbox, model, package, scheduler, transport, or inference process.
 ## Architecture Decision
 
 ```text
-decision: APPROVED FOR MERGE
+decision: MERGED / VALIDATED / CLOSED
 implementation checkpoint: IMPLEMENTATION COMPLETE
 focused validation: PASS, 10/10
 runtime regression: PASS, 93/93
@@ -239,5 +245,10 @@ field QA: PASS on source commit fbf91c419ed5b13d3351bbcf47f8d28c319c88cc
 field QA matrix: 6/6 platform roles, 60/60 focused + 24/24 library
 field findings: none
 final Architecture review: PASS
-next gate: controlled merge into develop
+controlled merge: PASS, 1efa9cf156bb79f6b7f7d1fc0377521b5dbc3421
+post-merge quality gate: PASS WITH WARNINGS, required_failures=0
+post-merge optional tools skipped: cargo-audit, cargo-deny, gitleaks
+sandbox finding: model and daemon failures reproduced on the exact base
+unrestricted reruns: PASS
+next feature: AGENT-AUDIT-EVENT-ENFORCEMENT-001
 ```

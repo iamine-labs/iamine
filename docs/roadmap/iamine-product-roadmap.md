@@ -347,17 +347,18 @@ AGENT-POLICY-METADATA-VALIDATORS-001
 
 `AGENT-TIMEOUT-CANCEL-ENFORCEMENT-001` closed in merge `2dbb760` after
 Architecture, implementation, local validation, exact-tree field QA, final
-Architecture review, and post-merge validation. Thirteen of the 19 implementation
+Architecture review, and post-merge validation. Fourteen of the 19 implementation
 rows are now `CLOSED`. `AGENT-HANDOFF-ENFORCEMENT-001` closed in merge
 `9e42136` after exact-tree six-role field QA and post-merge validation.
 `AGENT-OUT-OF-SCOPE-RESPONSE-ENFORCEMENT-001` closed in merge `0b9bdf0`
 after local validation, exact-tree six-role field QA, final Architecture
 review, and post-merge validation.
-`AGENT-ROUTING-CANDIDATE-SELECTOR-001` is `APPROVED FOR MERGE`; its bounded
+`AGENT-ROUTING-CANDIDATE-SELECTOR-001` closed in merge `1efa9cf`; its bounded
 in-memory implementation, local regression, exact-tree field QA on six
-platform roles, and final Architecture review passed without scheduler,
-transport, model-selection, distributed-MoE, or execution side effects.
-The other six rows stay `PROPOSED`, and no later row is authorized in bulk.
+platform roles, final Architecture review, and unrestricted post-merge gate
+passed without scheduler, transport, model-selection, distributed-MoE, or
+execution side effects. The other five rows stay `PROPOSED`, and no later row
+is authorized in bulk.
 
 Each arrow still requires the complete canonical feature lifecycle. A roadmap
 position is not development authorization.
