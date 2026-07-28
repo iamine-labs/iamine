@@ -6,7 +6,9 @@
 IMPLEMENTATION COMPLETE
 LOCAL VALIDATION PASSED
 ARCHITECTURE CHECKPOINT PASSED
-FIELD QA AUTHORIZED
+FIELD QA PASSED
+FINAL ARCHITECTURE REVIEW PASSED
+APPROVED FOR MERGE
 focused integration tests: PASS, 10/10
 runtime regression: PASS, 103/103
 agents regression: PASS, 109/109
@@ -19,8 +21,9 @@ strict crate clippy: PASS
 branch: feature/agent-audit-event-enforcement-001
 base: c96014bee0927f57a72bdbbd52a9da1ef652766e
 base tree: 01812f50a2f8c7c86db230accdf566d7c661d7e7
-source commit: pending
-source tree: pending
+source commit: e2f867410f48990c09b9a3be90b9f8d409820ffd
+source tree: c770f8a857a34f101ee42b5e14c119508ad5d194
+bundle sha256: a596ee442d95ea196663a8cdc28bcc94991c0833fef6aaac85177bea2015cae0
 ```
 
 ## Expected Scope
@@ -141,12 +144,12 @@ Run on the exact source commit and tree:
 
 | Platform role | Required | Result |
 | --- | --- | --- |
-| macOS development | yes | pending |
-| physical Linux | yes | pending |
-| Linux VM control | yes | pending |
-| Linux VM worker A | yes | pending |
-| Linux VM worker B | yes | pending |
-| Linux VM heavy | yes | pending |
+| macOS development | yes | PASS, 10/10 integration + 4/4 library |
+| physical Linux, TS140 | yes | PASS, 10/10 integration + 4/4 library |
+| Linux VM control, iamine-ctrl | yes | PASS, 10/10 integration + 4/4 library |
+| Linux VM worker A, iamine-wrk1 | yes | PASS, 10/10 integration + 4/4 library |
+| Linux VM worker B, iamine-wrk2 | yes | PASS, 10/10 integration + 4/4 library |
+| Linux VM heavy, iamine-heavy | yes | PASS, 10/10 integration + 4/4 library |
 
 For each role:
 
@@ -167,13 +170,35 @@ runtime side effects: none
 On the first failure, stop, classify product/environment/harness/baseline, do
 not modify code during QA, and do not continue later roles.
 
+Consolidated evidence:
+
+```text
+source identity: PASS on all six platform roles
+focused integration total: PASS, 60/60
+runtime library total: PASS, 24/24
+tracked worktree: clean on all six platform roles
+staging: clean on all six platform roles
+runtime side effects: none
+product failures: 0
+baseline failures: 0
+environment failures: 0
+harness findings: 1, resolved before tests
+```
+
+The first TS140 attempt stopped before tests because non-interactive SSH did
+not expose Cargo on `PATH`. Cargo was located at
+`/home/ts140/.cargo/bin/cargo`; the same checkout and exact identity then
+passed both required test commands. No code changed and no product failure
+was observed.
+
 ## Current Result
 
 ```text
 implementation: complete
 local validation: PASS
 Architecture checkpoint: PASS
-field QA: authorized, pending
+field QA: PASS on Mac, TS140, and four Proxmox guests
+final Architecture review: PASS
 execution/runtime availability change: none
-recommendation: pending
+recommendation: APPROVED FOR MERGE
 ```
