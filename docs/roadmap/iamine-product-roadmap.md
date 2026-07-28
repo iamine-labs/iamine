@@ -10,27 +10,32 @@ closeout documents.
 The whitepaper remains strategic vision. This roadmap controls implementation
 sequence, release meaning, and feature authorization.
 
-Reconciled against:
+Operational status reconciled from:
 
 ```text
 branch: origin/develop
-commit: 4649b6bf9dc61dfd102517dee4d16dc1c83c5727
-date: 2026-07-11
+baseline commit: c836d5c8f18fd95967b0114fbc0bd185c59158de
+baseline tree: a351ba66c486975261ba1050f730a00ebe7f8aac
+date: 2026-07-28
 ```
 
 Canonical update:
 
 ```text
 ROADMAP-OFFICIAL-AGENT-NETWORK-RECONCILIATION-001
+IAMINE-CANONICAL-ROADMAP-RECONCILIATION-001
 ```
 
-This update incorporates the official Agent Network roadmap. IAMINE v1.0 is
-the IAMINE Agent Network Public Beta, not an inference-only public beta.
+These updates incorporate the official Agent Network roadmap and its current
+repository status. IAMINE v1.0 is the IAMINE Agent Network Public Beta, not an
+inference-only public beta.
 
 The detailed Agent Network roadmap lives in:
 
 ```text
 docs/roadmap/iamine-agent-network-roadmap.md
+docs/roadmap/iamine-gui-cli-product-track.md
+docs/roadmap/iamine-security-ci-track.md
 ```
 
 ## State Vocabulary
@@ -113,6 +118,14 @@ authorize execution.
 architecture-only runtime claims to independently owned implementation
 features. It changed roadmap state only.
 
+Fifteen of the 19 executable v0.11.2 rows are closed. The last closed row is
+`AGENT-AUDIT-EVENT-ENFORCEMENT-001`, merge `b9fe62d`.
+`AGENT-EXECUTION-AUTHORIZATION-001` is the next sequential implementation
+feature, but remains paused until
+`IAMINE-CANONICAL-ROADMAP-RECONCILIATION-001` is merged, post-merge validated,
+and closed. The package-load evidence integration, package loader, and runtime
+executor rows remain proposed and are not authorized in bulk.
+
 The broader v0.9 operational stability claim still requires the operational
 target: 10-50 nodes, 3-10 operators, multiple physical networks, and two to
 four weeks of stable operation.
@@ -128,6 +141,7 @@ or handed off to the orchestrator.
 | ROADMAP-OFFICIAL-AGENT-NETWORK-RECONCILIATION-001 | CLOSED | Architecture / product roadmap | Reconciled this repository roadmap with the official Agent Network roadmap while preserving closed feature evidence without reinterpreting it; merge `62761cb`, post-merge validation PASS. |
 | ROADMAP-AGENT-NETWORK-COMPLETE-RECONCILIATION-001 | CLOSED | Architecture / product roadmap | Incorporated the complete Agent Network, agent creation architecture, developer platform, language policy, dependency policy, routing, and advanced compute roadmap update; merge `7769cb2`, focused post-merge validation PASS. |
 | NODE-DOCTOR-AGENT-001-DEPENDENCY-RECONCILIATION-001 | CLOSED | Architecture / product roadmap | Kept functional Node Doctor implementation blocked and placed its executable prerequisite chain before development authorization; merge `7588e09`, focused post-merge validation PASS. |
+| IAMINE-CANONICAL-ROADMAP-RECONCILIATION-001 | ACTIVE | Architecture / product roadmap | Reconcile the current v0.11.2 status, preserve existing milestone numbering, register proposed GUI/CLI and Security/CI tracks, and correct superseded QA evidence without changing runtime behavior. |
 
 ## Milestone 0 - v0.7 Foundations
 
@@ -264,6 +278,13 @@ real payments remain blocked until the appropriate trust, registry,
 validation, reputation, and economic-testnet layers exist.
 
 ## Parallel or Later Product Lines
+
+Canonical parallel tracks:
+
+| Track | State | Activation rule | Roadmap |
+| --- | --- | --- | --- |
+| IAMINE-GUI-CLI-PRODUCT-TRACK | PROPOSED | Visual mock work may proceed independently; real actions require shared contracts, local authorization, audit, and the Local Control API contract. | `docs/roadmap/iamine-gui-cli-product-track.md` |
+| IAMINE-SECURITY-CI-TRACK | PROPOSED / OPEN | Does not replace the sequential runtime feature; unresolved findings block release closure and supply-chain readiness. | `docs/roadmap/iamine-security-ci-track.md` |
 
 These lines remain deferred unless Architecture explicitly promotes them into
 the active roadmap:

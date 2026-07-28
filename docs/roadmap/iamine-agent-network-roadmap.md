@@ -3,7 +3,8 @@
 ## Authority
 
 This document records the official Agent Network roadmap incorporated by
-`ROADMAP-OFFICIAL-AGENT-NETWORK-RECONCILIATION-001`.
+`ROADMAP-OFFICIAL-AGENT-NETWORK-RECONCILIATION-001` and corrected to the
+current repository state by `IAMINE-CANONICAL-ROADMAP-RECONCILIATION-001`.
 
 Decision:
 
@@ -18,6 +19,21 @@ runtime, handoff policy, out-of-scope response policy, sandbox baseline, audit
 logs, scope boundary evals, internal developer bootstrap, official agent
 registry, P0 official agents, beta onboarding, feedback loop, QA, and release
 gates.
+
+Current operational baseline:
+
+```text
+origin/develop: c836d5c8f18fd95967b0114fbc0bd185c59158de
+tree: a351ba66c486975261ba1050f730a00ebe7f8aac
+v0.11.2 executable rows: 15 of 19 CLOSED
+last closed: AGENT-AUDIT-EVENT-ENFORCEMENT-001
+next after roadmap reconciliation: AGENT-EXECUTION-AUTHORIZATION-001
+runtime regression baseline: 103/103
+agents regression baseline: 109/109
+```
+
+The earlier 62-test runtime result remains historical evidence for its exact
+snapshot. It is not the current regression baseline.
 
 ## Required Sequence
 
@@ -425,6 +441,10 @@ audit event boundaries now have executable validation evidence. Every row in
 the executable completion registry must close independently before Architecture
 may authorize the exhaustive milestone gate.
 
+`AGENT-EXECUTION-AUTHORIZATION-001` is paused only while the docs-only
+`IAMINE-CANONICAL-ROADMAP-RECONCILIATION-001` lifecycle completes. This pause
+does not authorize the three later executable rows.
+
 ## v0.11.3 - Internal Agent Developer Bootstrap
 
 Closure gate:
@@ -468,6 +488,11 @@ no unrestricted filesystem
 no unrestricted network
 no bypassing manual validation
 ```
+
+The v0.11.3 milestone remains closed and must not be reopened. Identifiers in
+this section are internal documentation contracts. A later public maturity
+stage may consume them as dependencies, but it must not reuse a closed feature
+ID as if it represented new implementation work.
 
 | Feature | State | Goal |
 | --- | --- | --- |
@@ -684,6 +709,25 @@ Experimental
 Disabled
 ```
 
+## Parallel Product Tracks
+
+The following tracks are strategically accepted but remain `PROPOSED`. They do
+not renumber v0.12.0, v0.12.1, v0.12.2, or v0.13.0 and do not authorize product
+implementation:
+
+```text
+IAMINE-GUI-CLI-PRODUCT-TRACK
+  -> docs/roadmap/iamine-gui-cli-product-track.md
+
+IAMINE-SECURITY-CI-TRACK
+  -> docs/roadmap/iamine-security-ci-track.md
+```
+
+Visual dashboard work may use typed mocks. Real mutating actions remain blocked
+until shared contracts, local authorization, audit requirements, and the Local
+Control API contract close. Security/CI remediation may proceed as an
+independent maintenance track but must preserve the active runtime sequence.
+
 ## v1.0.0 - IAMINE Agent Network Public Beta
 
 ```text
@@ -777,22 +821,31 @@ AGENT-TEST-HARNESS-001
 AGENT-PACKAGE-VALIDATOR-CLI-001
 AGENT-LOCAL-SIMULATOR-001
 AGENT-DEVELOPER-DOCS-001
-AGENT-FRAMEWORK-BASELINE-001
 AGENT-SCOPE-TEST-HARNESS-001
 AGENT-EXPERTISE-TEMPLATE-001
 ```
 
-Initial public templates:
+Closed internal contracts consumed by this milestone:
 
 ```text
+AGENT-FRAMEWORK-BASELINE-001
 AGENT-TEMPLATE-DIAGNOSTIC-001
 AGENT-TEMPLATE-FILE-READONLY-001
 AGENT-TEMPLATE-NETWORK-DIAGNOSTIC-001
 AGENT-TEMPLATE-REPORTER-001
 AGENT-TEMPLATE-TEXT-ASSISTANT-001
+AGENT-TEMPLATE-OS-DIAGNOSTIC-001
+```
+
+These closed identifiers are dependencies, not reopened v1.2 feature rows.
+Public implementation or distribution work must receive distinct feature IDs
+only when Architecture defines genuinely different deliverables.
+
+Proposed public template additions:
+
+```text
 AGENT-TEMPLATE-DOCUMENT-LOCAL-001
 AGENT-TEMPLATE-CONTENT-DRAFT-001
-AGENT-TEMPLATE-OS-DIAGNOSTIC-001
 AGENT-TEMPLATE-CONNECTOR-READONLY-001
 ```
 
@@ -809,6 +862,11 @@ AGENT-BOUNDARY-TEST-GENERATOR-AGENT-001
 AGENT-LOCAL-SIMULATION-AGENT-001
 AGENT-PACKAGE-REVIEW-AGENT-001
 ```
+
+The public assistant identifiers are distinct from their closed `-INTERNAL`
+contracts because they require executable public developer experience,
+distribution, and QA deliverables. They must consume the internal contracts
+without reinterpreting those contracts as executable evidence.
 
 Restrictions:
 
