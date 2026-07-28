@@ -353,6 +353,9 @@ rows are now `CLOSED`. `AGENT-HANDOFF-ENFORCEMENT-001` closed in merge
 `AGENT-OUT-OF-SCOPE-RESPONSE-ENFORCEMENT-001` closed in merge `0b9bdf0`
 after local validation, exact-tree six-role field QA, final Architecture
 review, and post-merge validation.
+`AGENT-ROUTING-CANDIDATE-SELECTOR-001` is `FIELD QA AUTHORIZED`; its bounded
+in-memory implementation and local regression passed without scheduler,
+transport, model-selection, distributed-MoE, or execution side effects.
 The other six rows stay `PROPOSED`, and no later row is authorized in bulk.
 
 Each arrow still requires the complete canonical feature lifecycle. A roadmap

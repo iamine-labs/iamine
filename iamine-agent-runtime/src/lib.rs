@@ -10,6 +10,7 @@ mod owner;
 mod reference;
 mod resolver;
 mod review_evidence;
+mod routing_candidate_selector;
 mod runtime_compatibility;
 mod sandbox_enforcement;
 mod timeout_cancel_enforcement;
@@ -61,6 +62,18 @@ pub use review_evidence::{
     LocalRegistryReviewDecision, PackageReviewAuthority, PackageReviewDecisions,
     PackageReviewEvidence, PackageReviewEvidenceStatus, PackageReviewRequirement,
     PackageReviewSubject, ReviewEvidenceError, ReviewEvidenceErrorCode,
+};
+pub use routing_candidate_selector::{
+    RoutingCandidateAvailability, RoutingCandidateCompatibility, RoutingCandidateExclusionReason,
+    RoutingCandidateRef, RoutingCandidateRiskClass, RoutingCandidateSandbox,
+    RoutingCandidateSelectionAuthority, RoutingCandidateSelectionEvidence,
+    RoutingCandidateSelectionEvidenceStatus, RoutingCandidateSelectionOutcome,
+    RoutingCandidateSelectorError, RoutingCandidateSelectorErrorCode,
+    RoutingCandidateSelectorRequirement, RoutingResourceRequirements,
+    RoutingSelectionBlockedAction, RoutingSelectionRequestRef, MAX_ROUTING_CANDIDATES,
+    MAX_ROUTING_CANDIDATE_ID_BYTES, MAX_ROUTING_TASK_TYPE_BYTES,
+    ROUTING_CANDIDATE_EXCLUSION_REASONS, ROUTING_CANDIDATE_SELECTION_OUTCOMES,
+    ROUTING_CANDIDATE_SELECTION_SCHEMA_VERSION,
 };
 pub use runtime_compatibility::{
     RuntimeCompatibilityAuthority, RuntimeCompatibilityConfigurationError,
