@@ -406,7 +406,7 @@ AGENT-POLICY-METADATA-VALIDATORS-001
 | AGENT-HANDOFF-ENFORCEMENT-001 | CLOSED | Typed authority-bound handoff controls and local dispatch evidence without permission expansion, target selection, transport, or implicit execution; merged in `9e42136`, exact-tree six-role field QA and post-merge validation passed. |
 | AGENT-OUT-OF-SCOPE-RESPONSE-ENFORCEMENT-001 | CLOSED | Authority-bound deterministic refusal, clarification, blocked, and handoff response evidence; merged in `0b9bdf0`, exact-tree six-role field QA and post-merge validation passed. |
 | AGENT-ROUTING-CANDIDATE-SELECTOR-001 | CLOSED | Authority-bound bounded candidate-selection evidence without scoring, execution, scheduler mutation, transport, model selection, or distributed model MoE; merged in `1efa9cf`, exact-tree field QA passed on six platform roles, and unrestricted post-merge quality gate passed. |
-| AGENT-AUDIT-EVENT-ENFORCEMENT-001 | PROPOSED | Authoritative gate/lifecycle audit integration without authorization semantics. |
+| AGENT-AUDIT-EVENT-ENFORCEMENT-001 | FIELD QA AUTHORIZED | Bounded audit-owner evidence wraps typed Scope/Permission projections and authority-bound lifecycle state without authorization semantics; local validation, quality gate, and Architecture checkpoint passed. |
 | AGENT-EXECUTION-AUTHORIZATION-001 | PROPOSED | Final typed decision consuming all independent gates; no side effects. |
 | AGENT-PACKAGE-LOAD-EVIDENCE-INTEGRATION-001 | PROPOSED | Typed package-load assessment consuming non-forgeable owner evidence. |
 | AGENT-PACKAGE-LOADER-001 | PROPOSED | Load an eligible package through the bounded resolver; no execution. |
@@ -604,7 +604,11 @@ platform roles, and post-merge validation.
 implementation, 10 focused tests, the 93-test runtime regression, strict
 crate clippy, scope review, size review, exact-tree field QA on six platform
 roles, final Architecture review, and unrestricted post-merge validation
-passed. The other five rows stay `PROPOSED`.
+passed. `AGENT-AUDIT-EVENT-ENFORCEMENT-001` is authorized for exact-tree field
+QA after 10 focused tests, the 103-test runtime regression, the 109-test
+agents regression, strict crate clippy, the full quality gate, privacy review,
+size review, and Architecture checkpoint passed. The other four rows stay
+`PROPOSED`.
 
 Not all functional P0 agents should be implemented in parallel at the start.
 After every prerequisite gate above passes, `NODE-DOCTOR-AGENT-001` remains
