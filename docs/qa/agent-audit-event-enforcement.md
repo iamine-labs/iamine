@@ -8,7 +8,9 @@ LOCAL VALIDATION PASSED
 ARCHITECTURE CHECKPOINT PASSED
 FIELD QA PASSED
 FINAL ARCHITECTURE REVIEW PASSED
-APPROVED FOR MERGE
+MERGED
+POST-MERGE VALIDATION PASSED
+MERGED / VALIDATED / CLOSED
 focused integration tests: PASS, 10/10
 runtime regression: PASS, 103/103
 agents regression: PASS, 109/109
@@ -24,6 +26,8 @@ base tree: 01812f50a2f8c7c86db230accdf566d7c661d7e7
 source commit: e2f867410f48990c09b9a3be90b9f8d409820ffd
 source tree: c770f8a857a34f101ee42b5e14c119508ad5d194
 bundle sha256: a596ee442d95ea196663a8cdc28bcc94991c0833fef6aaac85177bea2015cae0
+feature tip: a81e874f4deec1ef8d222e26ed57554c8d12a9f3
+merge commit: b9fe62d2ccf09cb8c24b51522d2eca226d41ea86
 ```
 
 ## Expected Scope
@@ -199,6 +203,13 @@ local validation: PASS
 Architecture checkpoint: PASS
 field QA: PASS on Mac, TS140, and four Proxmox guests
 final Architecture review: PASS
+controlled merge: PASS, b9fe62d2ccf09cb8c24b51522d2eca226d41ea86
+post-merge focused tests: PASS, 10/10
+post-merge runtime regression: PASS, 103/103
+post-merge agents regression: PASS, 109/109
+post-merge strict crate clippy: PASS
+post-merge quality gate: PASS WITH WARNINGS, required_failures=0
+post-merge optional tools skipped: cargo-audit, cargo-deny, gitleaks
 execution/runtime availability change: none
-recommendation: APPROVED FOR MERGE
+recommendation: MERGED / VALIDATED / CLOSED
 ```
