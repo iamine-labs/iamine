@@ -81,3 +81,23 @@ READY FOR ARCHITECTURE MERGE REVIEW
 ```
 
 QA must not approve or authorize the merge.
+
+## Controlled Merge And Closure
+
+```text
+implementation commit: f1ed14cf6f309ae754f631e77c009bed2e65d8ff
+validated tree: 97db286ccfa3d997e4e05515dd6bf53d9922a555
+merge commit: e761b0acabf69e12f292bba936c3ff0a964feb13
+target: develop
+merge tree matches validated tree: yes
+post-merge quality gate: PASS WITH WARNINGS
+post-merge required failures: 0
+post-merge gate warnings: 0
+post-merge optional tools skipped: 3
+closure state: MERGED / VALIDATED / CLOSED
+```
+
+The post-merge gate repeated all required checks and `clippy`. `cargo audit`,
+`cargo deny`, and `gitleaks` remained unavailable and were explicitly skipped.
+No field QA was required because the integrated tree changes documentation
+only.

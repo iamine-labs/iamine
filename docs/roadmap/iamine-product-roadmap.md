@@ -141,7 +141,7 @@ or handed off to the orchestrator.
 | ROADMAP-OFFICIAL-AGENT-NETWORK-RECONCILIATION-001 | CLOSED | Architecture / product roadmap | Reconciled this repository roadmap with the official Agent Network roadmap while preserving closed feature evidence without reinterpreting it; merge `62761cb`, post-merge validation PASS. |
 | ROADMAP-AGENT-NETWORK-COMPLETE-RECONCILIATION-001 | CLOSED | Architecture / product roadmap | Incorporated the complete Agent Network, agent creation architecture, developer platform, language policy, dependency policy, routing, and advanced compute roadmap update; merge `7769cb2`, focused post-merge validation PASS. |
 | NODE-DOCTOR-AGENT-001-DEPENDENCY-RECONCILIATION-001 | CLOSED | Architecture / product roadmap | Kept functional Node Doctor implementation blocked and placed its executable prerequisite chain before development authorization; merge `7588e09`, focused post-merge validation PASS. |
-| IAMINE-CANONICAL-ROADMAP-RECONCILIATION-001 | ACTIVE | Architecture / product roadmap | Reconcile the current v0.11.2 status, preserve existing milestone numbering, register proposed GUI/CLI and Security/CI tracks, and correct superseded QA evidence without changing runtime behavior. |
+| IAMINE-CANONICAL-ROADMAP-RECONCILIATION-001 | CLOSED | Architecture / product roadmap | Reconciled the current v0.11.2 status, preserved existing milestone numbering, registered proposed GUI/CLI and Security/CI tracks, and corrected superseded QA evidence without changing runtime behavior; merge `e761b0a`, post-merge quality gate PASS WITH WARNINGS. |
 
 ## Milestone 0 - v0.7 Foundations
 
