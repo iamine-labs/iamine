@@ -121,10 +121,10 @@ features. It changed roadmap state only.
 Fifteen of the 19 executable v0.11.2 rows are closed. The last closed row is
 `AGENT-AUDIT-EVENT-ENFORCEMENT-001`, merge `b9fe62d`.
 `AGENT-EXECUTION-AUTHORIZATION-001` is the next sequential implementation
-feature, but remains paused until
-`IAMINE-CANONICAL-ROADMAP-RECONCILIATION-001` is merged, post-merge validated,
-and closed. The package-load evidence integration, package loader, and runtime
-executor rows remain proposed and are not authorized in bulk.
+feature and is active on `feature/agent-execution-authorization-001` after
+`IAMINE-CANONICAL-ROADMAP-RECONCILIATION-001` closed. The package-load evidence
+integration, package loader, and runtime executor rows remain proposed and are
+not authorized in bulk.
 
 The broader v0.9 operational stability claim still requires the operational
 target: 10-50 nodes, 3-10 operators, multiple physical networks, and two to

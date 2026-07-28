@@ -32,6 +32,10 @@ impl<'a> PackageReviewSubject<'a> {
         self.package
     }
 
+    pub(crate) fn package_id(self) -> &'a str {
+        &self.package.manifest().package_id
+    }
+
     pub(crate) const fn references(self) -> &'a ResolvedPackageReferences {
         self.references
     }

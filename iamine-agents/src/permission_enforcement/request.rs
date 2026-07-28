@@ -44,6 +44,10 @@ impl<'a> PermissionRequestRef<'a> {
         self.package_id
     }
 
+    pub fn targets_package(&self, package_id: &str) -> bool {
+        self.package_id == package_id
+    }
+
     pub(crate) const fn action(&self) -> &str {
         self.action
     }

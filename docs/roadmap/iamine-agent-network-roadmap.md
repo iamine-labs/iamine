@@ -23,11 +23,11 @@ gates.
 Current operational baseline:
 
 ```text
-origin/develop: c836d5c8f18fd95967b0114fbc0bd185c59158de
-tree: a351ba66c486975261ba1050f730a00ebe7f8aac
+origin/develop: ff7ba1668ffdf61a71294ac3fa1921baf426ce43
+tree: f38b05e44c635989fa1594803eee8d97ea45ec5a
 v0.11.2 executable rows: 15 of 19 CLOSED
 last closed: AGENT-AUDIT-EVENT-ENFORCEMENT-001
-next after roadmap reconciliation: AGENT-EXECUTION-AUTHORIZATION-001
+active feature: AGENT-EXECUTION-AUTHORIZATION-001
 runtime regression baseline: 103/103
 agents regression baseline: 109/109
 ```
@@ -423,7 +423,7 @@ AGENT-POLICY-METADATA-VALIDATORS-001
 | AGENT-OUT-OF-SCOPE-RESPONSE-ENFORCEMENT-001 | CLOSED | Authority-bound deterministic refusal, clarification, blocked, and handoff response evidence; merged in `0b9bdf0`, exact-tree six-role field QA and post-merge validation passed. |
 | AGENT-ROUTING-CANDIDATE-SELECTOR-001 | CLOSED | Authority-bound bounded candidate-selection evidence without scoring, execution, scheduler mutation, transport, model selection, or distributed model MoE; merged in `1efa9cf`, exact-tree field QA passed on six platform roles, and unrestricted post-merge quality gate passed. |
 | AGENT-AUDIT-EVENT-ENFORCEMENT-001 | CLOSED | Bounded audit-owner evidence wraps typed Scope/Permission projections and authority-bound lifecycle state without authorization semantics; merged in `b9fe62d`, exact-tree six-role field QA and post-merge validation passed. |
-| AGENT-EXECUTION-AUTHORIZATION-001 | PROPOSED | Final typed decision consuming all independent gates; no side effects. |
+| AGENT-EXECUTION-AUTHORIZATION-001 | ACTIVE | Implement the final authority-bound typed decision by recomputing package-bound Scope/Permission and verifying the exact review, compatibility, I/O, sandbox, lifecycle, timeout/cancel, routing, and audit chain; no package load or runtime side effects. |
 | AGENT-PACKAGE-LOAD-EVIDENCE-INTEGRATION-001 | PROPOSED | Typed package-load assessment consuming non-forgeable owner evidence. |
 | AGENT-PACKAGE-LOADER-001 | PROPOSED | Load an eligible package through the bounded resolver; no execution. |
 | AGENT-RUNTIME-EXECUTOR-001 | PROPOSED | Execute only authorized loaded packages through every runtime owner. |
@@ -441,9 +441,10 @@ audit event boundaries now have executable validation evidence. Every row in
 the executable completion registry must close independently before Architecture
 may authorize the exhaustive milestone gate.
 
-`AGENT-EXECUTION-AUTHORIZATION-001` is paused only while the docs-only
-`IAMINE-CANONICAL-ROADMAP-RECONCILIATION-001` lifecycle completes. This pause
-does not authorize the three later executable rows.
+`IAMINE-CANONICAL-ROADMAP-RECONCILIATION-001` is closed.
+`AGENT-EXECUTION-AUTHORIZATION-001` is now active on its independent feature
+branch. This activation does not authorize package-load evidence integration,
+the package loader, or the runtime executor.
 
 ## v0.11.3 - Internal Agent Developer Bootstrap
 
