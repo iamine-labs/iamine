@@ -349,10 +349,11 @@ AGENT-POLICY-METADATA-VALIDATORS-001
 Architecture, implementation, local validation, exact-tree field QA, final
 Architecture review, and post-merge validation. Twelve of the 19 implementation
 rows are now `CLOSED`. `AGENT-HANDOFF-ENFORCEMENT-001` closed in merge
-`9e42136` after exact-tree six-role field QA and post-merge validation. The
-other seven rows stay `PROPOSED`;
-`AGENT-OUT-OF-SCOPE-RESPONSE-ENFORCEMENT-001` is next in sequence, and no later
-row is authorized in bulk.
+`9e42136` after exact-tree six-role field QA and post-merge validation.
+`AGENT-OUT-OF-SCOPE-RESPONSE-ENFORCEMENT-001` is active at
+`APPROVED FOR MERGE`; local validation, exact-tree six-role field QA, and
+final Architecture review passed.
+The other six rows stay `PROPOSED`, and no later row is authorized in bulk.
 
 Each arrow still requires the complete canonical feature lifecycle. A roadmap
 position is not development authorization.

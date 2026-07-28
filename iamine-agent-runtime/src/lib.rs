@@ -5,6 +5,7 @@ mod foundation;
 mod handoff_enforcement;
 mod input_output_enforcement;
 mod limits;
+mod out_of_scope_response_enforcement;
 mod owner;
 mod reference;
 mod resolver;
@@ -43,6 +44,14 @@ pub use limits::{
     ResolverLimits, MAX_PACKAGE_REFERENCE_BYTES, MAX_PACKAGE_REFERENCE_COMPONENTS,
     MAX_PACKAGE_REFERENCE_COUNT, MAX_PACKAGE_REFERENCE_FILE_BYTES,
     MAX_PACKAGE_REFERENCE_TOTAL_BYTES,
+};
+pub use out_of_scope_response_enforcement::{
+    OutOfScopeBlockedAction, OutOfScopeOperatorSummary, OutOfScopeResponseAuthority,
+    OutOfScopeResponseClass, OutOfScopeResponseError, OutOfScopeResponseErrorCode,
+    OutOfScopeResponseEvidence, OutOfScopeResponseEvidenceStatus, OutOfScopeResponseReason,
+    OutOfScopeResponseRequirement, OutOfScopeResponseSource, OutOfScopeSourceReason,
+    OUT_OF_SCOPE_RESPONSE_CLASSES, OUT_OF_SCOPE_RESPONSE_REASONS,
+    OUT_OF_SCOPE_RESPONSE_SCHEMA_VERSION,
 };
 pub use owner::{RuntimeOwner, RuntimeOwnerState, RuntimeOwnerStatus};
 pub use reference::{PackageReferenceKind, ResolvedPackageReferences, ResolvedReference};
