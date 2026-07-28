@@ -6,11 +6,12 @@
 IMPLEMENTATION COMPLETE
 LOCAL VALIDATION PASSED
 FIELD QA AUTHORIZED
+READY FOR MERGE REVIEW
 focused integration tests: PASS, 10/10
 runtime regression: PASS, 93/93
 strict crate clippy: PASS
 Architecture checkpoint: PASS
-field QA: pending exact source commit
+field QA: PASS, 6/6 platform roles
 ```
 
 ## Identity
@@ -19,8 +20,8 @@ field QA: pending exact source commit
 branch: feature/agent-routing-candidate-selector-001
 base: a4fd73311009de46ebb434caf501888e3b2794d3
 base tree: 7d3f51ab76705df62a204612d7d8a76bf44cdb3f
-source commit: pending
-source tree: pending
+source commit: fbf91c419ed5b13d3351bbcf47f8d28c319c88cc
+source tree: 7561da0d1763a3e7afe37bd8473bac0359a485f6
 ```
 
 ## Expected Scope
@@ -161,12 +162,12 @@ Run on the exact source commit and tree:
 
 | Platform role | Required | Result |
 | --- | --- | --- |
-| macOS development | yes | pending |
-| physical Linux | yes | pending |
-| Linux VM control | yes | pending |
-| Linux VM worker A | yes | pending |
-| Linux VM worker B | yes | pending |
-| Linux VM heavy | yes | pending |
+| macOS development | yes | PASS, 10/10 + 4/4 |
+| physical Linux | yes | PASS, 10/10 + 4/4 |
+| Linux VM control | yes | PASS, 10/10 + 4/4 |
+| Linux VM worker A | yes | PASS, 10/10 + 4/4 |
+| Linux VM worker B | yes | PASS, 10/10 + 4/4 |
+| Linux VM heavy | yes | PASS, 10/10 + 4/4 |
 
 For each role:
 
@@ -195,8 +196,11 @@ focused validation: PASS
 runtime regression: PASS
 strict crate clippy: PASS
 Architecture checkpoint: PASS
-field QA: authorized, pending exact source commit
+field QA: PASS, 6/6 platform roles, 60/60 focused + 24/24 library
+field product failures: none
+field environment failures: none
+field harness failures: none
 known limitation: Scope/Permission evaluations are typed but not authority-bound
 execution/runtime availability change: none
-recommendation: proceed to exact-source field QA
+recommendation: READY FOR ARCHITECTURE MERGE REVIEW
 ```

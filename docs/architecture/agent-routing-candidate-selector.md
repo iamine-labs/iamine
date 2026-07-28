@@ -8,12 +8,16 @@ DEVELOPMENT AUTHORIZED
 IMPLEMENTATION COMPLETE
 LOCAL VALIDATION PASSED
 FIELD QA AUTHORIZED
+READY FOR MERGE REVIEW
+APPROVED FOR MERGE
 branch: feature/agent-routing-candidate-selector-001
 base: a4fd73311009de46ebb434caf501888e3b2794d3
 base tree: 7d3f51ab76705df62a204612d7d8a76bf44cdb3f
 runtime behavior change: bounded in-memory candidate-selection evidence
 execution availability change: none
-field QA: pending exact source commit
+source commit: fbf91c419ed5b13d3351bbcf47f8d28c319c88cc
+source tree: 7561da0d1763a3e7afe37bd8473bac0359a485f6
+field QA: PASS, 6/6 platform roles
 ```
 
 ## Objective
@@ -222,7 +226,7 @@ sandbox, model, package, scheduler, transport, or inference process.
 ## Architecture Decision
 
 ```text
-decision: FIELD QA AUTHORIZED
+decision: APPROVED FOR MERGE
 implementation checkpoint: IMPLEMENTATION COMPLETE
 focused validation: PASS, 10/10
 runtime regression: PASS, 93/93
@@ -231,5 +235,9 @@ scope review: PASS
 size review: PASS
 known limitation: Scope/Permission evaluations are typed but not authority-bound
 execution impact: none
-next gate: exact-source field QA
+field QA: PASS on source commit fbf91c419ed5b13d3351bbcf47f8d28c319c88cc
+field QA matrix: 6/6 platform roles, 60/60 focused + 24/24 library
+field findings: none
+final Architecture review: PASS
+next gate: controlled merge into develop
 ```
