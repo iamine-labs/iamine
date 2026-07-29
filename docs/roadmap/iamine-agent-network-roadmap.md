@@ -734,12 +734,26 @@ IAMINE-GUI-CLI-PRODUCT-TRACK
 
 IAMINE-SECURITY-CI-TRACK
   -> docs/roadmap/iamine-security-ci-track.md
+
+IAMINE-INTERNAL-QUALITY-SECURITY-AUTOMATION-TRACK
+  -> docs/roadmap/iamine-internal-quality-security-automation-track.md
+
+IAMINE-PUBLIC-INTERNAL-ARCHITECTURE-GOVERNANCE-TRACK
+  -> docs/roadmap/iamine-public-internal-governance-track.md
+
+IAMINE-FUTURE-PRODUCT-EXPERIENCE-TRACKS
+  -> docs/roadmap/iamine-future-product-experience-tracks.md
 ```
 
 Visual dashboard work may use typed mocks. Real mutating actions remain blocked
 until shared contracts, local authorization, audit requirements, and the Local
 Control API contract close. Security/CI remediation may proceed as an
 independent maintenance track but must preserve the active runtime sequence.
+Internal QA and Security agent implementation begins only after the v0.11.2
+runtime milestone, remains subordinate to human authority, and is not a new
+implicit prerequisite for P0 agents. Future desktop, mobile, memory,
+cross-device, family, and education implementation remains deferred until
+Architecture promotes its dependency-complete groups.
 
 ## v1.0.0 - IAMINE Agent Network Public Beta
 

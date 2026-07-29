@@ -14,9 +14,9 @@ Operational status reconciled from:
 
 ```text
 branch: origin/develop
-baseline commit: c836d5c8f18fd95967b0114fbc0bd185c59158de
-baseline tree: a351ba66c486975261ba1050f730a00ebe7f8aac
-date: 2026-07-28
+baseline commit: 90a4605babe9383d6177b2211ae6507618525f69
+baseline tree: 9c020075e1881390406fb1e8d842931cc1ebff07
+date: 2026-07-29
 ```
 
 Canonical update:
@@ -24,6 +24,7 @@ Canonical update:
 ```text
 ROADMAP-OFFICIAL-AGENT-NETWORK-RECONCILIATION-001
 IAMINE-CANONICAL-ROADMAP-RECONCILIATION-001
+IAMINE-PRODUCT-TRACKS-ROADMAP-RECONCILIATION-001
 ```
 
 These updates incorporate the official Agent Network roadmap and its current
@@ -36,6 +37,9 @@ The detailed Agent Network roadmap lives in:
 docs/roadmap/iamine-agent-network-roadmap.md
 docs/roadmap/iamine-gui-cli-product-track.md
 docs/roadmap/iamine-security-ci-track.md
+docs/roadmap/iamine-internal-quality-security-automation-track.md
+docs/roadmap/iamine-public-internal-governance-track.md
+docs/roadmap/iamine-future-product-experience-tracks.md
 ```
 
 ## State Vocabulary
@@ -139,6 +143,7 @@ or handed off to the orchestrator.
 | ROADMAP-AGENT-NETWORK-COMPLETE-RECONCILIATION-001 | CLOSED | Architecture / product roadmap | Incorporated the complete Agent Network, agent creation architecture, developer platform, language policy, dependency policy, routing, and advanced compute roadmap update; merge `7769cb2`, focused post-merge validation PASS. |
 | NODE-DOCTOR-AGENT-001-DEPENDENCY-RECONCILIATION-001 | CLOSED | Architecture / product roadmap | Kept functional Node Doctor implementation blocked and placed its executable prerequisite chain before development authorization; merge `7588e09`, focused post-merge validation PASS. |
 | IAMINE-CANONICAL-ROADMAP-RECONCILIATION-001 | CLOSED | Architecture / product roadmap | Reconciled the current v0.11.2 status, preserved existing milestone numbering, registered proposed GUI/CLI and Security/CI tracks, and corrected superseded QA evidence without changing runtime behavior; merge `e761b0a`, post-merge quality gate PASS WITH WARNINGS. |
+| IAMINE-PRODUCT-TRACKS-ROADMAP-RECONCILIATION-001 | ACTIVE | Architecture / product roadmap | Reconcile internal assurance, public/internal governance, dashboard parallelism, shared-model installation direction, and deferred personal/family product tracks without runtime changes, milestone renumbering, or bulk authorization. |
 
 ## Milestone 0 - v0.7 Foundations
 
@@ -282,17 +287,33 @@ Canonical parallel tracks:
 | --- | --- | --- | --- |
 | IAMINE-GUI-CLI-PRODUCT-TRACK | PROPOSED | Visual mock work may proceed independently; real actions require shared contracts, local authorization, audit, and the Local Control API contract. | `docs/roadmap/iamine-gui-cli-product-track.md` |
 | IAMINE-SECURITY-CI-TRACK | PROPOSED / OPEN | Does not replace the sequential runtime feature; unresolved findings block release closure and supply-chain readiness. | `docs/roadmap/iamine-security-ci-track.md` |
+| IAMINE-INTERNAL-QUALITY-SECURITY-AUTOMATION-TRACK | PROPOSED | Internal-agent implementation starts after the v0.11.2 milestone; it does not replace human authority or silently block P0 implementation. | `docs/roadmap/iamine-internal-quality-security-automation-track.md` |
+| IAMINE-PUBLIC-INTERNAL-ARCHITECTURE-GOVERNANCE-TRACK | PROPOSED | Release-relevant classification, licensing, third-party, and disclosure work must close before a public release relies on it. | `docs/roadmap/iamine-public-internal-governance-track.md` |
+| IAMINE-FUTURE-PRODUCT-EXPERIENCE-TRACKS | PROPOSED / DEFERRED | Architecture groups may be promoted independently; executable product work requires explicit dependencies, milestone placement, and authorization. | `docs/roadmap/iamine-future-product-experience-tracks.md` |
 
 These lines remain deferred unless Architecture explicitly promotes them into
 the active roadmap:
 
 | Line | State | Activation dependency |
 | --- | --- | --- |
-| Desktop and mobile applications | DEFERRED | Stable node management APIs and resource policy |
+| Desktop and mobile applications | DEFERRED | Stable shared contracts, node management APIs, local authorization, service lifecycle, and resource policy |
+| Personal memory, companion, and cross-device continuity | DEFERRED | Privacy, consent, encryption, scoping, revocation, export/delete, and audit |
+| Family and education ecosystem | DEFERRED | Profiles, guardian consent, child safety, age-appropriate UX, bounded memory, and independent safety QA |
 | Enterprise API and billing | DEFERRED | Stable public inference API, accounting, and reliability evidence |
 | Model marketplace | DEFERRED | Trusted registry maturity |
 | Advanced distributed compute | DEFERRED | Mature distributed runtime and verified shard integrity |
 | Advanced automation agents | DEFERRED | Agent safety, trust, and permission maturity |
+
+The future shared-model and installation direction must extend the existing
+agent resource metadata and model eligibility gates. It must not add model
+selection, download, loading, or execution responsibilities to
+`AGENT-PACKAGE-LOADER-001`.
+
+The GUI/CLI visual sequence may run in a separate worktree with typed mocks
+after its frontend preflight and interface architecture. Real node data or
+actions remain blocked behind shared contracts, local authorization, audit,
+and the Local Control API. Parallel track registration is not development
+authorization and does not alter the immediate runtime sequence.
 
 ## Enabling and Corrective Work
 
