@@ -9,10 +9,15 @@ base: 7455f30193bcb53c5362690206b3fb79aba92bbd
 base tree: 84a53698274ab1d5d71b001a313f961b7ce5d8ae
 source commit: 22fc428def790eb74db23f6aa11fe8e247df25d3
 source tree: 9d760b1831206a5d72a8c6b878e50d3c8ded98bd
+feature tip: fc2bb2fc4b580815f9853f04022b3c3b051097a5
+feature tree: d787a6fa958d4e1571cfd64268be56947dce78f3
+merge commit: 0e8e2db37ba55f14729e0d4c10f1e3e34898b172
+merge tree: d787a6fa958d4e1571cfd64268be56947dce78f3
 canonical remote: origin
 runtime behavior changed: bounded in-memory package loading
 field QA required: yes
 field QA result: PASS
+post-merge validation: PASS
 ```
 
 QA must record the exact source commit and tree before running any test. It
@@ -157,10 +162,33 @@ TS140 did not expose Cargo through the default non-interactive SSH path. The
 existing `/home/ts140/.cargo/bin/cargo` executable was used without changing
 the host.
 
+## Post-Merge Validation
+
+The controlled merge preserved the exact validated feature tree. Validation
+ran against merge `0e8e2db37ba55f14729e0d4c10f1e3e34898b172` and tree
+`d787a6fa958d4e1571cfd64268be56947dce78f3`.
+
+```text
+focused package loader: 9/9 PASS
+workspace: 1109/1109 PASS
+workspace clippy: PASS WITH BASELINE WARNINGS
+quality gate required failures: 0
+quality gate warnings: 0
+quality gate optional checks skipped: 3
+quality gate result: PASS WITH WARNINGS
+```
+
+The first post-merge workspace attempt exhausted the Mac data volume while
+compiling generated Cargo artifacts. No product test failed. After removing
+only the disposable feature-worktree `target/` directory, the unchanged merge
+passed the workspace regression, workspace Clippy, and complete quality gate.
+This was an environmental capacity finding, not a product exception.
+
 ## Recommendation
 
 ```text
-READY FOR ARCHITECTURE MERGE REVIEW
+MERGED / VALIDATED / CLOSED
+next feature: AGENT-RUNTIME-EXECUTOR-001 remains PROPOSED
 ```
 
 QA does not approve or authorize merge.
