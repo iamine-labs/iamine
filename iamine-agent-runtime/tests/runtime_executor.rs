@@ -85,9 +85,10 @@ impl<'subject> PreparedRuntime<'subject> {
         &'context mut self,
         chain: &'context mut PreparedAuthorizationChain<'subject>,
         input: &'context EnforcedInputRecord,
-    ) -> RuntimeExecutionRequest<'context, 'subject> {
-        RuntimeExecutionRequest::new(
-            self.permit.take().expect("test permit is one-shot"),
+    ) -> TestResult<RuntimeExecutionRequest<'context, 'subject>> {
+        let permit = self.permit.take().ok_or("missing one-shot test permit")?;
+        Ok(RuntimeExecutionRequest::new(
+            permit,
             &chain.lifecycle_authority,
             &mut chain.lifecycle_record,
             input,
@@ -96,7 +97,7 @@ impl<'subject> PreparedRuntime<'subject> {
         .with_sandbox(&chain.sandbox_authority, &chain.sandbox_evidence)
         .with_timeout_cancel(&chain.timeout_authority, &chain.timeout_control)
         .with_input_output(&chain.input_output_authority, &chain.input_output_evidence)
-        .with_audit(&chain.audit_authority)
+        .with_audit(&chain.audit_authority))
     }
 }
 
@@ -109,7 +110,7 @@ fn exact_loaded_authorized_package_executes_registered_official_program() -> Tes
     let executor = RuntimeExecutorAuthority::new_operator_local();
     let mut runtime = PreparedRuntime::new(&chain, &executor, successful_program)?;
 
-    let result = executor.execute(runtime.request(&mut chain, &input))?;
+    let result = executor.execute(runtime.request(&mut chain, &input)?)?;
 
     assert_eq!(
         result.schema_version(),
@@ -163,7 +164,7 @@ fn foreign_executor_cannot_consume_permit() -> TestResult {
     let foreign = RuntimeExecutorAuthority::new_operator_local();
 
     assert_executor_error(
-        foreign.execute(runtime.request(&mut chain, &input)),
+        foreign.execute(runtime.request(&mut chain, &input)?),
         RuntimeExecutorErrorCode::ForeignExecutorAuthority,
         RuntimeExecutorRequirement::ExecutorAuthority,
     )?;
@@ -219,7 +220,7 @@ fn stale_lifecycle_revision_invalidates_permit() -> TestResult {
     )?;
 
     assert_executor_error(
-        executor.execute(runtime.request(&mut chain, &input)),
+        executor.execute(runtime.request(&mut chain, &input)?),
         RuntimeExecutorErrorCode::StaleExecutionPermit,
         RuntimeExecutorRequirement::ExecutionPermit,
     )?;
@@ -245,7 +246,7 @@ fn pending_cancellation_blocks_before_running() -> TestResult {
     )?;
 
     assert_executor_error(
-        executor.execute(runtime.request(&mut chain, &input)),
+        executor.execute(runtime.request(&mut chain, &input)?),
         RuntimeExecutorErrorCode::CancellationPending,
         RuntimeExecutorRequirement::TimeoutCancelControl,
     )?;
@@ -268,7 +269,7 @@ fn input_from_another_evidence_chain_is_rejected() -> TestResult {
     let mut runtime = PreparedRuntime::new(&chain, &executor, successful_program)?;
 
     assert_executor_error(
-        executor.execute(runtime.request(&mut chain, &foreign_input)),
+        executor.execute(runtime.request(&mut chain, &foreign_input)?),
         RuntimeExecutorErrorCode::EnforcedInputNotVerified,
         RuntimeExecutorRequirement::EnforcedInput,
     )?;
@@ -285,7 +286,7 @@ fn program_failure_records_failed_terminal_state() -> TestResult {
     let mut runtime = PreparedRuntime::new(&chain, &executor, failing_program)?;
 
     assert_executor_error(
-        executor.execute(runtime.request(&mut chain, &input)),
+        executor.execute(runtime.request(&mut chain, &input)?),
         RuntimeExecutorErrorCode::RuntimeProgramFailed,
         RuntimeExecutorRequirement::RuntimeProgram,
     )?;
@@ -306,7 +307,7 @@ fn invalid_program_output_records_failed_terminal_state() -> TestResult {
     let mut runtime = PreparedRuntime::new(&chain, &executor, oversized_output_program)?;
 
     assert_executor_error(
-        executor.execute(runtime.request(&mut chain, &input)),
+        executor.execute(runtime.request(&mut chain, &input)?),
         RuntimeExecutorErrorCode::RuntimeOutputRejected,
         RuntimeExecutorRequirement::EnforcedOutput,
     )?;
@@ -329,7 +330,7 @@ fn execution_timeout_is_enforced_as_timeout_terminal_state() -> TestResult {
     let mut runtime = PreparedRuntime::new(&chain, &executor, slow_program)?;
 
     assert_executor_error(
-        executor.execute(runtime.request(&mut chain, &input)),
+        executor.execute(runtime.request(&mut chain, &input)?),
         RuntimeExecutorErrorCode::RuntimeTimedOut,
         RuntimeExecutorRequirement::RuntimeProgram,
     )?;
@@ -369,7 +370,7 @@ fn debug_errors_and_results_do_not_expose_private_values() -> TestResult {
     let input = enforced_input(&chain, "redacted status request")?;
     let executor = RuntimeExecutorAuthority::new_operator_local();
     let mut runtime = PreparedRuntime::new(&chain, &executor, successful_program)?;
-    let result = executor.execute(runtime.request(&mut chain, &input))?;
+    let result = executor.execute(runtime.request(&mut chain, &input)?)?;
 
     for debug in [
         format!("{executor:?}"),
