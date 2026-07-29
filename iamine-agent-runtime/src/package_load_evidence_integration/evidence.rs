@@ -11,6 +11,9 @@ pub const PACKAGE_LOAD_EVIDENCE_SCHEMA_VERSION: &str =
 #[derive(Debug)]
 pub(crate) struct PackageLoadEvidenceAuthorityIdentity;
 
+#[derive(Debug)]
+pub(crate) struct PackageLoadEvidenceIdentity;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum PackageLoadEvidenceStatus {
@@ -32,6 +35,7 @@ const PACKAGE_LOAD_REQUIREMENTS: [PackageLoadEvidenceRequirement; 9] = [
 #[must_use]
 pub struct PackageLoadEvidence<'subject> {
     authority: Arc<PackageLoadEvidenceAuthorityIdentity>,
+    identity: Arc<PackageLoadEvidenceIdentity>,
     authorization: Arc<ExecutionAuthorizationEvidenceIdentity>,
     subject: PackageReviewSubject<'subject>,
     lifecycle_revision: u8,
@@ -44,6 +48,7 @@ impl<'subject> PackageLoadEvidence<'subject> {
     ) -> Self {
         Self {
             authority,
+            identity: Arc::new(PackageLoadEvidenceIdentity),
             authorization: Arc::clone(authorization.identity()),
             subject: authorization.subject(),
             lifecycle_revision: authorization.lifecycle_revision(),
@@ -110,6 +115,14 @@ impl<'subject> PackageLoadEvidence<'subject> {
         &self.authority
     }
 
+    pub(crate) const fn identity(&self) -> &Arc<PackageLoadEvidenceIdentity> {
+        &self.identity
+    }
+
+    pub(crate) const fn subject(&self) -> PackageReviewSubject<'subject> {
+        self.subject
+    }
+
     pub(crate) fn matches_authorization(
         &self,
         authorization: &ExecutionAuthorizationEvidence<'subject>,
@@ -128,6 +141,7 @@ impl fmt::Debug for PackageLoadEvidence<'_> {
             .field("status", &self.status())
             .field("requirements", &self.requirements())
             .field("authority", &"[redacted]")
+            .field("identity", &"[redacted]")
             .field("authorization", &"[redacted]")
             .field("subject", &"[redacted]")
             .field("lifecycle_revision", &self.lifecycle_revision)
