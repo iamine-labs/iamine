@@ -17,8 +17,17 @@ pub enum PackageLoadEvidenceStatus {
     Eligible,
 }
 
-const PACKAGE_LOAD_REQUIREMENTS: [PackageLoadEvidenceRequirement; 1] =
-    [PackageLoadEvidenceRequirement::ExecutionAuthorizationEvidence];
+const PACKAGE_LOAD_REQUIREMENTS: [PackageLoadEvidenceRequirement; 9] = [
+    PackageLoadEvidenceRequirement::ScopeManifestValidation,
+    PackageLoadEvidenceRequirement::CapabilityMetadataValidation,
+    PackageLoadEvidenceRequirement::ExpertiseMetadataValidation,
+    PackageLoadEvidenceRequirement::ResourceRequirementsValidation,
+    PackageLoadEvidenceRequirement::PermissionModelValidation,
+    PackageLoadEvidenceRequirement::AuditPolicyValidation,
+    PackageLoadEvidenceRequirement::BoundaryEvalValidation,
+    PackageLoadEvidenceRequirement::ReferenceContract,
+    PackageLoadEvidenceRequirement::ExecutionAuthorizationEvidence,
+];
 
 #[must_use]
 pub struct PackageLoadEvidence<'subject> {

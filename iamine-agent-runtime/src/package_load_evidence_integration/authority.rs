@@ -5,6 +5,7 @@ use crate::{
 };
 
 use super::evidence::PackageLoadEvidenceAuthorityIdentity;
+use super::validation::validate_subject;
 use super::{
     PackageLoadEvidence, PackageLoadEvidenceError, PackageLoadEvidenceErrorCode,
     PackageLoadEvidenceRequirement,
@@ -35,6 +36,7 @@ impl PackageLoadEvidenceAuthority {
                 PackageLoadEvidenceRequirement::ExecutionAuthorizationEvidence,
             ));
         }
+        validate_subject(authorization_evidence.subject())?;
 
         Ok(PackageLoadEvidence::new(
             Arc::clone(&self.identity),

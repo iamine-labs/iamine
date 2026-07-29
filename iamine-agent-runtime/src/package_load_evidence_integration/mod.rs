@@ -1,6 +1,7 @@
 mod authority;
 mod error;
 mod evidence;
+mod validation;
 
 pub use authority::PackageLoadEvidenceAuthority;
 pub use error::{

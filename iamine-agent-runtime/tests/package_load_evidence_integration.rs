@@ -15,13 +15,20 @@ use iamine_agent_runtime::{
     inspect_runtime_foundation, CancellationSource, ExecutionAuthorizationAuthority,
     PackageLoadEvidence, PackageLoadEvidenceAuthority, PackageLoadEvidenceError,
     PackageLoadEvidenceErrorCode, PackageLoadEvidenceRequirement, PackageLoadEvidenceStatus,
-    RuntimeFoundationStatus, RuntimeOwner, RuntimeOwnerState, PACKAGE_LOAD_EVIDENCE_SCHEMA_VERSION,
+    PackageReferenceKind, RuntimeFoundationStatus, RuntimeOwner, RuntimeOwnerState,
+    PACKAGE_LOAD_EVIDENCE_SCHEMA_VERSION,
 };
 use iamine_agents::{assess_package_load_yaml, PackageLoadBlockerCode, PackageLoadStatus};
 use routing_policy::PACKAGE_ID;
 use sandbox_chain::{PackageFixture, VALID_MANIFEST};
 
 type TestResult<T = ()> = Result<T, Box<dyn Error>>;
+const VALID_CAPABILITY: &str = include_str!(
+    "../../iamine-agents/tests/fixtures/descriptive_metadata/valid/capability-metadata.yaml"
+);
+const VALID_BOUNDARY: &str = include_str!(
+    "../../iamine-agents/tests/fixtures/boundary_eval/valid/agent-boundary-tests.yaml"
+);
 
 #[test]
 fn exact_authorization_emits_passive_package_load_evidence() -> TestResult {
@@ -40,10 +47,13 @@ fn exact_authorization_emits_passive_package_load_evidence() -> TestResult {
         PACKAGE_LOAD_EVIDENCE_SCHEMA_VERSION
     );
     assert_eq!(evidence.status(), PackageLoadEvidenceStatus::Eligible);
-    assert_eq!(
-        evidence.requirements(),
-        [PackageLoadEvidenceRequirement::ExecutionAuthorizationEvidence]
-    );
+    assert_eq!(evidence.requirements().len(), 9);
+    assert!(evidence
+        .requirements()
+        .contains(&PackageLoadEvidenceRequirement::ReferenceContract));
+    assert!(evidence
+        .requirements()
+        .contains(&PackageLoadEvidenceRequirement::ExecutionAuthorizationEvidence));
     assert_eq!(evidence.lifecycle_revision(), 2);
     assert!(evidence.evidence_integrated());
     assert!(evidence.package_load_allowed());
@@ -68,7 +78,11 @@ fn foreign_or_missing_authorization_provenance_fails_closed() -> TestResult {
     let foreign = ExecutionAuthorizationAuthority::new_operator_local();
     let authority = PackageLoadEvidenceAuthority::new_operator_local();
 
-    assert_error(authority.integrate(&foreign, &authorization, &request))
+    assert_error(
+        authority.integrate(&foreign, &authorization, &request),
+        PackageLoadEvidenceErrorCode::ExecutionAuthorizationNotVerified,
+        PackageLoadEvidenceRequirement::ExecutionAuthorizationEvidence,
+    )
 }
 
 #[test]
@@ -93,11 +107,15 @@ fn evidence_is_bound_to_the_exact_package_and_authorization_instance() -> TestRe
     let other_fixture = PackageFixture::valid()?;
     let other_references = other_fixture.resolve()?;
     let other_chain = PreparedAuthorizationChain::new(other_fixture.subject(&other_references))?;
-    assert_error(authority.integrate(
-        &authorization_authority,
-        &authorization,
-        &other_chain.request(),
-    ))
+    assert_error(
+        authority.integrate(
+            &authorization_authority,
+            &authorization,
+            &other_chain.request(),
+        ),
+        PackageLoadEvidenceErrorCode::ExecutionAuthorizationNotVerified,
+        PackageLoadEvidenceRequirement::ExecutionAuthorizationEvidence,
+    )
 }
 
 #[test]
@@ -128,7 +146,11 @@ fn stale_authorization_cannot_be_replayed_after_cancellation() -> TestResult {
         &authorization,
         &current,
     ));
-    assert_error(authority.integrate(&authorization_authority, &authorization, &current))
+    assert_error(
+        authority.integrate(&authorization_authority, &authorization, &current),
+        PackageLoadEvidenceErrorCode::ExecutionAuthorizationNotVerified,
+        PackageLoadEvidenceRequirement::ExecutionAuthorizationEvidence,
+    )
 }
 
 #[test]
@@ -153,24 +175,98 @@ fn integration_authorities_are_isolated() -> TestResult {
 }
 
 #[test]
-fn requirement_and_error_codes_are_unique_and_stable() {
-    let requirements = [PackageLoadEvidenceRequirement::ExecutionAuthorizationEvidence]
-        .into_iter()
-        .map(PackageLoadEvidenceRequirement::as_str)
-        .collect::<HashSet<_>>();
-    let errors = [PackageLoadEvidenceErrorCode::ExecutionAuthorizationNotVerified]
-        .into_iter()
-        .map(PackageLoadEvidenceErrorCode::as_str)
-        .collect::<HashSet<_>>();
+fn every_reviewed_reference_must_pass_its_canonical_validator() -> TestResult {
+    let fixture = PackageFixture::valid()?;
+    fixture.overwrite_reference(
+        PackageReferenceKind::CapabilityMetadata,
+        b"not-valid-capability-metadata",
+    )?;
+    let references = fixture.resolve()?;
+    let chain = PreparedAuthorizationChain::new(fixture.subject(&references))?;
+    let authorization_authority = ExecutionAuthorizationAuthority::new_operator_local();
+    let request = chain.request();
+    let authorization = authorization_authority.authorize(&request)?;
+    let authority = PackageLoadEvidenceAuthority::new_operator_local();
 
-    assert_eq!(
-        requirements,
-        HashSet::from(["execution_authorization_evidence"])
-    );
-    assert_eq!(
-        errors,
-        HashSet::from(["execution_authorization_not_verified"])
-    );
+    assert_error(
+        authority.integrate(&authorization_authority, &authorization, &request),
+        PackageLoadEvidenceErrorCode::ReferenceValidationFailed,
+        PackageLoadEvidenceRequirement::CapabilityMetadataValidation,
+    )
+}
+
+#[test]
+fn validated_references_must_target_the_exact_reviewed_package() -> TestResult {
+    let fixture = PackageFixture::valid()?;
+    let foreign = VALID_CAPABILITY.replace(PACKAGE_ID, "iamine.beta.other-agent");
+    fixture.overwrite_reference(PackageReferenceKind::CapabilityMetadata, foreign.as_bytes())?;
+    let references = fixture.resolve()?;
+    let chain = PreparedAuthorizationChain::new(fixture.subject(&references))?;
+    let authorization_authority = ExecutionAuthorizationAuthority::new_operator_local();
+    let request = chain.request();
+    let authorization = authorization_authority.authorize(&request)?;
+    let authority = PackageLoadEvidenceAuthority::new_operator_local();
+
+    assert_error(
+        authority.integrate(&authorization_authority, &authorization, &request),
+        PackageLoadEvidenceErrorCode::PackageIdentityMismatch,
+        PackageLoadEvidenceRequirement::ReferenceContract,
+    )
+}
+
+#[test]
+fn cross_reference_contract_mismatches_fail_closed() -> TestResult {
+    let fixture = PackageFixture::valid()?;
+    let mismatched = VALID_BOUNDARY.replace("scope_ref: agent-scope.yaml", "scope_ref: other.yaml");
+    fixture.overwrite_reference(PackageReferenceKind::BoundaryTests, mismatched.as_bytes())?;
+    let references = fixture.resolve()?;
+    let chain = PreparedAuthorizationChain::new(fixture.subject(&references))?;
+    let authorization_authority = ExecutionAuthorizationAuthority::new_operator_local();
+    let request = chain.request();
+    let authorization = authorization_authority.authorize(&request)?;
+    let authority = PackageLoadEvidenceAuthority::new_operator_local();
+
+    assert_error(
+        authority.integrate(&authorization_authority, &authorization, &request),
+        PackageLoadEvidenceErrorCode::ReferenceContractMismatch,
+        PackageLoadEvidenceRequirement::ReferenceContract,
+    )
+}
+
+#[test]
+fn requirement_and_error_codes_are_unique_and_stable() {
+    let requirements = [
+        PackageLoadEvidenceRequirement::ScopeManifestValidation,
+        PackageLoadEvidenceRequirement::CapabilityMetadataValidation,
+        PackageLoadEvidenceRequirement::ExpertiseMetadataValidation,
+        PackageLoadEvidenceRequirement::ResourceRequirementsValidation,
+        PackageLoadEvidenceRequirement::PermissionModelValidation,
+        PackageLoadEvidenceRequirement::AuditPolicyValidation,
+        PackageLoadEvidenceRequirement::BoundaryEvalValidation,
+        PackageLoadEvidenceRequirement::ReferenceContract,
+        PackageLoadEvidenceRequirement::ExecutionAuthorizationEvidence,
+    ]
+    .into_iter()
+    .map(PackageLoadEvidenceRequirement::as_str)
+    .collect::<HashSet<_>>();
+    let errors = [
+        PackageLoadEvidenceErrorCode::ReferenceMissing,
+        PackageLoadEvidenceErrorCode::ReferenceEncodingInvalid,
+        PackageLoadEvidenceErrorCode::ReferenceValidationFailed,
+        PackageLoadEvidenceErrorCode::PackageIdentityMismatch,
+        PackageLoadEvidenceErrorCode::ReferenceContractMismatch,
+        PackageLoadEvidenceErrorCode::ExecutionAuthorizationNotVerified,
+    ]
+    .into_iter()
+    .map(PackageLoadEvidenceErrorCode::as_str)
+    .collect::<HashSet<_>>();
+
+    assert_eq!(requirements.len(), 9);
+    assert_eq!(errors.len(), 6);
+    assert!(requirements.contains("scope_manifest_validation"));
+    assert!(requirements.contains("execution_authorization_evidence"));
+    assert!(errors.contains("reference_validation_failed"));
+    assert!(errors.contains("execution_authorization_not_verified"));
 }
 
 #[test]
@@ -246,16 +342,14 @@ fn assert_no_side_effects(evidence: &PackageLoadEvidence<'_>) {
     assert!(!evidence.external_event_emitted());
 }
 
-fn assert_error<T>(result: Result<T, PackageLoadEvidenceError>) -> TestResult {
+fn assert_error<T>(
+    result: Result<T, PackageLoadEvidenceError>,
+    code: PackageLoadEvidenceErrorCode,
+    requirement: PackageLoadEvidenceRequirement,
+) -> TestResult {
     let error = result.err().ok_or("expected package-load evidence error")?;
-    assert_eq!(
-        error.code(),
-        PackageLoadEvidenceErrorCode::ExecutionAuthorizationNotVerified
-    );
-    assert_eq!(
-        error.requirement(),
-        PackageLoadEvidenceRequirement::ExecutionAuthorizationEvidence
-    );
+    assert_eq!(error.code(), code);
+    assert_eq!(error.requirement(), requirement);
     assert!(!error.to_string().contains(PACKAGE_ID));
     Ok(())
 }
