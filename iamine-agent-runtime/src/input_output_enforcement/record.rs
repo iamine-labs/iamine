@@ -1,4 +1,6 @@
-use std::fmt;
+use std::{fmt, sync::Arc};
+
+use super::InputOutputEvidenceIdentity;
 
 pub const INPUT_OUTPUT_ENFORCEMENT_SCHEMA_VERSION: &str = "iamine.agent.input_output.enforced-0.1";
 
@@ -78,6 +80,7 @@ impl InputOutputRecordContext {
 }
 
 pub struct EnforcedInputRecord {
+    evidence: Arc<InputOutputEvidenceIdentity>,
     context: InputOutputRecordContext,
     classification: InputClassification,
     redacted_content: Box<str>,
@@ -85,11 +88,13 @@ pub struct EnforcedInputRecord {
 
 impl EnforcedInputRecord {
     pub(crate) fn new(
+        evidence: Arc<InputOutputEvidenceIdentity>,
         context: InputOutputRecordContext,
         classification: InputClassification,
         redacted_content: &str,
     ) -> Self {
         Self {
+            evidence,
             context,
             classification,
             redacted_content: redacted_content.into(),
@@ -138,6 +143,14 @@ impl EnforcedInputRecord {
 
     pub const fn transport_allowed(&self) -> bool {
         false
+    }
+
+    pub(crate) const fn evidence(&self) -> &Arc<InputOutputEvidenceIdentity> {
+        &self.evidence
+    }
+
+    pub(crate) fn matches_subject(&self, agent_id: &str, task_type: &str) -> bool {
+        self.context.agent_id.as_ref() == agent_id && self.context.task_type.as_ref() == task_type
     }
 }
 

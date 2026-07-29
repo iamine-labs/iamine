@@ -36,6 +36,10 @@ impl<'a> PackageReviewSubject<'a> {
         &self.package.manifest().package_id
     }
 
+    pub(crate) fn task_type(self) -> &'a str {
+        &self.package.manifest().agent.task_class
+    }
+
     pub(crate) const fn references(self) -> &'a ResolvedPackageReferences {
         self.references
     }
