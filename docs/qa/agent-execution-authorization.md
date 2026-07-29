@@ -7,7 +7,10 @@ IMPLEMENTATION COMPLETE
 LOCAL VALIDATION PASSED
 ARCHITECTURE CHECKPOINT PASSED
 FIELD QA PASSED
-READY FOR ARCHITECTURE MERGE REVIEW
+FINAL ARCHITECTURE REVIEW PASSED
+MERGED
+POST-MERGE VALIDATION PASSED
+MERGED / VALIDATED / CLOSED
 focused integration tests: PASS, 14/14
 runtime regression: PASS, 117/117
 agents regression: PASS, 109/109
@@ -24,6 +27,8 @@ base: ff7ba1668ffdf61a71294ac3fa1921baf426ce43
 base tree: f38b05e44c635989fa1594803eee8d97ea45ec5a
 source commit: 125264ef77e9fad63a79474c6834be63ae86e5bf
 source tree: bbf11787fe76a4f24e20a287f5e7125830bb6a3b
+feature tip: 30c84aff1dd12d81a7cdc1f084f819814a8afb1f
+merge commit: 22adc690f3b8d9704783d7f8304680d3ea677404
 ```
 
 ## Expected Scope
@@ -236,6 +241,20 @@ The first TS140 invocation did not find `cargo` in the non-interactive SSH
 sequence was restarted with the existing user-local Cargo directory in
 `PATH`. Both required checks then passed without source changes.
 
+The first post-merge quality-gate invocation inherited the Codex filesystem
+sandbox after a custom target-directory prefix. Four real-inference assertions
+and one daemon socket test failed with restricted Metal/socket access. The
+merge was not published at that point. Re-executing the same gate with normal
+OS access passed every required check, including both inference passes and the
+daemon test. This is classified as an environment/harness finding, not a
+product or baseline exception.
+
 ```text
-Recommendation: READY FOR ARCHITECTURE MERGE REVIEW
+controlled merge: PASS, 22adc690f3b8d9704783d7f8304680d3ea677404
+post-merge quality gate: PASS WITH WARNINGS
+post-merge required failures: 0
+post-merge workspace clippy: PASS
+post-merge optional tools skipped: cargo-audit, cargo-deny, gitleaks
+new product failures: 0
+Recommendation: MERGED / VALIDATED / CLOSED
 ```

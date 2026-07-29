@@ -23,12 +23,12 @@ gates.
 Current operational baseline:
 
 ```text
-origin/develop: ff7ba1668ffdf61a71294ac3fa1921baf426ce43
-tree: f38b05e44c635989fa1594803eee8d97ea45ec5a
-v0.11.2 executable rows: 15 of 19 CLOSED
-last closed: AGENT-AUDIT-EVENT-ENFORCEMENT-001
-active feature: AGENT-EXECUTION-AUTHORIZATION-001
-runtime regression baseline: 103/103
+validated develop merge: 22adc690f3b8d9704783d7f8304680d3ea677404
+tree: 1a31b812ada893b46de743c50202285c2e54dfe7
+v0.11.2 executable rows: 16 of 19 CLOSED
+last closed: AGENT-EXECUTION-AUTHORIZATION-001
+next sequential feature: AGENT-PACKAGE-LOAD-EVIDENCE-INTEGRATION-001
+runtime regression baseline: 117/117
 agents regression baseline: 109/109
 ```
 
@@ -423,7 +423,7 @@ AGENT-POLICY-METADATA-VALIDATORS-001
 | AGENT-OUT-OF-SCOPE-RESPONSE-ENFORCEMENT-001 | CLOSED | Authority-bound deterministic refusal, clarification, blocked, and handoff response evidence; merged in `0b9bdf0`, exact-tree six-role field QA and post-merge validation passed. |
 | AGENT-ROUTING-CANDIDATE-SELECTOR-001 | CLOSED | Authority-bound bounded candidate-selection evidence without scoring, execution, scheduler mutation, transport, model selection, or distributed model MoE; merged in `1efa9cf`, exact-tree field QA passed on six platform roles, and unrestricted post-merge quality gate passed. |
 | AGENT-AUDIT-EVENT-ENFORCEMENT-001 | CLOSED | Bounded audit-owner evidence wraps typed Scope/Permission projections and authority-bound lifecycle state without authorization semantics; merged in `b9fe62d`, exact-tree six-role field QA and post-merge validation passed. |
-| AGENT-EXECUTION-AUTHORIZATION-001 | ACTIVE | Implement the final authority-bound typed decision by recomputing package-bound Scope/Permission and verifying the exact review, compatibility, I/O, sandbox, lifecycle, timeout/cancel, routing, and audit chain; no package load or runtime side effects. |
+| AGENT-EXECUTION-AUTHORIZATION-001 | CLOSED | Final authority-bound typed decision recomputes package-bound Scope/Permission and verifies the exact review, compatibility, I/O, sandbox, lifecycle, timeout/cancel, routing, and audit chain; merged in `22adc69`, exact-tree six-role field QA and unrestricted post-merge validation passed with no package load or runtime side effects. |
 | AGENT-PACKAGE-LOAD-EVIDENCE-INTEGRATION-001 | PROPOSED | Typed package-load assessment consuming non-forgeable owner evidence. |
 | AGENT-PACKAGE-LOADER-001 | PROPOSED | Load an eligible package through the bounded resolver; no execution. |
 | AGENT-RUNTIME-EXECUTOR-001 | PROPOSED | Execute only authorized loaded packages through every runtime owner. |
@@ -441,10 +441,10 @@ audit event boundaries now have executable validation evidence. Every row in
 the executable completion registry must close independently before Architecture
 may authorize the exhaustive milestone gate.
 
-`IAMINE-CANONICAL-ROADMAP-RECONCILIATION-001` is closed.
-`AGENT-EXECUTION-AUTHORIZATION-001` is now active on its independent feature
-branch. This activation does not authorize package-load evidence integration,
-the package loader, or the runtime executor.
+`AGENT-EXECUTION-AUTHORIZATION-001` closed in merge `22adc69`.
+`AGENT-PACKAGE-LOAD-EVIDENCE-INTEGRATION-001` is the next sequential feature,
+but remains `PROPOSED` until its independent lifecycle begins. This closure
+does not authorize that feature, the package loader, or the runtime executor.
 
 ## v0.11.3 - Internal Agent Developer Bootstrap
 
@@ -612,14 +612,14 @@ It consumes the root parser and emits only a typed blocked report while
 referenced metadata validators or enforcement gates remain unavailable. It
 does not authorize package loading or agent execution.
 
-`AGENT-AUDIT-EVENT-ENFORCEMENT-001` closed in merge `b9fe62d`. The next
+`AGENT-EXECUTION-AUTHORIZATION-001` closed in merge `22adc69`. The next
 executable feature registered by the v0.11.2 reconciliation is:
 
 ```text
-AGENT-EXECUTION-AUTHORIZATION-001
+AGENT-PACKAGE-LOAD-EVIDENCE-INTEGRATION-001
 ```
 
-Fifteen of the 19 implementation rows are `CLOSED`.
+Sixteen of the 19 implementation rows are `CLOSED`.
 `AGENT-HANDOFF-ENFORCEMENT-001` closed in merge `9e42136` after implementation,
 local validation, Architecture checkpoints, exact-tree field QA on six
 required platform roles, and post-merge validation.
@@ -635,7 +635,13 @@ passed. `AGENT-AUDIT-EVENT-ENFORCEMENT-001` closed in merge `b9fe62d` after
 regression, strict crate clippy, the full quality gate, privacy review, size
 review, exact-tree field QA with 60/60 focused and 24/24 library tests across
 six platform roles, final Architecture review, and unrestricted post-merge
-validation passed. The other four rows stay `PROPOSED`.
+validation passed. `AGENT-EXECUTION-AUTHORIZATION-001` closed in merge
+`22adc69` after 14 focused tests, the 117-test runtime regression, the
+109-test agents regression, strict crate clippy, the full quality gate,
+privacy and size review, exact-tree field QA with 84/84 focused and 24/24
+library tests across six platform roles, final Architecture review, and
+unrestricted post-merge validation passed. The other three rows stay
+`PROPOSED`.
 
 Not all functional P0 agents should be implemented in parallel at the start.
 After every prerequisite gate above passes, `NODE-DOCTOR-AGENT-001` remains

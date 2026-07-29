@@ -118,13 +118,12 @@ authorize execution.
 architecture-only runtime claims to independently owned implementation
 features. It changed roadmap state only.
 
-Fifteen of the 19 executable v0.11.2 rows are closed. The last closed row is
-`AGENT-AUDIT-EVENT-ENFORCEMENT-001`, merge `b9fe62d`.
-`AGENT-EXECUTION-AUTHORIZATION-001` is the next sequential implementation
-feature and is active on `feature/agent-execution-authorization-001` after
-`IAMINE-CANONICAL-ROADMAP-RECONCILIATION-001` closed. The package-load evidence
-integration, package loader, and runtime executor rows remain proposed and are
-not authorized in bulk.
+Sixteen of the 19 executable v0.11.2 rows are closed. The last closed row is
+`AGENT-EXECUTION-AUTHORIZATION-001`, merge `22adc69`.
+`AGENT-PACKAGE-LOAD-EVIDENCE-INTEGRATION-001` is the next sequential
+implementation feature, but remains proposed until its independent lifecycle
+begins. The package loader and runtime executor rows also remain proposed;
+none of the three is authorized in bulk.
 
 The broader v0.9 operational stability claim still requires the operational
 target: 10-50 nodes, 3-10 operators, multiple physical networks, and two to
@@ -368,7 +367,7 @@ AGENT-POLICY-METADATA-VALIDATORS-001
 
 `AGENT-TIMEOUT-CANCEL-ENFORCEMENT-001` closed in merge `2dbb760` after
 Architecture, implementation, local validation, exact-tree field QA, final
-Architecture review, and post-merge validation. Fifteen of the 19 implementation
+Architecture review, and post-merge validation. Sixteen of the 19 implementation
 rows are now `CLOSED`. `AGENT-HANDOFF-ENFORCEMENT-001` closed in merge
 `9e42136` after exact-tree six-role field QA and post-merge validation.
 `AGENT-OUT-OF-SCOPE-RESPONSE-ENFORCEMENT-001` closed in merge `0b9bdf0`
@@ -382,9 +381,14 @@ execution side effects. `AGENT-AUDIT-EVENT-ENFORCEMENT-001` closed in merge
 `b9fe62d` after its bounded audit-owner integration passed focused, runtime,
 agents, strict-clippy, full quality-gate, privacy, size, exact-tree field QA
 on six platform roles, final Architecture validation, and unrestricted
-post-merge validation. `AGENT-EXECUTION-AUTHORIZATION-001` is the next
-sequential feature. The other four rows stay `PROPOSED`, and no later row is
-authorized in bulk.
+post-merge validation. `AGENT-EXECUTION-AUTHORIZATION-001` closed in merge
+`22adc69` after its authority-bound final decision passed 14 focused tests,
+the 117-test runtime regression, the 109-test agents regression, strict crate
+clippy, the full quality gate, privacy and size review, exact-tree field QA on
+six platform roles, final Architecture validation, and unrestricted
+post-merge validation without package-load or runtime side effects.
+`AGENT-PACKAGE-LOAD-EVIDENCE-INTEGRATION-001` is the next sequential feature.
+The other three rows stay `PROPOSED`, and no later row is authorized in bulk.
 
 Each arrow still requires the complete canonical feature lifecycle. A roadmap
 position is not development authorization.
