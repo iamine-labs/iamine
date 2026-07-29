@@ -17,8 +17,8 @@ and supply-chain readiness.
 
 | Feature | State | Current evidence | Closure condition |
 | --- | --- | --- | --- |
-| RUST-DEPENDENCY-SECURITY-REMEDIATION-001 | PROPOSED / OPEN | `cargo audit` reports 13 vulnerabilities and 19 allowed warnings. The workflow job is informational. | No unaccepted vulnerabilities; every allowed warning inventoried and dispositioned. |
-| SECRETS-SCAN-CI-GATE-REPAIR-001 | PROPOSED / OPEN | The required Gitleaks job stops on organization licensing/configuration before scanning. No secret finding is established. | Gitleaks or an approved equivalent executes successfully and reports no unaccepted secrets. |
+| RUST-DEPENDENCY-SECURITY-REMEDIATION-001 | PROPOSED / OPEN | Last recorded baseline reported 13 vulnerabilities and 19 allowed warnings; refresh against the exact activation commit before treating the counts as current. The workflow job was informational. | No unaccepted vulnerabilities; every allowed warning inventoried and dispositioned. |
+| SECRETS-SCAN-CI-GATE-REPAIR-001 | PROPOSED / OPEN | The last recorded required Gitleaks job stopped on organization licensing/configuration before scanning. No secret finding is established; refresh the workflow state at activation. | Gitleaks or an approved equivalent executes successfully and reports no unaccepted secrets. |
 
 ## Required Validation
 

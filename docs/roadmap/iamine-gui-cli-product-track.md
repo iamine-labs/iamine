@@ -7,6 +7,7 @@ track: IAMINE-GUI-CLI-PRODUCT-TRACK
 state: PROPOSED
 milestone placement: unresolved by design
 implementation authorization: none
+parallel implementation boundary: typed visual mocks only
 ```
 
 This track records the strategically accepted product direction without
@@ -19,10 +20,17 @@ Both interfaces must consume shared typed contracts. The frontend must not
 duplicate IAMINE domain, validation, permission, audit, P2P, scheduler, model,
 or execution logic.
 
+No canonical frontend implementation exists at this reconciliation baseline.
+The preflight must select and document the frontend technology, repository
+layout, dependency policy, supported targets, validation commands, packaging
+constraints, and future desktop/mobile reuse before creating application
+directories.
+
 ## Candidate Features
 
 | Feature | State | Dependency or boundary |
 | --- | --- | --- |
+| DASHBOARD-FRONTEND-PREFLIGHT-001 | PROPOSED | Inspect the repository and choose the canonical frontend stack, layout, validation, dependency, packaging, and target strategy without creating the frontend. |
 | GUI-CLI-INTERFACE-ARCHITECTURE-001 | PROPOSED | Define interface ownership and shared-core boundaries. |
 | GUI-CLI-SHARED-CONTRACTS-001 | PROPOSED | Stable typed command, status, error, and event contracts. |
 | NODE-LOCAL-CONTROL-API-CONTRACT-001 | PROPOSED | Shared contracts and explicit local threat model. |
@@ -32,7 +40,8 @@ or execution logic.
 | NODE-LOCAL-CONTROL-API-001 | PROPOSED | Contract, authorization, validation, and audit gates. |
 | IAMINE-DASHBOARD-DESIGN-SYSTEM-001 | PROPOSED | Typed mocks only until real control contracts close. |
 | IAMINE-DASHBOARD-SHELL-001 | PROPOSED | Design system and typed mock adapters. |
-| IAMINE-DASHBOARD-OVERVIEW-001 | PROPOSED | Read-only typed status mocks or authorized API. |
+| IAMINE-DASHBOARD-OVERVIEW-MOCK-001 | PROPOSED | Non-authoritative typed fixtures only; no node connection or fictitious endpoint. |
+| IAMINE-DASHBOARD-OVERVIEW-READONLY-INTEGRATION-001 | PROPOSED | Authorized read-only API, shared contracts, local authorization, and audit evidence. |
 | NODE-ONBOARDING-WIZARD-001 | PROPOSED | Stable setup, configuration, privacy, and rollback contracts. |
 | NODE-RESOURCE-CONTROLS-001 | PROPOSED | Stable resource policy and bounded mutation. |
 | DASHBOARD-DIAGNOSTICS-001 | PROPOSED | Privacy-safe diagnostics contract. |
@@ -41,9 +50,41 @@ or execution logic.
 | DASHBOARD-AGENT-EXECUTION-001 | PROPOSED | Functional runtime, loader, authorization, and executor. |
 | LOCAL-DASHBOARD-BUNDLING-001 | PROPOSED | Stable shell, service lifecycle, and release packaging. |
 | GUI-CLI-COMMAND-PARITY-001 | PROPOSED | Shared contracts and supported command inventory. |
-| DASHBOARD-ACCESSIBILITY-001 | PROPOSED | Stable interactive dashboard surfaces. |
-| DASHBOARD-RESPONSIVE-001 | PROPOSED | Stable dashboard layouts and supported viewports. |
 | DASHBOARD-E2E-001 | PROPOSED | All promised dashboard journeys and failure states. |
+
+Accessibility and responsive behavior are continuous acceptance gates, not
+one-time feature rows. Every visual feature must define supported viewports,
+keyboard and focus behavior, semantic labels, contrast, text-fit behavior,
+loading/empty/error states, and automated or manual evidence appropriate to
+its surface.
+
+## Parallel Visual Sequence
+
+The following sequence may proceed independently from the sequential agent
+runtime track:
+
+```text
+DASHBOARD-FRONTEND-PREFLIGHT-001
+-> GUI-CLI-INTERFACE-ARCHITECTURE-001
+-> IAMINE-DASHBOARD-DESIGN-SYSTEM-001
+-> IAMINE-DASHBOARD-SHELL-001
+-> IAMINE-DASHBOARD-OVERVIEW-MOCK-001
+```
+
+After the preflight and interface architecture freeze ownership and typed mock
+boundaries, Design System, Shell, and Overview work may use separate branches
+or worktrees with non-overlapping file ownership. Each feature still requires
+its own lifecycle and validation evidence.
+
+Real integration remains sequential:
+
+```text
+GUI-CLI-SHARED-CONTRACTS-001
+-> NODE-LOCAL-CONTROL-API-CONTRACT-001
+-> DASHBOARD-LOCAL-AUTHORIZATION-001
+-> NODE-LOCAL-CONTROL-API-001
+-> IAMINE-DASHBOARD-OVERVIEW-READONLY-INTEGRATION-001
+```
 
 ## Non-Bypass Rules
 
@@ -57,11 +98,19 @@ no duplicated permission or audit validation
 no credentials in frontend bundles
 no remote dashboard before security review
 no real mutation before authorization and audit close
+no claimed production integration from mock evidence
 ```
 
 Visual design, shell composition, and overview work may proceed with typed
 mocks. Mocks must be visibly non-authoritative and must not create a path to
 real node actions.
+
+The parallel visual scope may include brand assets, tokens, components, shell
+composition, typed fixtures, loading/empty/error states, visual QA, responsive
+layouts, and accessibility foundations. It must not include real node data,
+real logs, node mutation, agent execution, resource configuration, service
+lifecycle, local or remote API access, dashboard bundling, or direct P2P
+access.
 
 Milestone placement and closure gates require a later Architecture decision.
 This track does not modify the current v0.11.2 sequence.
