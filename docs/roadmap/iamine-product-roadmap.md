@@ -125,8 +125,9 @@ features. It changed roadmap state only.
 Eighteen of the 19 executable v0.11.2 rows are closed. The last closed row is
 `AGENT-PACKAGE-LOADER-001`, merge `0e8e2db`, after exact-tree six-role field
 QA and post-merge validation. `AGENT-RUNTIME-EXECUTOR-001` is the only active
-row; its local source validation passed and exact-tree field QA remains
-pending. No later row is authorized in bulk.
+row; its local source validation and exact-tree six-role field QA passed.
+Merge and post-merge validation remain pending. No later row is authorized in
+bulk.
 
 The broader v0.9 operational stability claim still requires the operational
 target: 10-50 nodes, 3-10 operators, multiple physical networks, and two to
@@ -415,8 +416,9 @@ quality gate without loading or executing packages. `AGENT-PACKAGE-LOADER-001`
 closed in merge `0e8e2db` after exact-tree six-role field QA and complete
 post-merge validation. `AGENT-RUNTIME-EXECUTOR-001` is `ACTIVE` at source
 commit `df6b903`; local validation passed with an accepted Metal
-real-inference baseline exception, field QA remains pending, and no
-later row is authorized in bulk.
+real-inference baseline exception, exact-tree six-role field QA passed, and
+merge/post-merge validation remain pending. No later row is authorized in
+bulk.
 
 Each arrow still requires the complete canonical feature lifecycle. A roadmap
 position is not development authorization.

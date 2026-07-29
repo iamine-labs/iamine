@@ -12,7 +12,7 @@ source tree: 4a37be4da2e42f4f8cc48004346e034377eb3856
 canonical remote: origin
 runtime behavior changed: registered official Rust execution
 field QA required: yes
-field QA result: pending
+field QA result: PASS
 ```
 
 QA must record the exact source commit and tree before testing. It must not
@@ -152,6 +152,71 @@ write a package or runtime profile
 mutate scheduler state
 ```
 
+## Field Results
+
+QA transferred a complete Git bundle with SHA-256:
+
+```text
+fc81fae549e45911b69f29547f6a0a9005933204e754c473c819f9e3116d39b7
+```
+
+Every role validated source commit
+`df6b9037994822db3677e13175184e81a9dcff58`, tree
+`4a37be4da2e42f4f8cc48004346e034377eb3856`, and base
+`b5aaf292f71cf7a3b243fc2780bac5f95c8223d6` before testing.
+
+| Platform role | Focused executor | Runtime regression | Final state |
+| --- | --- | --- | --- |
+| macOS development | 12/12 PASS | 149/149 PASS | clean |
+| physical Linux, TS140 | 12/12 PASS | 149/149 PASS | clean |
+| Linux VM control, iamine-ctrl | 12/12 PASS | 149/149 PASS | clean |
+| Linux VM worker A, iamine-wrk1 | 12/12 PASS | 149/149 PASS | clean |
+| Linux VM worker B, iamine-wrk2 | 12/12 PASS | 149/149 PASS | clean |
+| Linux VM heavy, iamine-heavy | 12/12 PASS | 149/149 PASS | clean |
+
+Aggregate:
+
+```text
+roles passed: 6/6
+focused tests: 72/72 PASS
+runtime regression: 894/894 PASS
+product failures: 0
+runtime side effects observed: 0
+source changes during QA: 0
+node processes started: 0
+worker processes started: 0
+```
+
+TS140 used the existing `/home/ts140/.cargo/bin/cargo` executable. The Mac
+used an exact detached worktree and shared only generated Cargo cache.
+Canonical remote working copies were not modified.
+
+## Environmental Findings
+
+The Mac data volume initially had 116 MiB available. The first quality-gate
+workspace build failed with `No space left on device`. Removing only the
+discardable feature-worktree `target/` restored 3.5 GiB; source and Git
+evidence were unchanged.
+
+Proxmox preflight recorded:
+
+```text
+iamine-ctrl: / 100% used, /dev/shm 4.1 GB available
+iamine-wrk1: / 100% used, /dev/shm 2.2 GB available
+iamine-wrk2: / 99% used, /dev/shm 4.1 GB available
+iamine-heavy: / 97% used, /dev/shm 12.3 GB available
+```
+
+The guests expose session-isolated `/dev/shm`. Initial SFTP transfers returned
+success but were not visible to the following SSH session. QA stopped,
+classified the harness condition, and used one SSH session to receive the
+bundle, clone, verify, compile, test, and inspect final state in tmpfs.
+
+`iamine-wrk1` emitted `database or disk is full` while its root filesystem was
+saturated. Both required commands nevertheless exited successfully with
+12/12 and 149/149. No source was changed, no package was installed, no process
+was terminated, and no canonical artifact was deleted.
+
 ## Known Boundaries
 
 - The current handler is a trusted function compiled into the operator binary.
@@ -164,8 +229,7 @@ mutate scheduler state
 ## Recommendation
 
 ```text
-FIELD QA REQUIRED
-MERGE REVIEW NOT YET AUTHORIZED
+READY FOR ARCHITECTURE MERGE REVIEW
 ```
 
 QA does not approve or authorize merge.
