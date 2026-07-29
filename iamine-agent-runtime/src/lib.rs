@@ -9,6 +9,7 @@ mod input_output_enforcement;
 mod limits;
 mod out_of_scope_response_enforcement;
 mod owner;
+mod package_load_evidence_integration;
 mod reference;
 mod resolver;
 mod review_evidence;
@@ -69,6 +70,11 @@ pub use out_of_scope_response_enforcement::{
     OUT_OF_SCOPE_RESPONSE_SCHEMA_VERSION,
 };
 pub use owner::{RuntimeOwner, RuntimeOwnerState, RuntimeOwnerStatus};
+pub use package_load_evidence_integration::{
+    PackageLoadEvidence, PackageLoadEvidenceAuthority, PackageLoadEvidenceError,
+    PackageLoadEvidenceErrorCode, PackageLoadEvidenceRequirement, PackageLoadEvidenceStatus,
+    PACKAGE_LOAD_EVIDENCE_SCHEMA_VERSION,
+};
 pub use reference::{PackageReferenceKind, ResolvedPackageReferences, ResolvedReference};
 pub use resolver::PackageReferenceResolver;
 pub use review_evidence::{

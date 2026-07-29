@@ -14,6 +14,9 @@ pub const EXECUTION_AUTHORIZATION_SCHEMA_VERSION: &str =
 #[derive(Debug)]
 pub(crate) struct ExecutionAuthorizationAuthorityIdentity;
 
+#[derive(Debug)]
+pub(crate) struct ExecutionAuthorizationEvidenceIdentity;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum ExecutionAuthorizationEvidenceStatus {
@@ -40,6 +43,7 @@ const AUTHORIZATION_REQUIREMENTS: [ExecutionAuthorizationRequirement; 14] = [
 #[must_use]
 pub struct ExecutionAuthorizationEvidence<'subject> {
     authority: Arc<ExecutionAuthorizationAuthorityIdentity>,
+    identity: Arc<ExecutionAuthorizationEvidenceIdentity>,
     subject: PackageReviewSubject<'subject>,
     execution: Arc<ExecutionIdentity>,
     sandbox: Arc<SandboxEvidenceIdentity>,
@@ -54,6 +58,7 @@ impl<'subject> ExecutionAuthorizationEvidence<'subject> {
     ) -> Self {
         Self {
             authority,
+            identity: Arc::new(ExecutionAuthorizationEvidenceIdentity),
             subject: facts.subject,
             execution: facts.execution,
             sandbox: facts.sandbox,
@@ -130,6 +135,14 @@ impl<'subject> ExecutionAuthorizationEvidence<'subject> {
         &self.authority
     }
 
+    pub(crate) const fn identity(&self) -> &Arc<ExecutionAuthorizationEvidenceIdentity> {
+        &self.identity
+    }
+
+    pub(crate) const fn subject(&self) -> PackageReviewSubject<'subject> {
+        self.subject
+    }
+
     pub(crate) fn matches(&self, facts: &AuthorizationFacts<'subject>) -> bool {
         self.subject.same_as(facts.subject)
             && Arc::ptr_eq(&self.execution, &facts.execution)
@@ -147,6 +160,7 @@ impl fmt::Debug for ExecutionAuthorizationEvidence<'_> {
             .field("status", &self.status())
             .field("requirements", &self.requirements())
             .field("authority", &"[redacted]")
+            .field("identity", &"[redacted]")
             .field("subject", &"[redacted]")
             .field("execution", &"[redacted]")
             .field("sandbox", &"[redacted]")
