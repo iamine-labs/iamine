@@ -120,10 +120,11 @@ features. It changed roadmap state only.
 
 Sixteen of the 19 executable v0.11.2 rows are closed. The last closed row is
 `AGENT-EXECUTION-AUTHORIZATION-001`, merge `22adc69`.
-`AGENT-PACKAGE-LOAD-EVIDENCE-INTEGRATION-001` is the next sequential
-implementation feature, but remains proposed until its independent lifecycle
-begins. The package loader and runtime executor rows also remain proposed;
-none of the three is authorized in bulk.
+`AGENT-PACKAGE-LOAD-EVIDENCE-INTEGRATION-001` is active on its independent
+feature branch and has reached merge review after exact-tree six-role field
+QA. It remains outside the closed count until controlled merge and post-merge
+validation. The package loader and runtime executor rows remain proposed and
+are not authorized in bulk.
 
 The broader v0.9 operational stability claim still requires the operational
 target: 10-50 nodes, 3-10 operators, multiple physical networks, and two to
@@ -387,8 +388,10 @@ the 117-test runtime regression, the 109-test agents regression, strict crate
 clippy, the full quality gate, privacy and size review, exact-tree field QA on
 six platform roles, final Architecture validation, and unrestricted
 post-merge validation without package-load or runtime side effects.
-`AGENT-PACKAGE-LOAD-EVIDENCE-INTEGRATION-001` is the next sequential feature.
-The other three rows stay `PROPOSED`, and no later row is authorized in bulk.
+`AGENT-PACKAGE-LOAD-EVIDENCE-INTEGRATION-001` is the active sequential feature
+and has reached `READY FOR MERGE REVIEW`. `AGENT-PACKAGE-LOADER-001` and
+`AGENT-RUNTIME-EXECUTOR-001` remain `PROPOSED`; no later row is authorized in
+bulk.
 
 Each arrow still requires the complete canonical feature lifecycle. A roadmap
 position is not development authorization.

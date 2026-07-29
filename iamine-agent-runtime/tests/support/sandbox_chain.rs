@@ -1,13 +1,13 @@
-use std::{error::Error, fs, path::Path};
+use std::{error::Error, fs, io, path::Path};
 
 use iamine_agent_runtime::{
     DeclaredAgentPackage, DependencyPolicyReviewDecision, HumanReviewDecision,
     InputOutputEnforcementAuthority, InputOutputPolicy, LanguagePolicyReviewDecision,
-    LocalRegistryReviewDecision, PackageReferenceResolver, PackageReviewAuthority,
-    PackageReviewDecisions, PackageReviewSubject, ResolverLimits, RuntimeCompatibilityAuthority,
-    RuntimeLanguageAvailability, RuntimeLanguageDecision, RuntimeLanguageMode,
-    RuntimeNetworkAvailability, RuntimeResourceEnvelope, SandboxEnforcementAuthority,
-    SandboxEnforcementEvidence, SandboxEnforcementPolicy,
+    LocalRegistryReviewDecision, PackageReferenceKind, PackageReferenceResolver,
+    PackageReviewAuthority, PackageReviewDecisions, PackageReviewSubject, ResolverLimits,
+    RuntimeCompatibilityAuthority, RuntimeLanguageAvailability, RuntimeLanguageDecision,
+    RuntimeLanguageMode, RuntimeNetworkAvailability, RuntimeResourceEnvelope,
+    SandboxEnforcementAuthority, SandboxEnforcementEvidence, SandboxEnforcementPolicy,
 };
 use iamine_agents::{parse_and_validate_yaml, AgentPackageManifest, ManifestReferences};
 use tempfile::TempDir;
@@ -18,8 +18,22 @@ pub const VALID_MANIFEST: &str =
     include_str!("../../../iamine-agents/tests/fixtures/valid/node-doctor-agent.yaml");
 const VALID_SCOPE: &str =
     include_str!("../../../iamine-agents/tests/fixtures/policy_metadata/valid/scope-policy.yaml");
+const VALID_CAPABILITY: &str = include_str!(
+    "../../../iamine-agents/tests/fixtures/descriptive_metadata/valid/capability-metadata.yaml"
+);
+const VALID_EXPERTISE: &str = include_str!(
+    "../../../iamine-agents/tests/fixtures/descriptive_metadata/valid/expertise-metadata.yaml"
+);
 const VALID_RESOURCES: &str = include_str!(
     "../../../iamine-agents/tests/fixtures/descriptive_metadata/valid/resource-requirements.yaml"
+);
+const VALID_PERMISSIONS: &str = include_str!(
+    "../../../iamine-agents/tests/fixtures/policy_metadata/valid/permission-policy.yaml"
+);
+const VALID_AUDIT: &str =
+    include_str!("../../../iamine-agents/tests/fixtures/policy_metadata/valid/audit-policy.yaml");
+const VALID_BOUNDARY: &str = include_str!(
+    "../../../iamine-agents/tests/fixtures/boundary_eval/valid/agent-boundary-tests.yaml"
 );
 
 pub struct PreparedSandbox<'a> {
@@ -105,6 +119,28 @@ impl PackageFixture {
     pub fn package_id(&self) -> &str {
         &self.manifest.package_id
     }
+
+    #[allow(dead_code)]
+    pub fn overwrite_reference(&self, kind: PackageReferenceKind, content: &[u8]) -> TestResult {
+        let declared = match kind {
+            PackageReferenceKind::ScopeManifest => &self.manifest.references.scope_manifest,
+            PackageReferenceKind::CapabilityMetadata => {
+                &self.manifest.references.capability_metadata
+            }
+            PackageReferenceKind::ExpertiseMetadata => &self.manifest.references.expertise_metadata,
+            PackageReferenceKind::ResourceRequirements => {
+                &self.manifest.references.resource_requirements
+            }
+            PackageReferenceKind::PermissionModel => &self.manifest.references.permission_model,
+            PackageReferenceKind::AuditPolicy => &self.manifest.references.audit_policy,
+            PackageReferenceKind::BoundaryTests => &self.manifest.references.boundary_tests,
+            _ => {
+                return Err(io::Error::other("unsupported package reference kind").into());
+            }
+        };
+        fs::write(self.root.path().join(declared), content)?;
+        Ok(())
+    }
 }
 
 fn approved_review_decisions() -> PackageReviewDecisions {
@@ -119,24 +155,15 @@ fn approved_review_decisions() -> PackageReviewDecisions {
 fn create_references(root: &Path, references: &ManifestReferences) -> TestResult {
     for (declared, content) in [
         (&references.scope_manifest, VALID_SCOPE.as_bytes()),
-        (
-            &references.capability_metadata,
-            b"validated metadata".as_slice(),
-        ),
-        (
-            &references.expertise_metadata,
-            b"validated metadata".as_slice(),
-        ),
+        (&references.capability_metadata, VALID_CAPABILITY.as_bytes()),
+        (&references.expertise_metadata, VALID_EXPERTISE.as_bytes()),
         (
             &references.resource_requirements,
             VALID_RESOURCES.as_bytes(),
         ),
-        (
-            &references.permission_model,
-            b"validated metadata".as_slice(),
-        ),
-        (&references.audit_policy, b"validated metadata".as_slice()),
-        (&references.boundary_tests, b"validated metadata".as_slice()),
+        (&references.permission_model, VALID_PERMISSIONS.as_bytes()),
+        (&references.audit_policy, VALID_AUDIT.as_bytes()),
+        (&references.boundary_tests, VALID_BOUNDARY.as_bytes()),
     ] {
         let path = root.join(declared);
         if let Some(parent) = path.parent() {

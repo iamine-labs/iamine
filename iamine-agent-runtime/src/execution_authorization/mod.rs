@@ -8,6 +8,7 @@ pub use authority::ExecutionAuthorizationAuthority;
 pub use error::{
     ExecutionAuthorizationError, ExecutionAuthorizationErrorCode, ExecutionAuthorizationRequirement,
 };
+pub(crate) use evidence::ExecutionAuthorizationEvidenceIdentity;
 pub use evidence::{
     ExecutionAuthorizationEvidence, ExecutionAuthorizationEvidenceStatus,
     EXECUTION_AUTHORIZATION_SCHEMA_VERSION,
