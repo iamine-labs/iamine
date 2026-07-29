@@ -118,13 +118,10 @@ authorize execution.
 architecture-only runtime claims to independently owned implementation
 features. It changed roadmap state only.
 
-Sixteen of the 19 executable v0.11.2 rows are closed. The last closed row is
-`AGENT-EXECUTION-AUTHORIZATION-001`, merge `22adc69`.
-`AGENT-PACKAGE-LOAD-EVIDENCE-INTEGRATION-001` is active on its independent
-feature branch and has reached merge review after exact-tree six-role field
-QA. It remains outside the closed count until controlled merge and post-merge
-validation. The package loader and runtime executor rows remain proposed and
-are not authorized in bulk.
+Seventeen of the 19 executable v0.11.2 rows are closed. The last closed row is
+`AGENT-PACKAGE-LOAD-EVIDENCE-INTEGRATION-001`, merge `c8a0ecc`, after
+exact-tree six-role field QA and post-merge validation. The package loader and
+runtime executor rows remain proposed and are not authorized in bulk.
 
 The broader v0.9 operational stability claim still requires the operational
 target: 10-50 nodes, 3-10 operators, multiple physical networks, and two to
@@ -368,7 +365,7 @@ AGENT-POLICY-METADATA-VALIDATORS-001
 
 `AGENT-TIMEOUT-CANCEL-ENFORCEMENT-001` closed in merge `2dbb760` after
 Architecture, implementation, local validation, exact-tree field QA, final
-Architecture review, and post-merge validation. Sixteen of the 19 implementation
+Architecture review, and post-merge validation. Seventeen of the 19 implementation
 rows are now `CLOSED`. `AGENT-HANDOFF-ENFORCEMENT-001` closed in merge
 `9e42136` after exact-tree six-role field QA and post-merge validation.
 `AGENT-OUT-OF-SCOPE-RESPONSE-ENFORCEMENT-001` closed in merge `0b9bdf0`
@@ -388,10 +385,12 @@ the 117-test runtime regression, the 109-test agents regression, strict crate
 clippy, the full quality gate, privacy and size review, exact-tree field QA on
 six platform roles, final Architecture validation, and unrestricted
 post-merge validation without package-load or runtime side effects.
-`AGENT-PACKAGE-LOAD-EVIDENCE-INTEGRATION-001` is the active sequential feature
-and has reached `READY FOR MERGE REVIEW`. `AGENT-PACKAGE-LOADER-001` and
-`AGENT-RUNTIME-EXECUTOR-001` remain `PROPOSED`; no later row is authorized in
-bulk.
+`AGENT-PACKAGE-LOAD-EVIDENCE-INTEGRATION-001` closed in merge `c8a0ecc` after
+its typed eligibility owner passed focused/runtime/agents validation,
+exact-tree six-role field QA, final Architecture review, and the post-merge
+quality gate without loading or executing packages. `AGENT-PACKAGE-LOADER-001`
+is next but remains `PROPOSED`; `AGENT-RUNTIME-EXECUTOR-001` also remains
+`PROPOSED`, and no later row is authorized in bulk.
 
 Each arrow still requires the complete canonical feature lifecycle. A roadmap
 position is not development authorization.
