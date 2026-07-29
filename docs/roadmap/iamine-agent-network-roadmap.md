@@ -23,12 +23,12 @@ gates.
 Current operational baseline:
 
 ```text
-validated develop merge: c8a0ecc3a9bdee09c59130232c74ab7724b352b5
-tree: 7fab6e20fc798c8cf9c7b5af74b1e25fe39141e3
-v0.11.2 executable rows: 17 of 19 CLOSED
-last closed: AGENT-PACKAGE-LOAD-EVIDENCE-INTEGRATION-001
-next sequential feature: AGENT-PACKAGE-LOADER-001
-runtime regression baseline: 128/128
+validated develop merge: 0e8e2db37ba55f14729e0d4c10f1e3e34898b172
+tree: d787a6fa958d4e1571cfd64268be56947dce78f3
+v0.11.2 executable rows: 18 of 19 CLOSED
+last closed: AGENT-PACKAGE-LOADER-001
+next sequential feature: AGENT-RUNTIME-EXECUTOR-001
+runtime regression baseline: 137/137
 agents regression baseline: 109/109
 ```
 
@@ -425,7 +425,7 @@ AGENT-POLICY-METADATA-VALIDATORS-001
 | AGENT-AUDIT-EVENT-ENFORCEMENT-001 | CLOSED | Bounded audit-owner evidence wraps typed Scope/Permission projections and authority-bound lifecycle state without authorization semantics; merged in `b9fe62d`, exact-tree six-role field QA and post-merge validation passed. |
 | AGENT-EXECUTION-AUTHORIZATION-001 | CLOSED | Final authority-bound typed decision recomputes package-bound Scope/Permission and verifies the exact review, compatibility, I/O, sandbox, lifecycle, timeout/cancel, routing, and audit chain; merged in `22adc69`, exact-tree six-role field QA and unrestricted post-merge validation passed with no package load or runtime side effects. |
 | AGENT-PACKAGE-LOAD-EVIDENCE-INTEGRATION-001 | CLOSED | Typed authority-bound package-load eligibility evidence consumes the exact execution authorization and canonically validated reviewed references; merged in `c8a0ecc`, six-role field QA and post-merge validation passed without loading or execution. |
-| AGENT-PACKAGE-LOADER-001 | ACTIVE | Load an eligible package through the bounded resolver; no execution. |
+| AGENT-PACKAGE-LOADER-001 | CLOSED | Authority-bound bounded in-memory loading preserves the exact reviewed snapshot without reopening paths or permitting execution; merged in `0e8e2db`, exact-tree six-role field QA and complete post-merge validation passed. |
 | AGENT-RUNTIME-EXECUTOR-001 | PROPOSED | Execute only authorized loaded packages through every runtime owner. |
 
 Closure gate:
@@ -444,9 +444,11 @@ may authorize the exhaustive milestone gate.
 `AGENT-EXECUTION-AUTHORIZATION-001` closed in merge `22adc69`.
 `AGENT-PACKAGE-LOAD-EVIDENCE-INTEGRATION-001` closed in merge `c8a0ecc` after
 local validation, exact-tree six-role field QA, final Architecture review, and
-post-merge validation. `AGENT-PACKAGE-LOADER-001` is the next sequential
-feature but remains `PROPOSED`; this closure does not authorize it or the
-runtime executor.
+post-merge validation. `AGENT-PACKAGE-LOADER-001` closed in merge `0e8e2db`
+after bounded loader validation, exact-tree six-role field QA, final
+Architecture review, and complete post-merge validation. The runtime executor
+is the next sequential feature but remains `PROPOSED`; this closure does not
+authorize it.
 
 ## v0.11.3 - Internal Agent Developer Bootstrap
 
@@ -621,7 +623,7 @@ executable feature registered by the v0.11.2 reconciliation is:
 AGENT-PACKAGE-LOAD-EVIDENCE-INTEGRATION-001
 ```
 
-Seventeen of the 19 implementation rows are `CLOSED`.
+Eighteen of the 19 implementation rows are `CLOSED`.
 `AGENT-HANDOFF-ENFORCEMENT-001` closed in merge `9e42136` after implementation,
 local validation, Architecture checkpoints, exact-tree field QA on six
 required platform roles, and post-merge validation.
@@ -646,8 +648,12 @@ unrestricted post-merge validation passed.
 `AGENT-PACKAGE-LOAD-EVIDENCE-INTEGRATION-001` closed in merge `c8a0ecc` after
 11 focused tests, the 128-test runtime regression, the 109-test agents
 regression, strict crate Clippy, full quality gate, exact-tree six-role field
-QA, and post-merge validation without package loading or execution. The
-package loader and runtime executor rows remain `PROPOSED`.
+QA, and post-merge validation without package loading or execution.
+`AGENT-PACKAGE-LOADER-001` closed in merge `0e8e2db` after 9 focused tests,
+the 137-test runtime regression, the 109-test agents regression, strict crate
+Clippy, full quality gate, exact-tree six-role field QA, and complete
+post-merge validation without agent execution. The runtime executor row
+remains `PROPOSED`.
 
 Not all functional P0 agents should be implemented in parallel at the start.
 After every prerequisite gate above passes, `NODE-DOCTOR-AGENT-001` remains
