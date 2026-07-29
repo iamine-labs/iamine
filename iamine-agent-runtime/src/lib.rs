@@ -16,6 +16,7 @@ mod resolver;
 mod review_evidence;
 mod routing_candidate_selector;
 mod runtime_compatibility;
+mod runtime_executor;
 mod sandbox_enforcement;
 mod timeout_cancel_enforcement;
 
@@ -107,6 +108,15 @@ pub use runtime_compatibility::{
     RuntimeCompatibilityEvidenceStatus, RuntimeCompatibilityRequirement,
     RuntimeLanguageAvailability, RuntimeLanguageDecision, RuntimeLanguageMode,
     RuntimeNetworkAvailability, RuntimeResourceEnvelope,
+};
+pub use runtime_executor::{
+    OfficialRustProgram, OfficialRustProgramFailure, OfficialRustProgramFailureCode,
+    OfficialRustProgramHandler, OfficialRustProgramOutput, OfficialRustProgramRegistry,
+    RuntimeExecutionContext, RuntimeExecutionInterrupt, RuntimeExecutionPermit,
+    RuntimeExecutionPreparation, RuntimeExecutionRequest, RuntimeExecutionResult,
+    RuntimeExecutionStatus, RuntimeExecutionVerification, RuntimeExecutorAuthority,
+    RuntimeExecutorError, RuntimeExecutorErrorCode, RuntimeExecutorRequirement,
+    RUNTIME_EXECUTION_RESULT_SCHEMA_VERSION,
 };
 pub use sandbox_enforcement::{
     SandboxCleanupOwner, SandboxCleanupTrigger, SandboxConfigurationError,

@@ -139,6 +139,14 @@ impl<'subject> ExecutionAuthorizationEvidence<'subject> {
         &self.identity
     }
 
+    pub(crate) const fn execution(&self) -> &Arc<ExecutionIdentity> {
+        &self.execution
+    }
+
+    pub(crate) const fn sandbox(&self) -> &Arc<SandboxEvidenceIdentity> {
+        &self.sandbox
+    }
+
     pub(crate) const fn subject(&self) -> PackageReviewSubject<'subject> {
         self.subject
     }

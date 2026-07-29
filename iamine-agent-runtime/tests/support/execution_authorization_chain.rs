@@ -56,6 +56,16 @@ pub struct PreparedAuthorizationChain<'subject> {
 
 impl<'subject> PreparedAuthorizationChain<'subject> {
     pub fn new(subject: PackageReviewSubject<'subject>) -> TestResult<Self> {
+        Self::new_with_timeout_policy(
+            subject,
+            TimeoutCancelPolicy::new(1_000, 1_000, 1_000, 1_000, 1_000, 1_000)?,
+        )
+    }
+
+    pub fn new_with_timeout_policy(
+        subject: PackageReviewSubject<'subject>,
+        timeout_policy: TimeoutCancelPolicy,
+    ) -> TestResult<Self> {
         let review_authority = PackageReviewAuthority::new_operator_local();
         let review_evidence = review_authority.issue(subject, approved_review_decisions())?;
         let compatibility_authority = RuntimeCompatibilityAuthority::new_operator_local(
@@ -105,7 +115,7 @@ impl<'subject> PreparedAuthorizationChain<'subject> {
             &sandbox_authority,
             &sandbox_evidence,
             subject,
-            TimeoutCancelPolicy::new(1_000, 1_000, 1_000, 1_000, 1_000, 1_000)?,
+            timeout_policy,
         )?;
         let scope_policy = scope_policy()?;
         let scope = evaluate_scope(

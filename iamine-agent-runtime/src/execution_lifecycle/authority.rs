@@ -51,6 +51,29 @@ impl ExecutionLifecycleAuthority {
         expected_revision: u8,
         target: ExecutionLifecycleState,
     ) -> Result<ExecutionLifecycleTransitionEvidence, ExecutionLifecycleError> {
+        self.transition_inner(record, expected_revision, target, false)
+    }
+
+    pub(crate) fn transition_authorized_to_running(
+        &self,
+        record: &mut ExecutionLifecycleRecord<'_>,
+        expected_revision: u8,
+    ) -> Result<ExecutionLifecycleTransitionEvidence, ExecutionLifecycleError> {
+        self.transition_inner(
+            record,
+            expected_revision,
+            ExecutionLifecycleState::Running,
+            true,
+        )
+    }
+
+    fn transition_inner(
+        &self,
+        record: &mut ExecutionLifecycleRecord<'_>,
+        expected_revision: u8,
+        target: ExecutionLifecycleState,
+        authorized_running: bool,
+    ) -> Result<ExecutionLifecycleTransitionEvidence, ExecutionLifecycleError> {
         if !Arc::ptr_eq(&self.identity, record.authority()) {
             return Err(ExecutionLifecycleError::new(
                 ExecutionLifecycleErrorCode::ForeignLifecycleAuthority,
@@ -78,10 +101,12 @@ impl ExecutionLifecycleAuthority {
                 ));
             }
             TransitionDisposition::ExecutionAuthorizationRequired => {
-                return Err(ExecutionLifecycleError::new(
-                    ExecutionLifecycleErrorCode::ExecutionAuthorizationRequired,
-                    ExecutionLifecycleRequirement::ExecutionAuthorizationEvidence,
-                ));
+                if !authorized_running {
+                    return Err(ExecutionLifecycleError::new(
+                        ExecutionLifecycleErrorCode::ExecutionAuthorizationRequired,
+                        ExecutionLifecycleRequirement::ExecutionAuthorizationEvidence,
+                    ));
+                }
             }
             TransitionDisposition::Recordable => {}
         }

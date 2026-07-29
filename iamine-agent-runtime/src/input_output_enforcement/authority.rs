@@ -101,6 +101,7 @@ impl InputOutputEnforcementAuthority {
         self.require_evidence(evidence, subject)?;
         require_redaction_attestation(evidence, content.evidence())?;
         Ok(EnforcedInputRecord::new(
+            Arc::clone(evidence.identity()),
             evidence.context().clone(),
             classification,
             content.content(),

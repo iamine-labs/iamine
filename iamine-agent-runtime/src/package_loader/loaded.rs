@@ -9,7 +9,7 @@ pub const LOADED_AGENT_PACKAGE_SCHEMA_VERSION: &str =
     "iamine.agent.package_loader.loaded_package-0.1";
 
 #[derive(Debug)]
-pub(super) struct PackageLoaderAuthorityIdentity;
+pub(crate) struct PackageLoaderAuthorityIdentity;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
@@ -108,8 +108,16 @@ impl<'subject> LoadedAgentPackage<'subject> {
         false
     }
 
-    pub(super) const fn authority(&self) -> &Arc<PackageLoaderAuthorityIdentity> {
+    pub(crate) const fn authority(&self) -> &Arc<PackageLoaderAuthorityIdentity> {
         &self.authority
+    }
+
+    pub(crate) const fn evidence(&self) -> &Arc<PackageLoadEvidenceIdentity> {
+        &self.evidence
+    }
+
+    pub(crate) const fn subject(&self) -> PackageReviewSubject<'subject> {
+        self.subject
     }
 
     pub(super) fn matches_evidence(&self, evidence: &PackageLoadEvidence<'subject>) -> bool {
