@@ -10,6 +10,7 @@ mod limits;
 mod out_of_scope_response_enforcement;
 mod owner;
 mod package_load_evidence_integration;
+mod package_loader;
 mod reference;
 mod resolver;
 mod review_evidence;
@@ -74,6 +75,10 @@ pub use package_load_evidence_integration::{
     PackageLoadEvidence, PackageLoadEvidenceAuthority, PackageLoadEvidenceError,
     PackageLoadEvidenceErrorCode, PackageLoadEvidenceRequirement, PackageLoadEvidenceStatus,
     PACKAGE_LOAD_EVIDENCE_SCHEMA_VERSION,
+};
+pub use package_loader::{
+    LoadedAgentPackage, LoadedAgentPackageStatus, PackageLoaderAuthority, PackageLoaderError,
+    PackageLoaderErrorCode, PackageLoaderRequirement, LOADED_AGENT_PACKAGE_SCHEMA_VERSION,
 };
 pub use reference::{PackageReferenceKind, ResolvedPackageReferences, ResolvedReference};
 pub use resolver::PackageReferenceResolver;

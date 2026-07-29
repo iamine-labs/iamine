@@ -7,6 +7,7 @@ pub use authority::PackageLoadEvidenceAuthority;
 pub use error::{
     PackageLoadEvidenceError, PackageLoadEvidenceErrorCode, PackageLoadEvidenceRequirement,
 };
+pub(crate) use evidence::PackageLoadEvidenceIdentity;
 pub use evidence::{
     PackageLoadEvidence, PackageLoadEvidenceStatus, PACKAGE_LOAD_EVIDENCE_SCHEMA_VERSION,
 };

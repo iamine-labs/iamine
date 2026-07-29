@@ -425,7 +425,7 @@ AGENT-POLICY-METADATA-VALIDATORS-001
 | AGENT-AUDIT-EVENT-ENFORCEMENT-001 | CLOSED | Bounded audit-owner evidence wraps typed Scope/Permission projections and authority-bound lifecycle state without authorization semantics; merged in `b9fe62d`, exact-tree six-role field QA and post-merge validation passed. |
 | AGENT-EXECUTION-AUTHORIZATION-001 | CLOSED | Final authority-bound typed decision recomputes package-bound Scope/Permission and verifies the exact review, compatibility, I/O, sandbox, lifecycle, timeout/cancel, routing, and audit chain; merged in `22adc69`, exact-tree six-role field QA and unrestricted post-merge validation passed with no package load or runtime side effects. |
 | AGENT-PACKAGE-LOAD-EVIDENCE-INTEGRATION-001 | CLOSED | Typed authority-bound package-load eligibility evidence consumes the exact execution authorization and canonically validated reviewed references; merged in `c8a0ecc`, six-role field QA and post-merge validation passed without loading or execution. |
-| AGENT-PACKAGE-LOADER-001 | PROPOSED | Load an eligible package through the bounded resolver; no execution. |
+| AGENT-PACKAGE-LOADER-001 | ACTIVE | Load an eligible package through the bounded resolver; no execution. |
 | AGENT-RUNTIME-EXECUTOR-001 | PROPOSED | Execute only authorized loaded packages through every runtime owner. |
 
 Closure gate:
