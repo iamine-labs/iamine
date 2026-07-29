@@ -23,12 +23,15 @@ gates.
 Current operational baseline:
 
 ```text
-validated develop merge: 0e8e2db37ba55f14729e0d4c10f1e3e34898b172
-tree: d787a6fa958d4e1571cfd64268be56947dce78f3
+validated develop merge: b5aaf292f71cf7a3b243fc2780bac5f95c8223d6
+tree: a3085fafb2e9f28d26b1a0430aa5e3ffd287ce8f
 v0.11.2 executable rows: 18 of 19 CLOSED
 last closed: AGENT-PACKAGE-LOADER-001
-next sequential feature: AGENT-RUNTIME-EXECUTOR-001
+active sequential feature: AGENT-RUNTIME-EXECUTOR-001
+active source commit: df6b9037994822db3677e13175184e81a9dcff58
+active source tree: 4a37be4da2e42f4f8cc48004346e034377eb3856
 runtime regression baseline: 137/137
+active candidate runtime regression: 149/149
 agents regression baseline: 109/109
 ```
 
@@ -426,7 +429,7 @@ AGENT-POLICY-METADATA-VALIDATORS-001
 | AGENT-EXECUTION-AUTHORIZATION-001 | CLOSED | Final authority-bound typed decision recomputes package-bound Scope/Permission and verifies the exact review, compatibility, I/O, sandbox, lifecycle, timeout/cancel, routing, and audit chain; merged in `22adc69`, exact-tree six-role field QA and unrestricted post-merge validation passed with no package load or runtime side effects. |
 | AGENT-PACKAGE-LOAD-EVIDENCE-INTEGRATION-001 | CLOSED | Typed authority-bound package-load eligibility evidence consumes the exact execution authorization and canonically validated reviewed references; merged in `c8a0ecc`, six-role field QA and post-merge validation passed without loading or execution. |
 | AGENT-PACKAGE-LOADER-001 | CLOSED | Authority-bound bounded in-memory loading preserves the exact reviewed snapshot without reopening paths or permitting execution; merged in `0e8e2db`, exact-tree six-role field QA and complete post-merge validation passed. |
-| AGENT-RUNTIME-EXECUTOR-001 | PROPOSED | Execute only authorized loaded packages through every runtime owner. |
+| AGENT-RUNTIME-EXECUTOR-001 | ACTIVE | One-shot execution of exact authorized and loaded subjects through registered official Rust programs, existing runtime owners, explicit cooperative limits, and no OS-isolation claim; local source evidence PASS, exact-tree field QA pending. |
 
 Closure gate:
 
@@ -447,8 +450,11 @@ local validation, exact-tree six-role field QA, final Architecture review, and
 post-merge validation. `AGENT-PACKAGE-LOADER-001` closed in merge `0e8e2db`
 after bounded loader validation, exact-tree six-role field QA, final
 Architecture review, and complete post-merge validation. The runtime executor
-is the next sequential feature but remains `PROPOSED`; this closure does not
-authorize it.
+is now `ACTIVE` at source commit `df6b903`; its local 12-test focused and
+149-test runtime regressions pass. Four Metal real-inference failures in the
+workspace gate reproduced exactly at the base and are an accepted baseline
+exception. Exact-tree field QA, final Architecture review, merge, and
+post-merge validation remain pending.
 
 ## v0.11.3 - Internal Agent Developer Bootstrap
 
@@ -652,8 +658,8 @@ QA, and post-merge validation without package loading or execution.
 `AGENT-PACKAGE-LOADER-001` closed in merge `0e8e2db` after 9 focused tests,
 the 137-test runtime regression, the 109-test agents regression, strict crate
 Clippy, full quality gate, exact-tree six-role field QA, and complete
-post-merge validation without agent execution. The runtime executor row
-remains `PROPOSED`.
+post-merge validation without agent execution. The runtime executor row is
+`ACTIVE` with local source validation passed and field QA pending.
 
 Not all functional P0 agents should be implemented in parallel at the start.
 After every prerequisite gate above passes, `NODE-DOCTOR-AGENT-001` remains
