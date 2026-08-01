@@ -250,11 +250,11 @@ or direct user-facing agent behavior.
 ## Next Roadmap Step
 
 ```text
-NODE-DOCTOR-EVIDENCE-PROVIDER-001
+NODE-DOCTOR-AGENT-001
 ```
 
 The v0.11.2 executable runtime prerequisites and milestone gate are closed. The
-evidence provider implementation, local validation, and six-role field QA are
-complete, but final Architecture review, merge, and post-merge validation remain
-pending. The functional Node Doctor feature remains blocked until that provider
-closes.
+evidence provider closed in merge `f54851b` after six-role field QA and
+exact-merge post-merge validation. The functional Node Doctor feature is now
+the next `PROPOSED` row and still requires its own Architecture and development
+authorization.

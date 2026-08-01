@@ -127,10 +127,10 @@ All 19 executable v0.11.2 rows are closed. The last row,
 validation, exact-tree six-role field QA, final Architecture review, and
 complete post-merge validation. Exhaustive QA passed on Mac, TS140, and four
 Proxmox/R5500 roles. The evidence merged in `76a3de0`, post-merge validation
-passed, and v0.11.2 is now closed. The next canonical feature is
-`NODE-DOCTOR-EVIDENCE-PROVIDER-001`. Its implementation and local validation
-are complete, and six-role field QA passed. Final Architecture merge review
-remains pending. No later product row is authorized in bulk.
+passed, and v0.11.2 is now closed. `NODE-DOCTOR-EVIDENCE-PROVIDER-001` closed in
+merge `f54851b` after local validation, six-role field QA, and exact-merge
+post-merge validation. The next canonical feature is `NODE-DOCTOR-AGENT-001` in
+`PROPOSED`; no later product row is authorized in bulk.
 
 The broader v0.9 operational stability claim still requires the operational
 target: 10-50 nodes, 3-10 operators, multiple physical networks, and two to
