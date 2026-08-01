@@ -97,36 +97,29 @@ PubSub, model policy, inference, hardware profiling, persistence, installer,
 updater, registry storage, marketplace behavior, rewards, wallet, settlement,
 mainnet, or distributed model MoE behavior.
 
-## Closed Prerequisites
+## Executable Prerequisite Status
 
 ```text
-AGENT-PACKAGE-LOAD-GATE-001
-AGENT-SCOPE-ENFORCEMENT-001
-AGENT-PERMISSION-ENFORCEMENT-001
-AGENT-AUDIT-EVENTS-001
+v0.11.2 executable completion registry: 19 of 19 CLOSED
+last executable feature: AGENT-RUNTIME-EXECUTOR-001
+last executable merge: 612d5cd84d0c79a3a7909e1b2d1aafb29fd40440
+current gate: V0.11.2-AGENT-RUNTIME-BASELINE-MILESTONE-QA-001
+current gate state: READY FOR ARCHITECTURE MILESTONE CLOSURE REVIEW
 ```
 
-`AGENT-MANIFEST-PARSER-VALIDATOR-001` provides the root Rust types, YAML parser,
-generated JSON Schema, validators, fixtures, and tests without package loading
-or execution. `AGENT-PACKAGE-LOAD-GATE-001` closed in merge `d56cbce`; it
-consumes that parser and emits only a typed blocked assessment until every
-referenced metadata validator and enforcement prerequisite is available.
-`AGENT-SCOPE-ENFORCEMENT-001` closed in merge `48cb6b2`; it adds a typed,
-fail-closed in-memory scope decision engine without authorizing package loading
-or runtime execution. `AGENT-PERMISSION-ENFORCEMENT-001` closed in merge
-`2a84543`; it adds a typed, deny-by-default in-memory permission gate after
-Scope without removing package-load blockers or authorizing execution.
-`AGENT-AUDIT-EVENTS-001` closed in merge `5a505d8`; it adds bounded, redacted,
-deterministic in-memory evidence without persistence, package integration, or
-runtime authorization.
+The parser, policy, descriptive metadata, boundary evaluation, runtime core,
+reference resolution, review, compatibility, I/O, sandbox, lifecycle,
+timeout/cancel, handoff, out-of-scope response, routing, audit, authorization,
+load evidence, package loading, and bounded runtime executor prerequisites are
+implemented and merged. The exhaustive gate passed on six platform roles, but
+QA does not close the milestone.
 
-The next executable feature in canonical roadmap order is:
+After the gate evidence merges and post-merge validation permits Architecture
+to close v0.11.2, the next canonical feature is:
 
 ```text
-AGENT-PACKAGE-REFERENCE-RESOLVER-001
+NODE-DOCTOR-EVIDENCE-PROVIDER-001
 ```
 
-`AGENT-RUNTIME-CORE-001` closed in merge `5bcbcf4`; the next feature remains
-`PROPOSED`. The closed metadata, sandbox, lifecycle,
-input/output, timeout, handoff, out-of-scope, and routing contracts still do
-not by themselves provide executable evidence.
+Functional `NODE-DOCTOR-AGENT-001` remains blocked until that provider has its
+own implementation, validation, field decision, merge, and post-merge closure.

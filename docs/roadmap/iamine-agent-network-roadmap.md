@@ -23,12 +23,12 @@ gates.
 Current operational baseline:
 
 ```text
-validated develop merge: 612d5cd84d0c79a3a7909e1b2d1aafb29fd40440
-tree: 7db36dc65c06e560b8dfe82e14393c41f7fc276b
+validated develop merge: 5480d51acac1bbec98e168863ee8d2fc13a408d1
+tree: 9446e25cf3e8098ea8ea7d71d1bb98503a898374
 v0.11.2 executable rows: 19 of 19 CLOSED
 last closed: AGENT-RUNTIME-EXECUTOR-001
 active sequential feature: V0.11.2-AGENT-RUNTIME-BASELINE-MILESTONE-QA-001
-active gate state: FIELD QA AUTHORIZED
+active gate state: READY FOR ARCHITECTURE MILESTONE CLOSURE REVIEW
 runtime regression baseline: 149/149
 agents regression baseline: 109/109
 ```
@@ -68,7 +68,7 @@ HEAD and tree is merged and post-merge validated.
 | v0.10.0 | IAMINE-PREPUBLIC-READINESS-GATE-001 | CLOSED / historical release gate |
 | v0.11.0 | Historical closure predating this registry | CLOSED / not reopened |
 | v0.11.1 | V0.11.1-AGENT-ARCHITECTURE-FOUNDATION-MILESTONE-QA-001 | CLOSED / merge `0bdff4b` / post-merge PASS |
-| v0.11.2 | V0.11.2-AGENT-RUNTIME-BASELINE-MILESTONE-QA-001 | ACTIVE / FIELD QA AUTHORIZED |
+| v0.11.2 | V0.11.2-AGENT-RUNTIME-BASELINE-MILESTONE-QA-001 | ACTIVE / READY FOR ARCHITECTURE MILESTONE CLOSURE REVIEW |
 | v0.11.3 | V0.11.3-AGENT-CREATION-ASSISTANTS-MILESTONE-QA-001 | CLOSED / documentation-only scope |
 | v0.12.0 | V0.12.0-P0-OFFICIAL-AGENTS-MILESTONE-QA-001 | PROPOSED / blocked on functional P0 agents |
 | v0.12.1 | V0.12.1-P1-ADOPTION-AGENTS-MILESTONE-QA-001 | PROPOSED |
@@ -221,8 +221,8 @@ tree: e7109bca0a4ec4f35968660f3a253725b57dbec2
 
 All feature rows and the exhaustive QA gate are closed. Architecture closed
 v0.11.1 only after the QA evidence merged and post-merge validation passed on
-the exact remote commit and tree. v0.11.2 remains `PROPOSED`; closing this
-milestone does not independently authorize a runtime feature.
+the exact remote commit and tree. At that historical closure, v0.11.2 remained
+`PROPOSED`; closing v0.11.1 did not independently authorize a runtime feature.
 
 `AGENT-SCOPE-MANIFEST-001` must define what an agent does, what it does not
 do, required permissions, blocked actions, supported task types, handoff
@@ -433,15 +433,15 @@ Closure gate:
 
 ```text
 V0.11.2-AGENT-RUNTIME-BASELINE-MILESTONE-QA-001
-state: ACTIVE / FIELD QA AUTHORIZED
+state: ACTIVE / READY FOR ARCHITECTURE MILESTONE CLOSURE REVIEW
 ```
 
 The historical documentation-only v0.11.2 QA snapshot does not close the
-current expanded milestone. Scope enforcement, permission enforcement, and
-audit event boundaries now have executable validation evidence. Every row in
-the executable completion registry must close independently before Architecture
-may authorize the exhaustive milestone gate. All 19 rows are now closed and
-the exhaustive gate is authorized; the milestone itself remains open.
+current expanded milestone. All 19 executable rows are closed. Exhaustive QA
+passed on the authorized `5480d51` tree across Mac, TS140, and four
+Proxmox/R5500 roles with 0 product failures. The milestone remains open until
+the gate evidence merges and post-merge validation passes on the exact remote
+commit and tree.
 
 `AGENT-EXECUTION-AUTHORIZATION-001` closed in merge `22adc69`.
 `AGENT-PACKAGE-LOAD-EVIDENCE-INTEGRATION-001` closed in merge `c8a0ecc` after
@@ -624,45 +624,22 @@ It consumes the root parser and emits only a typed blocked report while
 referenced metadata validators or enforcement gates remain unavailable. It
 does not authorize package loading or agent execution.
 
-`AGENT-EXECUTION-AUTHORIZATION-001` closed in merge `22adc69`. The next
-executable feature registered by the v0.11.2 reconciliation is:
+The v0.11.2 executable reconciliation is complete at 19 of 19 closed rows. The
+current sequential feature is:
 
 ```text
-AGENT-PACKAGE-LOAD-EVIDENCE-INTEGRATION-001
+V0.11.2-AGENT-RUNTIME-BASELINE-MILESTONE-QA-001
 ```
 
-Eighteen of the 19 implementation rows are `CLOSED`.
-`AGENT-HANDOFF-ENFORCEMENT-001` closed in merge `9e42136` after implementation,
-local validation, Architecture checkpoints, exact-tree field QA on six
-required platform roles, and post-merge validation.
-`AGENT-OUT-OF-SCOPE-RESPONSE-ENFORCEMENT-001` closed in merge `0b9bdf0`
-after local validation, final Architecture review, exact-tree field QA on six
-platform roles, and post-merge validation.
-`AGENT-ROUTING-CANDIDATE-SELECTOR-001` closed in merge `1efa9cf` after local
-implementation, 10 focused tests, the 93-test runtime regression, strict
-crate clippy, scope review, size review, exact-tree field QA on six platform
-roles, final Architecture review, and unrestricted post-merge validation
-passed. `AGENT-AUDIT-EVENT-ENFORCEMENT-001` closed in merge `b9fe62d` after
-10 focused tests, the 103-test runtime regression, the 109-test agents
-regression, strict crate clippy, the full quality gate, privacy review, size
-review, exact-tree field QA with 60/60 focused and 24/24 library tests across
-six platform roles, final Architecture review, and unrestricted post-merge
-validation passed. `AGENT-EXECUTION-AUTHORIZATION-001` closed in merge
-`22adc69` after 14 focused tests, the 117-test runtime regression, the
-109-test agents regression, strict crate clippy, the full quality gate,
-privacy and size review, exact-tree field QA with 84/84 focused and 24/24
-library tests across six platform roles, final Architecture review, and
-unrestricted post-merge validation passed.
-`AGENT-PACKAGE-LOAD-EVIDENCE-INTEGRATION-001` closed in merge `c8a0ecc` after
-11 focused tests, the 128-test runtime regression, the 109-test agents
-regression, strict crate Clippy, full quality gate, exact-tree six-role field
-QA, and post-merge validation without package loading or execution.
-`AGENT-PACKAGE-LOADER-001` closed in merge `0e8e2db` after 9 focused tests,
-the 137-test runtime regression, the 109-test agents regression, strict crate
-Clippy, full quality gate, exact-tree six-role field QA, and complete
-post-merge validation without agent execution. The runtime executor row is
-`ACTIVE` with local and exact-tree six-role field validation passed; merge and
-post-merge validation remain pending.
+After its evidence merges and Architecture closes the milestone, the next
+canonical feature is `NODE-DOCTOR-EVIDENCE-PROVIDER-001`.
+
+All 19 implementation rows are `CLOSED`. The final chain from handoff through
+the bounded runtime executor completed local validation, independent
+Architecture checkpoints, exact-tree field QA on six platform roles,
+controlled merges, and post-merge validation. The exhaustive milestone gate
+then passed 894/894 runtime and 654/654 agent test executions across the same
+six roles, plus the 1118-test workspace gate on TS140.
 
 Not all functional P0 agents should be implemented in parallel at the start.
 After every prerequisite gate above passes, `NODE-DOCTOR-AGENT-001` remains
