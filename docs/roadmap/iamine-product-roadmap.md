@@ -14,8 +14,8 @@ Operational status reconciled from:
 
 ```text
 branch: origin/develop
-baseline commit: 90a4605babe9383d6177b2211ae6507618525f69
-baseline tree: 9c020075e1881390406fb1e8d842931cc1ebff07
+baseline commit: 612d5cd84d0c79a3a7909e1b2d1aafb29fd40440
+baseline tree: 7db36dc65c06e560b8dfe82e14393c41f7fc276b
 date: 2026-07-29
 ```
 
@@ -122,11 +122,12 @@ authorize execution.
 architecture-only runtime claims to independently owned implementation
 features. It changed roadmap state only.
 
-Eighteen of the 19 executable v0.11.2 rows are closed. The last closed row is
-`AGENT-PACKAGE-LOADER-001`, merge `0e8e2db`, after exact-tree six-role field
-QA and post-merge validation. `AGENT-RUNTIME-EXECUTOR-001` is the only active
-row; its local source validation and exact-tree six-role field QA passed.
-Merge and post-merge validation remain pending. No later row is authorized in
+All 19 executable v0.11.2 rows are closed. The last row,
+`AGENT-RUNTIME-EXECUTOR-001`, closed in merge `612d5cd` after local
+validation, exact-tree six-role field QA, final Architecture review, and
+complete post-merge validation. The active sequential feature is now
+`V0.11.2-AGENT-RUNTIME-BASELINE-MILESTONE-QA-001`; this authorizes exhaustive
+milestone QA but does not close v0.11.2 or authorize later product rows in
 bulk.
 
 The broader v0.9 operational stability claim still requires the operational
@@ -414,11 +415,11 @@ its typed eligibility owner passed focused/runtime/agents validation,
 exact-tree six-role field QA, final Architecture review, and the post-merge
 quality gate without loading or executing packages. `AGENT-PACKAGE-LOADER-001`
 closed in merge `0e8e2db` after exact-tree six-role field QA and complete
-post-merge validation. `AGENT-RUNTIME-EXECUTOR-001` is `ACTIVE` at source
-commit `df6b903`; local validation passed with an accepted Metal
-real-inference baseline exception, exact-tree six-role field QA passed, and
-merge/post-merge validation remain pending. No later row is authorized in
-bulk.
+post-merge validation. `AGENT-RUNTIME-EXECUTOR-001` closed in merge `612d5cd`;
+local validation passed with an accepted Metal real-inference baseline
+exception, exact-tree six-role field QA passed, and complete post-merge
+validation passed. The v0.11.2 exhaustive milestone gate is active; no later
+row is authorized in bulk.
 
 Each arrow still requires the complete canonical feature lifecycle. A roadmap
 position is not development authorization.
