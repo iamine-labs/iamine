@@ -9,8 +9,8 @@ NODE-DOCTOR-EVIDENCE-PROVIDER-001
 Current state:
 
 ```text
-LOCAL VALIDATION PASSED
-FIELD QA REQUIRED
+FIELD QA PASSED
+ARCHITECTURE REVIEW REQUIRED
 ```
 
 ## Authorized Identity
@@ -19,10 +19,12 @@ FIELD QA REQUIRED
 branch: feature/node-doctor-evidence-provider-001
 base: e2e6a8a70a8f952bf4eb064a7fd9f70e39aac72a
 base tree: bbb3a261d85717d5326a0b960381f4509f787d30
+source commit: c66f626162ad1419977483b35249cb4fd0d80bf3
+source tree: 758fa81b00a431848393ad1ab9029a7649a4ff7c
+bundle SHA-256: 0f98fdefb1ab194f6c8604b03cdb1401b01143ca4eb5d01cab8920b45a052f3b
+Linux x86_64 test binary SHA-256: 6fadedbab89e59376b902a29b8e6f26d976b026051ce4f375d31fe6470e09033
 origin: https://github.com/iamine-labs/iamine
 ```
-
-The exact source commit and tree will be recorded before field QA.
 
 ## Scope
 
@@ -37,6 +39,7 @@ docs/qa/node-doctor-evidence-provider.md
 Updated:
 
 ```text
+iamine-models/src/model_storage.rs
 iamine-node/src/main.rs
 iamine-node/src/lan_node_doctor.rs
 docs/agents/node-doctor-agent-skeleton.md
@@ -49,12 +52,14 @@ docs/roadmap/iamine-product-roadmap.md
 
 ```text
 focused provider tests: 6/6 PASS
+read-only model storage test: 1/1 PASS
 iamine-node: 485/486 in Codex sandbox
 daemon socket test outside sandbox: 1/1 PASS
 effective iamine-node result: 486/486 PASS WITH ACCEPTED ENVIRONMENT EXCEPTION
 cargo fmt --all -- --check: PASS
 changed-surface Clippy with baseline lint families excluded: PASS
 new feature Clippy findings: 0
+workspace test inventory: 1125
 ```
 
 The strict workspace-style node Clippy invocation is blocked by historical
@@ -68,41 +73,67 @@ main.rs: 4929 -> 4934, wiring only
 cluster_registry.rs: 862 -> 862
 lan_node_doctor.rs: 687 lines
 node_doctor_evidence_provider.rs: 419 lines
+model_storage.rs: 192 lines
 new non-main Rust files above 750 lines: 0
 ```
 
-## Field QA Matrix
+## Finding And Correction
 
-Required environments:
+Field preparation found that the existing LAN Doctor path instantiated
+`ModelStorage::new()`, which can create the default models directory. That was a
+product finding because the provider contract forbids writes even when no model
+is installed.
+
+The source was corrected before QA closure. LAN Doctor now uses
+`ModelStorage::for_read_only_inspection()`, and the owner crate has a regression
+test proving that inspection of a missing storage path does not create it. The
+six-role rerun also executed the provider with a fresh nonexistent home path;
+the path remained absent on every role.
+
+## Field QA Results
+
+Exact-source results:
 
 ```text
-Mac
-TS140
-iamine-ctrl
-iamine-wrk1
-iamine-wrk2
-iamine-heavy
+Mac:          6/6 PASS, fresh home not created, processes 0 -> 0
+TS140:        6/6 PASS, fresh home not created, processes 1 -> 1
+iamine-ctrl:  6/6 PASS, fresh home not created, processes 0 -> 0
+iamine-wrk1:  6/6 PASS, fresh home not created, processes 0 -> 0
+iamine-wrk2:  6/6 PASS, fresh home not created, processes 0 -> 0
+iamine-heavy: 6/6 PASS, fresh home not created, processes 0 -> 0
 ```
 
-On each role:
+TS140 full gate:
 
-1. verify exact source commit, tree, base, tracked state, staging, and untracked
-   baseline;
-2. run the six focused provider tests;
-3. run the complete `iamine-node` suite or the approved exact-tree focused
-   matrix when resource limits require it;
-4. confirm serialized evidence contains only static bounded fields;
-5. confirm peer/network and remote readiness remain `not_observed` without an
-   active probe;
-6. confirm no worker, P2P, PubSub, download, model load, inference, profile
-   write, config write, or persistent evidence state is created;
-7. preserve existing processes, files, services, profiles, and credentials.
+```text
+scripts/quality-gate.sh: PASS WITH WARNINGS
+required_failures: 0
+warnings: 0
+skipped optional tools: 3
+iamine-models unit tests: 100/100 PASS
+iamine-models integration tests: 59/59 PASS
+iamine-network tests: 163/163 PASS
+iamine-node tests: 486/486 PASS
+workspace test inventory: 1125
+changed-surface strict Clippy: PASS
+```
+
+The four Proxmox guests had 5.3 GB to 6.1 GB free, so QA used the exact Git
+bundle plus the single TS140-built Linux x86_64 test binary instead of producing
+four duplicate compilation trees. Each guest verified both hashes, source
+commit, tree, base, clean tracked state, and zero untracked files before running
+the focused matrix.
+
+Two harness-only observations did not affect product results. Proxmox
+`/dev/shm` was session-scoped, so artifacts were staged under feature-specific
+`/tmp` paths. On Mac, a zsh variable-name collision occurred after a successful
+test run; the command was corrected and rerun successfully.
 
 ## Current Recommendation
 
 ```text
-FIELD QA AUTHORIZED AFTER SOURCE COMMIT
+READY FOR ARCHITECTURE MERGE REVIEW
 ```
 
-QA may recommend `READY FOR ARCHITECTURE MERGE REVIEW` after the six-role exact
-source matrix passes. QA does not authorize merge.
+QA recommends Architecture review of the exact source commit above. QA does not
+authorize merge, the functional Node Doctor agent, or any later roadmap row.

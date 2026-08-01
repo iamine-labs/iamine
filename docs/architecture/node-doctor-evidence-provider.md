@@ -45,6 +45,8 @@ build_node_doctor_evidence
 The collector obtains the existing static owner summary without requesting
 network checks. The builder accepts an already-built owner report and emits a
 privacy-reduced projection. It never copies owner messages or detail maps.
+LAN Doctor uses `ModelStorage::for_read_only_inspection()` for this summary so a
+diagnostic read cannot create the default models directory.
 
 Evidence categories:
 
@@ -110,6 +112,10 @@ Unavailable network state remains explicit instead of causing active discovery.
 The provider does not bind ports, write files, mutate configuration, install a
 package, persist evidence, or produce a user-facing response.
 
+The owner storage crate keeps its existing mutating constructors for install and
+runtime paths. The diagnostic-only constructor stores the target path without
+creating it; missing model state is observed as absent.
+
 ## Consumer Boundary
 
 The contract remains crate-private until the functional Node Doctor feature
@@ -138,6 +144,7 @@ blocked and warning precedence
 network-not-observed remote readiness
 private owner data redaction
 zero runtime and mutation side effects
+missing model storage remains absent during read-only inspection
 ```
 
 Because the collector reads hardware/configuration/model status and exposes

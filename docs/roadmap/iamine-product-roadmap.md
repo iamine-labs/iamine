@@ -129,8 +129,8 @@ complete post-merge validation. Exhaustive QA passed on Mac, TS140, and four
 Proxmox/R5500 roles. The evidence merged in `76a3de0`, post-merge validation
 passed, and v0.11.2 is now closed. The next canonical feature is
 `NODE-DOCTOR-EVIDENCE-PROVIDER-001`. Its implementation and local validation
-are complete; field QA and final Architecture review remain pending. No later
-product row is authorized in bulk.
+are complete, and six-role field QA passed. Final Architecture merge review
+remains pending. No later product row is authorized in bulk.
 
 The broader v0.9 operational stability claim still requires the operational
 target: 10-50 nodes, 3-10 operators, multiple physical networks, and two to

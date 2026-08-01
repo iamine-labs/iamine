@@ -28,7 +28,7 @@ tree: 005298bbdb84dc60f239fa7cc3a682807fcc7c74
 v0.11.2 executable rows: 19 of 19 CLOSED
 last closed: AGENT-RUNTIME-EXECUTOR-001
 active sequential feature: NODE-DOCTOR-EVIDENCE-PROVIDER-001
-active feature state: LOCAL VALIDATION PASSED / FIELD QA REQUIRED
+active feature state: READY FOR ARCHITECTURE MERGE REVIEW
 previous gate state: V0.11.2 CLOSED / POST-MERGE PASS
 runtime regression baseline: 149/149
 agents regression baseline: 109/109
@@ -538,7 +538,7 @@ ID as if it represented new implementation work.
 | HOME-NETWORK-ASSISTANT-AGENT-001-SKELETON | CLOSED | Defined the official P0 Home Network Assistant skeleton as a local-planning, privacy-safe contract without discovery, router access, or network execution; merge `aa3ec2a`, focused post-merge validation PASS. |
 | WINDOWS-OPTIMIZER-ASSISTANT-AGENT-001-SKELETON | CLOSED | Defined the official P0 Windows Optimizer Assistant skeleton as a local-planning, privacy-safe contract without system inspection, configuration change, or execution; merge `f81072a`, focused post-merge validation PASS. |
 | NODE-DOCTOR-AGENT-001-DEPENDENCY-RECONCILIATION-001 | CLOSED | Recorded the executable prerequisite chain and kept functional Node Doctor development blocked until every gate has implementation and validation evidence; merge `7588e09`, focused post-merge validation PASS. |
-| NODE-DOCTOR-EVIDENCE-PROVIDER-001 | LOCAL VALIDATION PASSED / FIELD QA REQUIRED | Expose bounded, structured, redacted, read-only node evidence through a stable non-agent interface; implementation is isolated in `iamine-node`, preserves LAN Doctor output, and does not authorize the functional agent. |
+| NODE-DOCTOR-EVIDENCE-PROVIDER-001 | READY FOR ARCHITECTURE MERGE REVIEW | Exposes bounded, structured, redacted, read-only node evidence through a stable non-agent interface. Local validation and six-role field QA passed; the functional agent remains unauthorized. |
 | NODE-DOCTOR-AGENT-001 | PROPOSED | Implement the first functional P0 reference agent only after the full executable prerequisite chain is implemented and validated. |
 
 Closure gate:
@@ -636,8 +636,9 @@ NODE-DOCTOR-EVIDENCE-PROVIDER-001
 Functional Node Doctor remains blocked until the evidence provider completes
 its own lifecycle and closure evidence.
 
-`NODE-DOCTOR-EVIDENCE-PROVIDER-001` has completed implementation and local
-validation. Its six-role field QA and final Architecture review remain pending.
+`NODE-DOCTOR-EVIDENCE-PROVIDER-001` has completed implementation, local
+validation, and six-role field QA. Final Architecture merge review remains
+pending.
 
 All 19 implementation rows are `CLOSED`. The final chain from handoff through
 the bounded runtime executor completed local validation, independent

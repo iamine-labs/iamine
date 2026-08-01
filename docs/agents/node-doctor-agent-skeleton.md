@@ -254,6 +254,7 @@ NODE-DOCTOR-EVIDENCE-PROVIDER-001
 ```
 
 The v0.11.2 executable runtime prerequisites and milestone gate are closed. The
-evidence provider implementation and local validation are complete, but field
-QA, final Architecture review, merge, and post-merge validation remain pending.
-The functional Node Doctor feature remains blocked until that provider closes.
+evidence provider implementation, local validation, and six-role field QA are
+complete, but final Architecture review, merge, and post-merge validation remain
+pending. The functional Node Doctor feature remains blocked until that provider
+closes.

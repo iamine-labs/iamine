@@ -122,8 +122,8 @@ The next canonical feature is:
 NODE-DOCTOR-EVIDENCE-PROVIDER-001
 ```
 
-Its implementation and local validation are complete. Field QA and final
-Architecture review remain required before merge.
+Its implementation, local validation, and six-role field QA are complete. Final
+Architecture merge review remains required before merge.
 
 Functional `NODE-DOCTOR-AGENT-001` remains blocked until that provider has its
 own implementation, validation, field decision, merge, and post-merge closure.
