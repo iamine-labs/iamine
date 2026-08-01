@@ -104,18 +104,19 @@ v0.11.2 executable completion registry: 19 of 19 CLOSED
 last executable feature: AGENT-RUNTIME-EXECUTOR-001
 last executable merge: 612d5cd84d0c79a3a7909e1b2d1aafb29fd40440
 current gate: V0.11.2-AGENT-RUNTIME-BASELINE-MILESTONE-QA-001
-current gate state: READY FOR ARCHITECTURE MILESTONE CLOSURE REVIEW
+current gate state: MERGED / VALIDATED / CLOSED
+milestone merge: 76a3de00df4c09bb9088c0acecd1a3fe99067a14
+milestone tree: 005298bbdb84dc60f239fa7cc3a682807fcc7c74
 ```
 
 The parser, policy, descriptive metadata, boundary evaluation, runtime core,
 reference resolution, review, compatibility, I/O, sandbox, lifecycle,
 timeout/cancel, handoff, out-of-scope response, routing, audit, authorization,
 load evidence, package loading, and bounded runtime executor prerequisites are
-implemented and merged. The exhaustive gate passed on six platform roles, but
-QA does not close the milestone.
+implemented and merged. The exhaustive gate passed on six platform roles and
+post-merge validation passed on the exact remote tree. The milestone is closed.
 
-After the gate evidence merges and post-merge validation permits Architecture
-to close v0.11.2, the next canonical feature is:
+The next canonical feature is:
 
 ```text
 NODE-DOCTOR-EVIDENCE-PROVIDER-001
