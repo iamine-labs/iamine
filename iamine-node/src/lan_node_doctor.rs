@@ -214,7 +214,7 @@ struct CatalogDiagnostic {
 
 fn collect_model_catalog(hardware_profile: Option<&NodeHardwareProfile>) -> CatalogDiagnostic {
     let registry = ModelRegistry::new();
-    let storage = ModelStorage::new();
+    let storage = ModelStorage::for_read_only_inspection();
     let acceptance = LicenseAcceptanceStore::new();
     let capabilities =
         capabilities_from_hardware_profile(LOCAL_DIAGNOSTIC_NODE_ID, hardware_profile, &storage);
