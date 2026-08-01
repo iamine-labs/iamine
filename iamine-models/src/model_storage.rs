@@ -22,6 +22,14 @@ impl ModelStorage {
         Self { base_path }
     }
 
+    pub fn for_read_only_inspection() -> Self {
+        Self::for_read_only_inspection_in(Self::models_dir())
+    }
+
+    pub fn for_read_only_inspection_in(base_path: PathBuf) -> Self {
+        Self { base_path }
+    }
+
     pub fn models_dir() -> PathBuf {
         let home = dirs::home_dir().expect("No se encontró home dir");
         home.join(".iamine").join("models")
@@ -163,5 +171,22 @@ impl ModelStorage {
 
     pub fn clone_for_test(&self) -> Self {
         self.clone()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn read_only_inspection_does_not_create_storage_directory() {
+        let temp = tempfile::tempdir().expect("temporary directory");
+        let missing_models_dir = temp.path().join("models");
+
+        let storage = ModelStorage::for_read_only_inspection_in(missing_models_dir.clone());
+
+        assert!(!missing_models_dir.exists());
+        assert!(!storage.has_model("missing-model"));
+        assert!(!missing_models_dir.exists());
     }
 }
