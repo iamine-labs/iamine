@@ -119,11 +119,10 @@ post-merge validation passed on the exact remote tree. The milestone is closed.
 The next canonical feature is:
 
 ```text
-NODE-DOCTOR-EVIDENCE-PROVIDER-001
+NODE-DOCTOR-AGENT-001
 ```
 
-Its implementation, local validation, and six-role field QA are complete. Final
-Architecture merge review remains required before merge.
-
-Functional `NODE-DOCTOR-AGENT-001` remains blocked until that provider has its
-own implementation, validation, field decision, merge, and post-merge closure.
+`NODE-DOCTOR-EVIDENCE-PROVIDER-001` closed in merge `f54851b` after local
+validation, six-role field QA, and exact-merge post-merge validation. Functional
+`NODE-DOCTOR-AGENT-001` remains `PROPOSED` until its own Architecture and
+development authorization are recorded.

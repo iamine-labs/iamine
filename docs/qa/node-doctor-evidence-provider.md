@@ -9,8 +9,7 @@ NODE-DOCTOR-EVIDENCE-PROVIDER-001
 Current state:
 
 ```text
-FIELD QA PASSED
-ARCHITECTURE REVIEW REQUIRED
+MERGED / VALIDATED / CLOSED
 ```
 
 ## Authorized Identity
@@ -24,6 +23,17 @@ source tree: 758fa81b00a431848393ad1ab9029a7649a4ff7c
 bundle SHA-256: 0f98fdefb1ab194f6c8604b03cdb1401b01143ca4eb5d01cab8920b45a052f3b
 Linux x86_64 test binary SHA-256: 6fadedbab89e59376b902a29b8e6f26d976b026051ce4f375d31fe6470e09033
 origin: https://github.com/iamine-labs/iamine
+```
+
+## Merge Identity
+
+```text
+PR: https://github.com/iamine-labs/iamine/pull/13
+merge commit: f54851bc70d603eab10ed60b719088628dc8f482
+merge tree: 18a5b0d2f2d49661d889b067e756eeee65646b94
+first parent: e2e6a8a70a8f952bf4eb064a7fd9f70e39aac72a
+second parent: d6d80f692b3df05bf284992b6f4a020099c8cce6
+post-merge bundle SHA-256: a84e6c357cf681b5a667c79a01d6a4d934f56136a0179c29a77e4fff84deea3a
 ```
 
 ## Scope
@@ -129,11 +139,39 @@ Two harness-only observations did not affect product results. Proxmox
 `/tmp` paths. On Mac, a zsh variable-name collision occurred after a successful
 test run; the command was corrected and rerun successfully.
 
+## Post-Merge Validation
+
+TS140 validated the exact merge commit, tree, and both parents from the bundle
+recorded above. The worktree remained clean and the existing node process count
+was preserved.
+
+```text
+scripts/quality-gate.sh: PASS WITH WARNINGS
+required_failures: 0
+warnings: 0
+skipped optional tools: 3
+iamine-models unit tests: 100/100 PASS
+iamine-models integration tests: 59/59 PASS
+iamine-network tests: 163/163 PASS
+iamine-node tests: 486/486 PASS
+cargo build -p iamine-node: PASS
+cargo test --workspace: PASS
+cargo clippy --workspace --all-targets: PASS
+```
+
+PR checks for format, diff, models, network, node, build, workspace, Clippy,
+Cargo deny, and the complete quality-gate script passed. The secret-scan job did
+not execute because the organization lacks the license now required by
+`gitleaks-action@v2`; the same failure exists on the exact `develop` base. An
+official Gitleaks CLI 8.30.1 artifact verified by release SHA-256 scanned all
+three feature commits and found no leaks. Cargo audit remained an informational
+baseline failure, and the feature changed no Cargo manifest or lockfile.
+
 ## Current Recommendation
 
 ```text
-READY FOR ARCHITECTURE MERGE REVIEW
+MERGED / VALIDATED / CLOSED
 ```
 
-QA recommends Architecture review of the exact source commit above. QA does not
-authorize merge, the functional Node Doctor agent, or any later roadmap row.
+The provider lifecycle is closed. `NODE-DOCTOR-AGENT-001` is the next canonical
+feature in `PROPOSED`; it is not development-authorized by this closure.

@@ -23,12 +23,12 @@ gates.
 Current operational baseline:
 
 ```text
-validated develop merge: 76a3de00df4c09bb9088c0acecd1a3fe99067a14
-tree: 005298bbdb84dc60f239fa7cc3a682807fcc7c74
+validated develop merge: f54851bc70d603eab10ed60b719088628dc8f482
+tree: 18a5b0d2f2d49661d889b067e756eeee65646b94
 v0.11.2 executable rows: 19 of 19 CLOSED
-last closed: AGENT-RUNTIME-EXECUTOR-001
-active sequential feature: NODE-DOCTOR-EVIDENCE-PROVIDER-001
-active feature state: READY FOR ARCHITECTURE MERGE REVIEW
+last closed: NODE-DOCTOR-EVIDENCE-PROVIDER-001
+active sequential feature: NODE-DOCTOR-AGENT-001
+active feature state: PROPOSED
 previous gate state: V0.11.2 CLOSED / POST-MERGE PASS
 runtime regression baseline: 149/149
 agents regression baseline: 109/109
@@ -538,7 +538,7 @@ ID as if it represented new implementation work.
 | HOME-NETWORK-ASSISTANT-AGENT-001-SKELETON | CLOSED | Defined the official P0 Home Network Assistant skeleton as a local-planning, privacy-safe contract without discovery, router access, or network execution; merge `aa3ec2a`, focused post-merge validation PASS. |
 | WINDOWS-OPTIMIZER-ASSISTANT-AGENT-001-SKELETON | CLOSED | Defined the official P0 Windows Optimizer Assistant skeleton as a local-planning, privacy-safe contract without system inspection, configuration change, or execution; merge `f81072a`, focused post-merge validation PASS. |
 | NODE-DOCTOR-AGENT-001-DEPENDENCY-RECONCILIATION-001 | CLOSED | Recorded the executable prerequisite chain and kept functional Node Doctor development blocked until every gate has implementation and validation evidence; merge `7588e09`, focused post-merge validation PASS. |
-| NODE-DOCTOR-EVIDENCE-PROVIDER-001 | READY FOR ARCHITECTURE MERGE REVIEW | Exposes bounded, structured, redacted, read-only node evidence through a stable non-agent interface. Local validation and six-role field QA passed; the functional agent remains unauthorized. |
+| NODE-DOCTOR-EVIDENCE-PROVIDER-001 | CLOSED | Bounded, structured, redacted, read-only node evidence provider merged in `f54851b`; six-role field QA and exact-merge post-merge quality gate passed. |
 | NODE-DOCTOR-AGENT-001 | PROPOSED | Implement the first functional P0 reference agent only after the full executable prerequisite chain is implemented and validated. |
 
 Closure gate:
@@ -627,18 +627,17 @@ referenced metadata validators or enforcement gates remain unavailable. It
 does not authorize package loading or agent execution.
 
 The v0.11.2 executable reconciliation and milestone gate are closed at 19 of
-19 rows. The next sequential feature is:
+19 rows. The evidence provider merged in `f54851b` and passed exact-merge
+post-merge validation. The next sequential feature is:
 
 ```text
-NODE-DOCTOR-EVIDENCE-PROVIDER-001
+NODE-DOCTOR-AGENT-001
 ```
 
-Functional Node Doctor remains blocked until the evidence provider completes
-its own lifecycle and closure evidence.
-
-`NODE-DOCTOR-EVIDENCE-PROVIDER-001` has completed implementation, local
-validation, and six-role field QA. Final Architecture merge review remains
-pending.
+`NODE-DOCTOR-EVIDENCE-PROVIDER-001` is `MERGED / VALIDATED / CLOSED` after local
+validation, six-role field QA, controlled merge, and exact-merge post-merge
+validation. Functional Node Doctor remains `PROPOSED` and requires its own
+Architecture and development authorization.
 
 All 19 implementation rows are `CLOSED`. The final chain from handoff through
 the bounded runtime executor completed local validation, independent

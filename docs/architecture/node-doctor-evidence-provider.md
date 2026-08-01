@@ -150,3 +150,17 @@ missing model storage remains absent during read-only inspection
 Because the collector reads hardware/configuration/model status and exposes
 operational evidence, field QA is required on Mac, TS140, and the four
 Proxmox/R5500 roles before merge review.
+
+## Closure Evidence
+
+```text
+PR: 13
+merge commit: f54851bc70d603eab10ed60b719088628dc8f482
+merge tree: 18a5b0d2f2d49661d889b067e756eeee65646b94
+field QA roles: 6 of 6 PASS
+post-merge quality gate: PASS WITH WARNINGS
+required failures: 0
+```
+
+The provider is `MERGED / VALIDATED / CLOSED`. This closure satisfies only the
+evidence-provider dependency; it does not authorize the functional agent.
