@@ -23,15 +23,13 @@ gates.
 Current operational baseline:
 
 ```text
-validated develop merge: b5aaf292f71cf7a3b243fc2780bac5f95c8223d6
-tree: a3085fafb2e9f28d26b1a0430aa5e3ffd287ce8f
-v0.11.2 executable rows: 18 of 19 CLOSED
-last closed: AGENT-PACKAGE-LOADER-001
-active sequential feature: AGENT-RUNTIME-EXECUTOR-001
-active source commit: df6b9037994822db3677e13175184e81a9dcff58
-active source tree: 4a37be4da2e42f4f8cc48004346e034377eb3856
-runtime regression baseline: 137/137
-active candidate runtime regression: 149/149
+validated develop merge: 612d5cd84d0c79a3a7909e1b2d1aafb29fd40440
+tree: 7db36dc65c06e560b8dfe82e14393c41f7fc276b
+v0.11.2 executable rows: 19 of 19 CLOSED
+last closed: AGENT-RUNTIME-EXECUTOR-001
+active sequential feature: V0.11.2-AGENT-RUNTIME-BASELINE-MILESTONE-QA-001
+active gate state: FIELD QA AUTHORIZED
+runtime regression baseline: 149/149
 agents regression baseline: 109/109
 ```
 
@@ -70,7 +68,7 @@ HEAD and tree is merged and post-merge validated.
 | v0.10.0 | IAMINE-PREPUBLIC-READINESS-GATE-001 | CLOSED / historical release gate |
 | v0.11.0 | Historical closure predating this registry | CLOSED / not reopened |
 | v0.11.1 | V0.11.1-AGENT-ARCHITECTURE-FOUNDATION-MILESTONE-QA-001 | CLOSED / merge `0bdff4b` / post-merge PASS |
-| v0.11.2 | V0.11.2-AGENT-RUNTIME-BASELINE-MILESTONE-QA-001 | PROPOSED / blocked on milestone features and executable evidence |
+| v0.11.2 | V0.11.2-AGENT-RUNTIME-BASELINE-MILESTONE-QA-001 | ACTIVE / FIELD QA AUTHORIZED |
 | v0.11.3 | V0.11.3-AGENT-CREATION-ASSISTANTS-MILESTONE-QA-001 | CLOSED / documentation-only scope |
 | v0.12.0 | V0.12.0-P0-OFFICIAL-AGENTS-MILESTONE-QA-001 | PROPOSED / blocked on functional P0 agents |
 | v0.12.1 | V0.12.1-P1-ADOPTION-AGENTS-MILESTONE-QA-001 | PROPOSED |
@@ -429,33 +427,36 @@ AGENT-POLICY-METADATA-VALIDATORS-001
 | AGENT-EXECUTION-AUTHORIZATION-001 | CLOSED | Final authority-bound typed decision recomputes package-bound Scope/Permission and verifies the exact review, compatibility, I/O, sandbox, lifecycle, timeout/cancel, routing, and audit chain; merged in `22adc69`, exact-tree six-role field QA and unrestricted post-merge validation passed with no package load or runtime side effects. |
 | AGENT-PACKAGE-LOAD-EVIDENCE-INTEGRATION-001 | CLOSED | Typed authority-bound package-load eligibility evidence consumes the exact execution authorization and canonically validated reviewed references; merged in `c8a0ecc`, six-role field QA and post-merge validation passed without loading or execution. |
 | AGENT-PACKAGE-LOADER-001 | CLOSED | Authority-bound bounded in-memory loading preserves the exact reviewed snapshot without reopening paths or permitting execution; merged in `0e8e2db`, exact-tree six-role field QA and complete post-merge validation passed. |
-| AGENT-RUNTIME-EXECUTOR-001 | ACTIVE | One-shot execution of exact authorized and loaded subjects through registered official Rust programs, existing runtime owners, explicit cooperative limits, and no OS-isolation claim; local and exact-tree six-role field QA PASS, merge review pending. |
+| AGENT-RUNTIME-EXECUTOR-001 | CLOSED | One-shot execution of exact authorized and loaded subjects through registered official Rust programs, existing runtime owners, explicit cooperative limits, and no OS-isolation claim; merge `612d5cd`, exact-tree six-role field QA and complete post-merge validation passed. |
 
 Closure gate:
 
 ```text
 V0.11.2-AGENT-RUNTIME-BASELINE-MILESTONE-QA-001
-state: PROPOSED / blocked
+state: ACTIVE / FIELD QA AUTHORIZED
 ```
 
 The historical documentation-only v0.11.2 QA snapshot does not close the
 current expanded milestone. Scope enforcement, permission enforcement, and
 audit event boundaries now have executable validation evidence. Every row in
 the executable completion registry must close independently before Architecture
-may authorize the exhaustive milestone gate.
+may authorize the exhaustive milestone gate. All 19 rows are now closed and
+the exhaustive gate is authorized; the milestone itself remains open.
 
 `AGENT-EXECUTION-AUTHORIZATION-001` closed in merge `22adc69`.
 `AGENT-PACKAGE-LOAD-EVIDENCE-INTEGRATION-001` closed in merge `c8a0ecc` after
 local validation, exact-tree six-role field QA, final Architecture review, and
 post-merge validation. `AGENT-PACKAGE-LOADER-001` closed in merge `0e8e2db`
 after bounded loader validation, exact-tree six-role field QA, final
-Architecture review, and complete post-merge validation. The runtime executor
-is now `ACTIVE` at source commit `df6b903`; its local 12-test focused and
-149-test runtime regressions pass. Four Metal real-inference failures in the
-workspace gate reproduced exactly at the base and are an accepted baseline
-exception. Exact-tree field QA passed on six platform roles with 72/72
-focused and 894/894 runtime tests. Final Architecture review passed; merge and
-post-merge validation remain pending.
+Architecture review, and complete post-merge validation.
+`AGENT-RUNTIME-EXECUTOR-001` closed in merge `612d5cd`; its local 12-test
+focused and 149-test runtime regressions passed. Four Metal real-inference
+failures in the Mac workspace gate reproduced exactly at the base and remain
+an accepted baseline exception; all four passed in the TS140 post-merge gate.
+Exact-tree field QA passed on six platform roles with 72/72 focused and
+894/894 runtime tests. Final Architecture review and complete post-merge
+validation passed. The 19/19 executable registry is closed, so the milestone
+QA gate is now the active sequential feature.
 
 ## v0.11.3 - Internal Agent Developer Bootstrap
 

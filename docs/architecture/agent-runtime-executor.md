@@ -12,11 +12,19 @@ FIELD QA AUTHORIZED
 FIELD QA PASSED
 FINAL ARCHITECTURE REVIEW PASSED
 READY FOR MERGE REVIEW
+APPROVED FOR MERGE
+MERGED
+POST-MERGE VALIDATION PASSED
+MERGED / VALIDATED / CLOSED
 branch: feature/agent-runtime-executor-001
 base: b5aaf292f71cf7a3b243fc2780bac5f95c8223d6
 base tree: a3085fafb2e9f28d26b1a0430aa5e3ffd287ce8f
-source commit: df6b9037994822db3677e13175184e81a9dcff58
-source tree: 4a37be4da2e42f4f8cc48004346e034377eb3856
+field QA source commit: df6b9037994822db3677e13175184e81a9dcff58
+field QA source tree: 4a37be4da2e42f4f8cc48004346e034377eb3856
+feature tip: 4c070f2f4d64508a817334c0cd967ccf56097bfc
+feature tip tree: 7db36dc65c06e560b8dfe82e14393c41f7fc276b
+merge commit: 612d5cd84d0c79a3a7909e1b2d1aafb29fd40440
+merge tree: 7db36dc65c06e560b8dfe82e14393c41f7fc276b
 runtime behavior change: synchronous execution of registered official Rust programs
 node integration: none
 ```
@@ -281,3 +289,38 @@ Environmental findings do not change the product decision:
 The feature remains limited to operator-registered official Rust handlers and
 does not claim OS isolation. Those limits are intentional, visible, and
 release-relevant; they are not silently treated as completed future work.
+
+## Merge And Post-Merge Validation
+
+The controlled merge preserved the exact feature tree:
+
+```text
+source branch: feature/agent-runtime-executor-001
+target branch: develop
+feature tip: 4c070f2f4d64508a817334c0cd967ccf56097bfc
+merge commit: 612d5cd84d0c79a3a7909e1b2d1aafb29fd40440
+merge tree: 7db36dc65c06e560b8dfe82e14393c41f7fc276b
+tree equals feature tip: yes
+```
+
+Post-merge focused validation on Mac passed 12/12 executor, 149/149 runtime,
+109/109 agents, formatting, strict runtime Clippy, and diff checks. A complete
+quality gate then ran from a clean TS140 clone of the exact merge and passed
+every required check, the 1,118-test workspace inventory, workspace Clippy,
+and all repository guards.
+
+The TS140 gate reported:
+
+```text
+required_failures=0
+warnings=0
+skipped=3
+QUALITY GATE RESULT: PASS WITH WARNINGS
+```
+
+`cargo audit`, `cargo deny`, and `gitleaks` were unavailable and explicitly
+skipped. Existing unused, deprecated, `too_many_arguments`, and
+`type_complexity` warnings remain outside this feature. TS140 did not have
+`rg`; the same architecture guards passed on Mac, and the gate's Cargo, diff,
+and repository summary completed successfully. The clean clone remained at
+the exact merge tree with no IAMINE process left active.
