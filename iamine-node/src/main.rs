@@ -55,6 +55,11 @@ mod network_config;
 mod network_event_observability;
 mod node_capability_snapshot;
 mod node_config_schema;
+#[allow(
+    dead_code,
+    reason = "the stable provider is consumed by the next functional Node Doctor feature"
+)]
+mod node_doctor_evidence_provider;
 mod node_identity;
 mod node_identity_cli;
 mod node_modes;

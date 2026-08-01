@@ -23,6 +23,14 @@ use std::collections::BTreeMap;
 use std::error::Error;
 
 const REPORT_SCHEMA_VERSION: &str = "1.0.0";
+pub(crate) const HARDWARE_PROFILE_CHECK_ID: &str = "hardware_profile_visibility";
+pub(crate) const MODEL_CATALOG_CHECK_ID: &str = "model_catalog_gates";
+pub(crate) const BACKEND_AVAILABILITY_CHECK_ID: &str = "backend_availability";
+pub(crate) const WORKER_STARTUP_POLICY_CHECK_ID: &str = "worker_startup_policy";
+pub(crate) const METRICS_AVAILABILITY_CHECK_ID: &str = "metrics_availability";
+pub(crate) const NODE_CONFIG_CHECK_ID: &str = "node_config_schema";
+pub(crate) const PEER_NETWORK_CHECK_ID: &str = "lan_peer_pubsub_readiness";
+pub(crate) const RUNTIME_SIDE_EFFECT_CHECK_ID: &str = "runtime_side_effects";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -175,7 +183,7 @@ fn hardware_visibility_check(
             details.insert("warning_count".to_string(), json!(profile.warnings.len()));
 
             DoctorCheck {
-                id: "hardware_profile_visibility",
+                id: HARDWARE_PROFILE_CHECK_ID,
                 status: if schema_valid {
                     DoctorStatus::Pass
                 } else {
@@ -190,7 +198,7 @@ fn hardware_visibility_check(
             }
         }
         Err(error) => DoctorCheck {
-            id: "hardware_profile_visibility",
+            id: HARDWARE_PROFILE_CHECK_ID,
             status: DoctorStatus::Fail,
             message: format!("hardware inspection failed: {error}"),
             details: details_map(),
@@ -281,7 +289,7 @@ fn model_catalog_check(catalog: &CatalogDiagnostic) -> DoctorCheck {
     };
 
     DoctorCheck {
-        id: "model_catalog_gates",
+        id: MODEL_CATALOG_CHECK_ID,
         status,
         message,
         details,
@@ -310,14 +318,14 @@ fn backend_availability_check(policy: &WorkerStartupPolicy) -> DoctorCheck {
 
     if decision.permits_real_inference() {
         DoctorCheck {
-            id: "backend_availability",
+            id: BACKEND_AVAILABILITY_CHECK_ID,
             status: DoctorStatus::Pass,
             message: "backend policy permits real inference".to_string(),
             details,
         }
     } else {
         DoctorCheck {
-            id: "backend_availability",
+            id: BACKEND_AVAILABILITY_CHECK_ID,
             status: DoctorStatus::Warn,
             message: format!(
                 "backend policy does not currently permit real inference: {}",
@@ -342,7 +350,7 @@ fn worker_startup_policy_check(policy: &WorkerStartupPolicy) -> DoctorCheck {
     };
 
     DoctorCheck {
-        id: "worker_startup_policy",
+        id: WORKER_STARTUP_POLICY_CHECK_ID,
         status,
         message: "worker startup policy evaluated without starting a worker".to_string(),
         details,
@@ -375,7 +383,7 @@ fn metrics_availability_check() -> DoctorCheck {
                 json!("start_metrics_server"),
             );
             DoctorCheck {
-                id: "metrics_availability",
+                id: METRICS_AVAILABILITY_CHECK_ID,
                 status: DoctorStatus::Pass,
                 message: "metrics port policy derives a default endpoint without binding it"
                     .to_string(),
@@ -390,7 +398,7 @@ fn metrics_availability_check() -> DoctorCheck {
                 json!("continue_without_metrics_server"),
             );
             DoctorCheck {
-                id: "metrics_availability",
+                id: METRICS_AVAILABILITY_CHECK_ID,
                 status: DoctorStatus::Warn,
                 message: "metrics policy would continue without a metrics server".to_string(),
                 details,
@@ -403,7 +411,7 @@ fn metrics_availability_check() -> DoctorCheck {
                 json!("continue_without_metrics_server"),
             );
             DoctorCheck {
-                id: "metrics_availability",
+                id: METRICS_AVAILABILITY_CHECK_ID,
                 status: DoctorStatus::Warn,
                 message: "metrics policy is disabled".to_string(),
                 details,
@@ -431,33 +439,33 @@ fn config_schema_check() -> DoctorCheck {
 
     match inspection.state {
         NodeConfigState::Missing => DoctorCheck {
-            id: "node_config_schema",
+            id: NODE_CONFIG_CHECK_ID,
             status: DoctorStatus::Pass,
             message: "versioned node config schema is available; no config file exists yet"
                 .to_string(),
             details,
         },
         NodeConfigState::Current => DoctorCheck {
-            id: "node_config_schema",
+            id: NODE_CONFIG_CHECK_ID,
             status: DoctorStatus::Pass,
             message: "node config uses the current schema".to_string(),
             details,
         },
         NodeConfigState::Legacy => DoctorCheck {
-            id: "node_config_schema",
+            id: NODE_CONFIG_CHECK_ID,
             status: DoctorStatus::Warn,
             message: "legacy node config can be migrated with iamine-node node config migrate"
                 .to_string(),
             details,
         },
         NodeConfigState::Unsupported => DoctorCheck {
-            id: "node_config_schema",
+            id: NODE_CONFIG_CHECK_ID,
             status: DoctorStatus::Fail,
             message: "node config schema_version is not supported".to_string(),
             details,
         },
         NodeConfigState::InvalidJson => DoctorCheck {
-            id: "node_config_schema",
+            id: NODE_CONFIG_CHECK_ID,
             status: DoctorStatus::Fail,
             message: "node config is not valid JSON".to_string(),
             details,
@@ -475,7 +483,7 @@ fn network_readiness_check(network_checks_requested: bool) -> DoctorCheck {
     details.insert("pubsub_started".to_string(), json!(false));
 
     DoctorCheck {
-        id: "lan_peer_pubsub_readiness",
+        id: PEER_NETWORK_CHECK_ID,
         status: DoctorStatus::NotRun,
         message: if network_checks_requested {
             "network readiness probe is not implemented without starting P2P or PubSub".to_string()
@@ -497,7 +505,7 @@ fn runtime_side_effect_check() -> DoctorCheck {
     details.insert("dynamic_hardware_probe_started".to_string(), json!(false));
 
     DoctorCheck {
-        id: "runtime_side_effects",
+        id: RUNTIME_SIDE_EFFECT_CHECK_ID,
         status: DoctorStatus::Pass,
         message: "diagnostic path does not start runtime services".to_string(),
         details,

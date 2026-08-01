@@ -250,10 +250,10 @@ or direct user-facing agent behavior.
 ## Next Roadmap Step
 
 ```text
-AGENT-PACKAGE-LOAD-GATE-001
+NODE-DOCTOR-EVIDENCE-PROVIDER-001
 ```
 
-The root parser/validator is implemented without package loading or execution.
-The functional Node Doctor feature remains blocked until the package load gate
-and the complete prerequisite chain in
-`docs/roadmap/iamine-agent-network-roadmap.md` are satisfied.
+The v0.11.2 executable runtime prerequisites and milestone gate are closed. The
+evidence provider implementation and local validation are complete, but field
+QA, final Architecture review, merge, and post-merge validation remain pending.
+The functional Node Doctor feature remains blocked until that provider closes.
