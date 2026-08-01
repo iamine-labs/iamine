@@ -126,9 +126,10 @@ All 19 executable v0.11.2 rows are closed. The last row,
 `AGENT-RUNTIME-EXECUTOR-001`, closed in merge `612d5cd` after local
 validation, exact-tree six-role field QA, final Architecture review, and
 complete post-merge validation. The active sequential feature is now
-`V0.11.2-AGENT-RUNTIME-BASELINE-MILESTONE-QA-001`; this authorizes exhaustive
-milestone QA but does not close v0.11.2 or authorize later product rows in
-bulk.
+`V0.11.2-AGENT-RUNTIME-BASELINE-MILESTONE-QA-001`. Exhaustive QA passed on
+Mac, TS140, and four Proxmox/R5500 roles. The gate is ready for Architecture
+milestone closure review, but v0.11.2 remains open until the evidence merges
+and post-merge validation passes. No later product row is authorized in bulk.
 
 The broader v0.9 operational stability claim still requires the operational
 target: 10-50 nodes, 3-10 operators, multiple physical networks, and two to
@@ -264,9 +265,9 @@ Architecture. Feature-local QA is insufficient for milestone closure.
 | --- | --- | --- |
 | v0.11.0 | CLOSED | Agent research and product fit |
 | v0.11.1 | CLOSED | Agent architecture foundation; exhaustive gate merge `0bdff4b`, post-merge validation PASS |
-| v0.11.2 | PROPOSED | Agent runtime baseline |
+| v0.11.2 | ACTIVE / CLOSURE REVIEW | Agent runtime baseline |
 | v0.11.3 | CLOSED | Internal agent developer bootstrap contracts |
-| v0.12.0 | ACTIVE | P0 skeletons closed; functional P0 agents blocked on executable runtime prerequisites |
+| v0.12.0 | ACTIVE | P0 skeletons closed; functional Node Doctor awaits v0.11.2 closure and its evidence provider |
 | v0.12.1 | PROPOSED | P1 adoption agents |
 | v0.12.2 | PROPOSED | P2 experimental and technical agents |
 | v0.13.0 | PROPOSED | Agent beta productization |
@@ -389,8 +390,8 @@ AGENT-POLICY-METADATA-VALIDATORS-001
 
 `AGENT-TIMEOUT-CANCEL-ENFORCEMENT-001` closed in merge `2dbb760` after
 Architecture, implementation, local validation, exact-tree field QA, final
-Architecture review, and post-merge validation. Eighteen of the 19
-implementation rows are now `CLOSED`. `AGENT-HANDOFF-ENFORCEMENT-001` closed
+Architecture review, and post-merge validation. All 19 implementation rows are
+now `CLOSED`. `AGENT-HANDOFF-ENFORCEMENT-001` closed
 in merge `9e42136` after exact-tree six-role field QA and post-merge
 validation.
 `AGENT-OUT-OF-SCOPE-RESPONSE-ENFORCEMENT-001` closed in merge `0b9bdf0`
@@ -418,8 +419,8 @@ closed in merge `0e8e2db` after exact-tree six-role field QA and complete
 post-merge validation. `AGENT-RUNTIME-EXECUTOR-001` closed in merge `612d5cd`;
 local validation passed with an accepted Metal real-inference baseline
 exception, exact-tree six-role field QA passed, and complete post-merge
-validation passed. The v0.11.2 exhaustive milestone gate is active; no later
-row is authorized in bulk.
+validation passed. The v0.11.2 exhaustive milestone gate passed and is ready
+for Architecture closure review; no later row is authorized in bulk.
 
 Each arrow still requires the complete canonical feature lifecycle. A roadmap
 position is not development authorization.
