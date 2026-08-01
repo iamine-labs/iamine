@@ -23,12 +23,12 @@ gates.
 Current operational baseline:
 
 ```text
-validated develop merge: 5480d51acac1bbec98e168863ee8d2fc13a408d1
-tree: 9446e25cf3e8098ea8ea7d71d1bb98503a898374
+validated develop merge: 76a3de00df4c09bb9088c0acecd1a3fe99067a14
+tree: 005298bbdb84dc60f239fa7cc3a682807fcc7c74
 v0.11.2 executable rows: 19 of 19 CLOSED
 last closed: AGENT-RUNTIME-EXECUTOR-001
-active sequential feature: V0.11.2-AGENT-RUNTIME-BASELINE-MILESTONE-QA-001
-active gate state: READY FOR ARCHITECTURE MILESTONE CLOSURE REVIEW
+active sequential feature: NODE-DOCTOR-EVIDENCE-PROVIDER-001
+active gate state: V0.11.2 CLOSED / POST-MERGE PASS
 runtime regression baseline: 149/149
 agents regression baseline: 109/109
 ```
@@ -68,7 +68,7 @@ HEAD and tree is merged and post-merge validated.
 | v0.10.0 | IAMINE-PREPUBLIC-READINESS-GATE-001 | CLOSED / historical release gate |
 | v0.11.0 | Historical closure predating this registry | CLOSED / not reopened |
 | v0.11.1 | V0.11.1-AGENT-ARCHITECTURE-FOUNDATION-MILESTONE-QA-001 | CLOSED / merge `0bdff4b` / post-merge PASS |
-| v0.11.2 | V0.11.2-AGENT-RUNTIME-BASELINE-MILESTONE-QA-001 | ACTIVE / READY FOR ARCHITECTURE MILESTONE CLOSURE REVIEW |
+| v0.11.2 | V0.11.2-AGENT-RUNTIME-BASELINE-MILESTONE-QA-001 | CLOSED / merge `76a3de0` / post-merge PASS WITH WARNINGS |
 | v0.11.3 | V0.11.3-AGENT-CREATION-ASSISTANTS-MILESTONE-QA-001 | CLOSED / documentation-only scope |
 | v0.12.0 | V0.12.0-P0-OFFICIAL-AGENTS-MILESTONE-QA-001 | PROPOSED / blocked on functional P0 agents |
 | v0.12.1 | V0.12.1-P1-ADOPTION-AGENTS-MILESTONE-QA-001 | PROPOSED |
@@ -433,15 +433,16 @@ Closure gate:
 
 ```text
 V0.11.2-AGENT-RUNTIME-BASELINE-MILESTONE-QA-001
-state: ACTIVE / READY FOR ARCHITECTURE MILESTONE CLOSURE REVIEW
+state: MERGED / VALIDATED / CLOSED
+merge: 76a3de00df4c09bb9088c0acecd1a3fe99067a14
+tree: 005298bbdb84dc60f239fa7cc3a682807fcc7c74
 ```
 
 The historical documentation-only v0.11.2 QA snapshot does not close the
 current expanded milestone. All 19 executable rows are closed. Exhaustive QA
 passed on the authorized `5480d51` tree across Mac, TS140, and four
-Proxmox/R5500 roles with 0 product failures. The milestone remains open until
-the gate evidence merges and post-merge validation passes on the exact remote
-commit and tree.
+Proxmox/R5500 roles with 0 product failures. The evidence merged in `76a3de0`,
+and post-merge validation passed on the exact remote tree. v0.11.2 is closed.
 
 `AGENT-EXECUTION-AUTHORIZATION-001` closed in merge `22adc69`.
 `AGENT-PACKAGE-LOAD-EVIDENCE-INTEGRATION-001` closed in merge `c8a0ecc` after
@@ -624,15 +625,15 @@ It consumes the root parser and emits only a typed blocked report while
 referenced metadata validators or enforcement gates remain unavailable. It
 does not authorize package loading or agent execution.
 
-The v0.11.2 executable reconciliation is complete at 19 of 19 closed rows. The
-current sequential feature is:
+The v0.11.2 executable reconciliation and milestone gate are closed at 19 of
+19 rows. The next sequential feature is:
 
 ```text
-V0.11.2-AGENT-RUNTIME-BASELINE-MILESTONE-QA-001
+NODE-DOCTOR-EVIDENCE-PROVIDER-001
 ```
 
-After its evidence merges and Architecture closes the milestone, the next
-canonical feature is `NODE-DOCTOR-EVIDENCE-PROVIDER-001`.
+Functional Node Doctor remains blocked until the evidence provider completes
+its own lifecycle and closure evidence.
 
 All 19 implementation rows are `CLOSED`. The final chain from handoff through
 the bounded runtime executor completed local validation, independent
