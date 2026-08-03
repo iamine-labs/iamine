@@ -225,6 +225,17 @@ pub(crate) fn parse_args_from(raw_args: Vec<String>) -> Result<NodeMode, String>
             _ => Err(support_usage()),
         },
 
+        Some("agents") => match args.get(2).map(|s| s.as_str()) {
+            Some("node-doctor") => Ok(NodeMode::AgentNodeDoctor {
+                package_root: parse_optional_string_flag(&args, "--package-root")?
+                    .ok_or("Falta --package-root PATH")?,
+                json: args.iter().any(|arg| arg == "--json"),
+            }),
+            _ => Err(
+                "Uso: iamine-node agents node-doctor --package-root PATH [--json]".to_string(),
+            ),
+        },
+
         Some("nodes") => Ok(NodeMode::Nodes),
 
         Some("topology") => Ok(NodeMode::Topology), // ← NEW
@@ -336,6 +347,38 @@ mod tests {
         let error = parse_args_from(args(&["iamine-node", "unknown-mode"])).unwrap_err();
 
         assert_eq!(error, "Modo desconocido: unknown-mode");
+    }
+
+    #[test]
+    fn cli_parses_node_doctor_agent_as_control_plane_mode() {
+        let parsed = parse_args_from(args(&[
+            "iamine-node",
+            "agents",
+            "node-doctor",
+            "--package-root",
+            "agents/official/node-doctor",
+            "--json",
+        ]));
+        assert!(parsed.is_ok());
+        let Some(mode) = parsed.ok() else {
+            return;
+        };
+
+        assert!(matches!(
+            mode,
+            NodeMode::AgentNodeDoctor {
+                package_root,
+                json: true,
+            } if package_root == "agents/official/node-doctor"
+        ));
+    }
+
+    #[test]
+    fn cli_requires_node_doctor_package_root() {
+        let error = parse_args_from(args(&["iamine-node", "agents", "node-doctor"]))
+            .expect_err("package root should be required");
+
+        assert_eq!(error, "Falta --package-root PATH");
     }
 
     #[test]

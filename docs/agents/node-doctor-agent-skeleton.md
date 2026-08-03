@@ -27,9 +27,10 @@ execution_authorized: false
 ```
 
 The skeleton feature is closed as a planning contract. Functional
-`NODE-DOCTOR-AGENT-001` development remains blocked until every executable
-runtime and enforcement prerequisite has implementation and validation
-evidence.
+`NODE-DOCTOR-AGENT-001` development was blocked until every executable runtime
+and enforcement prerequisite had implementation and validation evidence. That
+chain and the evidence provider are now closed; the functional feature has its
+own Architecture approval and is in implementation/validation.
 
 ## Product Boundary
 
@@ -255,6 +256,6 @@ NODE-DOCTOR-AGENT-001
 
 The v0.11.2 executable runtime prerequisites and milestone gate are closed. The
 evidence provider closed in merge `f54851b` after six-role field QA and
-exact-merge post-merge validation. The functional Node Doctor feature is now
-the next `PROPOSED` row and still requires its own Architecture and development
-authorization.
+exact-merge post-merge validation. The functional Node Doctor feature is the
+active sequential row; its implementation must still pass exact-source field
+QA, final Architecture review, controlled merge, and post-merge validation.

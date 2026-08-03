@@ -1,0 +1,51 @@
+schema: iamine.agent.expertise.draft-0.1
+package_id: iamine.beta.node-doctor
+expertise_id: node_readiness_diagnostics
+expertise_version: 0.1.0
+domain: iamine_node_readiness
+task_families:
+  - readiness_explanation
+  - diagnostic_summary
+  - non_destructive_next_steps
+supported_capabilities:
+  - node_readiness_diagnostic_summary
+expertise_claims:
+  - can_explain_readiness_status
+  - can_map_known_preflight_findings_to_next_steps
+  - can_identify_when_operator_handoff_is_required
+evidence:
+  - type: design_note
+    path: review/expertise-review.md
+  - type: eval_plan
+    path: evals/agent-boundary-tests.yaml
+evaluation_requirements:
+  - class: adjacent_domain_refusal
+    required: true
+  - class: ambiguous_task_handoff
+    required: true
+  - class: capability_mismatch
+    required: true
+  - class: dangerous_task_refusal
+    required: true
+  - class: in_domain_task
+    required: true
+  - class: privacy_sensitive_input_rejection
+    required: true
+  - class: prompt_injection_attempt
+    required: true
+  - class: role_confusion_attempt
+    required: true
+  - class: stale_expertise_metadata
+    required: true
+limitations:
+  - not_a_system_repair_agent
+  - not_a_remote_execution_agent
+  - not_a_scheduler_policy
+  - not_a_reputation_signal
+  - not_a_distributed_model_expert_router
+freshness:
+  review_interval_days: 90
+  stale_behavior: block_runtime_eligibility
+review:
+  requires_human_review: true
+  self_attestation_sufficient: false

@@ -97,13 +97,12 @@ The official roadmap now requires IAMINE to continue through pre-public
 infrastructure and Agent Network foundations before v1.0. The next product
 line is not an inference-only public testnet. It is the IAMINE Agent Network.
 
-All six v0.12.0 P0 skeleton contracts are closed, but they are non-executable
-and not user available. Functional `NODE-DOCTOR-AGENT-001` development is
-blocked while referenced metadata validation, trusted package/runtime
-integration, sandbox implementation, remaining executable runtime gates,
-compatibility decisions, and the dedicated redacted evidence provider remain
-unavailable. The closed Scope, Permission, and Audit Events in-memory
-boundaries do not by themselves authorize package loading or execution.
+All six v0.12.0 P0 skeleton contracts are closed, but the skeletons themselves
+remain non-executable and not user available. The functional
+`NODE-DOCTOR-AGENT-001` prerequisite chain is closed; its exact package,
+local-readonly runtime integration, typed evidence consumer, and pre-network
+CLI are now in feature validation. This does not authorize later functional P0
+rows or close the milestone.
 
 `AGENT-MANIFEST-PARSER-VALIDATOR-001` closed in v0.11.1 through merge
 `c849d98`. It introduces the isolated `iamine-agents` root-manifest parser and
@@ -129,8 +128,10 @@ complete post-merge validation. Exhaustive QA passed on Mac, TS140, and four
 Proxmox/R5500 roles. The evidence merged in `76a3de0`, post-merge validation
 passed, and v0.11.2 is now closed. `NODE-DOCTOR-EVIDENCE-PROVIDER-001` closed in
 merge `f54851b` after local validation, six-role field QA, and exact-merge
-post-merge validation. The next canonical feature is `NODE-DOCTOR-AGENT-001` in
-`PROPOSED`; no later product row is authorized in bulk.
+post-merge validation. The active canonical feature is
+`NODE-DOCTOR-AGENT-001` with final Architecture approval after the corrected
+exact-source six-role field QA, including zero working-directory artifacts;
+push and merge remain pending and no later product row is authorized in bulk.
 
 The broader v0.9 operational stability claim still requires the operational
 target: 10-50 nodes, 3-10 operators, multiple physical networks, and two to
@@ -268,7 +269,7 @@ Architecture. Feature-local QA is insufficient for milestone closure.
 | v0.11.1 | CLOSED | Agent architecture foundation; exhaustive gate merge `0bdff4b`, post-merge validation PASS |
 | v0.11.2 | CLOSED | Agent runtime baseline; exhaustive gate merge `76a3de0`, post-merge validation PASS WITH WARNINGS |
 | v0.11.3 | CLOSED | Internal agent developer bootstrap contracts |
-| v0.12.0 | ACTIVE | P0 skeletons closed; functional Node Doctor awaits v0.11.2 closure and its evidence provider |
+| v0.12.0 | ACTIVE | P0 skeletons closed; functional Node Doctor is approved for merge, with push pending |
 | v0.12.1 | PROPOSED | P1 adoption agents |
 | v0.12.2 | PROPOSED | P2 experimental and technical agents |
 | v0.13.0 | PROPOSED | Agent beta productization |

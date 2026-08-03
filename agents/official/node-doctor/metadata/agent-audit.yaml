@@ -1,0 +1,39 @@
+schema: iamine.agent.audit.draft-0.1
+package_id: iamine.beta.node-doctor
+audit_profile_id: node_doctor_privacy_safe_audit
+audit_profile_version: 0.1.0
+event_classes:
+  - review_started
+  - scope_checked
+  - permission_checked
+  - redaction_checked
+  - handoff_required
+  - refusal_recorded
+  - human_review_recorded
+required_evidence:
+  - review/human-review.md
+  - review/qa-evidence.md
+  - evals/agent-boundary-tests.yaml
+redaction_policy:
+  default: redact
+  blocks_raw_prompts: true
+  blocks_raw_outputs: true
+  blocks_private_paths: true
+  blocks_host_identifiers: true
+  blocks_credentials: true
+retention_policy:
+  mode: review_only
+  operator_local_only: true
+integrity_policy:
+  future_tamper_evidence_required: true
+  publishes_artifacts: false
+access_policy:
+  visibility: operator_local
+  third_party_sharing: false
+  marketplace_publication: false
+failure_policy:
+  missing_audit_policy: block
+  unredacted_evidence: block
+  unsafe_event_class: block
+review:
+  requires_human_review: true

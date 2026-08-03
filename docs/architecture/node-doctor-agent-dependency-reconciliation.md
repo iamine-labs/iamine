@@ -124,5 +124,7 @@ NODE-DOCTOR-AGENT-001
 
 `NODE-DOCTOR-EVIDENCE-PROVIDER-001` closed in merge `f54851b` after local
 validation, six-role field QA, and exact-merge post-merge validation. Functional
-`NODE-DOCTOR-AGENT-001` remains `PROPOSED` until its own Architecture and
-development authorization are recorded.
+`NODE-DOCTOR-AGENT-001` now has its own Architecture and development
+authorization. It is the active sequential feature and does not close until
+field QA, final Architecture review, controlled merge, and post-merge
+validation are complete.

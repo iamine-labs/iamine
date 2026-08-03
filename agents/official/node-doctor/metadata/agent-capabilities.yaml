@@ -1,0 +1,41 @@
+schema: iamine.agent.capabilities.draft-0.1
+package_id: iamine.beta.node-doctor
+capability_id: node_readiness_diagnostic_summary
+capability_version: 0.1.0
+declared_task_types:
+  - diagnostic_report
+operations:
+  - read_declared_summary
+  - classify_status
+  - draft_explanation
+  - suggest_non_destructive_next_steps
+input_classes:
+  - iamine_node_status_summary
+  - iamine_readiness_checklist
+  - redacted_hardware_profile_summary
+  - user_provided_error_text
+output_classes:
+  - diagnostic_report
+  - blocked_action_report
+  - clarification_request
+  - handoff_request
+  - refusal_report
+execution_modes:
+  - local_readonly
+limitations:
+  - no_repairs
+  - no_shell
+  - no_service_restart
+risk_profile:
+  labels:
+    - bounded_readonly
+    - operator_review_required
+  expands_scope: false
+  grants_permissions: false
+  claims_scheduler_priority: false
+  claims_trust_or_reputation: false
+review:
+  requires_human_review: true
+  self_approval_allowed: false
+  evidence:
+    - review/capability-review.md
