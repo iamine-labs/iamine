@@ -31,7 +31,7 @@ directories.
 | Feature | State | Dependency or boundary |
 | --- | --- | --- |
 | DASHBOARD-FRONTEND-PREFLIGHT-001 | CLOSED | Selected the canonical React, TypeScript, Vite, npm, validation, layout, contract, packaging, and target strategy without creating the frontend; merge `396389f`, focused post-merge validation PASS with accepted baseline/environment exceptions. |
-| GUI-CLI-INTERFACE-ARCHITECTURE-001 | READY FOR MERGE REVIEW | Define interface ownership and shared-core boundaries; focused documentation validation passed and no field QA is required. |
+| GUI-CLI-INTERFACE-ARCHITECTURE-001 | CLOSED | Defined interface ownership and shared-core boundaries; merge `ff87b25`, focused post-merge validation PASS, no field QA required. |
 | GUI-CLI-SHARED-CONTRACTS-001 | PROPOSED | Stable typed command, status, error, and event contracts. |
 | NODE-LOCAL-CONTROL-API-CONTRACT-001 | PROPOSED | Shared contracts and explicit local threat model. |
 | DASHBOARD-LOCAL-AUTHORIZATION-001 | PROPOSED | Local Control API contract and audit requirements. |

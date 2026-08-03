@@ -4,7 +4,7 @@
 
 ```text
 feature: GUI-CLI-INTERFACE-ARCHITECTURE-001
-state: READY FOR MERGE REVIEW
+state: MERGED / VALIDATED / CLOSED
 base: origin/develop at 2d51b9532992b0857856b8d3450cc9e85cf2470c
 branch: feature/gui-cli-interface-architecture-001
 runtime behavior change: none
@@ -378,6 +378,36 @@ main.rs delta from base: 0
 No full runtime suite was required for this checkpoint because the diff has no
 Rust, CLI, API, frontend, dependency, or runtime changes. The existing runtime
 baseline remains outside this feature's executable surface.
+
+## Controlled Merge and Closure
+
+```text
+target before merge: 2d51b9532992b0857856b8d3450cc9e85cf2470c
+source: origin/feature/gui-cli-interface-architecture-001
+source commit: b3e5c4dbfeb43a79e8c3f50804de5934a6da1b33
+merge commit: ff87b2522469fe1953268ab3465ba7bec989cd07
+merge tree: 0df26f3ef022623c7c3e87e5db4da9dac14ae698
+merge conflicts: none
+runtime behavior changed: no
+field QA executed: no, not required
+```
+
+Focused post-merge validation:
+
+```text
+merged scope: two docs files only
+git diff --check: PASS
+quality gate guard-only: PASS
+required_failures: 0
+warnings: 0
+skipped: 0
+cargo fmt --all -- --check: PASS
+main.rs delta from target: 0
+```
+
+This closure authorizes no frontend implementation or real dashboard
+integration. It closes only the ownership and boundary architecture. The next
+feature must define the stable shared schemas and operation/event contracts.
 
 ## QA Classification
 
