@@ -4,7 +4,7 @@
 
 ```text
 feature: DASHBOARD-FRONTEND-PREFLIGHT-001
-state: ARCHITECTURE REVIEW REQUIRED
+state: READY FOR MERGE REVIEW
 base: origin/develop at e2e6a8a70a8f952bf4eb064a7fd9f70e39aac72a
 branch: feature/dashboard-frontend-preflight-001
 runtime behavior change: none
@@ -350,6 +350,31 @@ The unrestricted quality gate did not pass and was not reported as a pass:
 The staged diff contains no executable files, so these failures cannot be
 caused by this feature's product behavior. They remain baseline/environment
 exceptions for Architecture to classify; the full quality gate is not green.
+
+## Architecture Checkpoint
+
+The implementation checkpoint was reviewed at commit
+`d24ced0e6165a036f3e89c5340b56d0b8cada70b` with tree
+`8f1c15e32f42825ab8171f041061c51865b95f3f`:
+
+```text
+scope ownership: PASS
+Rust and runtime non-regression by diff: PASS
+frontend application remains absent: PASS
+shared-contract source of truth: PASS
+security and privacy boundaries: PASS
+mock versus real integration boundary: PASS
+dependency and packaging decisions: PASS
+field QA requirement: NOT REQUIRED
+broad-gate exceptions: ARCHITECTURE DECISION REQUIRED
+recommendation: READY FOR ARCHITECTURE MERGE REVIEW
+```
+
+At checkpoint time, `origin/develop` had advanced to
+`3374e27f7b6b132b39c3e979af7a1a03cd5daf9b` through the closed Node Doctor
+evidence-provider work. That delta does not modify this feature's two owned
+files and produces no merge-tree conflict. Controlled integration must still
+recheck the current remote target immediately before merge.
 
 ## QA Classification
 

@@ -30,7 +30,7 @@ directories.
 
 | Feature | State | Dependency or boundary |
 | --- | --- | --- |
-| DASHBOARD-FRONTEND-PREFLIGHT-001 | ARCHITECTURE REVIEW REQUIRED | Selected the canonical frontend stack, layout, validation, dependency, packaging, and target strategy without creating the frontend; focused validation passed and the broad gate recorded baseline/environment exceptions in `docs/architecture/dashboard-frontend-preflight.md`. |
+| DASHBOARD-FRONTEND-PREFLIGHT-001 | READY FOR MERGE REVIEW | Selected the canonical frontend stack, layout, validation, dependency, packaging, and target strategy without creating the frontend; focused validation passed, field QA is not required, and Architecture must classify the recorded broad-gate exceptions. |
 | GUI-CLI-INTERFACE-ARCHITECTURE-001 | PROPOSED | Define interface ownership and shared-core boundaries. |
 | GUI-CLI-SHARED-CONTRACTS-001 | PROPOSED | Stable typed command, status, error, and event contracts. |
 | NODE-LOCAL-CONTROL-API-CONTRACT-001 | PROPOSED | Shared contracts and explicit local threat model. |
