@@ -4,7 +4,7 @@
 
 ```text
 feature: DASHBOARD-FRONTEND-PREFLIGHT-001
-state: APPROVED FOR MERGE
+state: MERGED / VALIDATED / CLOSED
 base: origin/develop at e2e6a8a70a8f952bf4eb064a7fd9f70e39aac72a
 branch: feature/dashboard-frontend-preflight-001
 runtime behavior change: none
@@ -376,6 +376,37 @@ At checkpoint time, `origin/develop` had advanced to
 evidence-provider work. That delta does not modify this feature's two owned
 files and produces no merge-tree conflict. A fresh remote fetch before
 integration confirmed the same target and conflict-free relationship.
+
+## Controlled Merge and Closure
+
+```text
+target before merge: 3374e27f7b6b132b39c3e979af7a1a03cd5daf9b
+source: origin/feature/dashboard-frontend-preflight-001
+source commit: 02ed6172687a60a2c23eb38cf3dbfec19ba43b39
+merge commit: 396389fbe155a78cdc105680df0dd1bdb04c90bc
+merge tree: 24c48239e033d3164acab282c3e61a52d4c032d5
+merge conflicts: none
+runtime behavior changed: no
+field QA executed: no, not required
+```
+
+Focused post-merge validation:
+
+```text
+merged scope: two docs files only
+git diff --check: PASS
+quality gate guard-only: PASS
+required_failures: 0
+warnings: 0
+skipped: 0
+cargo fmt --all -- --check: PASS
+main.rs delta from target: 0
+```
+
+The unrestricted quality gate was not rerun after merge. Its pre-merge
+Metal/TinyLlama, sandbox socket, and workspace-progress exceptions remain
+visible above and were explicitly accepted by Architecture. Closure applies
+only to this documentation-only frontend preflight.
 
 ## QA Classification
 
