@@ -23,8 +23,8 @@ gates.
 Current operational baseline:
 
 ```text
-validated develop merge: 3374e27f7b6b132b39c3e979af7a1a03cd5daf9b
-tree: a8844ee8f3eb83a9836e7db6555f4634ebd85974
+validated develop merge: 2d51b9532992b0857856b8d3450cc9e85cf2470c
+tree: 096cae45f309e1a559956eb1083cf84fdbb332b2
 v0.11.2 executable rows: 19 of 19 CLOSED
 last closed: NODE-DOCTOR-EVIDENCE-PROVIDER-001
 active sequential feature: NODE-DOCTOR-AGENT-001
@@ -539,7 +539,7 @@ ID as if it represented new implementation work.
 | WINDOWS-OPTIMIZER-ASSISTANT-AGENT-001-SKELETON | CLOSED | Defined the official P0 Windows Optimizer Assistant skeleton as a local-planning, privacy-safe contract without system inspection, configuration change, or execution; merge `f81072a`, focused post-merge validation PASS. |
 | NODE-DOCTOR-AGENT-001-DEPENDENCY-RECONCILIATION-001 | CLOSED | Recorded the executable prerequisite chain and kept functional Node Doctor development blocked until every gate has implementation and validation evidence; merge `7588e09`, focused post-merge validation PASS. |
 | NODE-DOCTOR-EVIDENCE-PROVIDER-001 | CLOSED | Bounded, structured, redacted, read-only node evidence provider merged in `f54851b`; six-role field QA and exact-merge post-merge quality gate passed. |
-| NODE-DOCTOR-AGENT-001 | APPROVED FOR MERGE / PUSH AUTHORIZATION REQUIRED | First functional P0 reference agent; exact package snapshot, local-readonly runtime chain, typed redacted evidence, and pre-network CLI passed local validation and six-role field QA without public-beta publication. |
+| NODE-DOCTOR-AGENT-001 | APPROVED FOR MERGE / PUSH AUTHORIZATION REQUIRED | First functional P0 reference agent; exact package snapshot, local-readonly runtime chain, typed redacted evidence, and log-free pre-network CLI passed the complete local gate and corrected six-role field QA without public-beta publication. |
 
 Closure gate:
 

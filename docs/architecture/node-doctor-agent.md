@@ -144,9 +144,9 @@ close v0.12.0; the milestone remains open until all functional P0 agents and
 Exact runtime checkpoint:
 
 ```text
-commit: 2349499c94209f2b82665289cc08abce84625ea5
-tree: 2656459419d0a2bb68c07395998cd06dc0da1327
-base: 3374e27f7b6b132b39c3e979af7a1a03cd5daf9b
+commit: f84b81744737313b2fca2e892cbc77563dd9880f
+tree: 2ac1e1436687724ec1a2969e3c4ba4ab6bd123e0
+base: 2d51b9532992b0857856b8d3450cc9e85cf2470c
 field roles: 6 of 6 PASS
 ```
 
@@ -154,8 +154,8 @@ Architecture confirms that execution traverses the existing owner chain; the
 package cannot self-authorize, altered policy-bearing files fail closed, and
 the CLI returns before node-network startup. The feature introduces no
 scheduler, transport, model, worker, persistence, or public-distribution side
-effects. `main.rs` decreases by three lines and `cluster_registry.rs` is
-unchanged.
+effects. `main.rs` grows by one wiring line against the current base and
+`cluster_registry.rs` is unchanged.
 
 Accepted non-blocking limits are explicit: distribution remains manual
 `local_dev`, the caller supplies the package root, peer/network evidence is

@@ -129,9 +129,9 @@ Proxmox/R5500 roles. The evidence merged in `76a3de0`, post-merge validation
 passed, and v0.11.2 is now closed. `NODE-DOCTOR-EVIDENCE-PROVIDER-001` closed in
 merge `f54851b` after local validation, six-role field QA, and exact-merge
 post-merge validation. The active canonical feature is
-`NODE-DOCTOR-AGENT-001` with final Architecture approval after exact-source
-six-role field QA; push and merge remain pending and no later product row is
-authorized in bulk.
+`NODE-DOCTOR-AGENT-001` with final Architecture approval after the corrected
+exact-source six-role field QA, including zero working-directory artifacts;
+push and merge remain pending and no later product row is authorized in bulk.
 
 The broader v0.9 operational stability claim still requires the operational
 target: 10-50 nodes, 3-10 operators, multiple physical networks, and two to

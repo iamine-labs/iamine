@@ -16,12 +16,13 @@ READY FOR ARCHITECTURE MERGE REVIEW
 
 ```text
 branch: feature/node-doctor-agent-001
-base: 3374e27f7b6b132b39c3e979af7a1a03cd5daf9b
-source commit: 2349499c94209f2b82665289cc08abce84625ea5
-source tree: 2656459419d0a2bb68c07395998cd06dc0da1327
-full bundle SHA-256: 96aa759c3af23d113f6d29277d9427c33215c7b4cfc2b1a1e1f4d944b896397a
-Linux x86_64 binary SHA-256: 1b0efc0afc0dd62ce8ccbf74710695287ec2ba563e7729d17db6cc11e9f15306
-Linux focused-test binary SHA-256: f8499824eecf9b7473685ebb326d072837008bd9aaeb51673b1015c6484c69f7
+base: 2d51b9532992b0857856b8d3450cc9e85cf2470c
+source commit: f84b81744737313b2fca2e892cbc77563dd9880f
+source tree: 2ac1e1436687724ec1a2969e3c4ba4ab6bd123e0
+full bundle SHA-256: 895240043c9b4ee8da64c753485130d661f5b4d1badf063a6bdcc7135719d5a1
+Linux x86_64 binary SHA-256: 18a5f89eec77d1d9102e32c17d6caf66e2c2abaae37fcd77a6878817d0a2b056
+Linux focused-test binary SHA-256: 323ce79a5fda4a182d68d0675f3efef0cafffec8d92f924d421687bd8ba8fcc7
+Linux guest archive SHA-256: 7dc65f99a5c0c9169d5ac8936c8825732241b1d4488640d778eee48301b0fcd5
 official package aggregate SHA-256: 26910c212c271de5b8a89373303fbdb8bdb2cf14f5eb976a50e3e445af1000f9
 origin: https://github.com/iamine-labs/iamine
 ```
@@ -46,9 +47,10 @@ agent contracts, and roadmap state.
 
 ```text
 focused Node Doctor tests: 7/7 PASS
+log-free dispatch regression: 1/1 PASS
 iamine-agent-runtime: 149/149 PASS
 iamine-agents: 109/109 PASS
-iamine-node: 493/493 PASS
+iamine-node: 496/496 PASS
 cargo build -p iamine-node: PASS
 JSON CLI smoke: PASS
 fresh HOME absent before and after smoke: PASS
@@ -96,7 +98,8 @@ Every role verified the output schema, six categories, privacy filters, absent
 fresh HOME, unchanged process count, cleanup/audit evidence, and false
 scheduler/transport/persistence/OS-isolation claims. Every role also changed one
 byte in capability metadata and observed fail-closed package rejection. No
-guest QA root contained NDJSON output.
+guest QA root contained NDJSON output, and each command ran from a fresh
+directory that remained empty after both success and tamper rejection.
 
 Mac and TS140 reported static node/hardware/config/model readiness with passive
 peer and remote-inference evidence `not_observed`. The four Proxmox guests
@@ -109,7 +112,23 @@ status, then passed the seven focused tests. The four guests consumed one
 compressed Linux artifact after verifying its SHA-256, exact binary SHA-256,
 and aggregate package SHA-256.
 
-## Findings
+## Product Finding And Correction
+
+The initial six-role matrix verified HOME and process side effects but did not
+baseline the current working directory. Its Mac run left an empty
+`logs/iamine-node.ndjson` because global runtime logging was initialized before
+the pre-network dispatcher. This contradicted the feature's no-persistence
+contract even though the agent result itself reported `persisted: false`.
+
+The feature returned to `CHANGES REQUIRED`. Node Doctor is now dispatched
+before runtime logging through an explicit mode predicate, while all existing
+control-plane modes retain their prior startup order. A regression test binds
+that ordering. The branch then integrated the current `origin/develop` without
+conflicts, repeated the complete local quality gate, rebuilt Linux from the
+exact bundle, and repeated all six field roles with a fresh-directory check.
+The corrected matrix passed with zero working-directory artifacts.
+
+## Harness And Environment Findings
 
 The first Mac tamper harness expected the Display code `package_mismatch`, but
 Rust process termination emitted the safe typed Debug variant
@@ -125,7 +144,7 @@ checkout.
 ## Architecture Maintenance
 
 ```text
-main.rs: 4934 -> 4931, wiring only
+main.rs: 4934 -> 4935, wiring only
 cluster_registry.rs: 862 -> 862
 largest new Rust file: node_doctor_agent/execution.rs, 436 lines
 new non-main Rust files above 750 lines: 0
