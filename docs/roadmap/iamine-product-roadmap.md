@@ -129,7 +129,8 @@ Proxmox/R5500 roles. The evidence merged in `76a3de0`, post-merge validation
 passed, and v0.11.2 is now closed. `NODE-DOCTOR-EVIDENCE-PROVIDER-001` closed in
 merge `f54851b` after local validation, six-role field QA, and exact-merge
 post-merge validation. The active canonical feature is
-`NODE-DOCTOR-AGENT-001` in exact-source validation; no later product row is
+`NODE-DOCTOR-AGENT-001` with final Architecture approval after exact-source
+six-role field QA; push and merge remain pending and no later product row is
 authorized in bulk.
 
 The broader v0.9 operational stability claim still requires the operational
@@ -268,7 +269,7 @@ Architecture. Feature-local QA is insufficient for milestone closure.
 | v0.11.1 | CLOSED | Agent architecture foundation; exhaustive gate merge `0bdff4b`, post-merge validation PASS |
 | v0.11.2 | CLOSED | Agent runtime baseline; exhaustive gate merge `76a3de0`, post-merge validation PASS WITH WARNINGS |
 | v0.11.3 | CLOSED | Internal agent developer bootstrap contracts |
-| v0.12.0 | ACTIVE | P0 skeletons closed; functional Node Doctor is in exact-source validation |
+| v0.12.0 | ACTIVE | P0 skeletons closed; functional Node Doctor is approved for merge, with push pending |
 | v0.12.1 | PROPOSED | P1 adoption agents |
 | v0.12.2 | PROPOSED | P2 experimental and technical agents |
 | v0.13.0 | PROPOSED | Agent beta productization |

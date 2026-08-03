@@ -9,8 +9,8 @@ NODE-DOCTOR-AGENT-001
 Current state:
 
 ```text
-LOCAL VALIDATION PASSED
-FIELD QA REQUIRED
+APPROVED FOR MERGE
+PUSH AUTHORIZATION REQUIRED
 ```
 
 ## Purpose
@@ -138,3 +138,35 @@ quality gate and size guards
 Feature-local QA may recommend `READY FOR ARCHITECTURE MERGE REVIEW`. It cannot
 close v0.12.0; the milestone remains open until all functional P0 agents and
 `V0.12.0-P0-OFFICIAL-AGENTS-MILESTONE-QA-001` are closed.
+
+## Final Architecture Review
+
+Exact runtime checkpoint:
+
+```text
+commit: 2349499c94209f2b82665289cc08abce84625ea5
+tree: 2656459419d0a2bb68c07395998cd06dc0da1327
+base: 3374e27f7b6b132b39c3e979af7a1a03cd5daf9b
+field roles: 6 of 6 PASS
+```
+
+Architecture confirms that execution traverses the existing owner chain; the
+package cannot self-authorize, altered policy-bearing files fail closed, and
+the CLI returns before node-network startup. The feature introduces no
+scheduler, transport, model, worker, persistence, or public-distribution side
+effects. `main.rs` decreases by three lines and `cluster_registry.rs` is
+unchanged.
+
+Accepted non-blocking limits are explicit: distribution remains manual
+`local_dev`, the caller supplies the package root, peer/network evidence is
+passive, and the runtime reports a bounded sandbox adapter without claiming OS
+isolation. Later installer, registry, discovery, or platform-sandbox features
+must not be inferred from this checkpoint.
+
+Recommendation:
+
+```text
+APPROVED FOR MERGE
+```
+
+Push and controlled merge still require Merge Owner authority.

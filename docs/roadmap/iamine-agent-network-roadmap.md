@@ -28,7 +28,7 @@ tree: a8844ee8f3eb83a9836e7db6555f4634ebd85974
 v0.11.2 executable rows: 19 of 19 CLOSED
 last closed: NODE-DOCTOR-EVIDENCE-PROVIDER-001
 active sequential feature: NODE-DOCTOR-AGENT-001
-active feature state: LOCAL VALIDATION PASSED / FIELD QA REQUIRED
+active feature state: APPROVED FOR MERGE / PUSH AUTHORIZATION REQUIRED
 previous gate state: V0.11.2 CLOSED / POST-MERGE PASS
 runtime regression baseline: 149/149
 agents regression baseline: 109/109
@@ -539,7 +539,7 @@ ID as if it represented new implementation work.
 | WINDOWS-OPTIMIZER-ASSISTANT-AGENT-001-SKELETON | CLOSED | Defined the official P0 Windows Optimizer Assistant skeleton as a local-planning, privacy-safe contract without system inspection, configuration change, or execution; merge `f81072a`, focused post-merge validation PASS. |
 | NODE-DOCTOR-AGENT-001-DEPENDENCY-RECONCILIATION-001 | CLOSED | Recorded the executable prerequisite chain and kept functional Node Doctor development blocked until every gate has implementation and validation evidence; merge `7588e09`, focused post-merge validation PASS. |
 | NODE-DOCTOR-EVIDENCE-PROVIDER-001 | CLOSED | Bounded, structured, redacted, read-only node evidence provider merged in `f54851b`; six-role field QA and exact-merge post-merge quality gate passed. |
-| NODE-DOCTOR-AGENT-001 | LOCAL VALIDATION PASSED / FIELD QA REQUIRED | First functional P0 reference agent; exact package snapshot, local-readonly runtime chain, typed redacted evidence, and pre-network CLI are implemented without public-beta publication. |
+| NODE-DOCTOR-AGENT-001 | APPROVED FOR MERGE / PUSH AUTHORIZATION REQUIRED | First functional P0 reference agent; exact package snapshot, local-readonly runtime chain, typed redacted evidence, and pre-network CLI passed local validation and six-role field QA without public-beta publication. |
 
 Closure gate:
 
@@ -637,8 +637,9 @@ NODE-DOCTOR-AGENT-001
 `NODE-DOCTOR-EVIDENCE-PROVIDER-001` is `MERGED / VALIDATED / CLOSED` after local
 validation, six-role field QA, controlled merge, and exact-merge post-merge
 validation. Functional Node Doctor has Architecture and development
-authorization and is in exact-source validation. It is not merged, closed,
-public-beta listed, or milestone-closing evidence.
+authorization, passed exact-source six-role field QA, and has final Architecture
+approval. It is not pushed, merged, closed, public-beta listed, or
+milestone-closing evidence.
 
 All 19 implementation rows are `CLOSED`. The final chain from handoff through
 the bounded runtime executor completed local validation, independent
