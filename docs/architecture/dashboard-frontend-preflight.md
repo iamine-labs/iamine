@@ -4,7 +4,7 @@
 
 ```text
 feature: DASHBOARD-FRONTEND-PREFLIGHT-001
-state: READY FOR MERGE REVIEW
+state: APPROVED FOR MERGE
 base: origin/develop at e2e6a8a70a8f952bf4eb064a7fd9f70e39aac72a
 branch: feature/dashboard-frontend-preflight-001
 runtime behavior change: none
@@ -348,8 +348,8 @@ The unrestricted quality gate did not pass and was not reported as a pass:
   output while sharing the repository target directory.
 
 The staged diff contains no executable files, so these failures cannot be
-caused by this feature's product behavior. They remain baseline/environment
-exceptions for Architecture to classify; the full quality gate is not green.
+caused by this feature's product behavior. Architecture accepted them as
+baseline/environment exceptions; the full quality gate is not green.
 
 ## Architecture Checkpoint
 
@@ -366,15 +366,16 @@ security and privacy boundaries: PASS
 mock versus real integration boundary: PASS
 dependency and packaging decisions: PASS
 field QA requirement: NOT REQUIRED
-broad-gate exceptions: ARCHITECTURE DECISION REQUIRED
-recommendation: READY FOR ARCHITECTURE MERGE REVIEW
+broad-gate exceptions: ACCEPTED AS BASELINE / ENVIRONMENT
+authorization: EXPLICIT USER AUTHORITY RECORDED 2026-08-02
+recommendation: APPROVED FOR MERGE
 ```
 
 At checkpoint time, `origin/develop` had advanced to
 `3374e27f7b6b132b39c3e979af7a1a03cd5daf9b` through the closed Node Doctor
 evidence-provider work. That delta does not modify this feature's two owned
-files and produces no merge-tree conflict. Controlled integration must still
-recheck the current remote target immediately before merge.
+files and produces no merge-tree conflict. A fresh remote fetch before
+integration confirmed the same target and conflict-free relationship.
 
 ## QA Classification
 
