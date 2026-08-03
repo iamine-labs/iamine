@@ -92,6 +92,10 @@ pub(crate) enum NodeMode {
     Support {
         command: SupportCommand,
     },
+    AgentNodeDoctor {
+        package_root: String,
+        json: bool,
+    },
     LanDoctor {
         json: bool,
         network: bool,
@@ -181,6 +185,7 @@ pub(crate) fn mode_label(mode: &NodeMode) -> &'static str {
         NodeMode::NodeConfig { .. } => "node-config",
         NodeMode::NodeIdentity { .. } => "node-identity",
         NodeMode::Support { .. } => "support",
+        NodeMode::AgentNodeDoctor { .. } => "agent-node-doctor",
         NodeMode::LanDoctor { .. } => "lan-doctor",
         NodeMode::Capabilities => "capabilities",
         NodeMode::Nodes => "nodes",

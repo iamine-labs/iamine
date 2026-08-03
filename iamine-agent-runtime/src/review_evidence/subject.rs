@@ -1,6 +1,6 @@
 use std::fmt;
 
-use crate::{DeclaredAgentPackage, ResolvedPackageReferences};
+use crate::{DeclaredAgentPackage, PackageReferenceKind, ResolvedPackageReferences};
 
 #[derive(Clone, Copy)]
 #[must_use]
@@ -32,12 +32,18 @@ impl<'a> PackageReviewSubject<'a> {
         self.package
     }
 
-    pub(crate) fn package_id(self) -> &'a str {
+    pub fn package_id(self) -> &'a str {
         &self.package.manifest().package_id
     }
 
-    pub(crate) fn task_type(self) -> &'a str {
+    pub fn task_type(self) -> &'a str {
         &self.package.manifest().agent.task_class
+    }
+
+    pub fn reference_matches(self, kind: PackageReferenceKind, expected: &[u8]) -> bool {
+        self.references
+            .get(kind)
+            .is_some_and(|reference| reference.content() == expected)
     }
 
     pub(crate) const fn references(self) -> &'a ResolvedPackageReferences {

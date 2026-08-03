@@ -64,6 +64,7 @@ Future agent outputs must be classified before persistence or handoff:
 result_summary
 action_report
 diagnostic_report
+blocked_action_report
 clarification_request
 handoff_request
 refusal_report

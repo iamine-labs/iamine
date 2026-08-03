@@ -3,7 +3,8 @@ use crate::{
     cluster_stress_cli::run_cluster_stress_cli, code_quality::run_code_quality_checks,
     hardware_cli::run_hardware_cli, lan_node_doctor::run_lan_node_doctor,
     model_selector_cli::ModelSelectorCLI, node_config_schema::run_node_config_cli,
-    node_identity::NodeIdentity, node_identity_cli::run_node_identity_cli, prompt_task_label,
+    node_doctor_agent::run_node_doctor_agent_cli, node_identity::NodeIdentity,
+    node_identity_cli::run_node_identity_cli, prompt_task_label,
     quality_gate::run_release_validation, regression_runner::run_default_regression_suite,
     security_checks::run_security_checks, tasks_cli, user_diagnostics_support::run_support_cli,
     worker_lifecycle::run_worker_lifecycle_cli,
@@ -35,6 +36,7 @@ pub(crate) fn is_control_plane_mode(mode: &NodeMode) -> bool {
             | NodeMode::NodeConfig { .. }
             | NodeMode::NodeIdentity { .. }
             | NodeMode::Support { .. }
+            | NodeMode::AgentNodeDoctor { .. }
             | NodeMode::LanDoctor { .. }
             | NodeMode::WorkerLifecycle { .. }
     )
@@ -127,6 +129,11 @@ pub(crate) async fn handle_pre_network_mode(
 
         NodeMode::Support { command } => {
             run_support_cli(command)?;
+            Ok(true)
+        }
+
+        NodeMode::AgentNodeDoctor { package_root, json } => {
+            run_node_doctor_agent_cli(std::path::Path::new(package_root), *json)?;
             Ok(true)
         }
 
@@ -534,6 +541,10 @@ mod tests {
         assert!(is_control_plane_mode(&NodeMode::LanDoctor {
             json: false,
             network: false,
+        }));
+        assert!(is_control_plane_mode(&NodeMode::AgentNodeDoctor {
+            package_root: "agents/official/node-doctor".to_string(),
+            json: true,
         }));
         assert!(!is_control_plane_mode(&NodeMode::Worker));
     }

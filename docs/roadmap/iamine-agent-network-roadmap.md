@@ -23,12 +23,12 @@ gates.
 Current operational baseline:
 
 ```text
-validated develop merge: f54851bc70d603eab10ed60b719088628dc8f482
-tree: 18a5b0d2f2d49661d889b067e756eeee65646b94
+validated develop merge: 3374e27f7b6b132b39c3e979af7a1a03cd5daf9b
+tree: a8844ee8f3eb83a9836e7db6555f4634ebd85974
 v0.11.2 executable rows: 19 of 19 CLOSED
 last closed: NODE-DOCTOR-EVIDENCE-PROVIDER-001
 active sequential feature: NODE-DOCTOR-AGENT-001
-active feature state: PROPOSED
+active feature state: LOCAL VALIDATION PASSED / FIELD QA REQUIRED
 previous gate state: V0.11.2 CLOSED / POST-MERGE PASS
 runtime regression baseline: 149/149
 agents regression baseline: 109/109
@@ -539,7 +539,7 @@ ID as if it represented new implementation work.
 | WINDOWS-OPTIMIZER-ASSISTANT-AGENT-001-SKELETON | CLOSED | Defined the official P0 Windows Optimizer Assistant skeleton as a local-planning, privacy-safe contract without system inspection, configuration change, or execution; merge `f81072a`, focused post-merge validation PASS. |
 | NODE-DOCTOR-AGENT-001-DEPENDENCY-RECONCILIATION-001 | CLOSED | Recorded the executable prerequisite chain and kept functional Node Doctor development blocked until every gate has implementation and validation evidence; merge `7588e09`, focused post-merge validation PASS. |
 | NODE-DOCTOR-EVIDENCE-PROVIDER-001 | CLOSED | Bounded, structured, redacted, read-only node evidence provider merged in `f54851b`; six-role field QA and exact-merge post-merge quality gate passed. |
-| NODE-DOCTOR-AGENT-001 | PROPOSED | Implement the first functional P0 reference agent only after the full executable prerequisite chain is implemented and validated. |
+| NODE-DOCTOR-AGENT-001 | LOCAL VALIDATION PASSED / FIELD QA REQUIRED | First functional P0 reference agent; exact package snapshot, local-readonly runtime chain, typed redacted evidence, and pre-network CLI are implemented without public-beta publication. |
 
 Closure gate:
 
@@ -583,9 +583,9 @@ not_user_available
 ```
 
 Closing an architecture contract does not prove that its runtime or
-enforcement behavior exists. `NODE-DOCTOR-AGENT-001` remains in `PROPOSED`
-and development authorization is blocked until all of the following have
-executable implementation and validation evidence:
+enforcement behavior exists. Development authorization for
+`NODE-DOCTOR-AGENT-001` was blocked until all of the following had executable
+implementation and validation evidence:
 
 ```text
 AGENT-MANIFEST-PARSER-VALIDATOR-001
@@ -636,8 +636,9 @@ NODE-DOCTOR-AGENT-001
 
 `NODE-DOCTOR-EVIDENCE-PROVIDER-001` is `MERGED / VALIDATED / CLOSED` after local
 validation, six-role field QA, controlled merge, and exact-merge post-merge
-validation. Functional Node Doctor remains `PROPOSED` and requires its own
-Architecture and development authorization.
+validation. Functional Node Doctor has Architecture and development
+authorization and is in exact-source validation. It is not merged, closed,
+public-beta listed, or milestone-closing evidence.
 
 All 19 implementation rows are `CLOSED`. The final chain from handoff through
 the bounded runtime executor completed local validation, independent

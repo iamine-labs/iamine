@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+iamine-agent-runtime = { path = "../iamine-agent-runtime" }
+iamine-agents = { path = "../iamine-agents" }
 iamine-core = { path = "../iamine-core" }
 iamine-hardware = { path = "../iamine-hardware" }
 iamine-models = { path = "../iamine-models" }

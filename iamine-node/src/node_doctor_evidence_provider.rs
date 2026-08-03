@@ -89,7 +89,7 @@ pub(crate) fn build_node_doctor_evidence(
     build_node_doctor_evidence_from_parts(owner_report.overall_status(), owner_report.checks())
 }
 
-fn build_node_doctor_evidence_from_parts(
+pub(crate) fn build_node_doctor_evidence_from_parts(
     overall_status: DoctorStatus,
     owner_checks: &[DoctorCheck],
 ) -> NodeDoctorEvidenceReport {
