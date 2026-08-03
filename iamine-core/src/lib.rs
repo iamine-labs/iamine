@@ -1,4 +1,5 @@
 pub mod errors;
+pub mod interface_contracts;
 pub mod message;
 pub mod node;
 pub mod node_upgrade_rollback;
@@ -9,6 +10,15 @@ pub mod supply_chain_security;
 pub mod task;
 
 pub use errors::{IaMineError, IaMineResult};
+pub use interface_contracts::{
+    InterfaceContractError, InterfaceEvent, InterfaceEventIdentity, InterfaceEventPayload,
+    InterfaceEventStream, InterfaceEvidenceScope, InterfaceOperation, InterfaceOperationClass,
+    InterfaceOperationId, InterfaceOperatorAction, InterfaceOutcome, InterfaceOutcomeStatus,
+    InterfaceProblem, InterfaceProblemCode, InterfaceProvenance, InterfaceProvenanceSource,
+    InterfaceRedaction, InterfaceRequest, InterfaceResponse, InterfaceSchemaVersion,
+    InterfaceWarning, InterfaceWarningCode, InterfaceWarnings, INTERFACE_CONTRACT_SCHEMA_VERSION,
+    MAX_INTERFACE_WARNINGS,
+};
 pub use message::IaMineMessage;
 pub use node::{NodeCapabilities, NodeReputation};
 pub use node_upgrade_rollback::{

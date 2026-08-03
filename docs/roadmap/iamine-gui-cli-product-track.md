@@ -32,7 +32,7 @@ directories.
 | --- | --- | --- |
 | DASHBOARD-FRONTEND-PREFLIGHT-001 | CLOSED | Selected the canonical React, TypeScript, Vite, npm, validation, layout, contract, packaging, and target strategy without creating the frontend; merge `396389f`, focused post-merge validation PASS with accepted baseline/environment exceptions. |
 | GUI-CLI-INTERFACE-ARCHITECTURE-001 | CLOSED | Defined interface ownership and shared-core boundaries; merge `ff87b25`, focused post-merge validation PASS, no field QA required. |
-| GUI-CLI-SHARED-CONTRACTS-001 | PROPOSED | Stable typed command, status, error, and event contracts. |
+| GUI-CLI-SHARED-CONTRACTS-001 | LOCAL VALIDATION PASSED | `iamine-core` shared typed command, status, error, provenance, and event contracts; no runtime or dashboard integration yet. Focused contract tests, workspace run, and gate guards passed; one unrelated concurrent Node Doctor test was transient and passed on exact rerun. |
 | NODE-LOCAL-CONTROL-API-CONTRACT-001 | PROPOSED | Shared contracts and explicit local threat model. |
 | DASHBOARD-LOCAL-AUTHORIZATION-001 | PROPOSED | Local Control API contract and audit requirements. |
 | NODE-SERVICE-LIFECYCLE-001 | PROPOSED | Stable node lifecycle and recovery semantics. |
