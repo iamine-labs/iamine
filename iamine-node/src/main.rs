@@ -204,7 +204,7 @@ use gossipsub_message_runtime::{
     handle_node_capabilities_message, handle_task_cancel_message, log_invalid_worker_task_message,
     message_topic_name,
 };
-use mode_dispatch::handle_pre_network_mode;
+use mode_dispatch::{handle_pre_network_mode, requires_log_free_dispatch};
 use model_display_policy::*;
 use network_config::{
     admitted_bootnodes_for_testnet_policy, admitted_nat_relay_policy_for_testnet_policy,
@@ -266,6 +266,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
     maybe_print_debug_flags(debug_flags);
     let runtime_version = runtime_version_metadata();
+    if requires_log_free_dispatch(&mode) && handle_pre_network_mode(&mode, &runtime_version).await?
+    {
+        return Ok(());
+    }
     set_global_runtime_context(mode_label(&mode), &runtime_version);
     let mode_config = RuntimeModeConfig::from_mode(&mode);
     let is_cluster_status_mode = mode_config.is_cluster_status_mode;

@@ -42,6 +42,10 @@ pub(crate) fn is_control_plane_mode(mode: &NodeMode) -> bool {
     )
 }
 
+pub(crate) fn requires_log_free_dispatch(mode: &NodeMode) -> bool {
+    matches!(mode, NodeMode::AgentNodeDoctor { .. })
+}
+
 pub(crate) async fn handle_pre_network_mode(
     mode: &NodeMode,
     runtime_version: &str,
@@ -552,6 +556,18 @@ mod tests {
     #[test]
     fn mode_dispatch_is_parse_only_for_help() {
         assert!(!is_control_plane_mode(&NodeMode::Help));
+    }
+
+    #[test]
+    fn node_doctor_dispatches_before_runtime_logging() {
+        assert!(requires_log_free_dispatch(&NodeMode::AgentNodeDoctor {
+            package_root: "agents/official/node-doctor".to_string(),
+            json: true,
+        }));
+        assert!(!requires_log_free_dispatch(&NodeMode::LanDoctor {
+            json: true,
+            network: false,
+        }));
     }
 
     #[test]
