@@ -2789,6 +2789,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 SwarmEvent::Behaviour(IaMineEvent::ResultResponse(RREvent::Message {
                     peer,
                     message: Message::Request { request, channel, .. },
+                    ..
                 })) => {
                     println!("🎉 [Origin] Resultado directo de {}:",
                         &peer.to_string()[..8]);
@@ -2991,6 +2992,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 SwarmEvent::Behaviour(IaMineEvent::ResultResponse(RREvent::Message {
                     peer,
                     message: Message::Response { response, .. },
+                    ..
                 })) => {
                     if response.acknowledged {
                         println!("✅ [Worker] Origin {} confirmó resultado", &peer.to_string()[..8]);
@@ -3072,7 +3074,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 }
 
                 SwarmEvent::Behaviour(IaMineEvent::Identify(event)) => {
-                    handle_identify_event(&mut swarm, event);
+                    handle_identify_event(&mut swarm, *event);
                 }
 
                 SwarmEvent::Behaviour(IaMineEvent::Kademlia(kad::Event::RoutingUpdated { peer, .. })) => {
@@ -3087,7 +3089,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                 SwarmEvent::Behaviour(IaMineEvent::RequestResponse(event)) => {
                     match event {
-                        RREvent::Message { peer, message: Message::Request { request, channel, .. } } => {
+                        RREvent::Message { peer, message: Message::Request { request, channel, .. }, .. } => {
                             if let Some(task) = request.distributed_task.clone() {
                                 let local_cluster_id = {
                                     let topo = topology.read().await;
@@ -3393,7 +3395,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 let _ = swarm.behaviour_mut().request_response.send_response(channel, response);
                             }
                         }
-                            RREvent::Message { peer, message: Message::Response { response, .. } } => {
+                            RREvent::Message { peer, message: Message::Response { response, .. }, .. } => {
                                 if let Some(distributed_result) = response.distributed_result {
                                     let expected_task_id = distributed_infer_state
                                         .as_ref()

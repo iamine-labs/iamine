@@ -10,7 +10,7 @@ iamine-core = { path = "../iamine-core" }
 iamine-hardware = { path = "../iamine-hardware" }
 iamine-models = { path = "../iamine-models" }
 iamine-network = { path = "../iamine-network" }
-libp2p = { version = "0.53", features = [
+libp2p = { version = "0.56", features = [
     "tcp", "noise", "yamux", "tokio",
     "identify", "ping", "macros",
     "request-response", "cbor",

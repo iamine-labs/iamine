@@ -6,7 +6,7 @@ members = [
     "iamine-hardware",
     "iamine-node",
     "iamine-models",   # ← nuevo
-    "client-rust",
     "iamine-network",
 ]
+exclude = ["client-rust"]
 resolver = "2"

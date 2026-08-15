@@ -55,7 +55,7 @@ pub(crate) struct IamineBehaviour {
 pub(crate) enum IaMineEvent {
     Ping(ping::Event),
     #[allow(dead_code)]
-    Identify(identify::Event),
+    Identify(Box<identify::Event>),
     RequestResponse(RREvent<TaskRequest, TaskResponse>),
     ResultResponse(RREvent<TaskResultRequest, TaskResultResponse>),
     Kademlia(kad::Event),
@@ -70,7 +70,7 @@ impl From<ping::Event> for IaMineEvent {
 }
 impl From<identify::Event> for IaMineEvent {
     fn from(e: identify::Event) -> Self {
-        IaMineEvent::Identify(e)
+        IaMineEvent::Identify(Box::new(e))
     }
 }
 impl From<RREvent<TaskRequest, TaskResponse>> for IaMineEvent {

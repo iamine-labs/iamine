@@ -5,7 +5,7 @@ use serde_json::Map;
 
 pub(crate) fn handle_identify_event(swarm: &mut Swarm<IamineBehaviour>, event: identify::Event) {
     match event {
-        identify::Event::Received { peer_id, info } => {
+        identify::Event::Received { peer_id, info, .. } => {
             let stream_protocols: Vec<String> =
                 info.protocols.iter().map(ToString::to_string).collect();
             let decision = peer_protocol_decision(
@@ -17,7 +17,7 @@ pub(crate) fn handle_identify_event(swarm: &mut Swarm<IamineBehaviour>, event: i
                 let _ = swarm.disconnect_peer_id(peer_id);
             }
         }
-        identify::Event::Error { peer_id, error } => {
+        identify::Event::Error { peer_id, error, .. } => {
             let mut fields = Map::new();
             fields.insert("peer_id".to_string(), peer_id.to_string().into());
             fields.insert("error".to_string(), error.to_string().into());
