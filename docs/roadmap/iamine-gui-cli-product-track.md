@@ -6,7 +6,7 @@
 track: IAMINE-GUI-CLI-PRODUCT-TRACK
 state: PROPOSED
 milestone placement: unresolved by design
-implementation authorization: none; DASHBOARD-FRONTEND-PREFLIGHT-001 is closed
+implementation authorization: IAMINE-DASHBOARD-DESIGN-SYSTEM-001 authorized on 2026-08-16
 parallel implementation boundary: typed visual mocks only
 ```
 
@@ -20,11 +20,11 @@ Both interfaces must consume shared typed contracts. The frontend must not
 duplicate IAMINE domain, validation, permission, audit, P2P, scheduler, model,
 or execution logic.
 
-No canonical frontend implementation exists at this reconciliation baseline.
-The preflight must select and document the frontend technology, repository
-layout, dependency policy, supported targets, validation commands, packaging
-constraints, and future desktop/mobile reuse before creating application
-directories.
+The preflight selected the frontend technology, repository layout, dependency
+policy, supported targets, validation commands, packaging constraints, and
+future desktop/mobile reuse. The design-system feature now owns the first
+canonical application scaffold and reusable presentation primitives. It
+remains a non-authoritative mock surface without node connectivity.
 
 ## Candidate Features
 
@@ -38,7 +38,7 @@ directories.
 | NODE-SERVICE-LIFECYCLE-001 | PROPOSED | Stable node lifecycle and recovery semantics. |
 | HEADLESS-NODE-MODE-001 | PROPOSED | Service lifecycle and CLI parity. |
 | NODE-LOCAL-CONTROL-API-001 | PROPOSED | Contract, authorization, validation, and audit gates. |
-| IAMINE-DASHBOARD-DESIGN-SYSTEM-001 | PROPOSED | Typed mocks only until real control contracts close. |
+| IAMINE-DASHBOARD-DESIGN-SYSTEM-001 | LOCAL VALIDATION PASSED / ARCHITECTURE REVIEW REQUIRED | React, TypeScript, and Vite scaffold; tokens, reusable primitives, strict npm lifecycle policy, and visible non-authoritative preview. Five unit/component tests and four Playwright projects pass on Mac; real control integration remains blocked. |
 | IAMINE-DASHBOARD-SHELL-001 | PROPOSED | Design system and typed mock adapters. |
 | IAMINE-DASHBOARD-OVERVIEW-MOCK-001 | PROPOSED | Non-authoritative typed fixtures only; no node connection or fictitious endpoint. |
 | IAMINE-DASHBOARD-OVERVIEW-READONLY-INTEGRATION-001 | PROPOSED | Authorized read-only API, shared contracts, local authorization, and audit evidence. |

@@ -1,0 +1,26 @@
+.mark {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  gap: var(--space-2);
+}
+
+.symbol {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  place-items: center;
+  color: var(--color-brand-contrast);
+  background: var(--color-brand);
+  border-radius: var(--radius-sm);
+}
+
+.name {
+  overflow: hidden;
+  color: var(--color-ink);
+  font-size: 15px;
+  font-weight: 750;
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+}
