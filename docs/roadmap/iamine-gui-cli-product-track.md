@@ -6,7 +6,7 @@
 track: IAMINE-GUI-CLI-PRODUCT-TRACK
 state: PROPOSED
 milestone placement: unresolved by design
-implementation authorization: none; IAMINE-DASHBOARD-SHELL-001 is closed
+implementation authorization: none; IAMINE-DASHBOARD-OVERVIEW-MOCK-001 is ready for merge review
 parallel implementation boundary: typed visual mocks only
 ```
 
@@ -40,7 +40,7 @@ remains a non-authoritative mock surface without node connectivity.
 | NODE-LOCAL-CONTROL-API-001 | PROPOSED | Contract, authorization, validation, and audit gates. |
 | IAMINE-DASHBOARD-DESIGN-SYSTEM-001 | MERGED / VALIDATED / CLOSED | React, TypeScript, and Vite scaffold; official dark tokens and IAMINE assets; reusable primitives; strict npm lifecycle policy; responsive non-authoritative Overview visual preview. Merge `7bb7de8`; focused post-merge validation PASS on Mac. Real control integration remains blocked. |
 | IAMINE-DASHBOARD-SHELL-001 | MERGED / VALIDATED / CLOSED | Routed static application shell, navigation lifecycle, inert reserved destinations, and top-level failure boundaries; merge `5c05e65`, post-merge frontend validation PASS, no core or real node behavior changed. |
-| IAMINE-DASHBOARD-OVERVIEW-MOCK-001 | PROPOSED | Non-authoritative typed fixtures only; no node connection or fictitious endpoint. |
+| IAMINE-DASHBOARD-OVERVIEW-MOCK-001 | READY FOR MERGE REVIEW | Feature-owned typed presentation contract, deterministic non-authoritative source, and loading/ready/empty/error states; Mac frontend and repository gates PASS, no node connection or fictitious endpoint. |
 | IAMINE-DASHBOARD-OVERVIEW-READONLY-INTEGRATION-001 | PROPOSED | Authorized read-only API, shared contracts, local authorization, and audit evidence. |
 | NODE-ONBOARDING-WIZARD-001 | PROPOSED | Stable setup, configuration, privacy, and rollback contracts. |
 | NODE-RESOURCE-CONTROLS-001 | PROPOSED | Stable resource policy and bounded mutation. |

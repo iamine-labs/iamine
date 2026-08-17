@@ -9,9 +9,7 @@ import {
 } from 'react-router';
 
 import { Button, StatePanel, StatusBadge } from '../components';
-import { type DashboardView } from '../preview/fixtures';
-import { OverviewSummary } from '../preview/OverviewSummary';
-import { OverviewTelemetry } from '../preview/OverviewTelemetry';
+import { OverviewPage } from '../features/overview/OverviewPage';
 import { DashboardChrome } from './DashboardChrome';
 import { DashboardStatusBar } from './DashboardStatusBar';
 import {
@@ -22,18 +20,13 @@ import {
 } from './routes';
 import styles from './DashboardShell.module.css';
 
-function OverviewPreviewRoute() {
+function OverviewRoute() {
   const navigate = useNavigate();
 
-  const navigateFromPreview = (view: DashboardView) => {
-    void navigate(getDashboardRoute(view).path);
-  };
-
   return (
-    <div className={styles.overviewGrid}>
-      <OverviewSummary onNavigate={navigateFromPreview} />
-      <OverviewTelemetry />
-    </div>
+    <OverviewPage
+      onOpenNodes={() => void navigate(getDashboardRoute('nodes').path)}
+    />
   );
 }
 
@@ -122,10 +115,7 @@ export function DashboardShell() {
               index
               element={<Navigate replace to={overviewRoute.path} />}
             />
-            <Route
-              path={overviewRoute.path}
-              element={<OverviewPreviewRoute />}
-            />
+            <Route path={overviewRoute.path} element={<OverviewRoute />} />
             {dashboardRoutes
               .filter((route) => route.id !== overviewRoute.id)
               .map((route) => (
