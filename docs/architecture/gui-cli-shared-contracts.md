@@ -4,9 +4,12 @@
 
 ```text
 feature: GUI-CLI-SHARED-CONTRACTS-001
-state: READY FOR MERGE REVIEW
+state: MERGED / VALIDATED / CLOSED
 base: origin/develop at df6d46295eb42efe4e112758960f6061ec4ec2e2
 branch: feature/gui-cli-shared-contracts-001
+feature commit: 55c449a078409bc15507b7bb55b598bca9a9ac5f
+merge commit: ee488b08731c9920a25e0b3395ac2f3dd3783180
+merged tree: 36177d813c54b217ea6fa0d43064fc444a4629b5
 runtime behavior change: none
 dashboard application created: no
 field QA: not required at this boundary
@@ -112,9 +115,14 @@ optional `cargo audit`, `cargo deny`, and `gitleaks` tools were unavailable and
 are reported as skipped. No Proxmox or TS140 field QA is required because this
 change does not execute or alter node runtime behavior.
 
+The controlled merge tree is identical to the final feature tree. Post-merge
+validation repeated the focused core tests and complete repository gate with
+zero required failures and zero new warnings before `origin/develop` was
+verified at the merge commit.
+
 Architecture review also moved the contract tests out of the production module
 after the combined file reached 833 lines. The final production module is 581
-lines and its integration test module is 254 lines, both below the 750-line
+lines and its integration test module is 256 lines, both below the 750-line
 review threshold. `main.rs` and `cluster_registry.rs` have zero-line deltas.
 
 ## Next Feature

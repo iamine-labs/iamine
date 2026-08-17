@@ -66,7 +66,7 @@ optional skipped: cargo-audit, cargo-deny, gitleaks unavailable
 main.rs: 4935 lines, delta 0
 cluster_registry.rs: 862 lines, delta 0
 interface_contracts.rs: 581 lines
-interface contract integration tests: 254 lines
+interface contract integration tests: 256 lines
 git diff --check: PASS
 ```
 
@@ -84,7 +84,7 @@ git diff --check: PASS
 4. Exact JSON shape and the complete operation-to-class table were not frozen.
    Integration tests now protect both contracts from accidental drift.
 5. Adding those tests made the production module 833 lines. The tests were
-   extracted into a 254-line integration module, leaving production at 581
+   extracted into a 256-line integration module, leaving production at 581
    lines and avoiding a new monolith.
 6. Workspace Clippy reports historical warnings in `client-rust`, models,
    network, and node code outside the feature diff. They are baseline debt, not
@@ -110,3 +110,29 @@ READY FOR ARCHITECTURE MERGE REVIEW
 This recommendation applies only to the shared contract boundary. It does not
 authorize a Local Control API, dashboard connectivity, runtime mutation, or
 agent execution.
+
+## Post-Merge Validation
+
+```text
+feature commit: 55c449a078409bc15507b7bb55b598bca9a9ac5f
+merge commit: ee488b08731c9920a25e0b3395ac2f3dd3783180
+merge tree: 36177d813c54b217ea6fa0d43064fc444a4629b5
+feature tree: 36177d813c54b217ea6fa0d43064fc444a4629b5
+tree identity: PASS
+merge conflicts: none
+cargo test -p iamine-core: PASS, 43 unit + 10 integration tests
+cargo clippy -p iamine-core --all-targets: PASS
+./scripts/quality-gate.sh: PASS WITH WARNINGS
+workspace tests: 1148 passed
+required failures: 0
+new warnings: 0
+architecture guards: PASS
+optional skipped: cargo-audit, cargo-deny, gitleaks unavailable
+origin/develop identity: PASS
+```
+
+Final state:
+
+```text
+MERGED / VALIDATED / CLOSED
+```
