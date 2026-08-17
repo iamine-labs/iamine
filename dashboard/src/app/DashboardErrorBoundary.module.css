@@ -1,0 +1,33 @@
+.fallback {
+  display: grid;
+  width: min(560px, calc(100% - 32px));
+  min-height: 100vh;
+  align-content: center;
+  justify-items: center;
+  gap: 12px;
+  margin: 0 auto;
+  text-align: center;
+}
+
+.fallback h1 {
+  font-size: 24px;
+  letter-spacing: 0;
+}
+
+.fallback p {
+  max-width: 440px;
+  color: var(--color-ink-secondary);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.icon {
+  display: grid;
+  width: 56px;
+  height: 56px;
+  place-items: center;
+  color: var(--color-danger);
+  background: var(--color-danger-soft);
+  border: 1px solid rgb(239 68 68 / 32%);
+  border-radius: var(--radius-md);
+}

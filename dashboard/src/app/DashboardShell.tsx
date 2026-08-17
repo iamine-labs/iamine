@@ -1,0 +1,146 @@
+import { ArrowLeft, Construction, MapPinOff } from 'lucide-react';
+import { Suspense, useCallback, useState } from 'react';
+import {
+  Navigate,
+  Route,
+  Routes,
+  useLocation,
+  useNavigate,
+} from 'react-router';
+
+import { Button, StatePanel, StatusBadge } from '../components';
+import { type DashboardView } from '../preview/fixtures';
+import { OverviewSummary } from '../preview/OverviewSummary';
+import { OverviewTelemetry } from '../preview/OverviewTelemetry';
+import { DashboardChrome } from './DashboardChrome';
+import { DashboardStatusBar } from './DashboardStatusBar';
+import {
+  dashboardRoutes,
+  getDashboardRoute,
+  overviewRoute,
+  type DashboardRoute,
+} from './routes';
+import styles from './DashboardShell.module.css';
+
+function OverviewPreviewRoute() {
+  const navigate = useNavigate();
+
+  const navigateFromPreview = (view: DashboardView) => {
+    void navigate(getDashboardRoute(view).path);
+  };
+
+  return (
+    <div className={styles.overviewGrid}>
+      <OverviewSummary onNavigate={navigateFromPreview} />
+      <OverviewTelemetry />
+    </div>
+  );
+}
+
+function ReservedRoute({ route }: { route: DashboardRoute }) {
+  const navigate = useNavigate();
+
+  return (
+    <section className={styles.placeholder}>
+      <span className={styles.placeholderIcon} aria-hidden="true">
+        <Construction size={34} />
+      </span>
+      <StatusBadge tone="info">Preview boundary</StatusBadge>
+      <h2>{route.label}</h2>
+      <p>
+        This destination is reserved for its own feature. No node request,
+        mutation, or fictitious endpoint is available from this shell.
+      </p>
+      <Button
+        leadingIcon={<ArrowLeft size={16} />}
+        onClick={() => void navigate(overviewRoute.path)}
+      >
+        Return to Overview
+      </Button>
+    </section>
+  );
+}
+
+function UnknownRoute() {
+  const navigate = useNavigate();
+
+  return (
+    <section className={styles.placeholder}>
+      <span className={styles.placeholderIcon} aria-hidden="true">
+        <MapPinOff size={34} />
+      </span>
+      <StatusBadge tone="warning">Unknown route</StatusBadge>
+      <h2>Page not found</h2>
+      <p>The requested dashboard route is not part of the approved shell.</p>
+      <Button onClick={() => void navigate(overviewRoute.path)}>
+        Return to Overview
+      </Button>
+    </section>
+  );
+}
+
+function RouteLoadingState() {
+  return (
+    <div className={styles.routeState}>
+      <StatePanel
+        state="loading"
+        title="Loading dashboard view"
+        detail="Preparing the local presentation surface."
+      />
+    </div>
+  );
+}
+
+export function DashboardShell() {
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const location = useLocation();
+
+  const closeDrawer = useCallback(() => setDrawerOpen(false), []);
+  const toggleDrawer = useCallback(() => setDrawerOpen((open) => !open), []);
+
+  const activeLabel =
+    dashboardRoutes.find((route) => route.path === location.pathname)?.label ??
+    'Unknown route';
+  const activeView = dashboardRoutes.find(
+    (route) => route.path === location.pathname,
+  )?.id;
+
+  return (
+    <div className={styles.shell}>
+      <DashboardChrome
+        activeView={activeView}
+        drawerOpen={drawerOpen}
+        onDrawerToggle={toggleDrawer}
+        onNavigate={closeDrawer}
+      />
+
+      <main className={styles.main} id="dashboard-content" tabIndex={-1}>
+        <h1 className="sr-only">IAMINE {activeLabel} dashboard</h1>
+        <Suspense fallback={<RouteLoadingState />}>
+          <Routes>
+            <Route
+              index
+              element={<Navigate replace to={overviewRoute.path} />}
+            />
+            <Route
+              path={overviewRoute.path}
+              element={<OverviewPreviewRoute />}
+            />
+            {dashboardRoutes
+              .filter((route) => route.id !== overviewRoute.id)
+              .map((route) => (
+                <Route
+                  key={route.id}
+                  path={route.path}
+                  element={<ReservedRoute route={route} />}
+                />
+              ))}
+            <Route path="*" element={<UnknownRoute />} />
+          </Routes>
+        </Suspense>
+      </main>
+
+      <DashboardStatusBar />
+    </div>
+  );
+}

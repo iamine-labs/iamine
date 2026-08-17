@@ -1,3 +1,19 @@
+.skipLink {
+  position: fixed;
+  z-index: 50;
+  top: 8px;
+  left: 84px;
+  padding: 8px 12px;
+  color: var(--color-brand-contrast);
+  background: var(--color-brand);
+  border-radius: var(--radius-sm);
+  transform: translateY(-160%);
+}
+
+.skipLink:focus {
+  transform: translateY(0);
+}
+
 .sidebar {
   position: fixed;
   z-index: 30;
@@ -40,6 +56,7 @@
   background: transparent;
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
+  text-decoration: none;
 }
 
 .sideNavItem span,
@@ -67,6 +84,7 @@
 
 .securityButton {
   margin: 10px;
+  cursor: default;
 }
 
 .drawerClose,
@@ -104,6 +122,8 @@
   border: 0;
   font-size: 13px;
   font-weight: 520;
+  text-decoration: none;
+  letter-spacing: 0;
 }
 
 .topNavItem::after {
@@ -188,6 +208,10 @@
 }
 
 @media (max-width: 760px) {
+  .skipLink {
+    left: 12px;
+  }
+
   .sidebar {
     width: min(280px, 86vw);
     grid-template-rows: 64px 1fr auto;
