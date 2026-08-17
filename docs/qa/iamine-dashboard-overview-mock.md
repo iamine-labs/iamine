@@ -121,3 +121,27 @@ This evidence authorizes review of the typed mock feature only. It does not
 authorize real node connectivity, Local Control API access, or mutation. TS140
 and Proxmox field QA are not required because runtime, scheduler, capabilities,
 workers, hardware, network, models, and inference behavior are unchanged.
+
+## Post-Merge Validation
+
+```text
+merge commit: f62db25b68d1de175dba3511e2c1873926ace028
+merge tree: 89720afa227cb5707ab445dca608dd6d707a49d5
+source tree: 89720afa227cb5707ab445dca608dd6d707a49d5
+tree identity: PASS
+merge conflicts: none
+npm ci: PASS, 248 packages from lockfile
+npm run format:check: PASS
+npm run lint: PASS
+npm run typecheck: PASS
+npm test -- --run: PASS, 4 files / 13 tests
+npm run build: PASS
+npm run e2e: PASS, 4/4 projects
+core path diff: empty
+```
+
+Final state:
+
+```text
+MERGED / VALIDATED / CLOSED
+```

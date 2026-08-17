@@ -4,7 +4,7 @@
 
 ```text
 feature: IAMINE-DASHBOARD-OVERVIEW-MOCK-001
-state: READY FOR MERGE REVIEW
+state: MERGED / VALIDATED / CLOSED
 branch: feature/iamine-dashboard-overview-mock-001
 base: 5e4e9f7914adfa5cae62edbd017892fe0e1d204c
 target: develop
@@ -130,3 +130,27 @@ real node action: none
 The checkpoint confirms that the mock feature is modular, non-authoritative,
 and ready for merge review. It does not authorize the future read-only node
 integration or any runtime mutation.
+
+## Controlled Merge And Closure
+
+```text
+target before merge: 5e4e9f7914adfa5cae62edbd017892fe0e1d204c
+source: origin/feature/iamine-dashboard-overview-mock-001
+source commit: a2bb66af9232ed42178740ed9667a7fddd0b6479
+source tree: 89720afa227cb5707ab445dca608dd6d707a49d5
+merge commit: f62db25b68d1de175dba3511e2c1873926ace028
+merge tree: 89720afa227cb5707ab445dca608dd6d707a49d5
+tree identity: PASS
+merge conflicts: none
+runtime behavior changed: no
+field QA executed: no, not required for browser-only mock behavior
+```
+
+Post-merge frontend validation repeated `npm ci`, format, lint, typecheck, 13
+unit tests, production build, and 4/4 Playwright projects successfully. The
+source quality gate on the identical tree passed with zero required failures
+and zero new warnings.
+
+This closes the typed Overview mock only. Real node data, local authorization,
+audit, shared API contracts, and runtime actions remain blocked by their
+canonical dependency sequence.
