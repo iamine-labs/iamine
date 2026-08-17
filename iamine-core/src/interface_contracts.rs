@@ -14,6 +14,8 @@ pub enum InterfaceContractError {
     TooManyWarnings,
     #[error("mock provenance cannot be authoritative")]
     MockCannotBeAuthoritative,
+    #[error("interface event stream does not match its payload")]
+    EventStreamMismatch,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -112,6 +114,7 @@ pub struct InterfaceOperation {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct RawInterfaceOperation {
     id: InterfaceOperationId,
     class: InterfaceOperationClass,
@@ -158,6 +161,7 @@ impl From<InterfaceOperation> for RawInterfaceOperation {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct InterfaceRequest<T> {
     pub schema_version: InterfaceSchemaVersion,
     pub operation: InterfaceOperation,
@@ -211,6 +215,7 @@ pub enum InterfaceOperatorAction {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct InterfaceProblem {
     pub code: InterfaceProblemCode,
     pub operator_action: InterfaceOperatorAction,
@@ -236,6 +241,7 @@ pub enum InterfaceWarningCode {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct InterfaceWarning {
     pub code: InterfaceWarningCode,
     pub operator_action: InterfaceOperatorAction,
@@ -309,6 +315,7 @@ pub struct InterfaceProvenance {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct RawInterfaceProvenance {
     source: InterfaceProvenanceSource,
     evidence_scope: InterfaceEvidenceScope,
@@ -380,7 +387,7 @@ impl From<InterfaceProvenance> for RawInterfaceProvenance {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum InterfaceOutcome<T> {
     Success {
         data: T,
@@ -437,6 +444,7 @@ impl<T> InterfaceOutcome<T> {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct InterfaceResponse<T> {
     pub schema_version: InterfaceSchemaVersion,
     pub operation: InterfaceOperation,
@@ -462,13 +470,14 @@ pub enum InterfaceEventStream {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct InterfaceEventIdentity {
     pub stream: InterfaceEventStream,
     pub sequence: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum InterfaceEventPayload {
     SnapshotReconciled {
         operation: InterfaceOperation,
@@ -489,24 +498,56 @@ pub enum InterfaceEventPayload {
     },
 }
 
+impl InterfaceEventPayload {
+    pub const fn stream(&self) -> InterfaceEventStream {
+        match self {
+            Self::SnapshotReconciled { .. } => InterfaceEventStream::NodeState,
+            Self::OperationStarted { .. }
+            | Self::OperationFinished { .. }
+            | Self::OperationRejected { .. } => InterfaceEventStream::OperationLifecycle,
+            Self::PermissionRequested { .. } => InterfaceEventStream::Audit,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "RawInterfaceEvent", into = "RawInterfaceEvent")]
 pub struct InterfaceEvent {
-    pub schema_version: InterfaceSchemaVersion,
-    pub identity: InterfaceEventIdentity,
-    pub payload: InterfaceEventPayload,
+    schema_version: InterfaceSchemaVersion,
+    identity: InterfaceEventIdentity,
+    payload: InterfaceEventPayload,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawInterfaceEvent {
+    schema_version: InterfaceSchemaVersion,
+    identity: InterfaceEventIdentity,
+    payload: InterfaceEventPayload,
 }
 
 impl InterfaceEvent {
-    pub fn new(
-        stream: InterfaceEventStream,
-        sequence: u64,
-        payload: InterfaceEventPayload,
-    ) -> Self {
+    pub fn new(sequence: u64, payload: InterfaceEventPayload) -> Self {
         Self {
             schema_version: InterfaceSchemaVersion::current(),
-            identity: InterfaceEventIdentity { stream, sequence },
+            identity: InterfaceEventIdentity {
+                stream: payload.stream(),
+                sequence,
+            },
             payload,
         }
+    }
+
+    pub fn schema_version(&self) -> &InterfaceSchemaVersion {
+        &self.schema_version
+    }
+
+    pub const fn identity(&self) -> InterfaceEventIdentity {
+        self.identity
+    }
+
+    pub const fn payload(&self) -> &InterfaceEventPayload {
+        &self.payload
     }
 
     pub fn authorizes_action(&self) -> bool {
@@ -514,128 +555,27 @@ impl InterfaceEvent {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
+impl TryFrom<RawInterfaceEvent> for InterfaceEvent {
+    type Error = InterfaceContractError;
 
-    fn read_operation() -> InterfaceOperation {
-        InterfaceOperation::new(InterfaceOperationId::NodeEvidenceRead)
+    fn try_from(value: RawInterfaceEvent) -> Result<Self, Self::Error> {
+        if value.identity.stream != value.payload.stream() {
+            return Err(InterfaceContractError::EventStreamMismatch);
+        }
+        Ok(Self {
+            schema_version: value.schema_version,
+            identity: value.identity,
+            payload: value.payload,
+        })
     }
+}
 
-    #[test]
-    fn request_and_response_use_the_current_schema() {
-        let request = InterfaceRequest::new(read_operation(), ());
-        let response = InterfaceResponse::new(
-            read_operation(),
-            InterfaceOutcome::Success {
-                data: "evidence",
-                provenance: InterfaceProvenance::owner(
-                    InterfaceEvidenceScope::CurrentSnapshot,
-                    InterfaceRedaction::Applied,
-                ),
-                warnings: InterfaceWarnings::empty(),
-            },
-        );
-
-        let request_json = serde_json::to_value(request).unwrap();
-        let response_json = serde_json::to_value(response).unwrap();
-        assert_eq!(
-            request_json["schema_version"],
-            INTERFACE_CONTRACT_SCHEMA_VERSION
-        );
-        assert_eq!(
-            response_json["schema_version"],
-            INTERFACE_CONTRACT_SCHEMA_VERSION
-        );
-    }
-
-    #[test]
-    fn incompatible_schema_is_rejected_during_deserialization() {
-        let payload = json!({
-            "schema_version": "9.0.0",
-            "operation": {
-                "id": "node_evidence_read",
-                "class": "read_only_diagnostic"
-            },
-            "payload": null
-        });
-
-        assert!(serde_json::from_value::<InterfaceRequest<()>>(payload).is_err());
-    }
-
-    #[test]
-    fn operation_class_mismatch_is_rejected() {
-        let payload = json!({
-            "id": "node_evidence_read",
-            "class": "runtime_mutation"
-        });
-
-        assert!(serde_json::from_value::<InterfaceOperation>(payload).is_err());
-    }
-
-    #[test]
-    fn warnings_are_bounded() {
-        let warnings = vec![
-            InterfaceWarning {
-                code: InterfaceWarningCode::PartialEvidence,
-                operator_action: InterfaceOperatorAction::ReviewOwnerEvidence,
-            };
-            MAX_INTERFACE_WARNINGS + 1
-        ];
-
-        assert_eq!(
-            InterfaceWarnings::try_from_items(warnings),
-            Err(InterfaceContractError::TooManyWarnings)
-        );
-    }
-
-    #[test]
-    fn blocked_outcome_has_no_data_even_with_warnings() {
-        let outcome = InterfaceOutcome::<String>::Blocked {
-            problem: InterfaceProblem::new(
-                InterfaceProblemCode::PolicyBlocked,
-                InterfaceOperatorAction::RequestAuthorization,
-            ),
-            provenance: InterfaceProvenance::owner(
-                InterfaceEvidenceScope::NoEvidence,
-                InterfaceRedaction::NotRequired,
-            ),
-            warnings: InterfaceWarnings::empty(),
-        };
-
-        assert_eq!(outcome.status(), InterfaceOutcomeStatus::Blocked);
-        assert!(outcome.data().is_none());
-    }
-
-    #[test]
-    fn mock_provenance_is_explicitly_non_authoritative() {
-        let provenance = InterfaceProvenance::mock(InterfaceEvidenceScope::CurrentSnapshot);
-        assert_eq!(provenance.source(), InterfaceProvenanceSource::MockFixture);
-        assert!(!provenance.is_authoritative());
-
-        let payload = json!({
-            "source": "mock_fixture",
-            "evidence_scope": "current_snapshot",
-            "redaction": "applied",
-            "authoritative": true
-        });
-        assert!(serde_json::from_value::<InterfaceProvenance>(payload).is_err());
-    }
-
-    #[test]
-    fn events_are_ordered_and_cannot_authorize_actions() {
-        let event = InterfaceEvent::new(
-            InterfaceEventStream::OperationLifecycle,
-            7,
-            InterfaceEventPayload::PermissionRequested {
-                operation: InterfaceOperation::new(InterfaceOperationId::AgentPermission),
-            },
-        );
-
-        assert_eq!(event.identity.sequence, 7);
-        assert!(!event.authorizes_action());
-        let serialized = serde_json::to_string(&event).unwrap();
-        assert!(!serialized.contains("authorize"));
+impl From<InterfaceEvent> for RawInterfaceEvent {
+    fn from(value: InterfaceEvent) -> Self {
+        Self {
+            schema_version: value.schema_version,
+            identity: value.identity,
+            payload: value.payload,
+        }
     }
 }

@@ -4,8 +4,8 @@
 
 ```text
 feature: GUI-CLI-SHARED-CONTRACTS-001
-state: LOCAL VALIDATION PASSED
-base: origin/develop at 1409b6fa9cb780d00fb840503c16f83bd35c0405
+state: READY FOR MERGE REVIEW
+base: origin/develop at df6d46295eb42efe4e112758960f6061ec4ec2e2
 branch: feature/gui-cli-shared-contracts-001
 runtime behavior change: none
 dashboard application created: no
@@ -49,8 +49,8 @@ agent_operation -> permission, execution, and cancellation intents
 ```
 
 The operation class is derived from the operation ID when constructed. A
-deserialized payload with a contradictory class is rejected rather than
-silently reclassified.
+deserialized payload with a contradictory class or unknown field is rejected
+rather than silently reclassified.
 
 ## Outcome and Privacy Rules
 
@@ -72,6 +72,8 @@ payload safe by wrapping it.
 ## Event Rules
 
 Events are identified by `(stream, sequence)` and are safe to drop or replay.
+The stream is derived from the event payload during construction, and a
+deserialized stream/payload mismatch is rejected.
 The initial payloads cover snapshot reconciliation, operation lifecycle,
 rejection, and permission-request signals. `InterfaceEvent::authorizes_action`
 is permanently false: a permission-request event is not a grant, and a
@@ -97,18 +99,23 @@ the shared contract boundary.
 
 ## Validation Evidence
 
-Focused tests cover schema version rejection, operation/class consistency,
-warning bounds, blocked-without-data semantics, mock provenance authority, and
-non-authorizing ordered events. `cargo test -p iamine-core`, owner clippy,
-workspace tests, the node build, and the repository guards pass.
+Focused validation passes with 43 existing `iamine-core` unit tests and 10 new
+contract integration tests. The new tests freeze exact request and response
+JSON shapes, the complete operation-to-class mapping, fail-closed schema and
+unknown-field handling, warning bounds, blocked outcomes without data,
+non-authoritative mock provenance, and derived non-authorizing event streams.
 
-The quality-gate summary recorded one transient isolated `iamine-node` failure
-from the concurrent Node Doctor feature (`RuntimeRejected`); the exact test
-rerun passed (`1 passed, 495 filtered out`) and the subsequent full workspace
-run passed all `496` node tests. The unrelated baseline `iamine-network`
-reload observation also passed in the serial gate run. No Proxmox or TS140
-field QA is required because this change does not execute or alter node runtime
-behavior.
+`./scripts/quality-gate.sh` passes with zero required failures and zero new
+warnings. The workspace run passes 1,148 tests, including all 496 node tests;
+workspace Clippy passes with pre-existing warnings outside this feature. The
+optional `cargo audit`, `cargo deny`, and `gitleaks` tools were unavailable and
+are reported as skipped. No Proxmox or TS140 field QA is required because this
+change does not execute or alter node runtime behavior.
+
+Architecture review also moved the contract tests out of the production module
+after the combined file reached 833 lines. The final production module is 581
+lines and its integration test module is 254 lines, both below the 750-line
+review threshold. `main.rs` and `cluster_registry.rs` have zero-line deltas.
 
 ## Next Feature
 
