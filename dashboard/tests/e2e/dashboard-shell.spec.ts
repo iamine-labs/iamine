@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { resolve } from 'node:path';
 
-test('renders the official dashboard preview without browser or layout failures', async ({
+test('runs the dashboard shell without browser or layout failures', async ({
   page,
 }, testInfo) => {
   const consoleErrors: string[] = [];
@@ -11,10 +11,18 @@ test('renders the official dashboard preview without browser or layout failures'
     if (message.type() === 'error') consoleErrors.push(message.text());
   });
   page.on('requestfailed', (request) => {
-    failedRequests.push(`${request.method()} ${request.url()}`);
+    const reason = request.failure()?.errorText ?? 'unknown';
+    failedRequests.push(`${request.method()} ${request.url()} (${reason})`);
   });
 
-  await page.goto('/');
+  const wallpaperLoaded = page.waitForResponse(
+    (response) =>
+      response.url().endsWith('/assets/iamine-network-wallpaper.png') &&
+      response.ok(),
+  );
+  await page.goto('/#/overview');
+  await wallpaperLoaded;
+  await page.waitForLoadState('networkidle');
 
   await expect(page.getByText('Preview data')).toBeVisible();
   await expect(
@@ -23,29 +31,44 @@ test('renders the official dashboard preview without browser or layout failures'
   await expect(page.getByText('NODE-LOCAL-01').first()).toBeVisible();
 
   const viewportWidth = page.viewportSize()?.width ?? 0;
+  const tabKey = testInfo.project.name.startsWith('webkit') ? 'Alt+Tab' : 'Tab';
+
+  await page.keyboard.press(tabKey);
+  await expect(
+    page.getByRole('link', { name: 'Skip to dashboard content' }),
+  ).toBeFocused();
+  await page.keyboard.press(tabKey);
+
   if (viewportWidth <= 760) {
-    await page.keyboard.press(
-      testInfo.project.name.startsWith('webkit') ? 'Alt+Tab' : 'Tab',
-    );
     await expect(
       page.getByRole('button', { name: 'Open navigation' }),
     ).toBeFocused();
     await page.getByRole('button', { name: 'Open navigation' }).click();
-    await page
-      .getByRole('button', { name: 'Open Agents from sidebar' })
-      .click();
+    await page.getByRole('link', { name: 'Open Agents from sidebar' }).click();
   } else {
-    await page.keyboard.press('Tab');
     await expect(
-      page.getByRole('button', { name: 'Open Overview from sidebar' }),
+      page.getByRole('link', { name: 'Open Overview from sidebar' }),
     ).toBeFocused();
-    await page.getByRole('button', { name: 'Agents', exact: true }).click();
+    await page.getByRole('link', { name: 'Agents', exact: true }).click();
   }
 
   await expect(
     page.getByRole('heading', { name: 'Agents', exact: true }),
   ).toBeVisible();
+  await expect(page).toHaveURL(/#\/agents$/);
+  await page.reload();
+  await page.waitForLoadState('networkidle');
+  await expect(
+    page.getByRole('heading', { name: 'Agents', exact: true }),
+  ).toBeVisible();
   await page.getByRole('button', { name: 'Return to Overview' }).click();
+  await expect(page).toHaveURL(/#\/overview$/);
+
+  await expect(
+    page.getByRole('button', {
+      name: 'Notifications unavailable in preview',
+    }),
+  ).toBeDisabled();
 
   const documentWidth = await page.evaluate(
     () => document.documentElement.scrollWidth,

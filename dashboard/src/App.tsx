@@ -1,5 +1,14 @@
-import { DesignSystemPreview } from './preview/DesignSystemPreview';
+import { HashRouter } from 'react-router';
+
+import { DashboardErrorBoundary } from './app/DashboardErrorBoundary';
+import { DashboardShell } from './app/DashboardShell';
 
 export function App() {
-  return <DesignSystemPreview />;
+  return (
+    <DashboardErrorBoundary>
+      <HashRouter>
+        <DashboardShell />
+      </HashRouter>
+    </DashboardErrorBoundary>
+  );
 }
