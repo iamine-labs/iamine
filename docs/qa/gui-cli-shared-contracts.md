@@ -89,6 +89,10 @@ git diff --check: PASS
 6. Workspace Clippy reports historical warnings in `client-rust`, models,
    network, and node code outside the feature diff. They are baseline debt, not
    new regressions. The three optional security tools were unavailable.
+7. The first post-merge architecture guard detected three `unwrap()` calls in
+   the new JSON regression tests. They were replaced with typed test results
+   and error propagation before publishing `develop`; production behavior was
+   unchanged.
 
 ## Core Safety
 

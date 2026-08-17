@@ -13,7 +13,7 @@ fn read_operation() -> InterfaceOperation {
 }
 
 #[test]
-fn request_and_response_use_the_current_schema() {
+fn request_and_response_use_the_current_schema() -> serde_json::Result<()> {
     let request = InterfaceRequest::new(read_operation(), ());
     let response = InterfaceResponse::new(
         read_operation(),
@@ -27,8 +27,8 @@ fn request_and_response_use_the_current_schema() {
         },
     );
 
-    let request_json = serde_json::to_value(request).unwrap();
-    let response_json = serde_json::to_value(response).unwrap();
+    let request_json = serde_json::to_value(request)?;
+    let response_json = serde_json::to_value(response)?;
     assert_eq!(
         request_json,
         json!({
@@ -62,6 +62,7 @@ fn request_and_response_use_the_current_schema() {
             }
         })
     );
+    Ok(())
 }
 
 #[test]
@@ -199,7 +200,7 @@ fn mock_provenance_is_explicitly_non_authoritative() {
 }
 
 #[test]
-fn events_are_ordered_and_cannot_authorize_actions() {
+fn events_are_ordered_and_cannot_authorize_actions() -> serde_json::Result<()> {
     let event = InterfaceEvent::new(
         7,
         InterfaceEventPayload::PermissionRequested {
@@ -210,7 +211,7 @@ fn events_are_ordered_and_cannot_authorize_actions() {
     assert_eq!(event.identity().sequence, 7);
     assert_eq!(event.identity().stream, InterfaceEventStream::Audit);
     assert!(!event.authorizes_action());
-    let serialized = serde_json::to_value(&event).unwrap();
+    let serialized = serde_json::to_value(&event)?;
     assert_eq!(
         serialized,
         json!({
@@ -230,6 +231,7 @@ fn events_are_ordered_and_cannot_authorize_actions() {
         })
     );
     assert!(!serialized.to_string().contains("authorize"));
+    Ok(())
 }
 
 #[test]
