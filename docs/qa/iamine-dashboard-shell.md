@@ -114,3 +114,28 @@ A passing browser mock does not authorize real node connectivity or close any
 control API dependency. Field QA on TS140 or Proxmox is not required because no
 runtime, scheduler, capability, worker, hardware, network, or inference behavior
 changed.
+
+## Post-Merge Validation
+
+```text
+merge commit: 5c05e6571155bc473b18b49cc1c4176650ebbd66
+merge tree: ce6b596fe8fd07e19f832b38b47ff33d8cb3cb76
+source tree: ce6b596fe8fd07e19f832b38b47ff33d8cb3cb76
+tree identity: PASS
+merge conflicts: none
+npm ci: PASS
+npm run format:check: PASS
+npm run lint: PASS
+npm run typecheck: PASS
+npm test -- --run: PASS, 3 files / 7 tests
+npm run build: PASS
+npm run e2e: PASS, 4/4 projects
+core path diff: empty
+origin/develop verification: PASS
+```
+
+Final state:
+
+```text
+MERGED / VALIDATED / CLOSED
+```

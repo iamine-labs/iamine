@@ -4,7 +4,7 @@
 
 ```text
 feature: IAMINE-DASHBOARD-SHELL-001
-state: READY FOR MERGE REVIEW
+state: MERGED / VALIDATED / CLOSED
 branch: feature/iamine-dashboard-shell-001
 base: 0c299833c74b99bed84a1a68a241a6dba528f2e8
 target: develop
@@ -139,6 +139,27 @@ real node connection: none
 real node action: none
 ```
 
-The implementation preserves the approved boundaries and is ready for merge
-review. This checkpoint does not authorize real dashboard integration or a
-merge.
+The checkpoint found that the implementation preserved the approved
+boundaries and was ready for merge review. It did not authorize real dashboard
+integration or a merge by itself.
+
+## Controlled Merge And Closure
+
+```text
+target before merge: 0c299833c74b99bed84a1a68a241a6dba528f2e8
+source: origin/feature/iamine-dashboard-shell-001
+source commit: 5cf2614308434c04e7a306cddc82ca9977d6375e
+merge commit: 5c05e6571155bc473b18b49cc1c4176650ebbd66
+merge tree: ce6b596fe8fd07e19f832b38b47ff33d8cb3cb76
+merge conflicts: none
+runtime behavior changed: no
+field QA executed: no, not required for browser-only mock behavior
+```
+
+The merge tree is byte-identical to the reviewed feature tree. Post-merge
+frontend validation repeated `npm ci`, format, lint, typecheck, 7 unit tests,
+build, and 4/4 Playwright projects successfully. The source quality gate on the
+identical tree passed with zero required failures and zero new warnings.
+
+This closes the routed shell only. Real node data, local authorization, audit,
+and runtime actions remain blocked by their canonical dependency sequence.
