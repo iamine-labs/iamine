@@ -1,0 +1,62 @@
+:root {
+  color-scheme: dark;
+  font-family:
+    Inter,
+    ui-sans-serif,
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+
+  --font-mono: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+
+  --color-canvas: #060f14;
+  --color-surface: #11161d;
+  --color-surface-subtle: #171c24;
+  --color-surface-raised: #0b141c;
+  --color-ink: #e6ecf2;
+  --color-ink-secondary: #a3adba;
+  --color-ink-muted: #758094;
+  --color-border: #232a36;
+  --color-border-strong: #2f3746;
+
+  --color-brand: #ff8a00;
+  --color-brand-hover: #e97900;
+  --color-brand-soft: rgb(255 138 0 / 12%);
+  --color-brand-contrast: #080d14;
+
+  --color-info: #3a8aff;
+  --color-info-soft: rgb(58 138 255 / 12%);
+  --color-success: #22c55e;
+  --color-success-soft: rgb(34 197 94 / 12%);
+  --color-warning: #f59e0b;
+  --color-warning-soft: rgb(245 158 11 / 12%);
+  --color-danger: #ef4444;
+  --color-danger-soft: rgb(239 68 68 / 12%);
+  --color-agent: #8b5cf6;
+  --color-teal: #14b8a6;
+  --color-offline: #64748b;
+  --color-neutral-soft: rgb(100 116 139 / 12%);
+
+  --focus-ring: 0 0 0 3px rgb(58 138 255 / 28%);
+  --shadow-popover: 0 12px 32px rgb(0 0 0 / 36%);
+
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+
+  --control-sm: 32px;
+  --control-md: 44px;
+  --content-max: 1440px;
+}

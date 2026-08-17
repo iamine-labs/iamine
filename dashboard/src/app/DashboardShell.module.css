@@ -1,0 +1,130 @@
+.shell {
+  min-height: 100vh;
+  background: var(--color-canvas);
+}
+
+.main {
+  min-height: calc(100vh - 40px);
+  padding: 88px 24px 24px 96px;
+}
+
+.routeState {
+  width: min(620px, 100%);
+  margin: 0 auto;
+}
+
+.placeholder {
+  display: grid;
+  width: min(620px, 100%);
+  min-height: 420px;
+  align-content: center;
+  justify-items: center;
+  padding: 40px;
+  margin: 0 auto;
+  text-align: center;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.placeholderIcon {
+  display: grid;
+  width: 64px;
+  height: 64px;
+  margin-bottom: 18px;
+  place-items: center;
+  color: var(--color-brand);
+  background: var(--color-brand-soft);
+  border: 1px solid rgb(255 138 0 / 38%);
+  border-radius: var(--radius-md);
+}
+
+.placeholder h2 {
+  margin-top: 12px;
+  font-size: 24px;
+}
+
+.placeholder p {
+  max-width: 470px;
+  margin: 10px 0 22px;
+  color: var(--color-ink-secondary);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.statusbar {
+  position: static;
+  z-index: 18;
+  display: flex;
+  width: calc(100% - 72px);
+  min-height: 40px;
+  align-items: center;
+  gap: 22px;
+  padding: 0 24px;
+  margin-left: 72px;
+  overflow-x: auto;
+  color: var(--color-ink-muted);
+  background: rgb(8 13 20 / 97%);
+  border-top: 1px solid var(--color-border);
+  font-size: 10px;
+  scrollbar-width: none;
+  white-space: nowrap;
+}
+
+.statusbar > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.statusbar strong {
+  color: var(--color-ink-secondary);
+  font-weight: 520;
+}
+
+.statusbar [class*='badge'] {
+  min-height: 18px;
+  padding: 1px 5px;
+  font-size: 9px;
+}
+
+.version {
+  padding: 5px 8px;
+  color: var(--color-ink-secondary);
+  background: var(--color-surface-subtle);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.statusEnd {
+  margin-left: auto;
+}
+
+@media (max-width: 1100px) {
+  .main {
+    padding-right: 18px;
+    padding-left: 90px;
+  }
+}
+
+@media (max-width: 760px) {
+  .main {
+    padding: 80px 12px 58px;
+  }
+
+  .placeholder {
+    min-height: calc(100vh - 152px);
+    padding: 24px;
+  }
+
+  .statusbar {
+    width: 100%;
+    gap: 18px;
+    padding: 0 12px;
+    margin-left: 0;
+  }
+
+  .statusbar > span:nth-child(n + 4) {
+    display: none;
+  }
+}

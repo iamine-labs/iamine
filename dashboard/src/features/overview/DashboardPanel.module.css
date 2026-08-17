@@ -1,0 +1,36 @@
+.panel {
+  min-width: 0;
+  padding: 16px;
+  overflow: hidden;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 18%);
+}
+
+.header {
+  display: flex;
+  min-height: 28px;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.header h2 {
+  color: var(--color-ink);
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 20px;
+  text-transform: uppercase;
+}
+
+.header button {
+  flex: 0 0 auto;
+}
+
+@media (max-width: 760px) {
+  .panel {
+    padding: 14px;
+  }
+}
