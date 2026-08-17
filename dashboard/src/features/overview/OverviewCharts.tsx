@@ -1,4 +1,4 @@
-import styles from './PreviewCharts.module.css';
+import styles from './OverviewCharts.module.css';
 
 interface SparklineProps {
   ariaLabel: string;
@@ -7,12 +7,13 @@ interface SparklineProps {
 }
 
 export function Sparkline({ ariaLabel, color, points }: SparklineProps) {
-  const maximum = Math.max(...points);
-  const minimum = Math.min(...points);
+  const visiblePoints = points.length > 0 ? points : [0];
+  const maximum = Math.max(...visiblePoints);
+  const minimum = Math.min(...visiblePoints);
   const range = Math.max(maximum - minimum, 1);
-  const coordinates = points
+  const coordinates = visiblePoints
     .map((point, index) => {
-      const x = (index / Math.max(points.length - 1, 1)) * 100;
+      const x = (index / Math.max(visiblePoints.length - 1, 1)) * 100;
       const y = 32 - ((point - minimum) / range) * 26;
       return `${x},${y}`;
     })
@@ -33,14 +34,23 @@ export function Sparkline({ ariaLabel, color, points }: SparklineProps) {
 
 interface DonutChartProps {
   total: number;
+  completed: number;
+  pending: number;
+  failed: number;
 }
 
-export function DonutChart({ total }: DonutChartProps) {
+export function DonutChart({
+  total,
+  completed,
+  pending,
+  failed,
+}: DonutChartProps) {
   const radius = 34;
   const circumference = 2 * Math.PI * radius;
-  const complete = circumference * 0.72;
-  const pending = circumference * 0.16;
-  const failed = circumference * 0.04;
+  const unit = total > 0 ? circumference / total : 0;
+  const completeArc = completed * unit;
+  const pendingArc = pending * unit;
+  const failedArc = failed * unit;
 
   return (
     <div className={styles.donutWrap}>
@@ -48,7 +58,7 @@ export function DonutChart({ total }: DonutChartProps) {
         className={styles.donut}
         viewBox="0 0 84 84"
         role="img"
-        aria-label={`${total} sample inferences: 72 percent completed, 16 percent pending, 4 percent failed`}
+        aria-label={`${total} sample inferences: ${completed} completed, ${pending} pending, ${failed} failed`}
       >
         <circle className={styles.track} cx="42" cy="42" r={radius} />
         <circle
@@ -56,23 +66,23 @@ export function DonutChart({ total }: DonutChartProps) {
           cx="42"
           cy="42"
           r={radius}
-          strokeDasharray={`${complete} ${circumference - complete}`}
+          strokeDasharray={`${completeArc} ${circumference - completeArc}`}
         />
         <circle
           className={styles.pending}
           cx="42"
           cy="42"
           r={radius}
-          strokeDasharray={`${pending} ${circumference - pending}`}
-          strokeDashoffset={-complete}
+          strokeDasharray={`${pendingArc} ${circumference - pendingArc}`}
+          strokeDashoffset={-completeArc}
         />
         <circle
           className={styles.failed}
           cx="42"
           cy="42"
           r={radius}
-          strokeDasharray={`${failed} ${circumference - failed}`}
-          strokeDashoffset={-(complete + pending)}
+          strokeDasharray={`${failedArc} ${circumference - failedArc}`}
+          strokeDashoffset={-(completeArc + pendingArc)}
         />
       </svg>
       <div className={styles.donutValue}>

@@ -1,87 +1,87 @@
 import { Clock3, MoreHorizontal } from 'lucide-react';
 
-import { Button, IconButton } from '../components';
+import { Button, IconButton } from '../../components';
+import type { OverviewViewModel } from '../../contracts/view-models/overview';
 import { DashboardPanel } from './DashboardPanel';
-import { activityEntries, systemLogs, trafficSeries } from './fixtures';
-import { DonutChart, Sparkline } from './PreviewCharts';
+import { DonutChart, Sparkline } from './OverviewCharts';
 import styles from './OverviewPanels.module.css';
 
-export function OverviewTelemetry() {
+interface OverviewTelemetryProps {
+  viewModel: OverviewViewModel;
+}
+
+export function OverviewTelemetry({ viewModel }: OverviewTelemetryProps) {
+  const { activity, inferences, logs, nodeStatus, traffic } = viewModel;
+
   return (
     <>
       <DashboardPanel
         title="Node status"
         action={
-          <Button size="small" variant="quiet">
+          <Button size="small" variant="quiet" disabled>
             View all
           </Button>
         }
       >
         <div className={styles.nodeStatusGrid}>
-          <div>
-            <strong className={styles.greenText}>21</strong>
-            <span>Online</span>
-          </div>
-          <div>
-            <strong className={styles.copperText}>2</strong>
-            <span>Degraded</span>
-          </div>
-          <div>
-            <strong className={styles.blueText}>1</strong>
-            <span>Maintenance</span>
-          </div>
-          <div>
-            <strong className={styles.redText}>0</strong>
-            <span>Offline</span>
-          </div>
+          {nodeStatus.items.map((item) => (
+            <div key={item.label}>
+              <strong className={styles[`${item.tone}Text`]}>
+                {item.value}
+              </strong>
+              <span>{item.label}</span>
+            </div>
+          ))}
         </div>
       </DashboardPanel>
 
       <DashboardPanel
         title="Network traffic"
         action={
-          <Button size="small" variant="quiet">
-            24h
-          </Button>
+          <span className={styles.periodLabel}>{traffic.periodLabel}</span>
         }
       >
         <div className={styles.trafficSummary}>
-          <span>
-            Inbound <strong>2.34 TB</strong>
-          </span>
-          <span>
-            Outbound <strong>1.78 TB</strong>
-          </span>
+          {traffic.totals.map((total) => (
+            <span key={total.label}>
+              {total.label} <strong>{total.value}</strong>
+            </span>
+          ))}
         </div>
         <div className={styles.trafficChart}>
           <Sparkline
             ariaLabel="Inbound traffic sample trend"
             color="green"
-            points={trafficSeries.inbound}
+            points={traffic.inbound}
           />
           <Sparkline
             ariaLabel="Outbound traffic sample trend"
             color="copper"
-            points={trafficSeries.outbound}
+            points={traffic.outbound}
           />
         </div>
       </DashboardPanel>
 
-      <DashboardPanel title="Inferences (24h)">
+      <DashboardPanel title={`Inferences (${inferences.periodLabel})`}>
         <div className={styles.inferenceContent}>
-          <DonutChart total={1264} />
+          <DonutChart
+            total={inferences.total}
+            completed={inferences.completed}
+            pending={inferences.pending}
+            failed={inferences.failed}
+          />
           <dl>
             <div>
               <dt className={styles.greenText}>Completed</dt>
-              <dd>1,048</dd>
+              <dd>{inferences.completed.toLocaleString()}</dd>
             </div>
             <div>
               <dt className={styles.copperText}>Pending</dt>
-              <dd>164</dd>
+              <dd>{inferences.pending.toLocaleString()}</dd>
             </div>
             <div>
               <dt className={styles.redText}>Failed</dt>
-              <dd>52</dd>
+              <dd>{inferences.failed.toLocaleString()}</dd>
             </div>
           </dl>
         </div>
@@ -91,13 +91,13 @@ export function OverviewTelemetry() {
         className={styles.activityPanel}
         title="Recent activity"
         action={
-          <Button size="small" variant="quiet">
+          <Button size="small" variant="quiet" disabled>
             View history
           </Button>
         }
       >
         <ol className={styles.activityList}>
-          {activityEntries.map((entry) => (
+          {activity.map((entry) => (
             <li key={`${entry.time}-${entry.event}`}>
               <time>{entry.time}</time>
               <Clock3 size={13} aria-hidden="true" />
@@ -115,11 +115,12 @@ export function OverviewTelemetry() {
             size="small"
             label="System log preview options"
             icon={<MoreHorizontal size={16} />}
+            disabled
           />
         }
       >
         <div className={styles.logList} role="log" aria-label="Preview logs">
-          {systemLogs.map((line) => (
+          {logs.map((line) => (
             <code key={line}>{line}</code>
           ))}
         </div>

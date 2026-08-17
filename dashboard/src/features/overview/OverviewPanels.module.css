@@ -351,6 +351,11 @@
   font-size: 10px;
 }
 
+.periodLabel {
+  color: var(--color-ink-muted);
+  font-size: 11px;
+}
+
 .trafficSummary strong {
   display: block;
   margin-top: 4px;

@@ -14,12 +14,12 @@ function renderShell(route = '/overview') {
 }
 
 describe('DashboardShell', () => {
-  it('keeps mock provenance visible and navigates through stable routes', () => {
+  it('keeps mock provenance visible and navigates through stable routes', async () => {
     renderShell();
 
     expect(screen.getByText('Preview data')).toBeVisible();
     expect(
-      screen.getByRole('heading', { name: 'System operational' }),
+      await screen.findByRole('heading', { name: 'System operational' }),
     ).toBeVisible();
     expect(screen.getAllByText('NODE-LOCAL-01')[0]).toBeVisible();
 
@@ -30,7 +30,7 @@ describe('DashboardShell', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Return to Overview' }));
     expect(
-      screen.getByRole('heading', { name: 'System operational' }),
+      await screen.findByRole('heading', { name: 'System operational' }),
     ).toBeVisible();
   });
 
@@ -54,6 +54,7 @@ describe('DashboardShell', () => {
 
   it('has no detectable structural accessibility violations', async () => {
     const { container } = renderShell();
+    await screen.findByRole('heading', { name: 'System operational' });
     const results = await axe.run(container, {
       rules: { 'color-contrast': { enabled: false } },
     });
