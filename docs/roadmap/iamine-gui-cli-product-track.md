@@ -6,7 +6,7 @@
 track: IAMINE-GUI-CLI-PRODUCT-TRACK
 state: PROPOSED
 milestone placement: unresolved by design
-implementation authorization: IAMINE-DASHBOARD-DESIGN-SYSTEM-001 authorized on 2026-08-16
+implementation authorization: none; IAMINE-DASHBOARD-DESIGN-SYSTEM-001 is closed
 parallel implementation boundary: typed visual mocks only
 ```
 
@@ -38,7 +38,7 @@ remains a non-authoritative mock surface without node connectivity.
 | NODE-SERVICE-LIFECYCLE-001 | PROPOSED | Stable node lifecycle and recovery semantics. |
 | HEADLESS-NODE-MODE-001 | PROPOSED | Service lifecycle and CLI parity. |
 | NODE-LOCAL-CONTROL-API-001 | PROPOSED | Contract, authorization, validation, and audit gates. |
-| IAMINE-DASHBOARD-DESIGN-SYSTEM-001 | LOCAL VALIDATION PASSED / ARCHITECTURE REVIEW REQUIRED | React, TypeScript, and Vite scaffold; official dark tokens and IAMINE assets; reusable primitives; strict npm lifecycle policy; responsive non-authoritative Overview visual preview. Five unit/component tests and four Playwright projects pass on Mac; real control integration remains blocked. |
+| IAMINE-DASHBOARD-DESIGN-SYSTEM-001 | MERGED / VALIDATED / CLOSED | React, TypeScript, and Vite scaffold; official dark tokens and IAMINE assets; reusable primitives; strict npm lifecycle policy; responsive non-authoritative Overview visual preview. Merge `7bb7de8`; focused post-merge validation PASS on Mac. Real control integration remains blocked. |
 | IAMINE-DASHBOARD-SHELL-001 | PROPOSED | Design system and typed mock adapters. |
 | IAMINE-DASHBOARD-OVERVIEW-MOCK-001 | PROPOSED | Non-authoritative typed fixtures only; no node connection or fictitious endpoint. |
 | IAMINE-DASHBOARD-OVERVIEW-READONLY-INTEGRATION-001 | PROPOSED | Authorized read-only API, shared contracts, local authorization, and audit evidence. |

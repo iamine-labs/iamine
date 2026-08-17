@@ -4,7 +4,7 @@
 
 ```text
 feature: IAMINE-DASHBOARD-DESIGN-SYSTEM-001
-state: LOCAL VALIDATION PASSED / ARCHITECTURE REVIEW REQUIRED
+state: MERGED / VALIDATED / CLOSED
 base: origin/develop at 1409b6fa9cb780d00fb840503c16f83bd35c0405
 branch: feature/iamine-dashboard-design-system-001
 runtime behavior change: none
@@ -175,3 +175,41 @@ into production routes.
 - Browser evidence was collected on the development Mac only.
 - Remote field QA is deferred until a feature changes runtime or adds real node
   integration.
+
+## Controlled Merge And Closure
+
+```text
+target before merge: 1409b6fa9cb780d00fb840503c16f83bd35c0405
+source: origin/feature/iamine-dashboard-design-system-001
+source commit: 677901ae427912224395354c8d6e4c57e1961878
+merge commit: 7bb7de8c6d9464482fd863d5fdeee00c8207275a
+merge tree: 9ee0a0feebdf286a3e05e8c948d1d88c9805d9b3
+merge conflicts: none
+runtime behavior changed: no
+field QA executed: no, not required for the mock-only browser surface
+```
+
+The merge tree is byte-identical to the reviewed source tree because
+`origin/develop` had not moved from the feature base.
+
+Focused post-merge validation:
+
+```text
+npm ci: PASS, 245 packages from lockfile
+npm run format:check: PASS
+npm run lint: PASS
+npm run typecheck: PASS
+npm test -- --run: PASS, 3 files / 5 tests
+npm run build: PASS
+npm run e2e: PASS, 4 Playwright projects
+source quality gate on the identical tree: PASS WITH WARNINGS
+required failures: 0
+new warnings: 0
+optional tools skipped: cargo-audit, cargo-deny, gitleaks
+workspace tests: 1138 passed
+```
+
+This closure approves the design-system foundation and non-authoritative
+Overview visual preview only. It does not close
+`IAMINE-DASHBOARD-SHELL-001`, authorize a real node connection, or convert any
+preview control into a runtime action.
