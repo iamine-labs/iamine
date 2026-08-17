@@ -1,0 +1,89 @@
+.sparkline {
+  width: 100%;
+  height: 36px;
+  overflow: visible;
+}
+
+.sparkline polyline {
+  fill: none;
+  stroke: currentcolor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+.blue {
+  color: var(--color-info);
+}
+
+.copper {
+  color: var(--color-brand);
+}
+
+.green {
+  color: var(--color-success);
+}
+
+.red {
+  color: var(--color-danger);
+}
+
+.donutWrap {
+  position: relative;
+  width: 108px;
+  height: 108px;
+  flex: 0 0 108px;
+}
+
+.donut {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.donut circle {
+  fill: none;
+  stroke-width: 7;
+}
+
+.track {
+  stroke: var(--color-border);
+}
+
+.complete,
+.pending,
+.failed {
+  stroke-linecap: butt;
+}
+
+.complete {
+  stroke: var(--color-success);
+}
+
+.pending {
+  stroke: var(--color-brand);
+}
+
+.failed {
+  stroke: var(--color-danger);
+}
+
+.donutValue {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+}
+
+.donutValue strong {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.donutValue span {
+  margin-top: 4px;
+  color: var(--color-ink-muted);
+  font-size: 10px;
+}

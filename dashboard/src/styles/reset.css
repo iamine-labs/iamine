@@ -55,6 +55,6 @@ p {
 }
 
 ::selection {
-  color: var(--color-ink);
+  color: var(--color-brand-contrast);
   background: var(--color-brand-soft);
 }

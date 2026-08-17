@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { resolve } from 'node:path';
 
-test('renders the design system without browser or layout failures', async ({
+test('renders the official dashboard preview without browser or layout failures', async ({
   page,
 }, testInfo) => {
   const consoleErrors: string[] = [];
@@ -16,38 +16,50 @@ test('renders the design system without browser or layout failures', async ({
 
   await page.goto('/');
 
-  await expect(page.getByLabel('IAMINE')).toBeVisible();
   await expect(page.getByText('Preview data')).toBeVisible();
   await expect(
-    page.getByRole('heading', { name: 'Design system review' }),
+    page.getByRole('heading', { name: 'System operational' }),
   ).toBeVisible();
-
-  await page.keyboard.press(
-    testInfo.project.name.startsWith('webkit') ? 'Alt+Tab' : 'Tab',
-  );
-  await expect(
-    page.getByRole('button', { name: 'Preview notifications' }),
-  ).toBeFocused();
-
-  await page.getByRole('button', { name: 'Compact' }).click();
-  await expect(page.getByRole('button', { name: 'Compact' })).toHaveAttribute(
-    'aria-pressed',
-    'true',
-  );
+  await expect(page.getByText('NODE-LOCAL-01').first()).toBeVisible();
 
   const viewportWidth = page.viewportSize()?.width ?? 0;
+  if (viewportWidth <= 760) {
+    await page.keyboard.press(
+      testInfo.project.name.startsWith('webkit') ? 'Alt+Tab' : 'Tab',
+    );
+    await expect(
+      page.getByRole('button', { name: 'Open navigation' }),
+    ).toBeFocused();
+    await page.getByRole('button', { name: 'Open navigation' }).click();
+    await page
+      .getByRole('button', { name: 'Open Agents from sidebar' })
+      .click();
+  } else {
+    await page.keyboard.press('Tab');
+    await expect(
+      page.getByRole('button', { name: 'Open Overview from sidebar' }),
+    ).toBeFocused();
+    await page.getByRole('button', { name: 'Agents', exact: true }).click();
+  }
+
+  await expect(
+    page.getByRole('heading', { name: 'Agents', exact: true }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Return to Overview' }).click();
+
   const documentWidth = await page.evaluate(
     () => document.documentElement.scrollWidth,
   );
   expect(documentWidth).toBeLessThanOrEqual(viewportWidth);
 
   const topbar = await page.locator('header').boundingBox();
-  const main = await page.locator('main').boundingBox();
+  const firstPanel = await page
+    .getByRole('heading', { name: 'System operational' })
+    .locator('..')
+    .boundingBox();
   expect(topbar).not.toBeNull();
-  expect(main).not.toBeNull();
-  expect((main?.y ?? 0) + 1).toBeGreaterThanOrEqual(
-    (topbar?.y ?? 0) + (topbar?.height ?? 0),
-  );
+  expect(firstPanel).not.toBeNull();
+  expect(firstPanel?.y ?? 0).toBeGreaterThanOrEqual(topbar?.height ?? 0);
 
   expect(consoleErrors).toEqual([]);
   expect(failedRequests).toEqual([]);

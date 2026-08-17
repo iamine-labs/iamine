@@ -11,10 +11,26 @@ runtime behavior changed: no
 field QA required: no
 ```
 
-The implementation adds a browser-only design-system preview under
-`dashboard/`, documentation, roadmap state, and generated-artifact ignore
-rules. It does not modify Rust source, node startup, P2P, scheduler, model,
-agent, or inference behavior.
+The implementation adds a browser-only design-system and official Overview
+visual preview under `dashboard/`, two IAMINE-owned image assets,
+documentation, roadmap state, and generated-artifact ignore rules. It does not
+modify Rust source, node startup, P2P, scheduler, model, agent, or inference
+behavior.
+
+## Official Asset Integrity
+
+The three dashboard specification sheets were inspected at `1055x1491` and
+used as the layout, token, component, and responsive source of truth. Two
+separate official brand assets were selected for runtime use and copied without
+modification:
+
+| Runtime asset | Source SHA-256 | Repository SHA-256 | Result |
+| --- | --- | --- | --- |
+| `iamine-mark.png` | `a12514d84a44a9783b1cf1b1caebff424fc23db67989089bd8d90634b6b56bd1` | `a12514d84a44a9783b1cf1b1caebff424fc23db67989089bd8d90634b6b56bd1` | PASS |
+| `iamine-network-wallpaper.png` | `32cf7bf5ada4689a6ee8fca206357dd4eb2a904ae1c962039961e6f8d72271ac` | `32cf7bf5ada4689a6ee8fca206357dd4eb2a904ae1c962039961e6f8d72271ac` | PASS |
+
+Runtime weights are 232 KiB and 1.5 MiB respectively. Marketing compositions
+and design sheets are excluded from the application bundle.
 
 ## Toolchain Preflight
 
@@ -57,9 +73,9 @@ All commands used the pinned Node.js and npm versions.
 Production build sizes:
 
 ```text
-index.html: 0.50 kB
-CSS: 14.51 kB, 3.56 kB gzip
-JavaScript: 206.34 kB, 65.13 kB gzip
+index.html: 0.49 kB
+CSS: 22.59 kB, 5.22 kB gzip
+JavaScript: 215.41 kB, 67.66 kB gzip
 ```
 
 ## Browser Matrix
@@ -74,6 +90,7 @@ JavaScript: 206.34 kB, 65.13 kB gzip
 Each project verified:
 
 - brand and `Preview data` indicator visibility;
+- local desktop navigation and the mobile drawer path;
 - no browser console errors;
 - no failed network requests;
 - no document-width overflow or incoherent layout overlap;
@@ -107,6 +124,17 @@ environment limits, not product failures.
    has a region role, accessible name, and tab stop.
 7. macOS WebKit focus navigation required the platform `Alt+Tab` path. The E2E
    check now exercises the correct browser behavior.
+8. The first official-theme lint pass contained one unused icon import. It was
+   removed without suppressing the rule.
+9. Automated accessibility checks rejected labels on roleless brand, avatar,
+   and online-indicator elements. The decorative mark now uses visible text,
+   while the avatar and indicator have explicit image roles.
+10. The mobile status bar was horizontally scrollable but not focusable. It is
+    now a labeled keyboard-focusable region.
+11. A sticky status bar appeared between modules in full-page mobile evidence.
+    It now participates in document flow and cannot obscure content.
+12. The initial E2E navigation selectors matched both sidebar and topbar items.
+    Exact accessible names now make the harness deterministic.
 
 ## Repository Gate
 

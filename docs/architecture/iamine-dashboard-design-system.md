@@ -48,10 +48,13 @@ dashboard/src/styles/      reset, typography, layout, and semantic tokens
 dashboard/src/preview/     deterministic fixtures and preview composition
 dashboard/src/test/        shared unit-test setup
 dashboard/tests/e2e/       browser acceptance evidence
+dashboard/public/assets/   reviewed IAMINE-owned local brand assets
 ```
 
-The application entry point only mounts the design-system preview. Components
-remain independent of IAMINE runtime policy and transport types.
+The application entry point only mounts the official Overview visual preview.
+Its shell, navigation, charts, fixture panels, and status bar are local React
+state. Components remain independent of IAMINE runtime policy and transport
+types.
 
 ## Component Surface
 
@@ -66,6 +69,10 @@ The initial component set provides:
 - determinate progress;
 - responsive data tables with a keyboard-focusable scroll region;
 - loading, empty, unavailable, and error state panels.
+- 72px desktop sidebar, 64px top navigation, and 24px content spacing;
+- responsive Overview composition for operations, resources, active agent,
+  inference queue, nodes, traffic, inference totals, activity, and logs;
+- local-only navigation placeholders that cannot imply real integration.
 
 Every reusable component accepts presentation data only. No component decides
 node readiness, eligibility, authorization, scheduler policy, model policy, or
@@ -73,11 +80,24 @@ agent execution behavior.
 
 ## Visual Contract
 
+The project-owner-provided dashboard references are the visual source of truth.
+The implementation uses the documented official tokens:
+
+```text
+canvas: #060f14
+surface: #11161d
+copper/action: #ff8a00
+healthy: #22c55e
+information: #3a8aff
+agent: #8b5cf6
+error: #ef4444
+```
+
 The design system is intended for a quiet operational interface:
 
-- neutral canvas and surfaces with distinct green, blue, amber, and red
-  semantic roles;
-- no gradients, decorative background shapes, remote fonts, or remote images;
+- dark neutral canvas and surfaces with distinct copper, green, blue, purple,
+  and red semantic roles;
+- no CSS gradient decoration, remote fonts, or remote images;
 - card radii no greater than 8px;
 - stable responsive dimensions without viewport-scaled typography;
 - visible keyboard focus and semantic landmarks;
@@ -86,6 +106,19 @@ The design system is intended for a quiet operational interface:
 
 The preview identifies itself as `Preview data` at every supported viewport.
 Fixtures are deterministic and cannot invoke real node actions.
+
+## Official Assets
+
+Two project-owner-provided assets are copied byte-for-byte into the dashboard:
+
+| Asset | SHA-256 | Purpose |
+| --- | --- | --- |
+| `iamine-mark.png` | `a12514d84a44a9783b1cf1b1caebff424fc23db67989089bd8d90634b6b56bd1` | Sidebar and mobile brand mark |
+| `iamine-network-wallpaper.png` | `32cf7bf5ada4689a6ee8fca206357dd4eb2a904ae1c962039961e6f8d72271ac` | Operational network preview panel |
+
+The social banner, profile compositions, lab badge, and specification sheets
+are not shipped at runtime. They are marketing or design-reference material,
+not dashboard primitives.
 
 ## Security And Integration Boundary
 
@@ -115,9 +148,10 @@ GUI-CLI-SHARED-CONTRACTS-001
 -> IAMINE-DASHBOARD-OVERVIEW-READONLY-INTEGRATION-001
 ```
 
-The next visual feature, `IAMINE-DASHBOARD-SHELL-001`, may compose these
-components with typed visual mocks. It must preserve the same non-authoritative
-boundary and must not introduce a fictitious endpoint.
+This feature renders the intended shell appearance only to validate the design
+system. It does not close `IAMINE-DASHBOARD-SHELL-001`. That feature still owns
+production composition, route semantics, error boundaries, and shell lifecycle
+without introducing a fictitious endpoint.
 
 ## Architecture Maintenance
 
@@ -125,13 +159,14 @@ boundary and must not introduce a fictitious endpoint.
 iamine-node/src/main.rs: 4935 -> 4935 lines
 iamine-node/src/cluster_registry.rs: 862 -> 862 lines
 dashboard/src/App.tsx: 5 lines
-largest preview TypeScript module: 267 lines
-largest preview CSS module: 280 lines
+largest preview TypeScript module: 196 lines
+largest preview CSS module: 494 lines
 ```
 
-No Rust module grew and no runtime ownership moved. The preview is intentionally
-separate from reusable components so the shell can replace it without carrying
-fixture composition into production routes.
+No Rust module grew and no runtime ownership moved. Navigation, summary panels,
+telemetry panels, charts, fixtures, and shell composition are separate modules.
+The shell feature can replace preview wiring without carrying fixture policy
+into production routes.
 
 ## Known Limits
 

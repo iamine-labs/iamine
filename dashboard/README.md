@@ -1,7 +1,7 @@
 # IAMINE Dashboard
 
 This directory contains IAMINE's local dashboard frontend. The current surface
-is the non-authoritative design-system preview created by
+is the non-authoritative official Overview visual preview created by
 `IAMINE-DASHBOARD-DESIGN-SYSTEM-001`; it does not connect to a node, a Local
 Control API, P2P, the filesystem, or a shell.
 
@@ -35,6 +35,7 @@ npm audit --audit-level=moderate
 - `src/styles/` owns global tokens, reset, and typography foundations.
 - `src/preview/` owns deterministic preview fixtures and composition only.
 - `tests/e2e/` owns browser, responsive, keyboard, and accessibility evidence.
+- `public/assets/` contains reviewed IAMINE-owned runtime image assets.
 
 Rust remains the source of truth for IAMINE domain behavior. Future dashboard
 features must consume reviewed typed contracts through adapters and must not

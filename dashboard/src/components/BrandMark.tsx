@@ -1,5 +1,3 @@
-import { Network } from 'lucide-react';
-
 import styles from './BrandMark.module.css';
 
 interface BrandMarkProps {
@@ -8,9 +6,9 @@ interface BrandMarkProps {
 
 export function BrandMark({ compact = false }: BrandMarkProps) {
   return (
-    <div className={styles.mark} aria-label="IAMINE">
+    <div className={styles.mark} data-brand="iamine">
       <span className={styles.symbol} aria-hidden="true">
-        <Network size={20} strokeWidth={2} />
+        <img src="/assets/iamine-mark.png" alt="" />
       </span>
       {!compact && <span className={styles.name}>IAMINE</span>}
     </div>
