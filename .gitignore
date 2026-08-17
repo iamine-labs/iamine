@@ -30,3 +30,11 @@ semantic_logs.json
 *.ndjson
 /logs/
 /iamine-node/logs/
+
+# Dashboard generated artifacts
+/dashboard/node_modules/
+/dashboard/dist/
+/dashboard/coverage/
+/dashboard/playwright-report/
+/dashboard/test-results/
+/dashboard/*.tsbuildinfo

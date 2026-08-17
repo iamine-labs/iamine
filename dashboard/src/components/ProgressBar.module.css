@@ -1,0 +1,47 @@
+.root {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-2);
+}
+
+.header {
+  display: flex;
+  min-width: 0;
+  justify-content: space-between;
+  gap: var(--space-3);
+  color: var(--color-ink-secondary);
+  font-size: 12px;
+}
+
+.value {
+  flex: 0 0 auto;
+  color: var(--color-ink);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.track {
+  height: 7px;
+  overflow: hidden;
+  background: var(--color-surface-subtle);
+  border-radius: 999px;
+}
+
+.fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+}
+
+.brand {
+  background: var(--color-brand);
+}
+
+.info {
+  background: var(--color-info);
+}
+
+.warning {
+  background: var(--color-warning);
+}

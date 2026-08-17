@@ -1,0 +1,31 @@
+.mark {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  gap: 10px;
+}
+
+.symbol {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  place-items: center;
+  overflow: hidden;
+}
+
+.symbol img {
+  width: 42px;
+  max-width: none;
+  height: 42px;
+  object-fit: cover;
+}
+
+.name {
+  overflow: hidden;
+  color: var(--color-ink);
+  font-size: 18px;
+  font-weight: 650;
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+}
