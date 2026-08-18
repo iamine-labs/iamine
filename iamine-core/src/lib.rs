@@ -1,3 +1,4 @@
+pub mod dashboard_local_authorization;
 pub mod errors;
 pub mod interface_contracts;
 pub mod local_control_api_contract;
@@ -10,6 +11,14 @@ pub mod signed_autoupdate;
 pub mod supply_chain_security;
 pub mod task;
 
+pub use dashboard_local_authorization::{
+    LocalAuthorizationAuditHandoff, LocalAuthorizationAuditKind, LocalAuthorizationAuthority,
+    LocalAuthorizationConsumption, LocalAuthorizationDecision, LocalAuthorizationDenial,
+    LocalAuthorizationDenialCode, LocalAuthorizationError, LocalAuthorizationEvidence,
+    LocalAuthorizationIntent, LocalAuthorizationPolicy, LocalSessionClient, LocalSessionEvidence,
+    LocalSessionIssuance, LocalSessionIssuer, LOCAL_AUTHORIZATION_SCHEMA_VERSION,
+    MAX_LOCAL_AUTHORIZATION_REPLAY_RECORDS, MAX_LOCAL_AUTHORIZATION_SESSIONS,
+};
 pub use errors::{IaMineError, IaMineResult};
 pub use interface_contracts::{
     InterfaceContractError, InterfaceEvent, InterfaceEventIdentity, InterfaceEventPayload,

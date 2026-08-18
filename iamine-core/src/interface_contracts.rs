@@ -83,7 +83,7 @@ pub enum InterfaceOperationId {
 }
 
 impl InterfaceOperationId {
-    pub fn class(self) -> InterfaceOperationClass {
+    pub const fn class(self) -> InterfaceOperationClass {
         match self {
             Self::NodeEvidenceRead
             | Self::HardwareProfileRead
@@ -132,7 +132,7 @@ impl InterfaceOperation {
         self.id
     }
 
-    pub fn class(self) -> InterfaceOperationClass {
+    pub const fn class(self) -> InterfaceOperationClass {
         self.class
     }
 }
