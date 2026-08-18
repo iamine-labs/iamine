@@ -6,7 +6,7 @@
 track: IAMINE-GUI-CLI-PRODUCT-TRACK
 state: PROPOSED
 milestone placement: unresolved by design
-implementation authorization: none; next feature requires its own architecture start
+implementation authorization: NODE-LOCAL-CONTROL-API-CONTRACT-001 only
 parallel implementation boundary: typed visual mocks only
 ```
 
@@ -33,7 +33,7 @@ remains a non-authoritative mock surface without node connectivity.
 | DASHBOARD-FRONTEND-PREFLIGHT-001 | CLOSED | Selected the canonical React, TypeScript, Vite, npm, validation, layout, contract, packaging, and target strategy without creating the frontend; merge `396389f`, focused post-merge validation PASS with accepted baseline/environment exceptions. |
 | GUI-CLI-INTERFACE-ARCHITECTURE-001 | CLOSED | Defined interface ownership and shared-core boundaries; merge `ff87b25`, focused post-merge validation PASS, no field QA required. |
 | GUI-CLI-SHARED-CONTRACTS-001 | CLOSED | Shared typed contracts merged as `ee488b0`; 1,148 workspace tests and architecture guards PASS, no runtime or dashboard integration. |
-| NODE-LOCAL-CONTROL-API-CONTRACT-001 | PROPOSED | Shared contracts and explicit local threat model. |
+| NODE-LOCAL-CONTROL-API-CONTRACT-001 | READY FOR MERGE REVIEW | Loopback-only HTTP profile, strict shared-contract envelopes, bounded ingress/response validation, non-authorizing local authorization/replay/audit handoffs, and explicit local threat model; 1,157 workspace tests PASS, no server or dashboard integration. |
 | DASHBOARD-LOCAL-AUTHORIZATION-001 | PROPOSED | Local Control API contract and audit requirements. |
 | NODE-SERVICE-LIFECYCLE-001 | PROPOSED | Stable node lifecycle and recovery semantics. |
 | HEADLESS-NODE-MODE-001 | PROPOSED | Service lifecycle and CLI parity. |

@@ -1,5 +1,6 @@
 pub mod errors;
 pub mod interface_contracts;
+pub mod local_control_api_contract;
 pub mod message;
 pub mod node;
 pub mod node_upgrade_rollback;
@@ -18,6 +19,16 @@ pub use interface_contracts::{
     InterfaceRedaction, InterfaceRequest, InterfaceResponse, InterfaceSchemaVersion,
     InterfaceWarning, InterfaceWarningCode, InterfaceWarnings, INTERFACE_CONTRACT_SCHEMA_VERSION,
     MAX_INTERFACE_WARNINGS,
+};
+pub use local_control_api_contract::{
+    validate_local_control_response_size, LocalControlAuditRequirement,
+    LocalControlAuthorizationHandoff, LocalControlAuthorizationRequirement, LocalControlClient,
+    LocalControlContractError, LocalControlIngress, LocalControlMediaType, LocalControlMethod,
+    LocalControlOrigin, LocalControlPeer, LocalControlReplayRequirement, LocalControlRequest,
+    LocalControlRequestId, LocalControlResponse, LocalControlRoute, LocalControlSchemaVersion,
+    LocalControlTransport, LocalControlValidatedRequest, LOCAL_CONTROL_API_SCHEMA_VERSION,
+    LOCAL_CONTROL_OPERATION_PATH, MAX_LOCAL_CONTROL_REQUEST_BYTES,
+    MAX_LOCAL_CONTROL_RESPONSE_BYTES,
 };
 pub use message::IaMineMessage;
 pub use node::{NodeCapabilities, NodeReputation};
