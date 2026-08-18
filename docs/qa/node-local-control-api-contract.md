@@ -6,6 +6,9 @@
 branch: feature/node-local-control-api-contract-001
 base: 1170c4a67996d97f757fc18950bfebe4f2ea24e5
 target: develop
+feature commit: ae53c9be565b1ba9904442e598c81af8a84cfad1
+merge commit: 4bb90fdd56874655c484c52a18781890097e4767
+validated tree: 9c7f79fd5f22d170a0563ae27ca628062846a824
 platform: Mac development machine
 runtime behavior changed: no
 field QA: not required for contract-only behavior
@@ -45,7 +48,7 @@ CHECK 4: PASS WITH HARDENING
 CHECK 5: PASS
 CHECK 6: PASS WITH BASELINE WARNINGS
 CHECK 7: PASS
-CHECK 8: READY FOR MERGE REVIEW
+CHECK 8: PASS, CONTROLLED MERGE VALIDATED
 ```
 
 Focused evidence:
@@ -103,6 +106,10 @@ The 9 new integration tests verify:
    Focused strict Clippy for `iamine-core` is clean.
 6. Optional security tools are unavailable. Their checks were skipped and are
    not represented as executed.
+7. A sandboxed post-merge run blocked the daemon Unix socket and four
+   Metal-backed inference cases. The same failures reproduced on the exact
+   base. On the host, the focused failures and the complete merge quality gate
+   passed, classifying the finding as an environment/harness limitation.
 
 ## Core Safety
 
@@ -116,6 +123,11 @@ Fresh `git fetch origin --prune` confirmed `origin/develop` remains at the
 exact base `1170c4a67996d97f757fc18950bfebe4f2ea24e5`. There is no remote
 divergence to merge before handoff.
 
+The controlled merge has parents `1170c4a` and `ae53c9b`; its tree exactly
+matches the validated feature tree. Post-merge `./scripts/quality-gate.sh`
+passed with `required_failures=0`, `warnings=0`, and the three unavailable
+optional tools reported as skipped.
+
 ## Field QA Classification
 
 ```text
@@ -128,7 +140,7 @@ future real Local Control API field QA: required
 ## Recommendation
 
 ```text
-READY FOR ARCHITECTURE MERGE REVIEW
+MERGED / VALIDATED / CLOSED
 ```
 
 This recommendation approves only the contract boundary. It does not approve

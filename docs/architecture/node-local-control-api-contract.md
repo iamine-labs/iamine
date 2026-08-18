@@ -4,9 +4,12 @@
 
 ```text
 feature: NODE-LOCAL-CONTROL-API-CONTRACT-001
-state: READY FOR MERGE REVIEW
+state: MERGED / VALIDATED / CLOSED
 base: origin/develop at 1170c4a67996d97f757fc18950bfebe4f2ea24e5
 branch: feature/node-local-control-api-contract-001
+feature commit: ae53c9be565b1ba9904442e598c81af8a84cfad1
+merge commit: 4bb90fdd56874655c484c52a18781890097e4767
+validated tree: 9c7f79fd5f22d170a0563ae27ca628062846a824
 runtime behavior change: none
 server created or bound: no
 dashboard connectivity enabled: no
@@ -192,6 +195,14 @@ tests; workspace Clippy passes with historical warnings outside this feature.
 `cargo audit`, `cargo deny`, and `gitleaks` are unavailable and reported as
 skipped. The production module is 378 lines and its integration test module is
 321 lines. `main.rs` and `cluster_registry.rs` have zero-line deltas.
+
+Post-merge validation ran against merge commit `4bb90fd` and the same feature
+tree. The complete quality gate passed outside the restricted sandbox with
+zero required failures and zero new warnings. An initial sandboxed run blocked
+Unix socket creation and Metal-backed inference; both failures reproduced on
+the exact base and passed on the merge commit when run in the required host
+environment. They are classified as harness/environment limitations, not
+product regressions.
 
 No Mac runtime smoke, TS140, or Proxmox field QA is required because this
 feature does not bind a listener, connect the dashboard, dispatch an owner, or
