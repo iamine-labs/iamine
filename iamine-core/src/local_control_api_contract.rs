@@ -276,6 +276,38 @@ pub struct LocalControlAuthorizationHandoff {
 }
 
 impl LocalControlAuthorizationHandoff {
+    pub const fn for_operation(operation: InterfaceOperation) -> Self {
+        let (requirement, replay, audit) = match operation.class() {
+            InterfaceOperationClass::ReadOnlyDiagnostic
+            | InterfaceOperationClass::ReadOnlyOperational => (
+                LocalControlAuthorizationRequirement::ReadOnlySession,
+                LocalControlReplayRequirement::NotRequired,
+                LocalControlAuditRequirement::RequestDecision,
+            ),
+            InterfaceOperationClass::PlannedMutation => (
+                LocalControlAuthorizationRequirement::PlannedMutation,
+                LocalControlReplayRequirement::SingleUseAuthorizationEvidence,
+                LocalControlAuditRequirement::RequestDecisionAndAuthorization,
+            ),
+            InterfaceOperationClass::RuntimeMutation => (
+                LocalControlAuthorizationRequirement::RuntimeMutation,
+                LocalControlReplayRequirement::SingleUseAuthorizationEvidence,
+                LocalControlAuditRequirement::RequestDecisionAndAuthorization,
+            ),
+            InterfaceOperationClass::AgentOperation => (
+                LocalControlAuthorizationRequirement::AgentRuntime,
+                LocalControlReplayRequirement::SingleUseAuthorizationEvidence,
+                LocalControlAuditRequirement::RequestDecisionAndAuthorization,
+            ),
+        };
+        Self {
+            operation,
+            requirement,
+            replay,
+            audit,
+        }
+    }
+
     pub const fn authorizes_action(&self) -> bool {
         false
     }
@@ -330,39 +362,12 @@ impl LocalControlIngress {
             return Err(LocalControlContractError::OriginRejected);
         }
 
-        let operation = request.interface.operation;
-        let (requirement, replay, audit) = match operation.class() {
-            InterfaceOperationClass::ReadOnlyDiagnostic
-            | InterfaceOperationClass::ReadOnlyOperational => (
-                LocalControlAuthorizationRequirement::ReadOnlySession,
-                LocalControlReplayRequirement::NotRequired,
-                LocalControlAuditRequirement::RequestDecision,
-            ),
-            InterfaceOperationClass::PlannedMutation => (
-                LocalControlAuthorizationRequirement::PlannedMutation,
-                LocalControlReplayRequirement::SingleUseAuthorizationEvidence,
-                LocalControlAuditRequirement::RequestDecisionAndAuthorization,
-            ),
-            InterfaceOperationClass::RuntimeMutation => (
-                LocalControlAuthorizationRequirement::RuntimeMutation,
-                LocalControlReplayRequirement::SingleUseAuthorizationEvidence,
-                LocalControlAuditRequirement::RequestDecisionAndAuthorization,
-            ),
-            InterfaceOperationClass::AgentOperation => (
-                LocalControlAuthorizationRequirement::AgentRuntime,
-                LocalControlReplayRequirement::SingleUseAuthorizationEvidence,
-                LocalControlAuditRequirement::RequestDecisionAndAuthorization,
-            ),
-        };
+        let authorization =
+            LocalControlAuthorizationHandoff::for_operation(request.interface.operation);
 
         Ok(LocalControlValidatedRequest {
             request_id: request.request_id.clone(),
-            authorization: LocalControlAuthorizationHandoff {
-                operation,
-                requirement,
-                replay,
-                audit,
-            },
+            authorization,
         })
     }
 }

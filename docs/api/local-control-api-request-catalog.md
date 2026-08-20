@@ -35,8 +35,8 @@ limit, or serialization rule changes.
 | Maximum encoded response | 524,288 bytes (512 KiB) |
 | Path parameters | None |
 | Query parameters | None |
-| Authentication header | Not defined yet |
-| Authorization evidence | Not defined yet; owned by `DASHBOARD-LOCAL-AUTHORIZATION-001` |
+| Authentication header | No client-supplied header is approved; future adapter transport remains pending |
+| Authorization evidence | Opaque server-owned Rust capability; never accepted from JSON |
 
 The future adapter derives transport, peer, client, origin, method, route,
 media type, and encoded byte count from socket and HTTP metadata. None of
@@ -119,6 +119,27 @@ be separately reviewed and added to this catalog with:
 
 Until that work is complete, a consumer must not infer payload fields from CLI
 flags, frontend labels, mock fixtures, URL paths, or owner internals.
+
+## Local Authorization Boundary
+
+The future API adapter must resolve a server-owned `LocalSessionEvidence`
+before calling local authorization. Session issuers, sessions, authorization
+evidence, and consumed evidence are opaque, non-serializable Rust capabilities;
+they are not request variables, headers, cookies, or bearer tokens.
+
+| Operation class | Required local intent | Replay rule |
+| --- | --- | --- |
+| Read-only diagnostic | `proceed` or `confirm` | Request correlation only |
+| Read-only operational | `proceed` or `confirm` | Request correlation only |
+| Planned mutation | Explicit `confirm` | Single-use request ID until session expiry |
+| Runtime mutation | Explicit `confirm` | Single-use request ID until session expiry |
+| Agent operation | Explicit `confirm` | Single-use request ID plus agent-runtime authority |
+
+The adapter must pass the complete approved decision to evidence consumption
+so its request-decision audit handoff cannot be detached. The resulting local
+consumption still does not authorize owner dispatch. Browser-to-server session
+transport will be defined by `NODE-LOCAL-CONTROL-API-001`; clients must not add
+an ad hoc authentication field while that contract is absent.
 
 ## Response Envelope
 
@@ -238,9 +259,9 @@ The following items are not part of the approved contract yet:
 
 - server process, port, startup, shutdown, or recovery behavior;
 - HTTP status-code mapping;
-- authentication headers, cookies, local session storage, or CSRF mechanism;
+- browser-to-server session bootstrap, cookie/header transport, or CSRF mechanism;
 - operation-specific request and response payload schemas;
-- authorization-evidence wire format and replay storage;
+- persistent replay storage; current replay state is bounded and memory-only;
 - audit persistence and event delivery;
 - dashboard connectivity and generated TypeScript clients;
 - owner dispatch, mutation, agent execution, or remote access.
