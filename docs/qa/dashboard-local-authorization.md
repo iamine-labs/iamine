@@ -42,7 +42,7 @@ CHECK 6: PASS
 CHECK 7: PASS
 CHECK 8: PASS WITH BASELINE WARNINGS
 CHECK 9: PASS
-CHECK 10: READY FOR MERGE REVIEW
+CHECK 10: MERGED / VALIDATED / CLOSED
 ```
 
 Focused evidence:
@@ -107,9 +107,11 @@ does not change `iamine-node`, `main.rs`, `cluster_registry.rs`, dashboard
 TypeScript, CLI behavior, P2P, PubSub, scheduler, workers, hardware, models,
 inference, agent policy, or agent runtime.
 
-Fresh `git fetch origin --prune` confirmed `origin/develop` remains at the
-exact base `0ecf6d16d6078923a07964d477692eae5e67b756`. `origin/main` has no
-commits absent from `origin/develop`; no reconciliation merge is required.
+Pre-merge `git fetch origin --prune` confirmed the exact base
+`0ecf6d16d6078923a07964d477692eae5e67b756`. The controlled merge commit is
+`ee0f074b6eaf95e7e7aa31d6d086ea6f4967b0cf`; its first parent is the validated
+base and its second parent is the feature commit. `origin/main` has no
+commits absent from `origin/develop`; no reconciliation merge was required.
 
 ## Field QA Classification
 
@@ -123,5 +125,5 @@ future NODE-LOCAL-CONTROL-API-001 field QA: required
 ## Recommendation
 
 ```text
-READY FOR ARCHITECTURE MERGE REVIEW
+MERGED / VALIDATED / CLOSED
 ```

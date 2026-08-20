@@ -34,7 +34,7 @@ remains a non-authoritative mock surface without node connectivity.
 | GUI-CLI-INTERFACE-ARCHITECTURE-001 | CLOSED | Defined interface ownership and shared-core boundaries; merge `ff87b25`, focused post-merge validation PASS, no field QA required. |
 | GUI-CLI-SHARED-CONTRACTS-001 | CLOSED | Shared typed contracts merged as `ee488b0`; 1,148 workspace tests and architecture guards PASS, no runtime or dashboard integration. |
 | NODE-LOCAL-CONTROL-API-CONTRACT-001 | MERGED / VALIDATED / CLOSED | Loopback-only HTTP profile, strict shared-contract envelopes, bounded ingress/response validation, non-authorizing local authorization/replay/audit handoffs, and explicit local threat model; merge `4bb90fd`, 1,157 workspace tests and post-merge quality gate PASS, no server or dashboard integration. |
-| DASHBOARD-LOCAL-AUTHORIZATION-001 | READY FOR MERGE REVIEW | Opaque operator-local sessions, explicit decisions, bounded replay evidence, denial semantics, and attached audit handoffs in `iamine-core`; 1,168 workspace tests PASS, no server or dashboard connectivity. |
+| DASHBOARD-LOCAL-AUTHORIZATION-001 | MERGED / VALIDATED / CLOSED | Opaque operator-local sessions, explicit decisions, bounded replay evidence, denial semantics, and attached audit handoffs in `iamine-core`; merge `ee0f074b`, post-merge quality gate PASS WITH WARNINGS with zero required failures, no server or dashboard connectivity. |
 | NODE-SERVICE-LIFECYCLE-001 | PROPOSED | Stable node lifecycle and recovery semantics. |
 | HEADLESS-NODE-MODE-001 | PROPOSED | Service lifecycle and CLI parity. |
 | NODE-LOCAL-CONTROL-API-001 | PROPOSED | Contract, authorization, validation, and audit gates. |

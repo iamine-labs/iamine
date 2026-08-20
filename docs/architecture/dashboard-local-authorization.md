@@ -4,9 +4,10 @@
 
 ```text
 feature: DASHBOARD-LOCAL-AUTHORIZATION-001
-state: READY FOR MERGE REVIEW
+state: MERGED / VALIDATED / CLOSED
 base: origin/develop at 0ecf6d16d6078923a07964d477692eae5e67b756
 branch: feature/dashboard-local-authorization-001
+merge commit: ee0f074b6eaf95e7e7aa31d6d086ea6f4967b0cf
 owner: iamine-core
 runtime behavior changed: no
 server or port created: no
@@ -209,8 +210,11 @@ new warnings, and historical workspace Clippy warnings outside this feature.
 `cargo audit`, `cargo deny`, and `gitleaks` are unavailable and reported as
 skipped.
 
-Fresh reconciliation confirms `origin/develop` remains at the exact feature
-base and `origin/main` contains no commits missing from `develop`.
+Pre-merge reconciliation confirmed the exact feature base and that
+`origin/main` contained no commits missing from `develop`. The controlled
+merge produced `ee0f074b6eaf95e7e7aa31d6d086ea6f4967b0cf`; post-merge quality
+gate validation passed with zero required failures. Optional `cargo audit`,
+`cargo deny`, and `gitleaks` checks remain unavailable and skipped.
 
 ## Next Feature
 
