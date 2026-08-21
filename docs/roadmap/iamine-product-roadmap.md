@@ -14,8 +14,8 @@ Operational status reconciled from:
 
 ```text
 branch: origin/develop
-baseline commit: 53614e95c0a736edf2cd1f519c90418e83dc9063
-baseline tree: 2998711f52193fa41abc0fda161ea924a80f7017
+baseline commit: c60da20ba2e5379b97155ebb45f2a620915b0cd4
+baseline tree: 1f0d2f5c841f575f40c987692343ce69c93e90d5
 date: 2026-08-21
 ```
 
@@ -132,10 +132,11 @@ merge `f54851b` after local validation, six-role field QA, and exact-merge
 post-merge validation. `NODE-DOCTOR-AGENT-001` then merged in `1409b6f`; its
 exact merge tree passed the complete quality gate on 2026-08-21 with zero
 required failures, zero gate warnings, and three unavailable optional tools.
-The active canonical work is the docs-only
-`IAMINE-CURRENT-STATE-ROADMAP-RECONCILIATION-001`. `REPORTER-AGENT-001` is the
-next sequential product candidate but remains proposed and requires its own
-Architecture and Development authorization.
+The docs-only `IAMINE-CURRENT-STATE-ROADMAP-RECONCILIATION-001` then closed in
+merge `c60da20` after its exact-merge quality gate passed. No product feature is
+currently authorized. `REPORTER-AGENT-001` is the next sequential product
+candidate but remains proposed and requires its own Architecture and
+Development authorization.
 
 The broader v0.9 operational stability claim still requires the operational
 target: 10-50 nodes, 3-10 operators, multiple physical networks, and two to
@@ -154,7 +155,7 @@ or handed off to the orchestrator.
 | NODE-DOCTOR-AGENT-001-DEPENDENCY-RECONCILIATION-001 | CLOSED | Architecture / product roadmap | Kept functional Node Doctor implementation blocked and placed its executable prerequisite chain before development authorization; merge `7588e09`, focused post-merge validation PASS. |
 | IAMINE-CANONICAL-ROADMAP-RECONCILIATION-001 | CLOSED | Architecture / product roadmap | Reconciled the current v0.11.2 status, preserved existing milestone numbering, registered proposed GUI/CLI and Security/CI tracks, and corrected superseded QA evidence without changing runtime behavior; merge `e761b0a`, post-merge quality gate PASS WITH WARNINGS. |
 | IAMINE-PRODUCT-TRACKS-ROADMAP-RECONCILIATION-001 | CLOSED | Architecture / product roadmap | Reconciled internal assurance, public/internal governance, dashboard parallelism, shared-model installation direction, and deferred personal/family product tracks without runtime changes, milestone renumbering, or bulk authorization; implementation `44d34f7`, merge `b577073`, post-merge quality gate PASS WITH WARNINGS. |
-| IAMINE-CURRENT-STATE-ROADMAP-RECONCILIATION-001 | ACTIVE | Architecture / product roadmap | Reconcile the merged Node Doctor and Local Control API catalog evidence, remove stale active-state claims, and identify the next sequential candidates without authorizing implementation in bulk. |
+| IAMINE-CURRENT-STATE-ROADMAP-RECONCILIATION-001 | CLOSED | Architecture / product roadmap | Reconciled the merged Node Doctor and Local Control API catalog evidence, removed stale active-state claims, and identified the next sequential candidates without bulk authorization; implementation `705dea0`, merge `c60da20`, post-merge quality gate PASS WITH WARNINGS. |
 
 ## Milestone 0 - v0.7 Foundations
 
