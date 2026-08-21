@@ -6,7 +6,8 @@
 track: IAMINE-GUI-CLI-PRODUCT-TRACK
 state: PROPOSED
 milestone placement: unresolved by design
-implementation authorization: DASHBOARD-LOCAL-AUTHORIZATION-001 only
+implementation authorization: none beyond closed rows
+next real-integration candidate: NODE-LOCAL-CONTROL-API-001 (PROPOSED)
 parallel implementation boundary: typed visual mocks only
 ```
 
@@ -34,6 +35,7 @@ remains a non-authoritative mock surface without node connectivity.
 | GUI-CLI-INTERFACE-ARCHITECTURE-001 | CLOSED | Defined interface ownership and shared-core boundaries; merge `ff87b25`, focused post-merge validation PASS, no field QA required. |
 | GUI-CLI-SHARED-CONTRACTS-001 | CLOSED | Shared typed contracts merged as `ee488b0`; 1,148 workspace tests and architecture guards PASS, no runtime or dashboard integration. |
 | NODE-LOCAL-CONTROL-API-CONTRACT-001 | MERGED / VALIDATED / CLOSED | Loopback-only HTTP profile, strict shared-contract envelopes, bounded ingress/response validation, non-authorizing local authorization/replay/audit handoffs, and explicit local threat model; merge `4bb90fd`, 1,157 workspace tests and post-merge quality gate PASS, no server or dashboard integration. |
+| NODE-LOCAL-CONTROL-API-CATALOG-001 | MERGED / VALIDATED / CLOSED | Documented the single contracted endpoint, 17 logical operations, payload ownership, stable envelopes, and non-authorizing authorization/replay/audit handoffs; commit `42f0dcd`, merge `0ecf6d1`, exact-merge quality gate PASS WITH WARNINGS with zero required failures. No HTTP server or owner dispatch was added. |
 | DASHBOARD-LOCAL-AUTHORIZATION-001 | MERGED / VALIDATED / CLOSED | Opaque operator-local sessions, explicit decisions, bounded replay evidence, denial semantics, and attached audit handoffs in `iamine-core`; merge `ee0f074b`, post-merge quality gate PASS WITH WARNINGS with zero required failures, no server or dashboard connectivity. |
 | NODE-SERVICE-LIFECYCLE-001 | PROPOSED | Stable node lifecycle and recovery semantics. |
 | HEADLESS-NODE-MODE-001 | PROPOSED | Service lifecycle and CLI parity. |

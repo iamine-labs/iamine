@@ -23,12 +23,14 @@ gates.
 Current operational baseline:
 
 ```text
-validated develop merge: 2d51b9532992b0857856b8d3450cc9e85cf2470c
-tree: 096cae45f309e1a559956eb1083cf84fdbb332b2
+reconciled origin/develop base: 53614e95c0a736edf2cd1f519c90418e83dc9063
+base tree: 2998711f52193fa41abc0fda161ea924a80f7017
 v0.11.2 executable rows: 19 of 19 CLOSED
-last closed: NODE-DOCTOR-EVIDENCE-PROVIDER-001
-active sequential feature: NODE-DOCTOR-AGENT-001
-active feature state: APPROVED FOR MERGE / PUSH AUTHORIZATION REQUIRED
+last closed sequential Agent Network feature: NODE-DOCTOR-AGENT-001
+node doctor merge: 1409b6fa9cb780d00fb840503c16f83bd35c0405
+node doctor merge tree: e55e88cbaf1f86a8b018c162a128ec7c2f13b5ef
+active roadmap feature: IAMINE-CURRENT-STATE-ROADMAP-RECONCILIATION-001
+next sequential product candidate: REPORTER-AGENT-001 (PROPOSED)
 previous gate state: V0.11.2 CLOSED / POST-MERGE PASS
 runtime regression baseline: 149/149
 agents regression baseline: 109/109
@@ -539,7 +541,7 @@ ID as if it represented new implementation work.
 | WINDOWS-OPTIMIZER-ASSISTANT-AGENT-001-SKELETON | CLOSED | Defined the official P0 Windows Optimizer Assistant skeleton as a local-planning, privacy-safe contract without system inspection, configuration change, or execution; merge `f81072a`, focused post-merge validation PASS. |
 | NODE-DOCTOR-AGENT-001-DEPENDENCY-RECONCILIATION-001 | CLOSED | Recorded the executable prerequisite chain and kept functional Node Doctor development blocked until every gate has implementation and validation evidence; merge `7588e09`, focused post-merge validation PASS. |
 | NODE-DOCTOR-EVIDENCE-PROVIDER-001 | CLOSED | Bounded, structured, redacted, read-only node evidence provider merged in `f54851b`; six-role field QA and exact-merge post-merge quality gate passed. |
-| NODE-DOCTOR-AGENT-001 | APPROVED FOR MERGE / PUSH AUTHORIZATION REQUIRED | First functional P0 reference agent; exact package snapshot, local-readonly runtime chain, typed redacted evidence, and log-free pre-network CLI passed the complete local gate and corrected six-role field QA without public-beta publication. |
+| NODE-DOCTOR-AGENT-001 | CLOSED | First functional P0 reference agent; merge `1409b6f`, corrected exact-source six-role field QA, and exact-merge tree `e55e88c` quality gate PASS WITH WARNINGS with zero required failures. It does not publish the public beta or close v0.12.0. |
 
 Closure gate:
 
@@ -628,18 +630,20 @@ does not authorize package loading or agent execution.
 
 The v0.11.2 executable reconciliation and milestone gate are closed at 19 of
 19 rows. The evidence provider merged in `f54851b` and passed exact-merge
-post-merge validation. The next sequential feature is:
+post-merge validation. Functional Node Doctor then merged in `1409b6f` and its
+exact merge tree passed the complete quality gate on 2026-08-21. The active
+docs-only reconciliation is:
 
 ```text
-NODE-DOCTOR-AGENT-001
+IAMINE-CURRENT-STATE-ROADMAP-RECONCILIATION-001
 ```
 
 `NODE-DOCTOR-EVIDENCE-PROVIDER-001` is `MERGED / VALIDATED / CLOSED` after local
 validation, six-role field QA, controlled merge, and exact-merge post-merge
-validation. Functional Node Doctor has Architecture and development
-authorization, passed exact-source six-role field QA, and has final Architecture
-approval. It is not pushed, merged, closed, public-beta listed, or
-milestone-closing evidence.
+validation. Functional Node Doctor is also `MERGED / VALIDATED / CLOSED` after
+its corrected exact-source six-role field QA, controlled merge, and exact-merge
+quality gate. It remains local-readonly and is neither public-beta publication
+nor milestone-closing evidence.
 
 All 19 implementation rows are `CLOSED`. The final chain from handoff through
 the bounded runtime executor completed local validation, independent
@@ -649,10 +653,11 @@ then passed 894/894 runtime and 654/654 agent test executions across the same
 six roles, plus the 1118-test workspace gate on TS140.
 
 Not all functional P0 agents should be implemented in parallel at the start.
-After every prerequisite gate above passes, `NODE-DOCTOR-AGENT-001` remains
-the recommended complete reference vertical. `REPORTER-AGENT-001` should then
-be the next functional agent, followed by the remaining P0 implementation
-waves.
+`NODE-DOCTOR-AGENT-001` is the closed complete reference vertical.
+`REPORTER-AGENT-001` is the next sequential product candidate, followed by the
+remaining P0 implementation waves. It remains `PROPOSED` until Architecture
+records an exact base, scope, dependencies, out-of-scope list, and Development
+authorization.
 
 Each P0 agent must pass positive capability tests, negative capability tests,
 scope boundary tests, permission boundary tests, handoff tests, unsafe action

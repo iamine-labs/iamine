@@ -14,9 +14,9 @@ Operational status reconciled from:
 
 ```text
 branch: origin/develop
-baseline commit: 612d5cd84d0c79a3a7909e1b2d1aafb29fd40440
-baseline tree: 7db36dc65c06e560b8dfe82e14393c41f7fc276b
-date: 2026-07-29
+baseline commit: 53614e95c0a736edf2cd1f519c90418e83dc9063
+baseline tree: 2998711f52193fa41abc0fda161ea924a80f7017
+date: 2026-08-21
 ```
 
 Canonical update:
@@ -25,6 +25,7 @@ Canonical update:
 ROADMAP-OFFICIAL-AGENT-NETWORK-RECONCILIATION-001
 IAMINE-CANONICAL-ROADMAP-RECONCILIATION-001
 IAMINE-PRODUCT-TRACKS-ROADMAP-RECONCILIATION-001
+IAMINE-CURRENT-STATE-ROADMAP-RECONCILIATION-001
 ```
 
 These updates incorporate the official Agent Network roadmap and its current
@@ -98,11 +99,11 @@ infrastructure and Agent Network foundations before v1.0. The next product
 line is not an inference-only public testnet. It is the IAMINE Agent Network.
 
 All six v0.12.0 P0 skeleton contracts are closed, but the skeletons themselves
-remain non-executable and not user available. The functional
-`NODE-DOCTOR-AGENT-001` prerequisite chain is closed; its exact package,
-local-readonly runtime integration, typed evidence consumer, and pre-network
-CLI are now in feature validation. This does not authorize later functional P0
-rows or close the milestone.
+remain non-executable and not user available. The first functional reference,
+`NODE-DOCTOR-AGENT-001`, merged in `1409b6f` and is now closed after its
+corrected exact-source six-role field QA and an exact-merge quality gate on
+tree `e55e88c` passed with zero required failures. This does not authorize
+later functional P0 rows or close the milestone.
 
 `AGENT-MANIFEST-PARSER-VALIDATOR-001` closed in v0.11.1 through merge
 `c849d98`. It introduces the isolated `iamine-agents` root-manifest parser and
@@ -128,10 +129,13 @@ complete post-merge validation. Exhaustive QA passed on Mac, TS140, and four
 Proxmox/R5500 roles. The evidence merged in `76a3de0`, post-merge validation
 passed, and v0.11.2 is now closed. `NODE-DOCTOR-EVIDENCE-PROVIDER-001` closed in
 merge `f54851b` after local validation, six-role field QA, and exact-merge
-post-merge validation. The active canonical feature is
-`NODE-DOCTOR-AGENT-001` with final Architecture approval after the corrected
-exact-source six-role field QA, including zero working-directory artifacts;
-push and merge remain pending and no later product row is authorized in bulk.
+post-merge validation. `NODE-DOCTOR-AGENT-001` then merged in `1409b6f`; its
+exact merge tree passed the complete quality gate on 2026-08-21 with zero
+required failures, zero gate warnings, and three unavailable optional tools.
+The active canonical work is the docs-only
+`IAMINE-CURRENT-STATE-ROADMAP-RECONCILIATION-001`. `REPORTER-AGENT-001` is the
+next sequential product candidate but remains proposed and requires its own
+Architecture and Development authorization.
 
 The broader v0.9 operational stability claim still requires the operational
 target: 10-50 nodes, 3-10 operators, multiple physical networks, and two to
@@ -150,6 +154,7 @@ or handed off to the orchestrator.
 | NODE-DOCTOR-AGENT-001-DEPENDENCY-RECONCILIATION-001 | CLOSED | Architecture / product roadmap | Kept functional Node Doctor implementation blocked and placed its executable prerequisite chain before development authorization; merge `7588e09`, focused post-merge validation PASS. |
 | IAMINE-CANONICAL-ROADMAP-RECONCILIATION-001 | CLOSED | Architecture / product roadmap | Reconciled the current v0.11.2 status, preserved existing milestone numbering, registered proposed GUI/CLI and Security/CI tracks, and corrected superseded QA evidence without changing runtime behavior; merge `e761b0a`, post-merge quality gate PASS WITH WARNINGS. |
 | IAMINE-PRODUCT-TRACKS-ROADMAP-RECONCILIATION-001 | CLOSED | Architecture / product roadmap | Reconciled internal assurance, public/internal governance, dashboard parallelism, shared-model installation direction, and deferred personal/family product tracks without runtime changes, milestone renumbering, or bulk authorization; implementation `44d34f7`, merge `b577073`, post-merge quality gate PASS WITH WARNINGS. |
+| IAMINE-CURRENT-STATE-ROADMAP-RECONCILIATION-001 | ACTIVE | Architecture / product roadmap | Reconcile the merged Node Doctor and Local Control API catalog evidence, remove stale active-state claims, and identify the next sequential candidates without authorizing implementation in bulk. |
 
 ## Milestone 0 - v0.7 Foundations
 
@@ -269,7 +274,7 @@ Architecture. Feature-local QA is insufficient for milestone closure.
 | v0.11.1 | CLOSED | Agent architecture foundation; exhaustive gate merge `0bdff4b`, post-merge validation PASS |
 | v0.11.2 | CLOSED | Agent runtime baseline; exhaustive gate merge `76a3de0`, post-merge validation PASS WITH WARNINGS |
 | v0.11.3 | CLOSED | Internal agent developer bootstrap contracts |
-| v0.12.0 | ACTIVE | P0 skeletons closed; functional Node Doctor is approved for merge, with push pending |
+| v0.12.0 | ACTIVE | P0 skeletons and functional Node Doctor closed; remaining functional P0 agents and the exhaustive milestone gate are pending |
 | v0.12.1 | PROPOSED | P1 adoption agents |
 | v0.12.2 | PROPOSED | P2 experimental and technical agents |
 | v0.13.0 | PROPOSED | Agent beta productization |
@@ -386,6 +391,8 @@ AGENT-POLICY-METADATA-VALIDATORS-001
 -> V0.11.2-AGENT-RUNTIME-BASELINE-MILESTONE-QA-001
 -> NODE-DOCTOR-EVIDENCE-PROVIDER-001
 -> NODE-DOCTOR-AGENT-001
+-> IAMINE-CURRENT-STATE-ROADMAP-RECONCILIATION-001
+-> REPORTER-AGENT-001
 -> remaining functional P0 official agents
 -> V0.12.0-P0-OFFICIAL-AGENTS-MILESTONE-QA-001
 ```
