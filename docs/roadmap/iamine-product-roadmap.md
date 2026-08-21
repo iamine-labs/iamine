@@ -133,10 +133,11 @@ post-merge validation. `NODE-DOCTOR-AGENT-001` then merged in `1409b6f`; its
 exact merge tree passed the complete quality gate on 2026-08-21 with zero
 required failures, zero gate warnings, and three unavailable optional tools.
 The docs-only `IAMINE-CURRENT-STATE-ROADMAP-RECONCILIATION-001` then closed in
-merge `c60da20` after its exact-merge quality gate passed. No product feature is
-currently authorized. `REPORTER-AGENT-001` is the next sequential product
-candidate but remains proposed and requires its own Architecture and
-Development authorization.
+merge `c60da20` after its exact-merge quality gate passed.
+`REPORTER-AGENT-001` is now the only authorized product feature, implementing
+bounded local-only report formatting from typed, operator-approved, redacted
+evidence. `LAN-FILE-SHARE-ASSISTANT-AGENT-001` remains the next proposed
+candidate and is not authorized by this transition.
 
 The broader v0.9 operational stability claim still requires the operational
 target: 10-50 nodes, 3-10 operators, multiple physical networks, and two to
