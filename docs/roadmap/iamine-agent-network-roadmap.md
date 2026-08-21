@@ -23,13 +23,13 @@ gates.
 Current operational baseline:
 
 ```text
-reconciled origin/develop base: 53614e95c0a736edf2cd1f519c90418e83dc9063
-base tree: 2998711f52193fa41abc0fda161ea924a80f7017
+reconciled origin/develop merge: c60da20ba2e5379b97155ebb45f2a620915b0cd4
+merge tree: 1f0d2f5c841f575f40c987692343ce69c93e90d5
 v0.11.2 executable rows: 19 of 19 CLOSED
 last closed sequential Agent Network feature: NODE-DOCTOR-AGENT-001
 node doctor merge: 1409b6fa9cb780d00fb840503c16f83bd35c0405
 node doctor merge tree: e55e88cbaf1f86a8b018c162a128ec7c2f13b5ef
-active roadmap feature: IAMINE-CURRENT-STATE-ROADMAP-RECONCILIATION-001
+active roadmap feature: none
 next sequential product candidate: REPORTER-AGENT-001 (PROPOSED)
 previous gate state: V0.11.2 CLOSED / POST-MERGE PASS
 runtime regression baseline: 149/149
@@ -631,12 +631,17 @@ does not authorize package loading or agent execution.
 The v0.11.2 executable reconciliation and milestone gate are closed at 19 of
 19 rows. The evidence provider merged in `f54851b` and passed exact-merge
 post-merge validation. Functional Node Doctor then merged in `1409b6f` and its
-exact merge tree passed the complete quality gate on 2026-08-21. The active
-docs-only reconciliation is:
+exact merge tree passed the complete quality gate on 2026-08-21. The docs-only
+reconciliation then closed in:
 
 ```text
 IAMINE-CURRENT-STATE-ROADMAP-RECONCILIATION-001
+implementation: 705dea02fe0fb8796977c807a2ba81329e034ffc
+merge: c60da20ba2e5379b97155ebb45f2a620915b0cd4
+post-merge gate: PASS WITH WARNINGS
 ```
+
+No product feature is currently authorized.
 
 `NODE-DOCTOR-EVIDENCE-PROVIDER-001` is `MERGED / VALIDATED / CLOSED` after local
 validation, six-role field QA, controlled merge, and exact-merge post-merge
