@@ -59,13 +59,34 @@ skipped.
 
 ## Mac Field Result
 
-The exact source commit passed on Mac. The three valid executions returned the
-expected `support_report`, `blocked_action_report`, and `handoff_request`
-classifications. Each result reported package load, runtime authorization,
-sandbox adapter use, cleanup, and audit evidence, with scheduler mutation,
-transport startup, persistence, and OS-isolation claims disabled. A
-private-shaped claim failed with exit code 1 and did not echo the private
-token.
+The exact source commit was checked out detached in a disposable worktree. Its
+commit, tree, base, and clean status matched the authorized identity above. A
+build from that checkout passed, followed by Reporter 9/9, Node Doctor 8/8,
+and input/output enforcement 8/8 focused tests.
+
+Field executions ran from a new empty working directory with a new empty HOME.
+The human output and the three valid JSON paths returned the expected
+`support_report`, `blocked_action_report`, and `handoff_request`
+classifications. Explicit `missing` evidence also returned the bounded blocked
+report. Eight distinct evidence records were accepted, while the ninth was
+rejected. Duplicate and contradictory evidence were rejected with typed
+errors.
+
+Each valid result reported package load, runtime authorization, sandbox
+adapter use, cleanup, and audit evidence, with scheduler mutation, transport
+startup, persistence, and OS-isolation claims disabled. A private-shaped claim
+failed with exit code 1 and did not echo the private token. A copied package
+with altered capability metadata failed closed with `PackageMismatch`.
+
+```text
+IAMINE processes: 0 -> 0
+fresh HOME entries: 0 -> 0
+fresh working-directory entries: 0 -> 0
+exact worktree status after QA: clean
+logs created: 0
+profiles created: 0
+model-store entries created: 0
+```
 
 ## Remote Field Blocker
 
