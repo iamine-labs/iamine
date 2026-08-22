@@ -136,3 +136,32 @@ authorize real registry integration, node availability, permissions,
 installation, execution, or marketplace behavior. TS140 and Proxmox QA are not
 required because runtime, scheduler, workers, hardware, networking, models,
 inference, and agent execution behavior are unchanged.
+
+## Post-Merge Validation
+
+```text
+merge commit: 45923de09a329220135b6bc54615e00ed235de48
+merge tree: 8a4297ade2737d12da697e5e4b2fce279ceafccb
+source commit: 97d1cfe40762c163b78a858010954f5d418d6e43
+source tree: 8a4297ade2737d12da697e5e4b2fce279ceafccb
+tree identity: PASS
+merge conflicts: none
+npm ci: PASS, 248 packages from lockfile
+npm run format:check: PASS
+npm run lint: PASS
+npm run typecheck: PASS
+npm test -- --run: PASS, 5 files / 19 tests
+npm run build: PASS
+npm run e2e: PASS, 4/4 projects
+./scripts/quality-gate.sh: PASS WITH WARNINGS
+required failures: 0
+new warnings: 0
+optional skipped: cargo-audit, cargo-deny, gitleaks unavailable
+core path diff: empty
+```
+
+Final state:
+
+```text
+MERGED / VALIDATED / CLOSED
+```

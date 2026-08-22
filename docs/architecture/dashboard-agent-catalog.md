@@ -4,8 +4,8 @@
 
 ```text
 feature: DASHBOARD-AGENT-CATALOG-001
-state: LOCAL VALIDATION PASSED
-development: IMPLEMENTATION COMPLETE
+state: MERGED / VALIDATED / CLOSED
+development: CLOSED
 branch: codex/dashboard-agent-catalog-001
 base: 65f12dc3c7b6a67489fe54e691dd30778bd6a183
 base tree: 604bc770eef3374eb34858019e586653e72956a9
@@ -125,3 +125,28 @@ core path diff: empty
 field QA: not required
 recommendation: READY FOR ARCHITECTURE MERGE REVIEW
 ```
+
+## Controlled Merge And Closure
+
+```text
+target before merge: 65f12dc3c7b6a67489fe54e691dd30778bd6a183
+source: origin/codex/dashboard-agent-catalog-001
+source commit: 97d1cfe40762c163b78a858010954f5d418d6e43
+source tree: 8a4297ade2737d12da697e5e4b2fce279ceafccb
+merge commit: 45923de09a329220135b6bc54615e00ed235de48
+merge tree: 8a4297ade2737d12da697e5e4b2fce279ceafccb
+tree identity: PASS
+merge conflicts: none
+runtime behavior changed: no
+field QA executed: no, not required for browser-only mock behavior
+```
+
+Post-merge frontend validation repeated reproducible installation, format,
+lint, typecheck, 19 unit tests, production build, and all four Playwright
+projects successfully. The repository quality gate passed with zero required
+failures and zero new warnings; three unavailable optional tools remain
+recorded as skipped.
+
+This closes only the deterministic Agent Catalog preview. Real registry data,
+node availability, agent permissions, installation, execution, and marketplace
+behavior remain blocked by their owning canonical features.
