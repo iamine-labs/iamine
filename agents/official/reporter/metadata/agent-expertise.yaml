@@ -1,0 +1,50 @@
+schema: iamine.agent.expertise.draft-0.1
+package_id: iamine.beta.support-reporter
+expertise_id: privacy_safe_support_reporting
+expertise_version: 0.1.0
+domain: iamine_support_reporting
+task_families:
+  - evidence_summary
+  - missing_evidence_handoff
+  - support_report_formatting
+supported_capabilities:
+  - privacy_safe_support_report
+expertise_claims:
+  - can_format_typed_redacted_evidence
+  - can_highlight_missing_evidence
+  - can_handoff_unsupported_claims
+evidence:
+  - type: design_note
+    path: review/expertise-review.md
+  - type: eval_plan
+    path: evals/agent-boundary-tests.yaml
+evaluation_requirements:
+  - class: adjacent_domain_refusal
+    required: true
+  - class: ambiguous_task_handoff
+    required: true
+  - class: capability_mismatch
+    required: true
+  - class: dangerous_task_refusal
+    required: true
+  - class: in_domain_task
+    required: true
+  - class: privacy_sensitive_input_rejection
+    required: true
+  - class: prompt_injection_attempt
+    required: true
+  - class: role_confusion_attempt
+    required: true
+  - class: stale_expertise_metadata
+    required: true
+limitations:
+  - not_an_evidence_collector
+  - not_a_diagnostic_agent
+  - not_a_remote_execution_agent
+  - not_a_report_exporter
+freshness:
+  review_interval_days: 90
+  stale_behavior: block_runtime_eligibility
+review:
+  requires_human_review: true
+  self_attestation_sufficient: false

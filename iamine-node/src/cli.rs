@@ -5,6 +5,7 @@ use crate::lan_inference_cli::{lan_usage, parse_lan_infer_args};
 use crate::node_config_schema::{node_config_usage, NodeConfigCommand};
 use crate::node_identity_cli::{node_identity_usage, NodeIdentityCommand};
 use crate::node_modes::{InferenceControlFlags, NodeMode};
+use crate::reporter_agent::ReporterCliCommand;
 use crate::user_diagnostics_support::{support_usage, SupportCommand};
 use crate::worker_lifecycle::{worker_lifecycle_usage, WorkerLifecycleCommand};
 use libp2p::Multiaddr;
@@ -231,9 +232,10 @@ pub(crate) fn parse_args_from(raw_args: Vec<String>) -> Result<NodeMode, String>
                     .ok_or("Falta --package-root PATH")?,
                 json: args.iter().any(|arg| arg == "--json"),
             }),
-            _ => Err(
-                "Uso: iamine-node agents node-doctor --package-root PATH [--json]".to_string(),
-            ),
+            Some("reporter") => Ok(NodeMode::AgentReporter {
+                command: ReporterCliCommand::from_args(&args[3..])?,
+            }),
+            _ => Err("Uso: iamine-node agents node-doctor --package-root PATH [--json]\n  iamine-node agents reporter --package-root PATH [--evidence SOURCE:STATUS:CLAIM]... [--json]".to_string()),
         },
 
         Some("nodes") => Ok(NodeMode::Nodes),
@@ -379,6 +381,51 @@ mod tests {
             .expect_err("package root should be required");
 
         assert_eq!(error, "Falta --package-root PATH");
+    }
+
+    #[test]
+    fn cli_parses_reporter_agent_as_typed_control_plane_mode() {
+        let parsed = parse_args_from(args(&[
+            "iamine-node",
+            "agents",
+            "reporter",
+            "--package-root=agents/official/reporter",
+            "--evidence",
+            "redacted_diagnostic_summary:attention:model_readiness",
+            "--json",
+        ]));
+        assert!(parsed.is_ok());
+        let Some(mode) = parsed.ok() else {
+            return;
+        };
+
+        assert!(matches!(
+            mode,
+            NodeMode::AgentReporter { command }
+                if command.package_root == "agents/official/reporter"
+                    && command.evidence.len() == 1
+                    && command.json
+        ));
+    }
+
+    #[test]
+    fn cli_reporter_requires_package_root_and_rejects_unknown_arguments() {
+        let missing = parse_args_from(args(&["iamine-node", "agents", "reporter"]))
+            .expect_err("package root should be required");
+        assert_eq!(missing, "Falta --package-root PATH");
+
+        let unknown = parse_args_from(args(&[
+            "iamine-node",
+            "agents",
+            "reporter",
+            "--package-root",
+            "agents/official/reporter",
+            "--raw-log",
+            "/private/log",
+        ]))
+        .expect_err("unknown reporter argument should fail");
+        assert_eq!(unknown, "Argumento Reporter no reconocido: --raw-log");
+        assert!(!unknown.contains("/private/log"));
     }
 
     #[test]
