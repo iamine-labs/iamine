@@ -3,9 +3,12 @@
 State:
 
 ```text
-FIELD QA REQUIRED
+QA BLOCKED
 ```
 
-Evidence for the exact implementation commit will be recorded under
-`docs/qa/` after local validation and the Mac, TS140, and Proxmox/R5500 matrix.
-This placeholder is package review metadata and does not claim a QA pass.
+Local validation and exact-source Mac QA passed for commit
+`bd72f6baf53444d03e5d68eb83471e8704f28c2b`. TS140 and all four Proxmox/R5500
+guests were unreachable, so the required remote matrix remains blocked.
+
+Canonical evidence is recorded in `docs/qa/reporter-agent.md`. This package
+metadata does not claim Field QA PASS, merge readiness, or closure.
