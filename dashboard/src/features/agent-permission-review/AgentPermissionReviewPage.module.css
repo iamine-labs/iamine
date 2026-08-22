@@ -1,0 +1,152 @@
+.state,
+.stateStack {
+  width: min(620px, 100%);
+  margin: 0 auto;
+}
+
+.stateStack {
+  display: grid;
+  justify-items: start;
+  gap: 12px;
+}
+
+.page {
+  display: grid;
+  width: min(100%, var(--content-max));
+  gap: 14px;
+  margin: 0 auto;
+}
+
+.backAction {
+  min-height: var(--control-sm);
+}
+
+.pageHeader {
+  display: flex;
+  min-width: 0;
+  align-items: end;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 0 2px 8px;
+}
+
+.pageHeader > div {
+  min-width: 0;
+}
+
+.pageHeader h2 {
+  margin: 10px 0 4px;
+  color: var(--color-ink);
+  font-size: 28px;
+  font-weight: 720;
+  letter-spacing: 0;
+  line-height: 1.15;
+}
+
+.pageHeader p {
+  margin: 0;
+  color: var(--color-ink-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.provenance {
+  display: inline-flex;
+  max-width: 100%;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 9px;
+  color: var(--color-info);
+  background: var(--color-info-soft);
+  border: 1px solid rgb(58 138 255 / 28%);
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0;
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0;
+  overflow: hidden;
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.facts > div {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+  padding: 13px 16px;
+  border-right: 1px solid var(--color-border);
+}
+
+.facts > div:last-child {
+  border-right: 0;
+}
+
+.facts dt {
+  color: var(--color-ink-muted);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--color-ink);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.reviewGrid {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1.65fr) minmax(300px, 0.7fr);
+  align-items: start;
+  gap: 14px;
+}
+
+@media (max-width: 1040px) {
+  .reviewGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 760px) {
+  .page {
+    gap: 10px;
+  }
+
+  .pageHeader {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .pageHeader h2 {
+    font-size: 24px;
+  }
+
+  .provenance {
+    flex: 1 1 auto;
+  }
+
+  .facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .facts > div:nth-child(2) {
+    border-right: 0;
+  }
+
+  .facts > div:nth-child(-n + 2) {
+    border-bottom: 1px solid var(--color-border);
+  }
+}

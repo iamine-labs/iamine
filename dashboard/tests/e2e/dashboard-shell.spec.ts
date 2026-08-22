@@ -65,10 +65,50 @@ test('runs the dashboard shell without browser or layout failures', async ({
     page.getByRole('heading', { name: 'Agent catalog', exact: true }),
   ).toBeVisible();
 
+  await page.locator('#dashboard-content').focus();
+  await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({
     path: testInfo.outputPath(`${testInfo.project.name}-agents.png`),
     fullPage: true,
   });
+
+  await page.getByRole('button', { name: 'Review permission preview' }).click();
+  await expect(page).toHaveURL(/#\/agents\/node-doctor\/permissions$/);
+  await expect(
+    page.getByRole('heading', { name: 'Permission review' }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Confirm preview' }),
+  ).toBeDisabled();
+
+  await page
+    .getByRole('checkbox', { name: /I reviewed this preview request/i })
+    .check();
+  await page.getByRole('button', { name: 'Confirm preview' }).click();
+  await expect(
+    page.getByText('No permission or runtime authority was created.'),
+  ).toBeVisible();
+  await expect(page.getByText('Preview confirmation recorded')).toBeVisible();
+
+  await page.locator('#dashboard-content').focus();
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.screenshot({
+    path: testInfo.outputPath(`${testInfo.project.name}-permissions.png`),
+    fullPage: true,
+  });
+
+  await page.reload();
+  await page.waitForLoadState('networkidle');
+  await expect(
+    page.getByRole('heading', { name: 'Permission review' }),
+  ).toBeVisible();
+  await expect(page.getByText('Pending review')).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Confirm preview' }),
+  ).toBeDisabled();
+
+  await page.getByRole('button', { name: 'Agent catalog' }).click();
+  await expect(page).toHaveURL(/#\/agents$/);
 
   await page
     .getByRole('searchbox', { name: 'Search agents' })
@@ -143,6 +183,8 @@ test('runs the dashboard shell without browser or layout failures', async ({
   });
   expect(accessibilityViolations).toEqual([]);
 
+  await page.locator('#dashboard-content').focus();
+  await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({
     path: testInfo.outputPath(`${testInfo.project.name}.png`),
     fullPage: true,

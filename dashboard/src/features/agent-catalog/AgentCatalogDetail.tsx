@@ -1,6 +1,6 @@
-import { Bot, CheckCircle2, ShieldX } from 'lucide-react';
+import { Bot, CheckCircle2, ShieldCheck, ShieldX } from 'lucide-react';
 
-import { StatusBadge, type StatusTone } from '../../components';
+import { Button, StatusBadge, type StatusTone } from '../../components';
 import type {
   AgentCatalogEntry,
   AgentCatalogStage,
@@ -13,7 +13,13 @@ const stageTones: Record<AgentCatalogStage, StatusTone> = {
   planned: 'neutral',
 };
 
-export function AgentCatalogDetail({ agent }: { agent: AgentCatalogEntry }) {
+export function AgentCatalogDetail({
+  agent,
+  onReviewPermissions,
+}: {
+  agent: AgentCatalogEntry;
+  onReviewPermissions?: (agentId: string) => void;
+}) {
   return (
     <aside className={styles.panel} aria-labelledby="selected-agent-name">
       <header className={styles.header}>
@@ -73,6 +79,19 @@ export function AgentCatalogDetail({ agent }: { agent: AgentCatalogEntry }) {
           ))}
         </ul>
       </section>
+
+      {onReviewPermissions && (
+        <div className={styles.actions}>
+          <Button
+            size="small"
+            variant="secondary"
+            leadingIcon={<ShieldCheck size={15} />}
+            onClick={() => onReviewPermissions(agent.id)}
+          >
+            Review permission preview
+          </Button>
+        </div>
+      )}
 
       <footer className={styles.footer}>
         Preview metadata only. No local package or runtime state is queried.

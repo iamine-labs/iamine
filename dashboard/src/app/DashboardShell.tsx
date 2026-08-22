@@ -6,15 +6,19 @@ import {
   Routes,
   useLocation,
   useNavigate,
+  useParams,
 } from 'react-router';
 
 import { Button, StatePanel, StatusBadge } from '../components';
 import { AgentCatalogPage } from '../features/agent-catalog/AgentCatalogPage';
+import { AgentPermissionReviewPage } from '../features/agent-permission-review/AgentPermissionReviewPage';
 import { OverviewPage } from '../features/overview/OverviewPage';
 import { DashboardChrome } from './DashboardChrome';
 import { DashboardStatusBar } from './DashboardStatusBar';
 import {
+  agentPermissionRoutePattern,
   dashboardRoutes,
+  getAgentPermissionRoute,
   getDashboardRoute,
   overviewRoute,
   type DashboardRoute,
@@ -27,6 +31,31 @@ function OverviewRoute() {
   return (
     <OverviewPage
       onOpenNodes={() => void navigate(getDashboardRoute('nodes').path)}
+    />
+  );
+}
+
+function AgentsRoute() {
+  const navigate = useNavigate();
+
+  return (
+    <AgentCatalogPage
+      onReviewPermissions={(agentId) =>
+        void navigate(getAgentPermissionRoute(agentId))
+      }
+    />
+  );
+}
+
+function AgentPermissionRoute() {
+  const navigate = useNavigate();
+  const { agentId = '' } = useParams();
+
+  return (
+    <AgentPermissionReviewPage
+      key={agentId}
+      agentId={agentId}
+      onBack={() => void navigate(getDashboardRoute('agents').path)}
     />
   );
 }
@@ -92,12 +121,13 @@ export function DashboardShell() {
   const closeDrawer = useCallback(() => setDrawerOpen(false), []);
   const toggleDrawer = useCallback(() => setDrawerOpen((open) => !open), []);
 
-  const activeLabel =
-    dashboardRoutes.find((route) => route.path === location.pathname)?.label ??
-    'Unknown route';
-  const activeView = dashboardRoutes.find(
-    (route) => route.path === location.pathname,
-  )?.id;
+  const activeRoute = dashboardRoutes.find(
+    (route) =>
+      route.path === location.pathname ||
+      (route.id === 'agents' && location.pathname.startsWith(`${route.path}/`)),
+  );
+  const activeLabel = activeRoute?.label ?? 'Unknown route';
+  const activeView = activeRoute?.id;
 
   return (
     <div className={styles.shell}>
@@ -119,7 +149,11 @@ export function DashboardShell() {
             <Route path={overviewRoute.path} element={<OverviewRoute />} />
             <Route
               path={getDashboardRoute('agents').path}
-              element={<AgentCatalogPage />}
+              element={<AgentsRoute />}
+            />
+            <Route
+              path={agentPermissionRoutePattern}
+              element={<AgentPermissionRoute />}
             />
             {dashboardRoutes
               .filter(
