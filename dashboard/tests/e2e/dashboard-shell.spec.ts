@@ -53,15 +53,39 @@ test('runs the dashboard shell without browser or layout failures', async ({
   }
 
   await expect(
-    page.getByRole('heading', { name: 'Agents', exact: true }),
+    page.getByRole('heading', { name: 'Agent catalog', exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText('Preview catalog; not local node state'),
   ).toBeVisible();
   await expect(page).toHaveURL(/#\/agents$/);
   await page.reload();
   await page.waitForLoadState('networkidle');
   await expect(
-    page.getByRole('heading', { name: 'Agents', exact: true }),
+    page.getByRole('heading', { name: 'Agent catalog', exact: true }),
   ).toBeVisible();
-  await page.getByRole('button', { name: 'Return to Overview' }).click();
+
+  await page.screenshot({
+    path: testInfo.outputPath(`${testInfo.project.name}-agents.png`),
+    fullPage: true,
+  });
+
+  await page
+    .getByRole('searchbox', { name: 'Search agents' })
+    .fill('Windows Optimizer');
+  await expect(page.getByText('1 of 6')).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'Windows Optimizer Assistant' }),
+  ).toBeVisible();
+
+  if (viewportWidth <= 760) {
+    await page.getByRole('button', { name: 'Open navigation' }).click();
+    await page
+      .getByRole('link', { name: 'Open Overview from sidebar' })
+      .click();
+  } else {
+    await page.getByRole('link', { name: 'Overview', exact: true }).click();
+  }
   await expect(page).toHaveURL(/#\/overview$/);
 
   await expect(
@@ -75,7 +99,7 @@ test('runs the dashboard shell without browser or layout failures', async ({
   );
   expect(documentWidth).toBeLessThanOrEqual(viewportWidth);
 
-  const topbar = await page.locator('header').boundingBox();
+  const topbar = await page.getByRole('banner').boundingBox();
   const firstPanel = await page
     .getByRole('heading', { name: 'System operational' })
     .locator('..')

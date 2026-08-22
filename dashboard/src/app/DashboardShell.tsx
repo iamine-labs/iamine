@@ -9,6 +9,7 @@ import {
 } from 'react-router';
 
 import { Button, StatePanel, StatusBadge } from '../components';
+import { AgentCatalogPage } from '../features/agent-catalog/AgentCatalogPage';
 import { OverviewPage } from '../features/overview/OverviewPage';
 import { DashboardChrome } from './DashboardChrome';
 import { DashboardStatusBar } from './DashboardStatusBar';
@@ -116,8 +117,15 @@ export function DashboardShell() {
               element={<Navigate replace to={overviewRoute.path} />}
             />
             <Route path={overviewRoute.path} element={<OverviewRoute />} />
+            <Route
+              path={getDashboardRoute('agents').path}
+              element={<AgentCatalogPage />}
+            />
             {dashboardRoutes
-              .filter((route) => route.id !== overviewRoute.id)
+              .filter(
+                (route) =>
+                  route.id !== overviewRoute.id && route.id !== 'agents',
+              )
               .map((route) => (
                 <Route
                   key={route.id}

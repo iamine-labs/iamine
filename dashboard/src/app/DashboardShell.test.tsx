@@ -25,10 +25,14 @@ describe('DashboardShell', () => {
 
     fireEvent.click(screen.getByRole('link', { name: 'Agents' }));
 
-    expect(screen.getByRole('heading', { name: 'Agents' })).toBeVisible();
-    expect(screen.getByText('Preview boundary')).toBeVisible();
+    expect(
+      await screen.findByRole('heading', { name: 'Agent catalog' }),
+    ).toBeVisible();
+    expect(
+      screen.getByText('Preview catalog; not local node state'),
+    ).toBeVisible();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Return to Overview' }));
+    fireEvent.click(screen.getByRole('link', { name: 'Overview' }));
     expect(
       await screen.findByRole('heading', { name: 'System operational' }),
     ).toBeVisible();
