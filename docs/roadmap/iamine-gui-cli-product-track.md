@@ -48,7 +48,7 @@ remains a non-authoritative mock surface without node connectivity.
 | NODE-RESOURCE-CONTROLS-001 | PROPOSED | Stable resource policy and bounded mutation. |
 | DASHBOARD-DIAGNOSTICS-001 | PROPOSED | Privacy-safe diagnostics contract. |
 | DASHBOARD-AGENT-CATALOG-001 | MERGED / VALIDATED / CLOSED | Typed, non-authoritative Agent Catalog preview with bounded search, stage filters, local detail selection, complete UI states, and Mac multibrowser QA; merge `45923de`, post-merge frontend and repository gates PASS, no core or real agent behavior changed. |
-| DASHBOARD-AGENT-PERMISSION-FLOW-001 | ARCHITECTURE APPROVED / DEVELOPMENT AUTHORIZED | Typed, non-authoritative permission review preview with local confirmation, denial, reset, and non-persisted audit projection; real authorization, audit emission, package mutation, and execution remain blocked. |
+| DASHBOARD-AGENT-PERMISSION-FLOW-001 | READY FOR ARCHITECTURE MERGE REVIEW | Typed, non-authoritative permission review preview with exact catalog routing, complete UI states, local confirmation, denial, reset, non-persisted audit projection, and Mac multibrowser QA; real authorization, audit emission, package mutation, and execution remain blocked. |
 | DASHBOARD-AGENT-EXECUTION-001 | PROPOSED | Functional runtime, loader, authorization, and executor. |
 | LOCAL-DASHBOARD-BUNDLING-001 | PROPOSED | Stable shell, service lifecycle, and release packaging. |
 | GUI-CLI-COMMAND-PARITY-001 | PROPOSED | Shared contracts and supported command inventory. |
