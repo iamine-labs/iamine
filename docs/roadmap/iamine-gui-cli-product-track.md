@@ -47,7 +47,7 @@ remains a non-authoritative mock surface without node connectivity.
 | NODE-ONBOARDING-WIZARD-001 | PROPOSED | Stable setup, configuration, privacy, and rollback contracts. |
 | NODE-RESOURCE-CONTROLS-001 | PROPOSED | Stable resource policy and bounded mutation. |
 | DASHBOARD-DIAGNOSTICS-001 | PROPOSED | Privacy-safe diagnostics contract. |
-| DASHBOARD-AGENT-CATALOG-001 | PROPOSED | Official agent registry and display contracts. |
+| DASHBOARD-AGENT-CATALOG-001 | ARCHITECTURE APPROVED / DEVELOPMENT AUTHORIZED | Typed, non-authoritative Agent Catalog preview only; real registry data, node availability, permissions, installation, and execution remain blocked. |
 | DASHBOARD-AGENT-PERMISSION-FLOW-001 | PROPOSED | Permission display, confirmation, denial, and audit. |
 | DASHBOARD-AGENT-EXECUTION-001 | PROPOSED | Functional runtime, loader, authorization, and executor. |
 | LOCAL-DASHBOARD-BUNDLING-001 | PROPOSED | Stable shell, service lifecycle, and release packaging. |
