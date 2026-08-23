@@ -121,6 +121,50 @@ test('runs the dashboard shell without browser or layout failures', async ({
   if (viewportWidth <= 760) {
     await page.getByRole('button', { name: 'Open navigation' }).click();
     await page
+      .getByRole('link', { name: 'Open Diagnostics from sidebar' })
+      .click();
+  } else {
+    await page.getByRole('link', { name: 'Diagnostics', exact: true }).click();
+  }
+  await expect(page).toHaveURL(/#\/diagnostics$/);
+  await expect(
+    page.getByRole('heading', { name: 'Diagnostics', exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText('Preview fixture; no device was inspected'),
+  ).toBeVisible();
+  await page.reload();
+  await page.waitForLoadState('networkidle');
+  await expect(
+    page.getByRole('heading', { name: 'Diagnostics', exact: true }),
+  ).toBeVisible();
+
+  await page
+    .getByRole('searchbox', { name: 'Search checks' })
+    .fill('Local Control API');
+  await expect(page.getByText('1 of 6')).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'Local Control API' }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: /run diagnostics/i }),
+  ).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /export/i })).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Clear diagnostics filters' }).click();
+  await page.getByRole('button', { name: 'Attention' }).click();
+  await expect(page.getByText('2 of 6')).toBeVisible();
+
+  await page.locator('#dashboard-content').focus();
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.screenshot({
+    path: testInfo.outputPath(`${testInfo.project.name}-diagnostics.png`),
+    fullPage: true,
+  });
+
+  if (viewportWidth <= 760) {
+    await page.getByRole('button', { name: 'Open navigation' }).click();
+    await page
       .getByRole('link', { name: 'Open Overview from sidebar' })
       .click();
   } else {

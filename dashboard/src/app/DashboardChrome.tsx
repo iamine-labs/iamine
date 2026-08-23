@@ -10,6 +10,7 @@ import {
   Menu,
   Search,
   ShieldCheck,
+  Stethoscope,
   Store,
   X,
 } from 'lucide-react';
@@ -34,6 +35,7 @@ const viewIcons: Record<DashboardRouteId, ComponentType<{ size?: number }>> = {
   nodes: Boxes,
   models: Cpu,
   activity: Activity,
+  diagnostics: Stethoscope,
   marketplace: Store,
 };
 
