@@ -4,8 +4,9 @@
 
 ```text
 feature: DASHBOARD-DIAGNOSTICS-MOCK-001
-state: ARCHITECTURE REVIEW REQUIRED
+state: APPROVED FOR MERGE
 architecture: APPROVED
+architecture review: PASSED
 development: IMPLEMENTATION COMPLETE
 local validation: PASSED
 branch: codex/dashboard-diagnostics-mock-001
@@ -146,3 +147,21 @@ The Node `26.7.0` runtime available on the Mac is outside the dashboard's
 declared Node `24.x` engine range. npm `11.19.0` is supported, all required
 frontend checks pass, and this mismatch remains an environmental warning for
 future reproducibility with the pinned Node line.
+
+## Architecture Review
+
+```text
+reviewed commit: 40fa3aee0f8264d18288feb0c31a258d6a258962
+reviewed tree: 41604505953174dfb7abd93f203e5ceec22e0e76
+scope conformance: PASS
+ownership and modularity: PASS
+mock authority boundary: PASS
+privacy and security boundary: PASS
+core non-regression: PASS
+blocking findings: 0
+authorization: APPROVED FOR MERGE
+```
+
+The approval applies only to the deterministic browser preview. Real
+diagnostic evidence, Local Control API access, node inspection, repair, and
+export remain owned by future authorized features.
