@@ -23,8 +23,10 @@ type AgentCatalogState =
 
 export function AgentCatalogPage({
   dataSource = agentCatalogMockDataSource,
+  onReviewPermissions,
 }: {
   dataSource?: AgentCatalogDataSource;
+  onReviewPermissions?: (agentId: string) => void;
 }) {
   const [attempt, setAttempt] = useState(0);
   const [filter, setFilter] = useState<AgentCatalogFilter>('all');
@@ -163,7 +165,10 @@ export function AgentCatalogPage({
             selectedId={selectedAgent.id}
             onSelect={setSelectedId}
           />
-          <AgentCatalogDetail agent={selectedAgent} />
+          <AgentCatalogDetail
+            agent={selectedAgent}
+            onReviewPermissions={onReviewPermissions}
+          />
         </div>
       ) : (
         <div className={styles.noMatches}>

@@ -33,10 +33,15 @@ export const dashboardRoutes: readonly DashboardRoute[] = [
 ];
 
 export const overviewRoute = dashboardRoutes[0];
+export const agentPermissionRoutePattern = '/agents/:agentId/permissions';
 
 export function getDashboardRoute(id: DashboardRouteId): DashboardRoute {
   const route = dashboardRoutes.find((candidate) => candidate.id === id);
 
   if (!route) throw new Error(`Unknown dashboard route: ${id}`);
   return route;
+}
+
+export function getAgentPermissionRoute(agentId: string): string {
+  return `/agents/${encodeURIComponent(agentId)}/permissions`;
 }

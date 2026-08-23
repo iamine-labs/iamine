@@ -32,6 +32,22 @@ describe('DashboardShell', () => {
       screen.getByText('Preview catalog; not local node state'),
     ).toBeVisible();
 
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Review permission preview' }),
+    );
+    expect(
+      await screen.findByRole('heading', { name: 'Permission review' }),
+    ).toBeVisible();
+    expect(screen.getByRole('link', { name: 'Agents' })).toHaveAttribute(
+      'data-selected',
+      'true',
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Agent catalog' }));
+    expect(
+      await screen.findByRole('heading', { name: 'Agent catalog' }),
+    ).toBeVisible();
+
     fireEvent.click(screen.getByRole('link', { name: 'Overview' }));
     expect(
       await screen.findByRole('heading', { name: 'System operational' }),
@@ -45,6 +61,20 @@ describe('DashboardShell', () => {
       screen.getByRole('heading', { name: 'Page not found' }),
     ).toBeVisible();
     expect(screen.getByText('Unknown route')).toBeVisible();
+  });
+
+  it('renders a bounded permission state for an unknown agent route', async () => {
+    renderShell('/agents/not-in-the-catalog/permissions');
+
+    expect(
+      await screen.findByRole('heading', {
+        name: 'Permission preview unavailable for this agent',
+      }),
+    ).toBeVisible();
+    expect(screen.getByRole('link', { name: 'Agents' })).toHaveAttribute(
+      'data-selected',
+      'true',
+    );
   });
 
   it('marks unavailable shell actions as disabled', () => {

@@ -133,6 +133,24 @@ describe('AgentCatalogPage', () => {
     ).not.toBeInTheDocument();
   });
 
+  it('opens the permission preview for the exact selected agent', async () => {
+    const onReviewPermissions = vi.fn();
+    render(<AgentCatalogPage onReviewPermissions={onReviewPermissions} />);
+    await screen.findByRole('heading', { name: 'Agent catalog' });
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Select Home Network Assistant preview',
+      }),
+    );
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Review permission preview' }),
+    );
+
+    expect(onReviewPermissions).toHaveBeenCalledOnce();
+    expect(onReviewPermissions).toHaveBeenCalledWith('home-network-assistant');
+  });
+
   it('has no detectable structural accessibility violations', async () => {
     const { container } = render(<AgentCatalogPage />);
     await screen.findByRole('heading', { name: 'Agent catalog' });
