@@ -128,3 +128,55 @@ This evidence covers the typed visual preview only. It does not authorize real
 diagnostic collection, Local Control API integration, export, repair, or node
 mutation. TS140 and Proxmox QA are not required because runtime, networking,
 hardware, models, inference, and operational behavior are unchanged.
+
+## Post-Merge Validation
+
+```text
+target before merge: f9a51eff5008755978ad71c2077ab14d829cb34e
+source commit: 8e702f7adf140c9133bcba8b6f603086060832bf
+source tree: b91d70286be92fb0033e74f2af970125a5dec637
+merge commit: 156c360fdce506bf824dabd10f712b0185ce06b8
+merge tree: b91d70286be92fb0033e74f2af970125a5dec637
+tree identity: PASS
+merge conflicts: none
+npm ci: PASS, 248 packages from lockfile
+npm run format:check: PASS
+npm run lint: PASS
+npm run typecheck: PASS
+npm test -- --run: PASS, 7 files / 33 tests
+npm run build: PASS
+npm audit --audit-level=moderate: PASS, 0 vulnerabilities
+npm run e2e: PASS, 4/4 projects
+core path diff: empty
+```
+
+The sandboxed post-merge Rust gate produced these environment-sensitive
+failures after repository and architecture guards passed:
+
+```text
+iamine-models integration: 55 PASS / 4 FAIL
+failed: test_real_inference, test_inference_queue
+failed: test_concurrency_limit, test_token_streaming
+iamine-network: 163 unit + 4 routing PASS
+iamine-node: 495 PASS / 1 FAIL
+failed: daemon_runtime::tests::test_daemon_start_stop
+daemon failure: Unix socket creation returned EPERM under the sandbox
+```
+
+Only the five failed checks were repeated outside the sandbox against the
+exact merge tree. All five passed: TinyLlama hash verification, Metal model
+load, real inference, queue ordering, concurrency limit, token streaming, and
+daemon socket lifecycle completed successfully. The earlier complete source
+gate also passed with zero required failures, and the merge/source tree
+identity is exact.
+
+Architecture classification:
+
+```text
+product regression: no evidence
+environmental restriction: confirmed
+exception scope: five exact post-merge Rust checks only
+product or test changes required: no
+accepted result: POST-MERGE VALIDATION PASSED WITH ENVIRONMENTAL EXCEPTION
+final state: MERGED / VALIDATED / CLOSED
+```

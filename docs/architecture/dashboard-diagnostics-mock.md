@@ -4,7 +4,7 @@
 
 ```text
 feature: DASHBOARD-DIAGNOSTICS-MOCK-001
-state: APPROVED FOR MERGE
+state: MERGED / VALIDATED / CLOSED
 architecture: APPROVED
 architecture review: PASSED
 development: IMPLEMENTATION COMPLETE
@@ -165,3 +165,31 @@ authorization: APPROVED FOR MERGE
 The approval applies only to the deterministic browser preview. Real
 diagnostic evidence, Local Control API access, node inspection, repair, and
 export remain owned by future authorized features.
+
+## Controlled Merge And Closure
+
+```text
+target before merge: f9a51eff5008755978ad71c2077ab14d829cb34e
+source: origin/codex/dashboard-diagnostics-mock-001
+source commit: 8e702f7adf140c9133bcba8b6f603086060832bf
+source tree: b91d70286be92fb0033e74f2af970125a5dec637
+precomputed merge tree: b91d70286be92fb0033e74f2af970125a5dec637
+merge commit: 156c360fdce506bf824dabd10f712b0185ce06b8
+merge tree: b91d70286be92fb0033e74f2af970125a5dec637
+tree identity: PASS
+merge conflicts: none
+runtime behavior changed: no
+field QA executed: no, not required for browser-only mock behavior
+post-merge validation: PASS WITH ACCEPTED ENVIRONMENTAL EXCEPTION
+```
+
+Post-merge frontend installation, static checks, 33 unit tests, production
+build, npm audit, and all four Playwright projects passed. The sandboxed Rust
+gate blocked four Metal inference assertions and one Unix socket test; every
+failed test passed when repeated individually outside the sandbox against the
+same merge tree. Architecture accepts this bounded environmental exception
+because the source tree previously passed the complete gate, the merge tree is
+identical, and the feature has no Rust or workspace-manifest diff.
+
+This closes only the deterministic Diagnostics preview. Real evidence,
+collection, node connectivity, repair, and export remain unavailable.
