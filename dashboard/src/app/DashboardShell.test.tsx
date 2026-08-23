@@ -52,6 +52,14 @@ describe('DashboardShell', () => {
     expect(
       await screen.findByRole('heading', { name: 'System operational' }),
     ).toBeVisible();
+
+    fireEvent.click(screen.getByRole('link', { name: 'Diagnostics' }));
+    expect(
+      await screen.findByRole('heading', { name: 'Diagnostics' }),
+    ).toBeVisible();
+    expect(
+      screen.getByText('Preview fixture; no device was inspected'),
+    ).toBeVisible();
   });
 
   it('renders a bounded fallback for unknown routes', () => {

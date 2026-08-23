@@ -1,5 +1,11 @@
 export type DashboardRouteId =
-  'overview' | 'agents' | 'nodes' | 'models' | 'activity' | 'marketplace';
+  | 'overview'
+  | 'agents'
+  | 'nodes'
+  | 'models'
+  | 'activity'
+  | 'diagnostics'
+  | 'marketplace';
 
 export interface DashboardRoute {
   id: DashboardRouteId;
@@ -23,6 +29,12 @@ export const dashboardRoutes: readonly DashboardRoute[] = [
     label: 'Activity',
     path: '/activity',
     availability: 'reserved',
+  },
+  {
+    id: 'diagnostics',
+    label: 'Diagnostics',
+    path: '/diagnostics',
+    availability: 'preview',
   },
   {
     id: 'marketplace',

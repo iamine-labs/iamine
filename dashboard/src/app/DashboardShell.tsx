@@ -12,6 +12,7 @@ import {
 import { Button, StatePanel, StatusBadge } from '../components';
 import { AgentCatalogPage } from '../features/agent-catalog/AgentCatalogPage';
 import { AgentPermissionReviewPage } from '../features/agent-permission-review/AgentPermissionReviewPage';
+import { DiagnosticsPage } from '../features/diagnostics/DiagnosticsPage';
 import { OverviewPage } from '../features/overview/OverviewPage';
 import { DashboardChrome } from './DashboardChrome';
 import { DashboardStatusBar } from './DashboardStatusBar';
@@ -155,10 +156,16 @@ export function DashboardShell() {
               path={agentPermissionRoutePattern}
               element={<AgentPermissionRoute />}
             />
+            <Route
+              path={getDashboardRoute('diagnostics').path}
+              element={<DiagnosticsPage />}
+            />
             {dashboardRoutes
               .filter(
                 (route) =>
-                  route.id !== overviewRoute.id && route.id !== 'agents',
+                  route.id !== overviewRoute.id &&
+                  route.id !== 'agents' &&
+                  route.id !== 'diagnostics',
               )
               .map((route) => (
                 <Route
