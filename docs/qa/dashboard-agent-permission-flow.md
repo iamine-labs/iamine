@@ -143,3 +143,33 @@ does not authorize a real permission grant, Local Control API request, audit
 record, agent installation, runtime dispatch, or execution. TS140 and Proxmox
 QA are not required because runtime, scheduler, worker, hardware, networking,
 model, inference, and agent execution behavior are unchanged.
+
+## Post-Merge Validation
+
+```text
+merge commit: e5377334b112914a1a2fa56248a8a55a4f7132a3
+merge tree: 7c8794e231e27d56e37ff1be64ea9d645def5830
+source commit: 84eb1962a0ffbb0f76b4349639cb63c6b12293d2
+source tree: 7c8794e231e27d56e37ff1be64ea9d645def5830
+tree identity: PASS
+merge conflicts: none
+npm ci: PASS, 248 packages from lockfile
+npm run format:check: PASS
+npm run lint: PASS
+npm run typecheck: PASS
+npm test -- --run: PASS, 6 files / 27 tests
+npm run build: PASS
+npm run e2e: PASS, 4/4 projects
+npm audit --audit-level=high: PASS, 0 vulnerabilities
+./scripts/quality-gate.sh: PASS WITH WARNINGS
+required failures: 0
+new warnings: 0
+optional skipped: cargo-audit, cargo-deny, gitleaks unavailable
+core path diff: empty
+```
+
+Final state:
+
+```text
+MERGED / VALIDATED / CLOSED
+```

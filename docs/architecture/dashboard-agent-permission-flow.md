@@ -4,8 +4,8 @@
 
 ```text
 feature: DASHBOARD-AGENT-PERMISSION-FLOW-001
-state: LOCAL VALIDATION PASSED
-development: IMPLEMENTATION COMPLETE
+state: MERGED / VALIDATED / CLOSED
+development: CLOSED
 branch: codex/dashboard-agent-permission-flow-001
 base: 9ba34dddc987d090e49dba02aaac788826a67186
 base tree: 33e9daab8a52741b466528408298e76d2e00e1c9
@@ -162,3 +162,29 @@ core path diff: empty
 field QA: not required
 recommendation: READY FOR ARCHITECTURE MERGE REVIEW
 ```
+
+## Controlled Merge And Closure
+
+```text
+target before merge: 9ba34dddc987d090e49dba02aaac788826a67186
+source: origin/codex/dashboard-agent-permission-flow-001
+source commit: 84eb1962a0ffbb0f76b4349639cb63c6b12293d2
+source tree: 7c8794e231e27d56e37ff1be64ea9d645def5830
+merge commit: e5377334b112914a1a2fa56248a8a55a4f7132a3
+merge tree: 7c8794e231e27d56e37ff1be64ea9d645def5830
+tree identity: PASS
+merge conflicts: none
+runtime behavior changed: no
+field QA executed: no, not required for browser-only mock behavior
+```
+
+Post-merge frontend validation repeated reproducible installation, format,
+lint, typecheck, 27 unit tests, production build, dependency audit, and all
+four Playwright projects successfully. The repository quality gate passed with
+zero required failures and zero new warnings; three unavailable optional tools
+remain recorded as skipped.
+
+This closes only the deterministic permission-review preview. Real Local
+Control API integration, authorization, audit persistence, package mutation,
+runtime dispatch, and agent execution remain blocked by their owning canonical
+features.
