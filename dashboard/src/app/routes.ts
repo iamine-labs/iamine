@@ -1,5 +1,11 @@
 export type DashboardRouteId =
-  'overview' | 'agents' | 'nodes' | 'models' | 'activity' | 'marketplace';
+  | 'overview'
+  | 'agents'
+  | 'nodes'
+  | 'models'
+  | 'activity'
+  | 'diagnostics'
+  | 'marketplace';
 
 export interface DashboardRoute {
   id: DashboardRouteId;
@@ -15,14 +21,20 @@ export const dashboardRoutes: readonly DashboardRoute[] = [
     path: '/overview',
     availability: 'preview',
   },
-  { id: 'agents', label: 'Agents', path: '/agents', availability: 'reserved' },
-  { id: 'nodes', label: 'Nodes', path: '/nodes', availability: 'reserved' },
-  { id: 'models', label: 'Models', path: '/models', availability: 'reserved' },
+  { id: 'agents', label: 'Agents', path: '/agents', availability: 'preview' },
+  { id: 'nodes', label: 'Nodes', path: '/nodes', availability: 'preview' },
+  { id: 'models', label: 'Models', path: '/models', availability: 'preview' },
   {
     id: 'activity',
     label: 'Activity',
     path: '/activity',
-    availability: 'reserved',
+    availability: 'preview',
+  },
+  {
+    id: 'diagnostics',
+    label: 'Diagnostics',
+    path: '/diagnostics',
+    availability: 'preview',
   },
   {
     id: 'marketplace',
@@ -33,10 +45,15 @@ export const dashboardRoutes: readonly DashboardRoute[] = [
 ];
 
 export const overviewRoute = dashboardRoutes[0];
+export const agentPermissionRoutePattern = '/agents/:agentId/permissions';
 
 export function getDashboardRoute(id: DashboardRouteId): DashboardRoute {
   const route = dashboardRoutes.find((candidate) => candidate.id === id);
 
   if (!route) throw new Error(`Unknown dashboard route: ${id}`);
   return route;
+}
+
+export function getAgentPermissionRoute(agentId: string): string {
+  return `/agents/${encodeURIComponent(agentId)}/permissions`;
 }

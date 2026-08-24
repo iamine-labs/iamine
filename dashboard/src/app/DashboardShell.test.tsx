@@ -25,12 +25,62 @@ describe('DashboardShell', () => {
 
     fireEvent.click(screen.getByRole('link', { name: 'Agents' }));
 
-    expect(screen.getByRole('heading', { name: 'Agents' })).toBeVisible();
-    expect(screen.getByText('Preview boundary')).toBeVisible();
+    expect(
+      await screen.findByRole('heading', { name: 'Agent catalog' }),
+    ).toBeVisible();
+    expect(
+      screen.getByText('Preview catalog; not local node state'),
+    ).toBeVisible();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Return to Overview' }));
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Review permission preview' }),
+    );
+    expect(
+      await screen.findByRole('heading', { name: 'Permission review' }),
+    ).toBeVisible();
+    expect(screen.getByRole('link', { name: 'Agents' })).toHaveAttribute(
+      'data-selected',
+      'true',
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Agent catalog' }));
+    expect(
+      await screen.findByRole('heading', { name: 'Agent catalog' }),
+    ).toBeVisible();
+
+    fireEvent.click(screen.getByRole('link', { name: 'Overview' }));
     expect(
       await screen.findByRole('heading', { name: 'System operational' }),
+    ).toBeVisible();
+
+    fireEvent.click(screen.getByRole('link', { name: 'Nodes' }));
+    expect(await screen.findByRole('heading', { name: 'Nodes' })).toBeVisible();
+    expect(
+      screen.getByText('Preview fixture; no node discovery was performed'),
+    ).toBeVisible();
+
+    fireEvent.click(screen.getByRole('link', { name: 'Models' }));
+    expect(
+      await screen.findByRole('heading', { name: 'Models' }),
+    ).toBeVisible();
+    expect(
+      screen.getByText('Preview fixture; no model registry was read'),
+    ).toBeVisible();
+
+    fireEvent.click(screen.getByRole('link', { name: 'Activity' }));
+    expect(
+      await screen.findByRole('heading', { name: 'Activity' }),
+    ).toBeVisible();
+    expect(
+      screen.getByText('Preview fixture; no event source was read'),
+    ).toBeVisible();
+
+    fireEvent.click(screen.getByRole('link', { name: 'Diagnostics' }));
+    expect(
+      await screen.findByRole('heading', { name: 'Diagnostics' }),
+    ).toBeVisible();
+    expect(
+      screen.getByText('Preview fixture; no device was inspected'),
     ).toBeVisible();
   });
 
@@ -41,6 +91,20 @@ describe('DashboardShell', () => {
       screen.getByRole('heading', { name: 'Page not found' }),
     ).toBeVisible();
     expect(screen.getByText('Unknown route')).toBeVisible();
+  });
+
+  it('renders a bounded permission state for an unknown agent route', async () => {
+    renderShell('/agents/not-in-the-catalog/permissions');
+
+    expect(
+      await screen.findByRole('heading', {
+        name: 'Permission preview unavailable for this agent',
+      }),
+    ).toBeVisible();
+    expect(screen.getByRole('link', { name: 'Agents' })).toHaveAttribute(
+      'data-selected',
+      'true',
+    );
   });
 
   it('marks unavailable shell actions as disabled', () => {

@@ -23,6 +23,7 @@
   font-size: 12px;
   font-weight: 650;
   letter-spacing: 0;
+  white-space: nowrap;
 }
 
 .option[aria-pressed='true'] {
@@ -42,5 +43,6 @@
 
   .option {
     min-width: 0;
+    padding-inline: 6px;
   }
 }

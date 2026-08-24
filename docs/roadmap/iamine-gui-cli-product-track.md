@@ -46,9 +46,13 @@ remains a non-authoritative mock surface without node connectivity.
 | IAMINE-DASHBOARD-OVERVIEW-READONLY-INTEGRATION-001 | PROPOSED | Authorized read-only API, shared contracts, local authorization, and audit evidence. |
 | NODE-ONBOARDING-WIZARD-001 | PROPOSED | Stable setup, configuration, privacy, and rollback contracts. |
 | NODE-RESOURCE-CONTROLS-001 | PROPOSED | Stable resource policy and bounded mutation. |
+| DASHBOARD-DIAGNOSTICS-MOCK-001 | MERGED / VALIDATED / CLOSED | Typed, deterministic, non-authoritative diagnostics preview; merge `156c360`, post-merge Mac frontend PASS and Rust exception accepted for five sandbox-only failures that passed individually outside the sandbox. Core diff empty; real diagnostics remain proposed. |
+| DASHBOARD-NODES-MOCK-001 | MERGED / VALIDATED / CLOSED | Typed, deterministic, non-authoritative Nodes preview with complete Mac frontend QA; merge `b58a1a8`, exact source/merge tree identity, post-merge frontend and focused repository validation PASS. Core diff empty; real inventory and actions remain unavailable. |
+| DASHBOARD-MODELS-MOCK-001 | MERGED / VALIDATED / CLOSED | Controlled merge `522e74b` produced the exact approved source tree without conflicts; target integration verified at `2934c80`. Frontend, 45/45 unit, 12/12 multibrowser E2E, audit, focused Rust, and core-diff checks PASS. No real model integration or action was added. |
+| DASHBOARD-ACTIVITY-MOCK-001 | MERGED / VALIDATED / CLOSED | Merge `be6aefa` produced the exact approved source tree without conflicts. Post-merge Mac QA passed 51/51 unit and 16/16 multibrowser E2E tests; audit and focused Rust checks passed, core diff remained empty, and no real event or audit integration was added. |
 | DASHBOARD-DIAGNOSTICS-001 | PROPOSED | Privacy-safe diagnostics contract. |
-| DASHBOARD-AGENT-CATALOG-001 | PROPOSED | Official agent registry and display contracts. |
-| DASHBOARD-AGENT-PERMISSION-FLOW-001 | PROPOSED | Permission display, confirmation, denial, and audit. |
+| DASHBOARD-AGENT-CATALOG-001 | MERGED / VALIDATED / CLOSED | Typed, non-authoritative Agent Catalog preview with bounded search, stage filters, local detail selection, complete UI states, and Mac multibrowser QA; merge `45923de`, post-merge frontend and repository gates PASS, no core or real agent behavior changed. |
+| DASHBOARD-AGENT-PERMISSION-FLOW-001 | MERGED / VALIDATED / CLOSED | Typed, non-authoritative permission review preview with exact catalog routing, complete UI states, local confirmation, denial, reset, non-persisted audit projection, and Mac multibrowser QA; merge `e537733`, post-merge frontend and repository gates PASS, no core or real authorization behavior changed. |
 | DASHBOARD-AGENT-EXECUTION-001 | PROPOSED | Functional runtime, loader, authorization, and executor. |
 | LOCAL-DASHBOARD-BUNDLING-001 | PROPOSED | Stable shell, service lifecycle, and release packaging. |
 | GUI-CLI-COMMAND-PARITY-001 | PROPOSED | Shared contracts and supported command inventory. |
