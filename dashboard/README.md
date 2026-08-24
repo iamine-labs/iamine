@@ -1,13 +1,14 @@
 # IAMINE Dashboard
 
 This directory contains IAMINE's local dashboard frontend. The current surface
-is a routed application shell around the non-authoritative official Overview
-preview. It does not connect to a node, a Local Control API, P2P, the
+is a routed application shell around approved, non-authoritative visual
+previews. It does not connect to a node, a Local Control API, P2P, the
 filesystem, or an operating-system shell.
 
 Routes use the URL hash so the deterministic static build does not require a
-server-side fallback. Only `/overview` contains approved preview content; the
-other destinations are bounded placeholders for their own future features.
+server-side fallback. Overview, Agents, Nodes, and Diagnostics contain bounded
+preview content. Models, Activity, and Marketplace remain placeholders for
+their own future features.
 
 ## Toolchain
 
@@ -37,8 +38,10 @@ npm audit --audit-level=moderate
 
 - `src/components/` owns reusable presentation primitives.
 - `src/app/` owns composition, routes, navigation, and top-level failures.
+- `src/contracts/view-models/` owns presentation-only typed contracts.
+- `src/mocks/` owns deterministic non-authoritative data sources and fixtures.
+- `src/features/` owns bounded visual journeys and local UI state.
 - `src/styles/` owns global tokens, reset, and typography foundations.
-- `src/preview/` owns deterministic preview fixtures and panels only.
 - `tests/e2e/` owns browser, responsive, keyboard, and accessibility evidence.
 - `public/assets/` contains reviewed IAMINE-owned runtime image assets.
 

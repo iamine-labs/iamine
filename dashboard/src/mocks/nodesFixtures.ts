@@ -1,0 +1,108 @@
+import type { NodesViewModel } from '../contracts/view-models/nodes';
+
+export const nodesMockViewModel: NodesViewModel = {
+  schemaVersion: 'iamine.dashboard.nodes.preview-0.1',
+  title: 'Nodes',
+  subtitle: 'Synthetic inventory for the dashboard preview.',
+  provenance: {
+    label: 'Preview fixture; no node discovery was performed',
+    authoritative: false,
+  },
+  metrics: [
+    { label: 'Preview nodes', value: '5' },
+    { label: 'Available', value: '3' },
+    { label: 'Limited', value: '1' },
+    { label: 'Offline', value: '1' },
+  ],
+  nodes: [
+    {
+      id: 'preview-node-a',
+      name: 'Preview Node A',
+      roleLabel: 'Coordinator sample',
+      environmentLabel: 'Desktop sample',
+      status: 'available',
+      statusLabel: 'Available',
+      summary: 'Balanced presentation sample with coordination labels.',
+      capacityLabel: 'Balanced preview',
+      visibilityLabel: 'Bundled fixture',
+      capabilities: [
+        { id: 'compute', label: 'Compute label' },
+        { id: 'storage', label: 'Storage label' },
+      ],
+      notes: [
+        'No host process or network endpoint was queried.',
+        'Capacity is a display label, not scheduler eligibility.',
+      ],
+    },
+    {
+      id: 'preview-node-b',
+      name: 'Preview Node B',
+      roleLabel: 'Worker sample',
+      environmentLabel: 'Server sample',
+      status: 'available',
+      statusLabel: 'Available',
+      summary: 'Synthetic worker row with an acceleration presentation label.',
+      capacityLabel: 'Focused preview',
+      visibilityLabel: 'Bundled fixture',
+      capabilities: [
+        { id: 'compute', label: 'Compute label' },
+        { id: 'acceleration', label: 'Acceleration label' },
+      ],
+      notes: [
+        'No accelerator, memory, or processor was inspected.',
+        'The fixture cannot authorize model placement or execution.',
+      ],
+    },
+    {
+      id: 'preview-node-c',
+      name: 'Preview Node C',
+      roleLabel: 'Worker sample',
+      environmentLabel: 'Constrained sample',
+      status: 'limited',
+      statusLabel: 'Limited',
+      summary: 'Bounded presentation sample for a constrained visual state.',
+      capacityLabel: 'Constrained preview',
+      visibilityLabel: 'Bundled fixture',
+      capabilities: [{ id: 'compute', label: 'Compute label' }],
+      notes: [
+        'Limited is synthetic UI state, not a compatibility decision.',
+        'No resource budget or worker policy was evaluated.',
+      ],
+    },
+    {
+      id: 'preview-node-d',
+      name: 'Preview Node D',
+      roleLabel: 'Relay sample',
+      environmentLabel: 'Virtual sample',
+      status: 'offline',
+      statusLabel: 'Offline',
+      summary: 'Deterministic row used to exercise an offline visual state.',
+      capacityLabel: 'Unobserved preview',
+      visibilityLabel: 'Bundled fixture',
+      capabilities: [{ id: 'storage', label: 'Storage label' }],
+      notes: [
+        'Offline does not report a real connection or lifecycle state.',
+        'No retry, wake, or service action is available.',
+      ],
+    },
+    {
+      id: 'preview-node-e',
+      name: 'Preview Node E',
+      roleLabel: 'Worker sample',
+      environmentLabel: 'Desktop sample',
+      status: 'available',
+      statusLabel: 'Available',
+      summary: 'Second synthetic worker row for filtering and selection.',
+      capacityLabel: 'General preview',
+      visibilityLabel: 'Bundled fixture',
+      capabilities: [
+        { id: 'compute', label: 'Compute label' },
+        { id: 'acceleration', label: 'Acceleration label' },
+      ],
+      notes: [
+        'Values are deterministic and contain no machine identifier.',
+        'No trust, authorization, or runtime authority is represented.',
+      ],
+    },
+  ],
+};
