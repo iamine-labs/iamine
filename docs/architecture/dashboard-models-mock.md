@@ -4,9 +4,9 @@
 
 ```text
 feature: DASHBOARD-MODELS-MOCK-001
-state: ARCHITECTURE REVIEW REQUIRED
+state: APPROVED FOR MERGE
 architecture: APPROVED
-architecture review: REQUIRED
+architecture review: PASSED
 development: IMPLEMENTATION COMPLETE
 local validation: PASSED
 branch: codex/dashboard-models-mock-001
@@ -157,3 +157,25 @@ implementation tree. The feature contains no Rust or workspace-manifest diff.
 The first Models E2E run exposed an ambiguous `Review` selector in the new test.
 The selector was made exact and the full 12-case browser matrix then passed.
 No product behavior failed.
+
+## Architecture Review
+
+```text
+reviewed commit: f8fcdf31bf05eecf0af00578c7baac7dc691d212
+reviewed tree: bfb9ae3341ddf6860a6a48207b667ec8432187d6
+scope conformance: PASS
+ownership and modularity: PASS
+mock authority boundary: PASS
+model-domain ownership boundary: PASS
+privacy and security boundary: PASS
+responsive and accessibility evidence: PASS
+core non-regression: PASS
+environmental exception classification: ACCEPTED
+blocking findings: 0
+authorization: APPROVED FOR MERGE
+```
+
+The approval applies only to the deterministic browser preview. Real model
+identity, registry, artifacts, licenses, compatibility, backends, storage,
+download, installation, selection, routing, inference, execution, and Local
+Control API access remain unavailable and owned by future authorized features.
