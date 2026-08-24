@@ -6,8 +6,8 @@ previews. It does not connect to a node, a Local Control API, P2P, the
 filesystem, or an operating-system shell.
 
 Routes use the URL hash so the deterministic static build does not require a
-server-side fallback. Overview, Agents, Nodes, and Diagnostics contain bounded
-preview content. Models, Activity, and Marketplace remain placeholders for
+server-side fallback. Overview, Agents, Nodes, Models, and Diagnostics contain
+bounded preview content. Activity and Marketplace remain placeholders for
 their own future features.
 
 ## Toolchain

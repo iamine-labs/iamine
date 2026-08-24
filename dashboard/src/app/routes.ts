@@ -23,7 +23,7 @@ export const dashboardRoutes: readonly DashboardRoute[] = [
   },
   { id: 'agents', label: 'Agents', path: '/agents', availability: 'preview' },
   { id: 'nodes', label: 'Nodes', path: '/nodes', availability: 'preview' },
-  { id: 'models', label: 'Models', path: '/models', availability: 'reserved' },
+  { id: 'models', label: 'Models', path: '/models', availability: 'preview' },
   {
     id: 'activity',
     label: 'Activity',

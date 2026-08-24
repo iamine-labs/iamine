@@ -59,6 +59,14 @@ describe('DashboardShell', () => {
       screen.getByText('Preview fixture; no node discovery was performed'),
     ).toBeVisible();
 
+    fireEvent.click(screen.getByRole('link', { name: 'Models' }));
+    expect(
+      await screen.findByRole('heading', { name: 'Models' }),
+    ).toBeVisible();
+    expect(
+      screen.getByText('Preview fixture; no model registry was read'),
+    ).toBeVisible();
+
     fireEvent.click(screen.getByRole('link', { name: 'Diagnostics' }));
     expect(
       await screen.findByRole('heading', { name: 'Diagnostics' }),
