@@ -5,7 +5,7 @@
 ```text
 project: IAMINE
 feature: DASHBOARD-MODELS-MOCK-001
-state: LOCAL VALIDATION PASSED
+state: POST-MERGE VALIDATION
 branch: codex/dashboard-models-mock-001
 base: f5978c185ca766c9a47f485f450435c9364846d3
 base tree: d4380eaed21504c3c94039bc78b9530b85fd72e7
@@ -120,4 +120,56 @@ no product behavior failed.
 blocking product findings: 0
 known limitations: browser-only synthetic data; no real model integration
 recommendation: READY FOR ARCHITECTURE MERGE REVIEW
+```
+
+## Architecture Review
+
+```text
+reviewed commit: f8fcdf31bf05eecf0af00578c7baac7dc691d212
+reviewed tree: bfb9ae3341ddf6860a6a48207b667ec8432187d6
+scope, ownership, authority, privacy, accessibility, and core guards: PASS
+environmental exception: ACCEPTED
+blocking findings: 0
+authorization: APPROVED FOR MERGE
+```
+
+## Post-Merge Validation
+
+```text
+target before merge: f5978c185ca766c9a47f485f450435c9364846d3
+source commit: df117d5f7c43d264c7361812163aa883db5e9188
+source tree: 051de37e1e99d7a2ccdc0fc3b90f2148c58eaca9
+merge commit: 522e74b40e4e9543dc32e7cfcb5ea2ff5202241d
+merge tree: 051de37e1e99d7a2ccdc0fc3b90f2148c58eaca9
+tree identity: PASS
+merge conflicts: none
+npm ci: PASS, 248 packages from lockfile
+npm run format:check: PASS
+npm run lint: PASS
+npm run typecheck: PASS
+npm test -- --run: PASS, 9 files / 45 tests
+npm run build: PASS
+npm audit --audit-level=moderate: PASS, 0 vulnerabilities
+npm run e2e: PASS, 12/12 tests across 4 projects
+cargo fmt --all -- --check: PASS
+cargo test -p iamine-network: PASS, 163 unit + 4 routing tests
+cargo build -p iamine-node: PASS with historical warnings
+cargo clippy --workspace --all-targets: PASS with historical warnings
+core path diff: empty
+```
+
+The source tree completed the full repository gate with the accepted sandbox
+exception documented above. Because the merge tree is byte-for-byte identical,
+post-merge QA repeated the complete frontend surface and focused non-regression
+Rust checks. No product or test change was required after integration.
+
+Architecture classification:
+
+```text
+product regression: no evidence
+environmental restriction: confirmed
+exception scope: four Metal assertions and one Unix socket test
+product or test changes required: no
+accepted result: POST-MERGE VALIDATION PASSED WITH ENVIRONMENTAL EXCEPTION
+final state: pending verified target update
 ```

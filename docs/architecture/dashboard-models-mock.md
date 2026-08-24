@@ -4,7 +4,7 @@
 
 ```text
 feature: DASHBOARD-MODELS-MOCK-001
-state: APPROVED FOR MERGE
+state: POST-MERGE VALIDATION
 architecture: APPROVED
 architecture review: PASSED
 development: IMPLEMENTATION COMPLETE
@@ -179,3 +179,30 @@ The approval applies only to the deterministic browser preview. Real model
 identity, registry, artifacts, licenses, compatibility, backends, storage,
 download, installation, selection, routing, inference, execution, and Local
 Control API access remain unavailable and owned by future authorized features.
+
+## Controlled Merge And Validation
+
+```text
+target before merge: f5978c185ca766c9a47f485f450435c9364846d3
+source: origin/codex/dashboard-models-mock-001
+source commit: df117d5f7c43d264c7361812163aa883db5e9188
+source tree: 051de37e1e99d7a2ccdc0fc3b90f2148c58eaca9
+merge commit: 522e74b40e4e9543dc32e7cfcb5ea2ff5202241d
+merge tree: 051de37e1e99d7a2ccdc0fc3b90f2148c58eaca9
+tree identity: PASS
+merge conflicts: none
+runtime behavior changed: no
+field QA executed: no, not required for browser-only mock behavior
+post-merge validation: PASS WITH ACCEPTED ENVIRONMENTAL EXCEPTION
+target update: pending final remote identity check
+```
+
+Post-merge installation, static checks, 45 unit tests, production build, npm
+audit, and all 12 Playwright cases passed. Rust formatting, 163 network unit
+tests, four routing tests, node build, Clippy, whitespace checks, and core diff
+also passed. Clippy warnings are historical and outside this frontend diff.
+
+The complete source gate and its five exact out-of-sandbox environmental
+repetitions apply to the merge because source and merge trees are identical.
+The environment-sensitive suite was not redundantly repeated after the merge;
+no Rust or workspace-manifest content changed.
