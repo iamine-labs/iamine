@@ -67,6 +67,14 @@ describe('DashboardShell', () => {
       screen.getByText('Preview fixture; no model registry was read'),
     ).toBeVisible();
 
+    fireEvent.click(screen.getByRole('link', { name: 'Activity' }));
+    expect(
+      await screen.findByRole('heading', { name: 'Activity' }),
+    ).toBeVisible();
+    expect(
+      screen.getByText('Preview fixture; no event source was read'),
+    ).toBeVisible();
+
     fireEvent.click(screen.getByRole('link', { name: 'Diagnostics' }));
     expect(
       await screen.findByRole('heading', { name: 'Diagnostics' }),
