@@ -53,6 +53,12 @@ describe('DashboardShell', () => {
       await screen.findByRole('heading', { name: 'System operational' }),
     ).toBeVisible();
 
+    fireEvent.click(screen.getByRole('link', { name: 'Nodes' }));
+    expect(await screen.findByRole('heading', { name: 'Nodes' })).toBeVisible();
+    expect(
+      screen.getByText('Preview fixture; no node discovery was performed'),
+    ).toBeVisible();
+
     fireEvent.click(screen.getByRole('link', { name: 'Diagnostics' }));
     expect(
       await screen.findByRole('heading', { name: 'Diagnostics' }),
