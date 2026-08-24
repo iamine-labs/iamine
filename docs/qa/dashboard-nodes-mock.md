@@ -154,3 +154,46 @@ environmental exception: ACCEPTED
 blocking findings: 0
 authorization: APPROVED FOR MERGE
 ```
+
+## Post-Merge Validation
+
+```text
+target before merge: 6dcb75e718c53b79bb4e3c51478da027e293de43
+source commit: 84471bbef5d4ab2342515940be1fe7cae625ae27
+source tree: c276776cc6f8fc030b6668e2c9271d3ebdf2188f
+merge commit: b58a1a81e1a1afe8e759c95853d26f992dbb196e
+merge tree: c276776cc6f8fc030b6668e2c9271d3ebdf2188f
+tree identity: PASS
+merge conflicts: none
+npm ci: PASS, 248 packages from lockfile
+npm run format:check: PASS
+npm run lint: PASS
+npm run typecheck: PASS
+npm test -- --run: PASS, 8 files / 39 tests
+npm run build: PASS
+npm audit --audit-level=moderate: PASS, 0 vulnerabilities
+npm run e2e: PASS, 8/8 tests across 4 projects
+cargo fmt --all -- --check: PASS
+cargo test -p iamine-network: PASS, 163 unit + 4 routing tests
+cargo build -p iamine-node: PASS with historical warnings
+cargo clippy --workspace --all-targets: PASS with historical warnings
+repository and architecture guards: PASS
+core path diff: empty
+```
+
+The source tree completed the full repository gate with the accepted sandbox
+exception documented above. Because the merge tree is byte-for-byte identical,
+post-merge QA repeated the complete frontend surface and focused non-regression
+Rust checks without rerunning the same environment-sensitive model and socket
+matrix. No product or test change was required.
+
+Architecture classification:
+
+```text
+product regression: no evidence
+environmental restriction: confirmed
+exception scope: four Metal assertions and one Unix socket test
+product or test changes required: no
+accepted result: POST-MERGE VALIDATION PASSED WITH ENVIRONMENTAL EXCEPTION
+final state: MERGED / VALIDATED / CLOSED
+```

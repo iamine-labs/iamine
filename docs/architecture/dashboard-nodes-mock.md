@@ -4,7 +4,7 @@
 
 ```text
 feature: DASHBOARD-NODES-MOCK-001
-state: APPROVED FOR MERGE
+state: MERGED / VALIDATED / CLOSED
 architecture: APPROVED
 architecture review: PASSED
 development: IMPLEMENTATION COMPLETE
@@ -172,3 +172,34 @@ The approval applies only to the deterministic browser preview. Real node
 discovery, inventory, connectivity, hardware data, scheduler decisions,
 resource controls, lifecycle actions, and Local Control API access remain
 unavailable and owned by their future authorized features.
+
+## Controlled Merge And Closure
+
+```text
+target before merge: 6dcb75e718c53b79bb4e3c51478da027e293de43
+source: origin/codex/dashboard-nodes-mock-001
+source commit: 84471bbef5d4ab2342515940be1fe7cae625ae27
+source tree: c276776cc6f8fc030b6668e2c9271d3ebdf2188f
+precomputed merge tree: c276776cc6f8fc030b6668e2c9271d3ebdf2188f
+merge commit: b58a1a81e1a1afe8e759c95853d26f992dbb196e
+merge tree: c276776cc6f8fc030b6668e2c9271d3ebdf2188f
+tree identity: PASS
+merge conflicts: none
+runtime behavior changed: no
+field QA executed: no, not required for browser-only mock behavior
+post-merge validation: PASS WITH ACCEPTED ENVIRONMENTAL EXCEPTION
+```
+
+Post-merge installation, static checks, 39 unit tests, production build, npm
+audit, and all eight Playwright cases passed. Rust formatting, 163 network unit
+tests, four routing tests, node build, clippy, repository guards, and core diff
+also passed. Clippy warnings are historical and outside this frontend diff.
+
+The complete source gate and its five exact out-of-sandbox environmental
+repetitions apply to the merge because source and merge trees are identical.
+The environment-sensitive suite was not redundantly repeated after the merge;
+no Rust or workspace-manifest content changed.
+
+This closes only the deterministic Nodes preview. Real inventory, discovery,
+connectivity, hardware facts, scheduling, lifecycle, configuration, and Local
+Control API access remain unavailable.
