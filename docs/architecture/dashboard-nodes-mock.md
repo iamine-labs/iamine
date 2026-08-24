@@ -4,11 +4,15 @@
 
 ```text
 feature: DASHBOARD-NODES-MOCK-001
-state: DEVELOPMENT AUTHORIZED
+state: ARCHITECTURE REVIEW REQUIRED
 architecture: APPROVED
+development: IMPLEMENTATION COMPLETE
+local validation: PASSED
 branch: codex/dashboard-nodes-mock-001
 base: 6dcb75e718c53b79bb4e3c51478da027e293de43
 base tree: 5721b91883cec7a81aa33d8c533dee6541d16e58
+implementation commit: 2cc346898c732b3892d1db6b6a5dd2c8e2082ae3
+implementation tree: 06af5a2296c669d22e625f0f932fe55fc436b130
 target: develop
 runtime behavior changed: no
 field QA required: no; browser-only typed mock surface
@@ -121,3 +125,28 @@ Playwright and accessibility checks cover desktop and mobile ready states,
 navigation, filtering, provenance, overflow, and route non-regression. Remote
 Field QA is not required because the feature is browser-only and has no node
 connection.
+
+## Validation Outcome
+
+```text
+frontend format, lint, typecheck, unit, build, audit, and E2E: PASS
+unit coverage: 8 files / 39 tests
+Playwright matrix: 8/8 tests across 4 projects
+repository quality gate: PASS WITH ENVIRONMENTAL EXCEPTION RECOMMENDED
+required failures in sandbox: 3 aggregate checks / 5 exact cases
+exact failed cases repeated outside sandbox: 5/5 PASS
+new warnings: 0
+optional skipped: cargo-audit, cargo-deny, gitleaks unavailable
+core path diff: empty
+largest feature logic module: 191 lines
+largest feature CSS module: 219 lines
+field QA: not required
+recommendation: READY FOR ARCHITECTURE MERGE REVIEW
+```
+
+The sandbox blocked four Metal inference assertions and one Unix socket test.
+All five failed checks passed individually outside the sandbox against the same
+implementation tree. The feature contains no Rust or workspace-manifest diff.
+
+The Mac has Node `26.7.0`, outside the dashboard's declared Node `24.x` engine
+range. npm `11.19.0` is supported and every required frontend check passed.
