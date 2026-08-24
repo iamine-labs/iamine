@@ -51,6 +51,46 @@ content change under `agents/official/reporter`, `iamine-agent-runtime`, or
 `iamine-node`. The Reporter implementation and its runtime contracts are
 therefore unchanged by the merge. The branch was clean after reconciliation.
 
+## Mac Frontend Regression
+
+```text
+CHECK MAC-FRONTEND-REGRESSION: PASS WITH RECORDED TEST-SYNCHRONIZATION FINDING
+validated branch tip: e4328e087155cc554a0022a6a8f9cb8451506fae
+Node.js: 24.19.0
+npm: 11.16.0
+format: PASS
+lint: PASS
+typecheck: PASS
+unit tests: 51/51 PASS
+production build: PASS
+npm audit: 0 vulnerabilities
+E2E initial matrix: 15/16 PASS
+exact failed E2E rerun: 1/1 PASS
+visual matrix: 1440x900, 1024x768, and 390x844 PASS
+```
+
+The inherited dashboard from reconciled `develop` was validated on Mac without
+changing dashboard, Reporter, runtime, or core source. All six implemented
+routes (`overview`, `agents`, `nodes`, `models`, `activity`, and `diagnostics`)
+were inspected. The 1024- and 390-pixel route matrices had no horizontal
+overflow or interactive elements outside the viewport. The reviewed desktop
+and mobile views had no visible clipping or overlap, all referenced images
+loaded, and the browser console contained no warnings or errors.
+
+The initial multi-browser E2E run passed 15 of 16 cases. The Firefox 1024 shell
+case timed out while waiting for `networkidle`, although its captured page was
+fully rendered, all HTTP responses had succeeded, and the Vite development
+server's HMR WebSocket remained open. The exact failed case passed when rerun
+once in isolation. This is recorded as a nondeterministic test-synchronization
+finding rather than a dashboard product failure or a pristine initial E2E
+pass. Future test maintenance should replace dev-server `networkidle` waits
+with explicit UI-readiness assertions. No product or test code was modified
+during this QA check.
+
+The production preview was stopped after inspection and port 4173 had no
+remaining listener. Generated Playwright results remain local QA artifacts and
+are not staged for commit.
+
 ## Current Local Results
 
 ```text
