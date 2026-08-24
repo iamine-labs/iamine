@@ -5,7 +5,7 @@
 ```text
 project: IAMINE
 feature: DASHBOARD-ACTIVITY-MOCK-001
-state: ARCHITECTURE REVIEW REQUIRED
+state: MERGED / VALIDATED / CLOSED
 branch: codex/dashboard-activity-mock-001
 base: 6e66e2f3c4478367e9bc5fb27d4dfa04d26e4f76
 base tree: a19388cda194b1f4b951299413e3d0d1eb1f7349
@@ -146,4 +146,44 @@ environmental exception: ACCEPTED
 user authorization: EXPLICIT
 blocking findings: 0
 authorization: APPROVED FOR MERGE
+```
+
+## Post-Merge Validation
+
+```text
+target before merge: 6e66e2f3c4478367e9bc5fb27d4dfa04d26e4f76
+source commit: 4d19c8ee1d7a85b98a76bee13ca1bc21d45e81c6
+source tree: 4fc0ca8b6bc1f9bc883384aa6458d2a59bca815f
+merge commit: be6aefa07110948a32486f96cc606dd9544f5d66
+merge tree: 4fc0ca8b6bc1f9bc883384aa6458d2a59bca815f
+tree identity: PASS
+merge conflicts: none
+npm ci: PASS, 248 packages from lockfile
+npm run format:check: PASS
+npm run lint: PASS
+npm run typecheck: PASS
+npm test -- --run: PASS, 10 files / 51 tests
+npm run build: PASS, 1900 modules
+npm audit --audit-level=moderate: PASS, 0 vulnerabilities
+npm run e2e: PASS, 16/16 tests across 4 projects
+cargo fmt --all -- --check: PASS
+cargo test -p iamine-network: PASS, 163 unit + 4 routing tests
+cargo build -p iamine-node: PASS with historical warnings
+cargo clippy --workspace --all-targets: PASS with historical warnings
+git diff --check: PASS
+git diff --cached --check: PASS
+core path diff: empty
+```
+
+The complete repository gate and five accepted sandbox exceptions are recorded
+against the byte-identical source tree above. Post-merge QA therefore repeated
+the entire frontend surface and focused Rust non-regression checks. No product
+or test change was required after integration.
+
+```text
+product regression: no evidence
+environmental restriction: confirmed and accepted
+remote field QA: not required
+target update: origin/develop verified at be6aefa07110948a32486f96cc606dd9544f5d66
+final state: MERGED / VALIDATED / CLOSED
 ```
