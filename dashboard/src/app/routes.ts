@@ -28,7 +28,7 @@ export const dashboardRoutes: readonly DashboardRoute[] = [
     id: 'activity',
     label: 'Activity',
     path: '/activity',
-    availability: 'reserved',
+    availability: 'preview',
   },
   {
     id: 'diagnostics',
