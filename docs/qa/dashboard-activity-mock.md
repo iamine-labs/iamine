@@ -135,3 +135,15 @@ known limitations: browser-only synthetic data; no real event integration
 environmental exception: five sandbox-only cases, all passed outside sandbox
 recommendation: READY FOR ARCHITECTURE MERGE REVIEW
 ```
+
+## Architecture Review
+
+```text
+reviewed commit: c2aa12af892b83d2ad4bfeaa3b2fbe47509547d2
+reviewed tree: 50c899e05fc86f8e401ef533790dae53d20bf87e
+scope, ownership, authority, privacy, accessibility, and core guards: PASS
+environmental exception: ACCEPTED
+user authorization: EXPLICIT
+blocking findings: 0
+authorization: APPROVED FOR MERGE
+```

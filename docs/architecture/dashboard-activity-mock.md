@@ -4,14 +4,16 @@
 
 ```text
 feature: DASHBOARD-ACTIVITY-MOCK-001
-state: ARCHITECTURE REVIEW REQUIRED
-architecture: REVIEW REQUIRED
+state: APPROVED FOR MERGE
+architecture: APPROVED
 development: IMPLEMENTATION COMPLETE
 branch: codex/dashboard-activity-mock-001
 base: 6e66e2f3c4478367e9bc5fb27d4dfa04d26e4f76
 base tree: a19388cda194b1f4b951299413e3d0d1eb1f7349
 implementation commit: 79d5062ab4a2351c8d2606ee0edc6b711e829700
 implementation tree: 64ee74c26eb818c39cce01c9fe7f5e23193c21bd
+reviewed commit: c2aa12af892b83d2ad4bfeaa3b2fbe47509547d2
+reviewed tree: 50c899e05fc86f8e401ef533790dae53d20bf87e
 target: develop
 runtime behavior changed: no
 field QA required: no; browser-only typed mock surface
@@ -145,3 +147,23 @@ The implementation and QA evidence are recorded in
 `docs/qa/dashboard-activity-mock.md`. Architecture must review the complete
 feature diff and explicitly accept or reject the environmental exception before
 merge authorization.
+
+## Architecture Review
+
+Architecture reviewed the complete feature diff against the authorized base.
+The source remains modular, uses only synthetic typed presentation data, does
+not acquire runtime or audit authority, and has no core, Rust, manifest, or
+lockfile change. Privacy, responsive layout, accessibility, and absent-action
+guards passed.
+
+The five sandbox-only repository failures are accepted as an environmental
+exception because each exact case passed outside the sandbox against the
+reviewed tree. The aggregate gate failure remains visible in QA evidence.
+
+```text
+scope, ownership, authority, privacy, accessibility, and core guards: PASS
+environmental exception: ACCEPTED
+user authorization: EXPLICIT
+blocking findings: 0
+authorization: APPROVED FOR MERGE
+```
