@@ -4,7 +4,7 @@
 
 ```text
 feature: DASHBOARD-MODELS-MOCK-001
-state: POST-MERGE VALIDATION
+state: MERGED / VALIDATED / CLOSED
 architecture: APPROVED
 architecture review: PASSED
 development: IMPLEMENTATION COMPLETE
@@ -194,7 +194,8 @@ merge conflicts: none
 runtime behavior changed: no
 field QA executed: no, not required for browser-only mock behavior
 post-merge validation: PASS WITH ACCEPTED ENVIRONMENTAL EXCEPTION
-target update: pending final remote identity check
+target update: origin/develop verified at 2934c8086dccac2c4efcbb510926759fb9f76a6c
+target tree after validation: 86bd8a5ee0012295bf2c7817e888a89c986312ce
 ```
 
 Post-merge installation, static checks, 45 unit tests, production build, npm
@@ -206,3 +207,8 @@ The complete source gate and its five exact out-of-sandbox environmental
 repetitions apply to the merge because source and merge trees are identical.
 The environment-sensitive suite was not redundantly repeated after the merge;
 no Rust or workspace-manifest content changed.
+
+This closes only the deterministic Models preview. Real model identity,
+inventory, artifacts, licensing, compatibility, download, installation,
+storage, backend selection, routing, inference, execution, and Local Control
+API access remain unavailable.

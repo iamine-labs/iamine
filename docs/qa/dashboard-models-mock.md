@@ -5,7 +5,7 @@
 ```text
 project: IAMINE
 feature: DASHBOARD-MODELS-MOCK-001
-state: POST-MERGE VALIDATION
+state: MERGED / VALIDATED / CLOSED
 branch: codex/dashboard-models-mock-001
 base: f5978c185ca766c9a47f485f450435c9364846d3
 base tree: d4380eaed21504c3c94039bc78b9530b85fd72e7
@@ -171,5 +171,7 @@ environmental restriction: confirmed
 exception scope: four Metal assertions and one Unix socket test
 product or test changes required: no
 accepted result: POST-MERGE VALIDATION PASSED WITH ENVIRONMENTAL EXCEPTION
-final state: pending verified target update
+target update: origin/develop verified at 2934c8086dccac2c4efcbb510926759fb9f76a6c
+target tree after validation: 86bd8a5ee0012295bf2c7817e888a89c986312ce
+final state: MERGED / VALIDATED / CLOSED
 ```
