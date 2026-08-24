@@ -57,6 +57,9 @@ therefore unchanged by the merge. The branch was clean after reconciliation.
 focused Reporter tests: 10/10 PASS
 focused Node Doctor regression group: 21/21 PASS
 iamine-agent-runtime input/output enforcement: 8/8 PASS
+iamine-models outside sandbox: 100/100 unit + 59/59 integration PASS
+iamine-node outside sandbox: 506/506 PASS
+cargo test --workspace outside sandbox: PASS
 cargo build -p iamine-node: PASS
 cargo fmt --all -- --check: PASS
 supported report CLI smoke: PASS
@@ -93,7 +96,19 @@ clippy warnings. `main.rs` remained within the 5,000-line warning threshold and
 grew by two lines over `origin/develop`. `cargo audit`, `cargo deny`, and
 `gitleaks` were unavailable and were reported as skipped.
 
+The complete affected suites were then repeated outside the filesystem
+sandbox with `RUST_TEST_THREADS=1`. `iamine-models` passed all 100 unit and 59
+integration tests, `iamine-node` passed all 506 tests, and `cargo test
+--workspace` passed across the complete repository. This closes the three raw
+gate failures for the Mac host while preserving the gate's original result as
+executed.
+
 ## Mac Field Result
+
+```text
+MAC FIELD QA: PASS
+REMOTE FIELD QA: PENDING
+```
 
 The reconciled QA candidate commit and tree matched the identity above and the
 working tree was clean. A fresh isolated Cargo target was used after a shared
@@ -154,8 +169,10 @@ target compiled the same candidate and passed every focused Reporter check.
 
 The canonical gate's serial real-model run still failed four TinyLlama/Metal
 generation assertions inside the sandbox. All four passed when repeated one at
-a time outside it. The daemon socket test likewise passed outside the sandbox.
-Neither finding belongs to the Reporter source diff.
+a time outside it and as part of both the complete `iamine-models` suite and
+the complete workspace suite. The daemon socket test likewise passed outside
+the sandbox and in the complete `iamine-node` and workspace suites. Neither
+finding belongs to the Reporter source diff.
 
 ## Resume Condition
 
