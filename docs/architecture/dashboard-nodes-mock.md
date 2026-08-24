@@ -4,8 +4,9 @@
 
 ```text
 feature: DASHBOARD-NODES-MOCK-001
-state: ARCHITECTURE REVIEW REQUIRED
+state: APPROVED FOR MERGE
 architecture: APPROVED
+architecture review: PASSED
 development: IMPLEMENTATION COMPLETE
 local validation: PASSED
 branch: codex/dashboard-nodes-mock-001
@@ -150,3 +151,24 @@ implementation tree. The feature contains no Rust or workspace-manifest diff.
 
 The Mac has Node `26.7.0`, outside the dashboard's declared Node `24.x` engine
 range. npm `11.19.0` is supported and every required frontend check passed.
+
+## Architecture Review
+
+```text
+reviewed commit: 3cca6795aa8ec45d0ac51745b86103fec39ab6fe
+reviewed tree: 4057bfdd11080e92ff67836d3c2b35529be24bee
+scope conformance: PASS
+ownership and modularity: PASS
+mock authority boundary: PASS
+privacy and security boundary: PASS
+responsive and accessibility evidence: PASS
+core non-regression: PASS
+environmental exception classification: ACCEPTED
+blocking findings: 0
+authorization: APPROVED FOR MERGE
+```
+
+The approval applies only to the deterministic browser preview. Real node
+discovery, inventory, connectivity, hardware data, scheduler decisions,
+resource controls, lifecycle actions, and Local Control API access remain
+unavailable and owned by their future authorized features.

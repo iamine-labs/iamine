@@ -143,3 +143,14 @@ node discovery, inventory, connectivity, hardware data, scheduler decisions,
 resource controls, or lifecycle actions. TS140 and Proxmox QA are not required
 because runtime, networking, hardware, models, inference, and operational
 behavior are unchanged.
+
+## Architecture Review
+
+```text
+reviewed commit: 3cca6795aa8ec45d0ac51745b86103fec39ab6fe
+reviewed tree: 4057bfdd11080e92ff67836d3c2b35529be24bee
+scope, ownership, authority, privacy, accessibility, and core guards: PASS
+environmental exception: ACCEPTED
+blocking findings: 0
+authorization: APPROVED FOR MERGE
+```
