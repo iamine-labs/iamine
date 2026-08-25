@@ -22,7 +22,6 @@ test('runs the dashboard shell without browser or layout failures', async ({
   );
   await page.goto('/#/overview');
   await wallpaperLoaded;
-  await page.waitForLoadState('networkidle');
 
   await expect(page.getByText('Preview data')).toBeVisible();
   await expect(
@@ -60,7 +59,6 @@ test('runs the dashboard shell without browser or layout failures', async ({
   ).toBeVisible();
   await expect(page).toHaveURL(/#\/agents$/);
   await page.reload();
-  await page.waitForLoadState('networkidle');
   await expect(
     page.getByRole('heading', { name: 'Agent catalog', exact: true }),
   ).toBeVisible();
@@ -98,7 +96,6 @@ test('runs the dashboard shell without browser or layout failures', async ({
   });
 
   await page.reload();
-  await page.waitForLoadState('networkidle');
   await expect(
     page.getByRole('heading', { name: 'Permission review' }),
   ).toBeVisible();
@@ -134,7 +131,6 @@ test('runs the dashboard shell without browser or layout failures', async ({
     page.getByText('Preview fixture; no device was inspected'),
   ).toBeVisible();
   await page.reload();
-  await page.waitForLoadState('networkidle');
   await expect(
     page.getByRole('heading', { name: 'Diagnostics', exact: true }),
   ).toBeVisible();
