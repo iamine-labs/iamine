@@ -9,7 +9,8 @@ REPORTER-AGENT-001
 Current state:
 
 ```text
-QA BLOCKED
+FIELD QA PASSED
+READY FOR ARCHITECTURE MERGE REVIEW
 ```
 
 ## Authorized Identity
@@ -147,7 +148,7 @@ executed.
 
 ```text
 MAC FIELD QA: PASS
-REMOTE FIELD QA: PENDING
+REMOTE FIELD QA: PASS
 ```
 
 The reconciled QA candidate commit and tree matched the identity above and the
@@ -182,22 +183,59 @@ profiles created: 0
 model-store entries created: 0
 ```
 
-## Remote Field Blocker
+## Remote Field Results
 
-Reachability was rechecked on 2026-08-24 before attempting remote QA. No bundle
-was created or transferred, and no remote working copy was modified.
+On 2026-08-29 UTC, a complete-history bundle was used to validate the exact QA
+candidate in detached, disposable checkouts. The reconstructed package bundle
+had SHA-256
+`16926a2269253ab5e05917f7b1b256a5fd3ddff174854ccc390c1df67de78d7d`.
+Every role independently verified the expected candidate, tree, authorized
+base, bundle checksum, and clean source state.
 
 ```text
-TS140 / 192.168.2.200: SSH timeout
-iamine-ctrl / 192.168.2.220: SSH timeout
-iamine-wrk1 / 192.168.2.221: SSH timeout
-iamine-wrk2 / 192.168.2.222: SSH timeout
-iamine-heavy / 192.168.2.223: SSH timeout
+TS140: PASS
+Proxmox/R5500 host preflight: PASS
+iamine-ctrl: PASS
+iamine-wrk1: PASS
+iamine-wrk2: PASS
+iamine-heavy: PASS
 ```
 
-Architecture requires the exact commit to pass on Mac, TS140, and all four
-Proxmox/R5500 roles. Therefore this evidence does not claim Field QA PASS,
-merge readiness, merge approval, or closure.
+TS140 ran Linux x86_64 with AVX2 and FMA available and Rust/Cargo 1.94.0. The
+four Proxmox guests ran Linux x86_64 under KVM without exposed AVX2 or FMA and
+with Rust/Cargo 1.95.0. Proxmox host `pve-manager/9.0.3` reported the mapped
+controller, two workers, and heavy worker VMs running before guest transfer.
+
+Each of the five execution roles passed:
+
+```text
+cargo fmt --all -- --check: PASS
+Reporter focused tests: 10/10 PASS
+Node Doctor regression group: 21/21 PASS
+runtime input/output enforcement: 8/8 PASS
+iamine-node build: PASS
+supported human report: PASS
+supported JSON report: PASS
+missing evidence blocked report: PASS
+explicit missing evidence report: PASS
+unsupported claim handoff: PASS
+eight-evidence boundary: PASS
+ninth-evidence rejection: PASS
+duplicate evidence rejection: PASS
+contradictory evidence rejection: PASS
+private-shaped input rejection and no echo: PASS
+```
+
+The 25 positive JSON outputs were validated again after retrieval on the Mac.
+All five roles preserved empty runtime HOME, work, and temporary directories,
+kept the detached source clean, started no model download or real model load,
+and left the IAMINE process count unchanged. TS140 remained at one pre-existing
+IAMINE process before and after the run; every guest remained at zero. All
+preflight and runner stderr files were empty.
+
+Each build reported the same five historical `dead_code` warnings in
+`task_cache.rs`, `task_protocol.rs`, `wallet.rs`, and `worker_pool.rs`. None of
+those files belongs to the Reporter diff, and every build completed.
 
 ## Environment Findings
 
@@ -214,10 +252,21 @@ the complete workspace suite. The daemon socket test likewise passed outside
 the sandbox and in the complete `iamine-node` and workspace suites. Neither
 finding belongs to the Reporter source diff.
 
-## Resume Condition
+The first remote attempt stopped read-only because non-interactive TS140 SSH
+omitted the installed `~/.cargo/bin` toolchain from PATH. Package version 4
+added that standard per-user path when present without installing or changing
+the toolchain. The next attempt passed TS140 and then stopped in the Proxmox
+inventory check because SSH aliases differ from VM names. Package version 5
+added the observed alias-to-VM-name mapping and required exact prior TS140 PASS
+evidence before resuming at Proxmox. No product source was changed during QA,
+and successful TS140 execution was not repeated.
 
-Resume Field QA when TS140 and the four Proxmox guests are reachable. Validate
-the exact QA candidate commit and tree above in disposable checkouts, then
-update this evidence before Architecture merge review. Reporter remains `QA
-BLOCKED`; this document does not claim Field QA PASS, merge readiness, merge
-approval, or closure.
+## QA Recommendation
+
+```text
+READY FOR ARCHITECTURE MERGE REVIEW
+```
+
+QA does not authorize merge or closure. Architecture must review this evidence,
+reconcile the feature against current canonical `develop`, and require final
+pre-merge and post-merge validation.
