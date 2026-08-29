@@ -10,7 +10,10 @@ State:
 
 ```text
 ARCHITECTURE APPROVED
-DEVELOPMENT AUTHORIZED
+IMPLEMENTATION COMPLETE
+LOCAL VALIDATION PASSED
+FIELD QA PASSED
+APPROVED FOR MERGE
 ```
 
 ## Baseline
@@ -19,6 +22,9 @@ DEVELOPMENT AUTHORIZED
 branch: feature/reporter-agent-001
 base: 65f12dc3c7b6a67489fe54e691dd30778bd6a183
 base tree: 604bc770eef3374eb34858019e586653e72956a9
+reconciled base: 27c4d5fb7a6f4315546a5897c5e136c3748940ad
+approved candidate: 4a10d2912819592b6c5f0f7eef0b6ca6eb1a926c
+approved tree: e416330a672270474bb99a55240075c72862d22d
 target: develop
 ```
 
@@ -124,11 +130,12 @@ chain may establish review, compatibility, input/output, sandbox, lifecycle,
 timeout, scope, permission, routing, audit, load, execution, and result
 verification evidence.
 
-The common local-readonly official-agent composition currently embedded in
-Node Doctor will move to a dedicated `official_agent_execution` module. Node
-Doctor and Reporter will supply immutable agent-specific specs and program
-registrars. This extraction must preserve Node Doctor behavior byte-for-byte at
-its public CLI and output boundary and must not weaken any authority check.
+The common local-readonly official-agent composition moved from Node Doctor to
+a dedicated `official_agent_execution` module. Node Doctor and Reporter supply
+immutable agent-specific specs and program registrars. The specs also carry an
+explicit bounded execution timeout: Reporter remains at 1,000 ms and Node
+Doctor uses 5,000 ms for its platform-dependent local evidence collection. No
+other timeout class or authority check changed.
 
 Reporter implementation is split under:
 
@@ -157,12 +164,12 @@ unchanged.
 
 ## Compatibility And Non-Regression
 
-The feature is additive and must preserve CPU-only, accelerated, macOS, Linux,
+The feature is additive and preserves CPU-only, accelerated, macOS, Linux,
 VM, container, mock-worker, cgroup, and constrained-host behavior. It does not
-change Node Doctor evidence collection, support-bundle behavior, scheduler,
-P2P, PubSub, workers, models, inference, hardware profiling, registry
-publication, installer, marketplace, reputation, rewards, settlement, or
-public-beta state.
+change Node Doctor evidence or output contracts, support-bundle behavior,
+scheduler, P2P, PubSub, workers, models, inference, hardware profiling,
+registry publication, installer, marketplace, reputation, rewards, settlement,
+or public-beta state.
 
 ## Validation Gate
 
@@ -203,6 +210,22 @@ OS-level sandbox claims
 v0.12.0 milestone closure
 authorization of later P0 agents
 ```
+
+## Architecture Review Decision
+
+The final diff remains bounded to the official Reporter package, its typed CLI
+and runtime integration, the shared local-readonly composition, Node Doctor
+compatibility wiring, tests, and evidence. It does not modify `iamine-core`,
+`iamine-models`, `iamine-network`, dashboard product code, scheduler, P2P,
+PubSub, workers, models, inference, reputation, rewards, or settlement.
+
+The exact candidate passed the complete local quality gate, Mac Field QA,
+TS140, the Proxmox host inventory gate, and all four Proxmox guests. Privacy,
+fail-closed boundaries, cleanup, no-side-effect fields, process counts, and
+source cleanliness passed on every execution role. Architecture therefore
+authorizes only the controlled merge of candidate `4a10d291...` into current
+canonical `develop`, subject to the standard pre-push fetch/reconciliation and
+post-merge validation.
 
 ## Next Candidate
 
