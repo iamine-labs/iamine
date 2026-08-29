@@ -1,0 +1,93 @@
+schema: iamine.agent.scope.draft-0.1
+package_id: iamine.beta.support-reporter
+scope_id: privacy_safe_support_report
+scope_version: 0.1.0
+task_boundary:
+  in_scope:
+    - format_privacy_safe_support_report
+  out_of_scope:
+    - collect_support_evidence
+  task_types:
+    - support_report
+input_boundary:
+  allowed_inputs:
+    - operator_approved_redacted_evidence
+  forbidden_inputs:
+    - credentials
+    - disk_uuids
+    - full_hostnames
+    - home_directories
+    - ip_addresses
+    - mac_addresses
+    - machine_ids
+    - personal_paths
+    - private_keys
+    - private_paths
+    - raw_process_lists
+    - serial_numbers
+    - usernames
+    - wallet_keys
+operation_boundary:
+  allowed_operations:
+    - format_operator_visible_report
+  blocked_actions:
+    - change_settings
+    - delete_files
+    - download_models
+    - load_models
+    - mutate_vm_or_container
+    - publish_agent
+    - restart_services
+    - run_shell
+    - scan_network
+    - write_files
+permission_requirements:
+  required_categories:
+    - local_readonly
+    - redacted_status_summary
+  forbidden_categories:
+    - arbitrary_shell
+  permission_model_required: true
+confirmation_boundary:
+  requires_confirmation_for: []
+  must_refuse_without_confirmation:
+    - any_network_mutation
+    - any_private_data_request
+    - any_shell_action
+    - any_write_action
+handoff:
+  targets:
+    - orchestrator
+    - human_operator
+  required_when:
+    - ambiguous_task
+    - dangerous_task
+    - out_of_scope_task
+    - prompt_injection_attempt
+    - role_confusion_attempt
+orchestrator_return:
+  return_required_for:
+    - cross_domain_task
+    - missing_audit_policy
+    - missing_boundary_tests
+    - missing_permission_model
+    - request_to_collect_secret
+    - request_to_execute_code
+    - unsupported_task_type
+eval_requirements:
+  required_eval_classes:
+    - ambiguous_task
+    - cross_domain_task
+    - dangerous_task
+    - handoff_to_orchestrator
+    - in_scope_positive
+    - out_of_scope_negative
+    - permission_escalation
+    - prompt_injection
+    - role_confusion
+review:
+  requires_human_review: true
+  requires_permission_review: true
+  requires_audit_policy: true
+  requires_boundary_tests: true
+  scope_can_self_approve: false

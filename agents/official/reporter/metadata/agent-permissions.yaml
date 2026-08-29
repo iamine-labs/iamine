@@ -1,0 +1,76 @@
+schema: iamine.agent.permissions.draft-0.1
+package_id: iamine.beta.support-reporter
+permission_profile_id: support_reporter_local_readonly_permissions
+permission_profile_version: 0.1.0
+default_policy: deny
+requested_categories:
+  - local_readonly
+  - redacted_status_summary
+forbidden_categories:
+  - arbitrary_shell
+  - credential_access
+  - destructive_write
+  - mainnet_operation
+  - marketplace_publish
+  - model_download
+  - model_load
+  - network_mutation
+  - private_key_access
+  - service_mutation
+  - unrestricted_filesystem
+  - vm_or_container_mutation
+  - wallet_access
+blocked_actions:
+  - access_private_keys
+  - access_wallet
+  - collect_credentials
+  - delete_files
+  - download_models
+  - load_models
+  - mainnet_operation
+  - mutate_network
+  - mutate_vm_or_container
+  - publish_agent
+  - read_private_files
+  - restart_services
+  - reward_operation
+  - run_shell
+  - settlement_operation
+  - token_operation
+  - write_files
+confirmation_requirements:
+  requires_confirmation_for: []
+  must_refuse_without_confirmation:
+    - any_network_mutation
+    - any_private_data_request
+    - any_shell_action
+    - any_write_action
+data_access:
+  allowed:
+    - redacted_status_summary
+  forbidden:
+    - credentials
+    - disk_uuids
+    - full_hostnames
+    - home_directories
+    - ip_addresses
+    - mac_addresses
+    - machine_ids
+    - private_keys
+    - private_paths
+    - personal_paths
+    - raw_private_logs
+    - raw_process_lists
+    - serial_numbers
+    - usernames
+    - wallet_keys
+network_access:
+  mode: none
+filesystem_access:
+  mode: package_relative_review_only
+process_access:
+  mode: none
+escalation:
+  on_forbidden_request: return_to_orchestrator
+review:
+  requires_human_review: true

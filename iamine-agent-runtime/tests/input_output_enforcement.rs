@@ -149,6 +149,7 @@ fn every_contract_class_is_typed_and_fail_closed() -> TestResult {
         OutputClassification::ResultSummary,
         OutputClassification::ActionReport,
         OutputClassification::DiagnosticReport,
+        OutputClassification::SupportReport,
         OutputClassification::BlockedActionReport,
         OutputClassification::ClarificationRequest,
         OutputClassification::HandoffRequest,

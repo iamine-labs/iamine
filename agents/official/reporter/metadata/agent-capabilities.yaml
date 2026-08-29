@@ -1,0 +1,35 @@
+schema: iamine.agent.capabilities.draft-0.1
+package_id: iamine.beta.support-reporter
+capability_id: privacy_safe_support_report
+capability_version: 0.1.0
+declared_task_types:
+  - support_report
+operations:
+  - format_operator_visible_report
+input_classes:
+  - operator_approved_redacted_evidence
+output_classes:
+  - support_report
+  - blocked_action_report
+  - handoff_request
+execution_modes:
+  - local_readonly
+limitations:
+  - no_evidence_collection
+  - no_raw_text
+  - no_export
+  - no_network
+risk_profile:
+  labels:
+    - bounded_readonly
+    - privacy_safe
+    - operator_review_required
+  expands_scope: false
+  grants_permissions: false
+  claims_scheduler_priority: false
+  claims_trust_or_reputation: false
+review:
+  requires_human_review: true
+  self_approval_allowed: false
+  evidence:
+    - review/capability-review.md

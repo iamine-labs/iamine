@@ -29,8 +29,9 @@ v0.11.2 executable rows: 19 of 19 CLOSED
 last closed sequential Agent Network feature: NODE-DOCTOR-AGENT-001
 node doctor merge: 1409b6fa9cb780d00fb840503c16f83bd35c0405
 node doctor merge tree: e55e88cbaf1f86a8b018c162a128ec7c2f13b5ef
-active roadmap feature: none
-next sequential product candidate: REPORTER-AGENT-001 (PROPOSED)
+active roadmap feature: REPORTER-AGENT-001
+active feature state: DEVELOPMENT AUTHORIZED
+next sequential product candidate: LAN-FILE-SHARE-ASSISTANT-AGENT-001 (PROPOSED)
 previous gate state: V0.11.2 CLOSED / POST-MERGE PASS
 runtime regression baseline: 149/149
 agents regression baseline: 109/109
@@ -542,6 +543,7 @@ ID as if it represented new implementation work.
 | NODE-DOCTOR-AGENT-001-DEPENDENCY-RECONCILIATION-001 | CLOSED | Recorded the executable prerequisite chain and kept functional Node Doctor development blocked until every gate has implementation and validation evidence; merge `7588e09`, focused post-merge validation PASS. |
 | NODE-DOCTOR-EVIDENCE-PROVIDER-001 | CLOSED | Bounded, structured, redacted, read-only node evidence provider merged in `f54851b`; six-role field QA and exact-merge post-merge quality gate passed. |
 | NODE-DOCTOR-AGENT-001 | CLOSED | First functional P0 reference agent; merge `1409b6f`, corrected exact-source six-role field QA, and exact-merge tree `e55e88c` quality gate PASS WITH WARNINGS with zero required failures. It does not publish the public beta or close v0.12.0. |
+| REPORTER-AGENT-001 | ACTIVE | Implement the Privacy-Safe Support Reporter from bounded typed evidence through the existing local-readonly official runtime; no collection, raw text, export, persistence, network, model, worker, or inference behavior is authorized. |
 
 Closure gate:
 
@@ -641,7 +643,9 @@ merge: c60da20ba2e5379b97155ebb45f2a620915b0cd4
 post-merge gate: PASS WITH WARNINGS
 ```
 
-No product feature is currently authorized.
+`REPORTER-AGENT-001` is the only product feature currently authorized. Its
+functional scope is limited to typed, operator-approved, already-redacted
+evidence and local-only report formatting.
 
 `NODE-DOCTOR-EVIDENCE-PROVIDER-001` is `MERGED / VALIDATED / CLOSED` after local
 validation, six-role field QA, controlled merge, and exact-merge post-merge
@@ -659,9 +663,10 @@ six roles, plus the 1118-test workspace gate on TS140.
 
 Not all functional P0 agents should be implemented in parallel at the start.
 `NODE-DOCTOR-AGENT-001` is the closed complete reference vertical.
-`REPORTER-AGENT-001` is the next sequential product candidate, followed by the
-remaining P0 implementation waves. It remains `PROPOSED` until Architecture
-records an exact base, scope, dependencies, out-of-scope list, and Development
+`REPORTER-AGENT-001` is the active functional implementation after the closed
+Node Doctor reference vertical. `LAN-FILE-SHARE-ASSISTANT-AGENT-001` is the
+next sequential product candidate and remains `PROPOSED` until Architecture
+records its exact base, scope, dependencies, out-of-scope list, and Development
 authorization.
 
 Each P0 agent must pass positive capability tests, negative capability tests,
