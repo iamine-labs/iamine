@@ -26,6 +26,7 @@ const EXECUTION_SPEC: OfficialAgentExecutionSpec = OfficialAgentExecutionSpec {
     routing_candidate_id: "node-doctor-local",
     input_classification: InputClassification::TaskDescriptor,
     max_input_bytes: 256,
+    execution_timeout_ms: 5_000,
     register_program: register_node_doctor_program,
 };
 

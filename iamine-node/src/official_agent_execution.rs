@@ -40,6 +40,7 @@ pub(crate) struct OfficialAgentExecutionSpec {
     pub(crate) routing_candidate_id: &'static str,
     pub(crate) input_classification: InputClassification,
     pub(crate) max_input_bytes: usize,
+    pub(crate) execution_timeout_ms: u64,
     pub(crate) register_program: OfficialAgentProgramRegistrar,
 }
 
@@ -200,8 +201,15 @@ impl<'subject> PreparedChain<'subject> {
                 &sandbox_authority,
                 &sandbox_evidence,
                 subject,
-                TimeoutCancelPolicy::new(1_000, 1_000, 1_000, 1_000, 1_000, 1_000)
-                    .map_err(|_| OfficialAgentExecutionError::RuntimeRejected)?,
+                TimeoutCancelPolicy::new(
+                    1_000,
+                    1_000,
+                    1_000,
+                    spec.execution_timeout_ms,
+                    1_000,
+                    1_000,
+                )
+                .map_err(|_| OfficialAgentExecutionError::RuntimeRejected)?,
             )
             .map_err(|_| OfficialAgentExecutionError::RuntimeRejected)?;
         let scope = evaluate_scope(

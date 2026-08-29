@@ -26,6 +26,7 @@ const EXECUTION_SPEC: OfficialAgentExecutionSpec = OfficialAgentExecutionSpec {
     routing_candidate_id: "support-reporter-local",
     input_classification: InputClassification::OperatorIntent,
     max_input_bytes: 2_048,
+    execution_timeout_ms: 1_000,
     register_program: register_reporter_program,
 };
 
