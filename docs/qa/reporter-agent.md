@@ -11,6 +11,9 @@ Current state:
 ```text
 FIELD QA PASSED
 READY FOR ARCHITECTURE MERGE REVIEW
+MERGED
+POST-MERGE VALIDATION PASSED
+MERGED / VALIDATED / CLOSED
 ```
 
 ## Authorized Identity
@@ -25,6 +28,10 @@ reconciled develop: 27c4d5fb7a6f4315546a5897c5e136c3748940ad
 reconciled develop tree: 299e7becdcdb8f3c1557ad43ca57571e4c185aa9
 QA candidate commit: 4a10d2912819592b6c5f0f7eef0b6ca6eb1a926c
 QA candidate tree: e416330a672270474bb99a55240075c72862d22d
+feature tip: 2b83c4fc6cdde0438551134c33ab5ece5a9d6c07
+feature tip tree: c97274f3ace6af6735e349257f05ed1607f2a132
+merge commit: 8f5d4fb2470406b946e76da585e2ea4a55199f70
+merge tree: c97274f3ace6af6735e349257f05ed1607f2a132
 origin: https://github.com/iamine-labs/iamine
 ```
 
@@ -263,3 +270,42 @@ READY FOR ARCHITECTURE MERGE REVIEW
 QA does not authorize merge or closure. Architecture must review this evidence,
 reconcile the feature against current canonical `develop`, and require final
 pre-merge and post-merge validation.
+
+## Post-Merge Validation
+
+Architecture approved the exact QA candidate and the Merge Owner integrated
+feature tip `2b83c4fc6cdde0438551134c33ab5ece5a9d6c07` into canonical `develop` as
+merge `8f5d4fb2470406b946e76da585e2ea4a55199f70`. The feature tip and merge both
+resolve to tree `c97274f3ace6af6735e349257f05ed1607f2a132`; the difference from the
+Field QA candidate is review and QA documentation only.
+
+The exact merge tree passed the complete Mac quality gate:
+
+```text
+cargo fmt --all -- --check: PASS
+cargo test -p iamine-models: PASS
+cargo test -p iamine-network: PASS
+cargo test -p iamine-node: 506/506 PASS
+cargo build -p iamine-node: PASS
+cargo test --workspace: PASS
+cargo clippy --workspace --all-targets: PASS
+git diff --check: PASS
+git diff --cached --check: PASS
+required failures: 0
+warnings: 1
+optional tools skipped: 3
+QUALITY GATE RESULT: PASS WITH WARNINGS
+```
+
+The warning is the existing 914-line `iamine-node/src/cli.rs` architecture
+warning. `cargo audit`, `cargo deny`, and `gitleaks` were unavailable. The first
+isolated-HOME invocation did not expose the installed rustup default and was
+classified as an environmental setup failure before tests ran. The corrected
+invocation used the existing Rust toolchain explicitly, retained isolated
+runtime HOME and Cargo target directories, and passed without product changes.
+
+Architecture and the Merge Owner therefore record:
+
+```text
+MERGED / VALIDATED / CLOSED
+```
