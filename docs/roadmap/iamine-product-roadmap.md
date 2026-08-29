@@ -14,9 +14,9 @@ Operational status reconciled from:
 
 ```text
 branch: origin/develop
-baseline commit: c60da20ba2e5379b97155ebb45f2a620915b0cd4
-baseline tree: 1f0d2f5c841f575f40c987692343ce69c93e90d5
-date: 2026-08-21
+baseline commit: 8f5d4fb2470406b946e76da585e2ea4a55199f70
+baseline tree: c97274f3ace6af6735e349257f05ed1607f2a132
+date: 2026-08-29
 ```
 
 Canonical update:
@@ -134,10 +134,12 @@ exact merge tree passed the complete quality gate on 2026-08-21 with zero
 required failures, zero gate warnings, and three unavailable optional tools.
 The docs-only `IAMINE-CURRENT-STATE-ROADMAP-RECONCILIATION-001` then closed in
 merge `c60da20` after its exact-merge quality gate passed.
-`REPORTER-AGENT-001` is now the only authorized product feature, implementing
-bounded local-only report formatting from typed, operator-approved, redacted
-evidence. `LAN-FILE-SHARE-ASSISTANT-AGENT-001` remains the next proposed
-candidate and is not authorized by this transition.
+`REPORTER-AGENT-001` closed in merge `8f5d4fb` after bounded implementation,
+local validation, exact-candidate Field QA on Mac, TS140, and all four
+Proxmox/R5500 guests, Architecture approval, controlled integration, and an
+exact-merge quality gate with zero required failures. No product feature is
+currently authorized. `LAN-FILE-SHARE-ASSISTANT-AGENT-001` remains the next
+proposed candidate and is not authorized by this transition.
 
 The broader v0.9 operational stability claim still requires the operational
 target: 10-50 nodes, 3-10 operators, multiple physical networks, and two to
