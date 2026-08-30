@@ -1,7 +1,7 @@
 schema_version: "0.0.2"
 id: HID-SHADOW-MODE-001
 kind: engineering_process_enabler
-title: HID Shadow Mode Hardening
+title: HID Shadow Mode Invariant and Privacy Hardening
 
 canonical:
   workflow: docs/process/iamine-canonical-workflow.md
@@ -11,8 +11,8 @@ canonical:
 
 intent:
   data_class: SOURCE
-  problem: Shadow observations lacked auditable human gates, evidence staleness, and an explicit privacy policy.
-  expected_outcome: Make those guarantees structurally verifiable without granting HID workflow authority.
+  problem: Privileged state text could bypass pending gates, and obvious prohibited content could pass privacy inspection.
+  expected_outcome: Enforce state and authority invariants plus bounded free-text and IPv6 privacy checks without granting HID workflow authority.
 
 state:
   data_class: SOURCE
@@ -50,12 +50,12 @@ git:
     captured_at: "2026-08-30T02:55:26Z"
   candidate_snapshot:
     data_class: SNAPSHOT
-    purpose: validated_hardening_candidate
+    purpose: validated_invariant_privacy_hardening_candidate
     branch: feature/hid-shadow-mode-001
-    head_sha: 46dc4da3fc23ed9549b753ef61b4d9966bbd9110
-    tree: dbf7baef30780217ba69a72f161471d2140802b2
+    head_sha: 6178d8c80ee5f4fcad1566d46c809fe454ad5f0a
+    tree: 96c5f0b6298ae726f4c29f035d90d8881ce0b667
     dirty: false
-    captured_at: "2026-08-30T04:41:03Z"
+    captured_at: "2026-08-30T05:14:10Z"
   current:
     data_class: DERIVED
     source: .hid/scripts/capture.rb
@@ -82,6 +82,7 @@ gates:
 evidence:
   - HID-EVID-0001
   - HID-EVID-0002
+  - HID-EVID-0003
 blockers: []
 
 next_action:
@@ -108,9 +109,9 @@ execution:
 
 metrics:
   data_class: SNAPSHOT
-  tests_executed: 13
-  test_assertions: 18
-  validation_runs: 3
-  non_product_findings_reported: 3
+  tests_executed: 32
+  test_assertions: 46
+  validation_runs: 5
+  non_product_findings_reported: 4
   product_defects: 0
   scope_changes: 0
