@@ -1,7 +1,7 @@
 schema_version: "0.0.2"
 id: HID-SHADOW-MODE-001
 kind: engineering_process_enabler
-title: HID Shadow Mode Authority and Artifact Integrity Hardening
+title: HID Shadow Mode Constitutional Policy and Lifecycle Ordering Hardening
 
 canonical:
   workflow: docs/process/iamine-canonical-workflow.md
@@ -11,8 +11,8 @@ canonical:
 
 intent:
   data_class: SOURCE
-  problem: Human authority could bind to a historical snapshot, ignore later denial, or accept incomplete policy and unverifiable lifecycle artifacts.
-  expected_outcome: Bind authority to current Git identity, apply the latest relevant decision, and fail closed on incomplete policy or invalid Git artifacts.
+  problem: Project policy could remove constitutional Human Merge requirements, and valid lifecycle events could satisfy privileged state out of order.
+  expected_outcome: Union non-configurable authority minima with project policy and enforce feature-scoped privileged lifecycle order from append-only log position.
 
 state:
   data_class: SOURCE
@@ -50,12 +50,12 @@ git:
     captured_at: "2026-08-30T02:55:26Z"
   candidate_snapshot:
     data_class: SNAPSHOT
-    purpose: validated_authority_artifact_hardening_snapshot
+    purpose: validated_constitutional_lifecycle_hardening_snapshot
     branch: feature/hid-shadow-mode-001
-    head_sha: cf4fab06e47f359127144ec1c671897fcb737264
-    tree: c4de2a26695f3fe947f6f5ea2aeabdc4e3737282
+    head_sha: 2ce74feac0d7faf5f761ab7794d93c9f4e69e957
+    tree: 26419023658362b0545e4732e16a7794824d3fd7
     dirty: false
-    captured_at: "2026-08-30T22:04:14Z"
+    captured_at: "2026-08-30T23:12:41Z"
   current:
     data_class: DERIVED
     source: .hid/scripts/capture.rb
@@ -84,6 +84,7 @@ evidence:
   - HID-EVID-0002
   - HID-EVID-0003
   - HID-EVID-0004
+  - HID-EVID-0005
 blockers: []
 
 next_action:
@@ -110,9 +111,9 @@ execution:
 
 metrics:
   data_class: SNAPSHOT
-  tests_executed: 50
-  test_assertions: 86
-  validation_runs: 7
+  tests_executed: 60
+  test_assertions: 176
+  validation_runs: 9
   non_product_findings_reported: 4
   product_defects: 0
   scope_changes: 0
