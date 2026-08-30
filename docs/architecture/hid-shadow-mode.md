@@ -11,7 +11,9 @@ State:
 ```text
 ARCHITECTURE APPROVED
 DEVELOPMENT AUTHORIZED
-IMPLEMENTATION IN PROGRESS
+IMPLEMENTATION COMPLETE
+LOCAL VALIDATION PASSED
+ARCHITECTURE REVIEW REQUIRED
 ```
 
 ## Baseline
@@ -173,3 +175,19 @@ in the canonical roadmap. It is the recommended first complete HID pilot, but
 it remains `PROPOSED`. Separate Architecture must define its exact base, scope,
 dependencies, risks, Field QA matrix, and Development authorization before a
 pilot manifest or product branch is created.
+
+## Implementation Checkpoint
+
+```text
+implementation commit: 2b7187a9fb98271487df05fb9fed1748871b2e4c
+implementation tree: 3e8e22149021ab07201b298110c42694fb8491bb
+evidence: HID-EVID-0001
+local checks: 9 of 9 PASS
+field QA: NOT REQUIRED
+runtime behavior changed: no
+```
+
+The candidate is ready for an independent Architecture review of precedence,
+privacy, Git/evidence semantics, overhead, and the boundary before the first
+product pilot. Merge and product-feature authorization remain pending human
+decisions.

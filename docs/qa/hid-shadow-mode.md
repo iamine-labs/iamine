@@ -9,8 +9,9 @@ HID-SHADOW-MODE-001
 Current state:
 
 ```text
-IMPLEMENTATION IN PROGRESS
-LOCAL VALIDATION PENDING
+IMPLEMENTATION COMPLETE
+LOCAL VALIDATION PASSED
+READY FOR ARCHITECTURE REVIEW
 ```
 
 ## Authorized Identity
@@ -77,7 +78,7 @@ separately and does not silently inherit the earlier record.
 
 ## Recommendation Gate
 
-QA may recommend only:
+QA recommendation:
 
 ```text
 READY FOR ARCHITECTURE REVIEW
@@ -85,3 +86,32 @@ READY FOR ARCHITECTURE REVIEW
 
 QA does not authorize merge, replacement of the canonical workflow, product
 feature development, or the first LAN File Share pilot.
+
+## Local Result
+
+```text
+implementation commit: 2b7187a9fb98271487df05fb9fed1748871b2e4c
+implementation tree: 3e8e22149021ab07201b298110c42694fb8491bb
+evidence record: .hid/evidence/HID-EVID-0001.json
+Ruby syntax: PASS
+HID validator: PASS
+YAML safe parse: PASS
+JSON template parse: PASS
+JSONL line parse: PASS
+Git identity and cleanliness: PASS
+scope and whitespace: PASS
+roadmap state uniqueness: PASS
+privacy shape scan: PASS
+field QA: NOT REQUIRED
+```
+
+The diff contains only `.hid/`, the HID Architecture and QA documents, and the
+single process-enabler roadmap registration. No product, runtime, Core,
+dashboard, model, network, worker, inference, build, or release file changed.
+
+Two non-product findings were classified. The initial append-only probe exposed
+expected missing-base Git stderr even though validation passed; the harness now
+suppresses that expected message. The first staging attempt was denied by the
+filesystem sandbox at `.git/index.lock`; authorized Git metadata access created
+the same local commit without source changes. They are recorded as `harness`
+and `infrastructure`, respectively.

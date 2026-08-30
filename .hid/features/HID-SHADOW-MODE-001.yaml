@@ -14,7 +14,7 @@ intent:
   expected_outcome: Capture bounded machine-readable process observations without replacing canonical authority.
 
 state:
-  current: IMPLEMENTATION IN PROGRESS
+  current: ARCHITECTURE REVIEW REQUIRED
   authority: canonical_workflow
 
 scope:
@@ -43,19 +43,19 @@ git:
   base_tree: a18f150de86da34f64aae7fe06e7ed760154d44c
   branch: feature/hid-shadow-mode-001
   last_capture:
-    purpose: feature_start
-    head_sha: b6fad67e7af4f2e691f0334d64944ab5a3a9b1a5
-    tree: a18f150de86da34f64aae7fe06e7ed760154d44c
+    purpose: validated_implementation_candidate
+    head_sha: 2b7187a9fb98271487df05fb9fed1748871b2e4c
+    tree: 3e8e22149021ab07201b298110c42694fb8491bb
     dirty: false
-    captured_at: "2026-08-30T02:55:26Z"
+    captured_at: "2026-08-30T03:01:49Z"
 
 gates:
   architecture:
     required: true
-    status: pending
+    status: passed
   local_validation:
     required: true
-    status: pending
+    status: passed
   field_qa:
     required: false
     status: not_required
@@ -67,12 +67,13 @@ gates:
     required: true
     status: pending
 
-evidence: []
+evidence:
+  - HID-EVID-0001
 blockers: []
 
 next_action:
-  type: implement_shadow_infrastructure
-  description: Create and locally validate the bounded HID v0.0.1 candidate.
+  type: architecture_review
+  description: Review the exact candidate, shadow precedence, privacy guards, and pilot boundary.
 
 execution:
   classification:
@@ -107,9 +108,9 @@ metrics:
   task_count: not_measured
   agent_iterations: not_measured
   human_interventions: not_measured
-  tests_executed: not_measured
-  tests_repeated: not_measured
-  failures: not_measured
+  tests_executed: 9
+  tests_repeated: 1
+  failures: 2
   scope_changes: 0
   tree_changes_after_qa: not_measured
   evidence_invalidations: 0
