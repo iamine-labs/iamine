@@ -1,7 +1,7 @@
 schema_version: "0.0.2"
 id: HID-SHADOW-MODE-001
 kind: engineering_process_enabler
-title: HID Shadow Mode Invariant and Privacy Hardening
+title: HID Shadow Mode Authority and Artifact Integrity Hardening
 
 canonical:
   workflow: docs/process/iamine-canonical-workflow.md
@@ -11,8 +11,8 @@ canonical:
 
 intent:
   data_class: SOURCE
-  problem: Privileged state text could bypass pending gates, and obvious prohibited content could pass privacy inspection.
-  expected_outcome: Enforce state and authority invariants plus bounded free-text and IPv6 privacy checks without granting HID workflow authority.
+  problem: Human authority could bind to a historical snapshot, ignore later denial, or accept incomplete policy and unverifiable lifecycle artifacts.
+  expected_outcome: Bind authority to current Git identity, apply the latest relevant decision, and fail closed on incomplete policy or invalid Git artifacts.
 
 state:
   data_class: SOURCE
@@ -50,12 +50,12 @@ git:
     captured_at: "2026-08-30T02:55:26Z"
   candidate_snapshot:
     data_class: SNAPSHOT
-    purpose: validated_invariant_privacy_hardening_candidate
+    purpose: validated_authority_artifact_hardening_snapshot
     branch: feature/hid-shadow-mode-001
-    head_sha: 6178d8c80ee5f4fcad1566d46c809fe454ad5f0a
-    tree: 96c5f0b6298ae726f4c29f035d90d8881ce0b667
+    head_sha: cf4fab06e47f359127144ec1c671897fcb737264
+    tree: c4de2a26695f3fe947f6f5ea2aeabdc4e3737282
     dirty: false
-    captured_at: "2026-08-30T05:14:10Z"
+    captured_at: "2026-08-30T22:04:14Z"
   current:
     data_class: DERIVED
     source: .hid/scripts/capture.rb
@@ -83,6 +83,7 @@ evidence:
   - HID-EVID-0001
   - HID-EVID-0002
   - HID-EVID-0003
+  - HID-EVID-0004
 blockers: []
 
 next_action:
@@ -109,9 +110,9 @@ execution:
 
 metrics:
   data_class: SNAPSHOT
-  tests_executed: 32
-  test_assertions: 46
-  validation_runs: 5
+  tests_executed: 50
+  test_assertions: 86
+  validation_runs: 7
   non_product_findings_reported: 4
   product_defects: 0
   scope_changes: 0

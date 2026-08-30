@@ -1,0 +1,89 @@
+{
+  "schema_version": "0.0.2",
+  "id": "HID-EVID-0004",
+  "feature": "HID-SHADOW-MODE-001",
+  "type": "local_validation",
+  "captured_at": "2026-08-30T22:04:14Z",
+  "artifact": {
+    "head_sha": "cf4fab06e47f359127144ec1c671897fcb737264",
+    "tree": "c4de2a26695f3fe947f6f5ea2aeabdc4e3737282"
+  },
+  "environment": {
+    "host_class": "local_macos",
+    "os": "macos",
+    "arch": "aarch64"
+  },
+  "execution": {
+    "commands": [
+      "git_identity_cleanliness",
+      "hid_capture",
+      "ruby_syntax",
+      "hid_regression_tests",
+      "human_authority_tests",
+      "privileged_policy_coverage_tests",
+      "git_event_artifact_integrity_tests",
+      "real_git_ancestry_fixture",
+      "privacy_regression",
+      "evidence_regression",
+      "append_only_regression",
+      "hid_validator",
+      "yaml_safe_parse",
+      "json_parse",
+      "jsonl_line_parse",
+      "git_scope_and_whitespace",
+      "core_guard"
+    ],
+    "started_at": "2026-08-30T22:04:06Z",
+    "finished_at": "2026-08-30T22:04:14Z"
+  },
+  "coverage": {
+    "paths": [
+      ".hid/**",
+      "docs/architecture/hid-shadow-mode.md",
+      "docs/qa/hid-shadow-mode.md"
+    ],
+    "claims": [
+      "current-git-candidate-human-authorization-binding",
+      "append-order-latest-human-decision",
+      "artifact-change-invalidates-old-authorization",
+      "privileged-state-policy-coverage-fail-closed",
+      "privileged-next-action-policy-incomplete",
+      "merge-event-commit-tree-integrity",
+      "merge-event-current-candidate-ancestry",
+      "post-merge-and-closure-event-correlation",
+      "real-git-valid-lifecycle-path",
+      "privacy-evidence-and-append-only-regression",
+      "process-only-scope"
+    ]
+  },
+  "dependencies": [
+    {
+      "type": "git_base",
+      "value": "b6fad67e7af4f2e691f0334d64944ab5a3a9b1a5"
+    },
+    {
+      "type": "runtime",
+      "value": "ruby-2.6.10"
+    }
+  ],
+  "validity": {
+    "artifact_bound": true,
+    "environment_bound": true
+  },
+  "result": {
+    "status": "pass",
+    "tests": {
+      "executed": 50,
+      "passed": 50,
+      "assertions": 86
+    },
+    "failures": 0
+  },
+  "failure_class": null,
+  "notes": [
+    "Field QA is not required because product and platform-dependent behavior did not change.",
+    "Human authorization remains absent and every Human Gate remains pending.",
+    "The formal authorization candidate is derived from current clean Git identity; candidate_snapshot remains historical evidence metadata.",
+    "Status is derived; the evidence-recording commit will make this record visibly stale against the later repository artifact."
+  ]
+}
