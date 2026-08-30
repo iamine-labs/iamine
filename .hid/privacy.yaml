@@ -1,0 +1,58 @@
+schema_version: "0.0.2"
+
+ALLOW:
+  categories:
+    - feature identifiers
+    - bounded generic task descriptions
+    - Git commit and tree hashes
+    - repository-relative paths
+    - test counts and status values
+    - failure classifications
+    - abstract model profiles
+
+REDACT:
+  categories:
+    - email addresses
+    - IPv4 and IPv6 addresses
+    - local absolute POSIX and Windows paths
+    - usernames embedded in paths
+    - sensitive hostnames
+    - URLs carrying unnecessary query data
+  keys:
+    - email
+    - hostname
+    - host
+    - local_path
+    - absolute_path
+
+NEVER_STORE:
+  keys:
+    - password
+    - secret
+    - api_key
+    - apikey
+    - access_token
+    - refresh_token
+    - private_key
+    - authorization_header
+    - credential
+    - credentials
+    - session_token
+  payload_keys:
+    - prompt_content
+    - full_prompt
+    - model_response
+    - full_model_response
+    - environment_dump
+    - raw_environment
+  categories:
+    - credentials and private keys
+    - OAuth, CI/CD, session, and bearer tokens
+    - secret-bearing URLs or commands
+    - complete model responses without explicit Architecture justification
+    - environment-variable dumps
+
+limitations:
+  - Detection is pattern-based and cannot prove that persisted data is safe.
+  - Warnings require review and deterministic redaction before persistence when the value is unnecessary.
+  - The validator reports findings but never rewrites persisted data automatically.

@@ -1,4 +1,4 @@
-schema_version: "0.0.1"
+schema_version: "0.0.2"
 
 project:
   id: iamine
@@ -29,34 +29,32 @@ authority:
   public_claim: human
   silence_is_authorization: false
 
-git:
-  track_base_sha: true
-  track_head_sha: true
-  track_tree: true
-  track_dirty_status: true
-  evidence_binds_to_tree: true
-  tree_change_marks_evidence_stale: true
+human_gates:
+  architecture:
+    action: development_authorization
+    artifact_bound: true
+  final_review:
+    action: architecture_merge_approval
+    artifact_bound: true
+  human_merge:
+    action: merge
+    artifact_bound: true
+
+data_semantics:
+  SOURCE:
+    - human intent and approved scope
+    - architecture decisions and risk acceptance
+    - explicit human authorization
+  DERIVED:
+    - current Git identity and ancestry
+    - evidence status and next action
+  SNAPSHOT:
+    - Git identity at a recorded event or validation
+    - environment and bounded test result
 
 lifecycle:
   source: docs/process/iamine-canonical-workflow.md
-  canonical_states:
-    - PROPOSED
-    - ARCHITECTURE IN PROGRESS
-    - ARCHITECTURE APPROVED
-    - DEVELOPMENT AUTHORIZED
-    - IMPLEMENTATION IN PROGRESS
-    - IMPLEMENTATION COMPLETE
-    - LOCAL VALIDATION PASSED
-    - ARCHITECTURE REVIEW REQUIRED
-    - FIELD QA AUTHORIZED
-    - FIELD QA IN PROGRESS
-    - QA BLOCKED
-    - CHANGES REQUIRED
-    - READY FOR MERGE REVIEW
-    - APPROVED FOR MERGE
-    - MERGED
-    - POST-MERGE VALIDATION
-    - MERGED / VALIDATED / CLOSED
+  representation: derived_at_validation
 
 failure_classes:
   - product
@@ -67,30 +65,31 @@ failure_classes:
   - unknown
 
 risk_levels:
-  - RISK_0
-  - RISK_1
-  - RISK_2
-  - RISK_3
+  RISK_0: documentation or trivial local change
+  RISK_1: local and reconstructible change
+  RISK_2: backend, database, or API change
+  RISK_3: security, distributed runtime, or release change
 
 risk_gates:
   enforcement: false
   purpose: observe_required_review_and_validation
 
-intake:
-  decisions:
-    - accepted_current
-    - future_milestone
-    - replanning
-    - deferred
-    - rejected
-  relationships:
-    - supersedes
-    - depends_on
-    - replaces
-    - blocks
-
 model_routing:
   enforced: false
+  must_capture_when_available:
+    - task_type
+    - risk
+    - model_or_profile_used
+  useful_if_available:
+    - complexity
+    - context_size
+    - tokens
+    - escalation
+    - rework
+  deferred:
+    - total_cost_optimizer
+    - automatic_selection
+    - historical_optimization
   profiles:
     - FAST
     - BALANCED
@@ -99,7 +98,9 @@ model_routing:
   missing_measurement: not_measured
 
 events:
-  append_only: true
+  append_only: policy
+  verification: baseline_prefix_when_available
+  baseline_unavailable: visible_not_checked
   allowed:
     - feature_received
     - feature_triaged
@@ -111,6 +112,7 @@ events:
     - architecture_changes_required
     - implementation_started
     - implementation_completed
+    - artifact_captured
     - validation_started
     - validation_passed
     - validation_failed
@@ -118,21 +120,19 @@ events:
     - field_qa_passed
     - field_qa_blocked
     - failure_classified
+    - gate_state_corrected
+    - changes_completed
     - replanning_requested
     - replanning_completed
     - human_decision_requested
-    - human_merge_authorized
+    - human_authorization
     - merged
     - post_merge_validation_passed
     - feature_closed
 
 privacy:
-  store_prompt_content: false
-  store_secret_values: false
-  store_personal_paths: false
-  store_hostnames: false
-  store_ip_addresses: false
-  store_machine_identifiers: false
+  policy: .hid/privacy.yaml
+  automatic_redaction: false
 
 metrics:
   missing_value: not_measured

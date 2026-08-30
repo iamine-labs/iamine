@@ -1,8 +1,9 @@
 {
-  "schema_version": "0.0.1",
+  "schema_version": "0.0.2",
   "id": "EVIDENCE-ID",
   "feature": "FEATURE-ID",
   "type": "local_validation",
+  "captured_at": null,
   "artifact": {
     "head_sha": null,
     "tree": null
@@ -16,6 +17,15 @@
     "commands": [],
     "started_at": null,
     "finished_at": null
+  },
+  "coverage": {
+    "paths": [],
+    "claims": []
+  },
+  "dependencies": [],
+  "validity": {
+    "artifact_bound": true,
+    "environment_bound": false
   },
   "result": {
     "status": "unknown",

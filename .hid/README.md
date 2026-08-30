@@ -1,66 +1,69 @@
-# HID v0.0.1 Shadow Mode
+# HID v0.0.2 Shadow Mode
 
-HID is an experimental, machine-readable observation layer for IAMINE's
-existing human and agent engineering workflow. During v0.0.1, the canonical
-workflow, Architecture, QA, roadmaps, and explicit human gates retain all
-authority.
+HID is a machine-readable observation layer for IAMINE's existing workflow. It
+does not enforce gates or replace `AGENTS.md`, the canonical workflow,
+Architecture, QA, roadmaps, or explicit human decisions.
 
 ## Precedence
 
-When HID and canonical documentation disagree:
+When HID and canonical sources disagree, follow the canonical source and record
+the divergence. HID cannot authorize scope, exceptions, destructive actions,
+merge, release, milestone closure, or public claims. Human silence is not
+authorization.
 
-1. follow `AGENTS.md` and `docs/process/iamine-canonical-workflow.md`;
-2. follow the canonical roadmap for product sequence and authorization;
-3. record the HID discrepancy as a finding;
-4. do not silently rewrite either history or authority.
+## Data Semantics
 
-HID cannot authorize scope, exceptions, destructive actions, merge, release,
-milestone closure, or public claims. Human silence is never authorization.
+- `SOURCE` is introduced by an authority: intent, approved scope, Architecture
+  decisions, risk acceptance, and human authorization.
+- `DERIVED` is calculated from canonical sources or Git: current identity,
+  ancestry, evidence status, and next action.
+- `SNAPSHOT` is a derived observation captured at a historical moment: Git
+  identity, environment, or test result.
 
-## Layout
+Current Git facts are never stored as a live authority. Run
+`.hid/scripts/capture.rb` to derive them. Persisted Git values are snapshots.
 
-```text
-.hid/project.yaml                 L0 constitution and stable references
-.hid/features/<FEATURE-ID>.yaml   L1 active feature capsule
-.hid/evidence/<EVIDENCE-ID>.json  exact-artifact evidence records
-.hid/events.jsonl                 append-only observations
-.hid/templates/                   non-evidence examples
-.hid/scripts/validate.rb          local structural and privacy validator
-```
+## Human Gates
 
-Relevant Architecture, ADR-like decisions, QA, and dependency documents remain
-L2 knowledge in their canonical repository locations. Historical logs and old
-feature evidence remain L3 archive and are loaded only when needed.
+A human gate marked `passed` requires a correlated `human_authorization` event
+for the same feature, gate, action, and candidate commit/tree. The actor must be
+typed as human and the artifact must be clean. Tooling validates structure and
+correlation; it does not authenticate a person's identity cryptographically.
+An agent must not manufacture a human event from silence or inference.
 
-## Artifact Semantics
+## Evidence
 
-Git values are timestamped snapshots, not self-updating fields. Evidence binds
-to its subject commit and tree, while the later commit that records the evidence
-may have a different documentation-only tree. That difference never carries
-evidence forward automatically.
+Evidence records an exact commit/tree, bounded coverage, relevant dependencies,
+environment, and execution result. Status is derived, never stored:
 
-Feature manifests reference canonical documents instead of copying their full
-content. `next_action` is explicit in v0.0.1 and is not yet calculated or
-enforced.
+- `VALID`: recorded commit/tree exists and is the current clean artifact;
+- `STALE`: internally valid evidence belongs to another artifact;
+- `INVALID`: the commit is missing or its real tree contradicts the record;
+- `UNKNOWN`: Git cannot verify the artifact in the current environment.
 
-## Event Rules
+Stale evidence remains historical evidence. It is not automatically reused.
 
-`events.jsonl` is append-only. Correct a bad observation with a later event;
-do not edit history to erase it. Metadata must be bounded and must not include
-prompt content, tokens, credentials, personal paths, hostnames, network
-addresses, machine identifiers, or raw QA logs.
+## Privacy
 
-## Validation
+`.hid/privacy.yaml` defines `ALLOW`, `REDACT`, and `NEVER_STORE`. The validator
+fails on detected violations, warns on values requiring review/redaction, and
+never rewrites data. Pattern matching can miss secrets; human review remains
+required before persistence and push.
 
-Run:
+## Append-only
+
+`events.jsonl` follows an append-only policy. When a canonical baseline already
+contains the log, validation checks that the baseline is an exact prefix. When
+no baseline is available, the result is visibly `not_checked`. This is neither
+tamper-proof storage nor a cryptographic immutability guarantee.
+
+## Commands
 
 ```bash
+ruby .hid/scripts/capture.rb
 ruby .hid/scripts/validate.rb
+ruby .hid/tests/validator_test.rb
 ```
 
-The validator uses only the Ruby standard library. It parses all HID YAML,
-JSON, and JSONL; checks canonical references and lifecycle vocabulary; validates
-feature, event, and evidence invariants; checks append-only history against the
-feature base when available; and rejects common sensitive-value shapes.
-
-HID validation does not replace repository tests or QA.
+The scripts use the Ruby standard library. Validation supplements rather than
+replaces IAMINE repository tests and QA.
