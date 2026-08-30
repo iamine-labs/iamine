@@ -16,8 +16,8 @@ intent:
 
 state:
   data_class: SOURCE
-  current: CHANGES REQUIRED
-  authority: architecture_review
+  current: ARCHITECTURE REVIEW REQUIRED
+  authority: development_handoff
 
 scope:
   data_class: SOURCE
@@ -50,12 +50,12 @@ git:
     captured_at: "2026-08-30T02:55:26Z"
   candidate_snapshot:
     data_class: SNAPSHOT
-    purpose: architecture_changes_required_baseline
+    purpose: validated_hardening_candidate
     branch: feature/hid-shadow-mode-001
-    head_sha: 1debffbebe277c791a57a9ad682536c3af47a393
-    tree: 4e3f52653ccaffab3bf7f3175016514df29333ad
+    head_sha: 46dc4da3fc23ed9549b753ef61b4d9966bbd9110
+    tree: dbf7baef30780217ba69a72f161471d2140802b2
     dirty: false
-    captured_at: "2026-08-30T04:27:59Z"
+    captured_at: "2026-08-30T04:41:03Z"
   current:
     data_class: DERIVED
     source: .hid/scripts/capture.rb
@@ -67,7 +67,7 @@ gates:
     reason: prior passed value had no correlated human authorization event
   local_validation:
     required: true
-    status: pending
+    status: passed
   field_qa:
     required: false
     status: not_required
@@ -81,6 +81,7 @@ gates:
 
 evidence:
   - HID-EVID-0001
+  - HID-EVID-0002
 blockers: []
 
 next_action:
@@ -107,8 +108,9 @@ execution:
 
 metrics:
   data_class: SNAPSHOT
-  tests_executed: not_measured
-  tests_repeated: not_measured
+  tests_executed: 13
+  test_assertions: 18
+  validation_runs: 3
   non_product_findings_reported: 3
   product_defects: 0
   scope_changes: 0
