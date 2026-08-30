@@ -21,6 +21,7 @@ module Hid
     RESULT_STATUSES = %w[pass fail blocked unknown].freeze
     DATA_CLASSES = %w[SOURCE DERIVED SNAPSHOT].freeze
     GATE_NAMES = %w[architecture local_validation field_qa final_review human_merge].freeze
+    GATE_NAME_PATTERN = /\A[a-z][a-z0-9_]*\z/
 
     attr_reader :warnings
 
@@ -75,7 +76,7 @@ module Hid
         gate = feature.fetch("gates").fetch(gate_name)
         next unless gate["status"] == "passed"
 
-        status = invariants.authorization_status(gate_name, rule)
+        status = invariants.authorization_status_for_state(gate_name, rule)
         assert(status == :approved, "#{feature['id']}: human gate #{gate_name} is not authorized: #{status}")
       end
     end
@@ -196,12 +197,18 @@ module Hid
       state_requirements = fetch(project, "state_requirements", path)
       coverage_failures = StateInvariants.policy_coverage_failures(privileged_states, state_requirements)
       assert(coverage_failures.empty?, "#{path}: #{coverage_failures.join('; ')}")
+      constitutional_failures = StateInvariants.constitutional_policy_failures(
+        privileged_states,
+        state_requirements,
+        human_gates
+      )
+      assert(constitutional_failures.empty?, "#{path}: #{constitutional_failures.join('; ')}")
       state_requirements.each do |state, requirements|
         assert(expected_states.include?(state), "#{path}: state requirement references non-canonical state #{state}")
         assert(requirements.is_a?(Hash), "#{path}: state requirement #{state} must be an object")
         assert([nil, "passed"].include?(requirements["required_gates"]), "#{path}: invalid required_gates rule for #{state}")
         fetch(requirements, "gates", "#{path}: state_requirements.#{state}").each do |gate_name, status|
-          assert(GATE_NAMES.include?(gate_name), "#{path}: state requirement #{state} references unknown gate #{gate_name}")
+          assert(GATE_NAME_PATTERN.match?(gate_name), "#{path}: state requirement #{state} has invalid gate name #{gate_name}")
           assert(status == "passed", "#{path}: state requirement #{state}.#{gate_name} must require passed")
         end
         Array(requirements["events"]).each do |event_name|
@@ -249,8 +256,9 @@ module Hid
       assert(actual_tree == candidate["tree"], "#{path}: candidate commit/tree mismatch")
 
       gates = fetch(feature, "gates", path)
-      GATE_NAMES.each do |gate_name|
-        gate = fetch(gates, gate_name, path)
+      GATE_NAMES.each { |gate_name| fetch(gates, gate_name, path) }
+      gates.each do |gate_name, gate|
+        assert(GATE_NAME_PATTERN.match?(gate_name), "#{path}: invalid gate name #{gate_name}")
         assert([true, false].include?(gate["required"]), "#{path}: #{gate_name}.required must be boolean")
         assert(GATE_STATUSES.include?(gate["status"]), "#{path}: invalid #{gate_name}.status")
       end
@@ -394,6 +402,8 @@ module Hid
       current ||= @git.capture
       failures = state_requirement_failures(feature, events, project, current)
       return "policy_incomplete" if failures.any? { |failure| failure.start_with?("POLICY_INCOMPLETE") }
+      return "constitutional_policy_violation" if failures.any? { |failure| failure.start_with?("CONSTITUTIONAL_POLICY") }
+      return "lifecycle_inconsistency" if failures.any? { |failure| failure.start_with?("LIFECYCLE_ORDER_VIOLATION") }
       return "state_gate_inconsistency" unless failures.empty?
       return "resolve_blockers" unless feature["blockers"].empty?
 

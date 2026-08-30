@@ -8,7 +8,7 @@ gate result, validation count, or next action.
 
 ## Purpose
 
-HID v0.0.4 is a bounded machine-readable observation layer. It captures facts
+HID v0.0.5 is a bounded machine-readable observation layer. It captures facts
 needed to study a future control plane while the canonical IAMINE workflow,
 Architecture, QA, roadmaps, and explicit human gates retain all authority.
 
@@ -61,18 +61,19 @@ effective decision: a later denial revokes an approval and a later approval can
 supersede a denial. Decisions for older artifacts are stale and never carry
 forward.
 
-Privileged lifecycle states are constrained by the declarative
-`state_requirements` map in `.hid/project.yaml`. `APPROVED FOR MERGE` requires
-passed local validation, final review, human merge, every other applicable
-`required` gate, and correlated human authorization for each human gate.
-`MERGED`, `POST-MERGE VALIDATION`, and `MERGED / VALIDATED / CLOSED` retain those
-requirements and add the corresponding merge, post-merge validation, and
-closure events. The canonical workflow has no standalone `MERGING` or `CLOSED`
-state, so HID does not invent either one.
+Privileged lifecycle states combine a small non-configurable HID Constitution
+with the declarative project policy. The Constitution always requires local
+validation, final review, human merge, and exact-candidate human authorization.
+The project policy may add gates, including risk-specific gates, but omission,
+`required: false`, or a modified human-gate action cannot remove the minimum.
+`MERGED`, `POST-MERGE VALIDATION`, and `MERGED / VALIDATED / CLOSED` add the
+corresponding merge, post-merge validation, and closure events. The canonical
+workflow has no standalone `MERGING` or `CLOSED` state, so HID invents neither.
 
 `next_action` checks those invariants before returning an operational action. A
-privileged state with missing prerequisites yields `state_gate_inconsistency`;
-it cannot yield `run_merge_precheck` from state text alone.
+privileged state with missing prerequisites yields `state_gate_inconsistency`,
+constitutional weakening yields `constitutional_policy_violation`, and invalid
+event order yields `lifecycle_inconsistency`. None can yield a privileged action.
 
 Privileged states are derived from the canonical lifecycle beginning at
 `APPROVED FOR MERGE`. Every derived privileged state must have a declarative
@@ -84,6 +85,21 @@ not accepted by name alone. Their commit must exist, the recorded tree must
 match Git, and a merge artifact must descend from the current formal candidate.
 Post-merge validation and closure events must bind to that valid merge
 artifact. Missing, unverifiable, mismatched, or unrelated artifacts fail closed.
+
+Physical append-only log position is the lifecycle sequence source. For the
+same feature and relevant artifacts, a valid chain is:
+
+```text
+effective approved human_merge authorization
+< merged
+< post_merge_validation_passed
+< feature_closed
+```
+
+An approval followed by denial before merge cannot support the transition. A
+denial after a valid merge does not erase the historical Git event; it prevents
+later actions that require current authority. Events from another feature or an
+older candidate do not satisfy this chain.
 
 The prior `architecture: passed` observation had no supporting authorization
 event. v0.0.2 corrects the mutable gate to `pending` and appends a corrective
@@ -172,6 +188,6 @@ optimization are deferred. `FAST`, `BALANCED`, and `DEEP` remain provider-neutra
 
 ## Pilot Boundary
 
-`LAN-FILE-SHARE-ASSISTANT-AGENT-001` remains `PROPOSED` and is too risky as the
-first HID pilot. A later Architecture decision should select an existing, real,
-local, reversible, low-risk microfeature with deterministic local validation.
+`QUALITY-SECURITY-EVIDENCE-CONTRACT-001` remains `PROPOSED` and is the candidate
+for the first bounded pilot only after Architecture Review and a real Human Gate.
+`LAN-FILE-SHARE-ASSISTANT-AGENT-001` also remains `PROPOSED` and is not started.

@@ -16,6 +16,15 @@ class HidEventIntegrityTest < HidTestCase
     assert_invalid_event_artifact("POST-MERGE VALIDATION", [workflow_event("merged", head: FAKE_HEAD, tree: FAKE_TREE)])
   end
 
+  def test_post_merge_state_requires_post_merge_validation_event
+    events = authorization_events + [merged_event]
+
+    error = assert_raises(Hid::ValidationError) do
+      validate_state(state_feature("POST-MERGE VALIDATION"), events, validator: lifecycle_validator)
+    end
+    assert_includes error.message, "event post_merge_validation_passed is required"
+  end
+
   def test_closed_state_rejects_nonexistent_lifecycle_artifacts
     events = %w[merged post_merge_validation_passed feature_closed].map do |name|
       workflow_event(name, head: FAKE_HEAD, tree: FAKE_TREE)
@@ -120,7 +129,102 @@ class HidEventIntegrityTest < HidTestCase
     end
   end
 
+  def test_only_canonical_lifecycle_permutation_is_accepted
+    tokens = %w[authorize merged post_merge_validation_passed feature_closed]
+    validator = lifecycle_validator
+    feature = state_feature("MERGED / VALIDATED / CLOSED")
+
+    tokens.permutation.each do |permutation|
+      events = lifecycle_events(permutation)
+      if permutation == tokens
+        validate_state(feature, events, validator: validator)
+      else
+        error = assert_raises(Hid::ValidationError, permutation.join(" -> ")) do
+          validate_state(feature, events, validator: validator)
+        end
+        assert_includes error.message, "LIFECYCLE_ORDER_VIOLATION"
+      end
+    end
+  end
+
+  def test_approval_then_denial_before_merge_is_rejected
+    approvals = authorization_events
+    denial = authorization_event(decision: "denied")
+    events = approvals + [denial, merged_event]
+
+    error = assert_raises(Hid::ValidationError) do
+      validate_state(state_feature("MERGED"), events, validator: lifecycle_validator)
+    end
+    assert_includes error.message, "LIFECYCLE_ORDER_VIOLATION"
+    assert_equal "lifecycle_inconsistency", derive_lifecycle_next_action(state_feature("MERGED"), events)
+  end
+
+  def test_denial_after_merge_does_not_erase_valid_historical_transition
+    events = authorization_events + [merged_event, authorization_event(decision: "denied")]
+
+    validate_state(state_feature("MERGED"), events, validator: lifecycle_validator)
+  end
+
+  def test_final_review_authorization_after_merge_is_rejected
+    approvals = authorization_events.reject { |event| event.dig("authorization", "gate") == "final_review" }
+    late_final_review = authorization_event(gate: "final_review", action: "architecture_merge_approval")
+    events = approvals + [merged_event, late_final_review]
+
+    error = assert_raises(Hid::ValidationError) do
+      validate_state(state_feature("MERGED"), events, validator: lifecycle_validator)
+    end
+    assert_includes error.message, "LIFECYCLE_ORDER_VIOLATION"
+  end
+
+  def test_other_feature_events_do_not_affect_lifecycle_order
+    unrelated = merged_event
+    unrelated["feature"] = "OTHER-FEATURE-001"
+    events = authorization_events + [unrelated, merged_event, post_merge_event, closed_event]
+
+    validate_state(state_feature("MERGED / VALIDATED / CLOSED"), events, validator: lifecycle_validator)
+  end
+
   private
+
+  def lifecycle_validator
+    git = FakeGit.new(
+      {HEAD => [:valid, TREE], OTHER_HEAD => [:valid, OTHER_TREE]},
+      current: current_candidate,
+      ancestries: {[HEAD, OTHER_HEAD] => :ancestor}
+    )
+    Hid::Validator.new(Dir.pwd, git: git)
+  end
+
+  def lifecycle_events(tokens)
+    tokens.flat_map do |token|
+      case token
+      when "authorize"
+        authorization_events
+      when "merged"
+        [merged_event]
+      when "post_merge_validation_passed"
+        [post_merge_event]
+      when "feature_closed"
+        [closed_event]
+      end
+    end
+  end
+
+  def merged_event
+    workflow_event("merged", head: OTHER_HEAD, tree: OTHER_TREE)
+  end
+
+  def post_merge_event
+    workflow_event("post_merge_validation_passed", head: OTHER_HEAD, tree: OTHER_TREE)
+  end
+
+  def closed_event
+    workflow_event("feature_closed", head: OTHER_HEAD, tree: OTHER_TREE)
+  end
+
+  def derive_lifecycle_next_action(feature, events)
+    lifecycle_validator.send(:derive_next_action, feature, events, state_project, current_candidate)
+  end
 
   def assert_invalid_event_artifact(state, lifecycle_events)
     feature = state_feature(state)

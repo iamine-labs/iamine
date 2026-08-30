@@ -4,6 +4,17 @@ module Hid
   class StateInvariants
     PRIVILEGED_START_STATE = "APPROVED FOR MERGE"
     LIFECYCLE_EVENT_TYPES = %w[merged post_merge_validation_passed feature_closed].freeze
+    CONSTITUTIONAL_GATES = %w[local_validation final_review human_merge].freeze
+    CONSTITUTIONAL_EVENTS = {
+      "APPROVED FOR MERGE" => [],
+      "MERGED" => %w[merged],
+      "POST-MERGE VALIDATION" => %w[merged post_merge_validation_passed],
+      "MERGED / VALIDATED / CLOSED" => %w[merged post_merge_validation_passed feature_closed]
+    }.freeze
+    CONSTITUTIONAL_HUMAN_GATES = {
+      "final_review" => {"action" => "architecture_merge_approval", "artifact_bound" => true},
+      "human_merge" => {"action" => "merge", "artifact_bound" => true}
+    }.freeze
 
     def self.privileged_states(lifecycle_states)
       start = lifecycle_states.index(PRIVILEGED_START_STATE)
@@ -13,6 +24,34 @@ module Hid
     def self.policy_coverage_failures(privileged_states, requirements)
       privileged_states.reject { |state| requirements.key?(state) }
                        .map { |state| "POLICY_INCOMPLETE state #{state} has no requirements" }
+    end
+
+    def self.constitution_coverage_failures(privileged_states)
+      privileged_states.reject { |state| CONSTITUTIONAL_EVENTS.key?(state) }
+                       .map { |state| "CONSTITUTIONAL_POLICY_INCOMPLETE state #{state} has no minimum requirements" }
+    end
+
+    def self.constitutional_policy_failures(privileged_states, requirements, human_gates)
+      failures = constitution_coverage_failures(privileged_states)
+      privileged_states.each do |state|
+        gates = requirements.dig(state, "gates")
+        next unless gates.is_a?(Hash)
+
+        CONSTITUTIONAL_GATES.each do |gate_name|
+          next unless gates.key?(gate_name) && gates[gate_name] != "passed"
+
+          failures << "CONSTITUTIONAL_POLICY_VIOLATION state #{state} cannot weaken gate #{gate_name}"
+        end
+      end
+
+      CONSTITUTIONAL_HUMAN_GATES.each do |gate_name, minimum|
+        configured = human_gates[gate_name]
+        next if configured.is_a?(Hash) && configured["action"] == minimum["action"] &&
+                configured["artifact_bound"] == minimum["artifact_bound"]
+
+        failures << "CONSTITUTIONAL_POLICY_VIOLATION human gate #{gate_name} must remain artifact-bound to #{minimum['action']}"
+      end
+      failures
     end
 
     def initialize(feature, events, project, current:, git:)
@@ -30,20 +69,41 @@ module Hid
       return coverage if privileged_states.include?(state) && !requirements.key?(state)
 
       policy = requirements.fetch(state, {})
-      expected_gates = policy.fetch("gates", {}).dup
+      constitutional = self.class.constitutional_policy_failures(
+        privileged_states,
+        requirements,
+        @project.fetch("human_gates")
+      )
+      return constitutional unless constitutional.empty?
+
+      expected_gates = constitutional_gates(state).to_h { |gate_name| [gate_name, "passed"] }
+      expected_gates.merge!(policy.fetch("gates", {}))
       add_required_gates(expected_gates) if policy["required_gates"] == "passed"
-      gate_failures(expected_gates) + event_failures(Array(policy["events"]))
+      required_events = (constitutional_events(state) + Array(policy["events"])).uniq
+      gate_failures(state, expected_gates) +
+        event_failures(required_events) +
+        lifecycle_order_failures(required_events, expected_gates)
     end
 
-    def authorization_status(gate_name, rule)
+    def authorization_status(gate_name, rule, before_index: nil)
       return :missing unless rule.is_a?(Hash)
       return :candidate_dirty if @current.nil? || @current["dirty"] != false
 
-      relevant = human_decisions(gate_name, rule)
-      return :stale if relevant.empty? && any_human_decision?(gate_name, rule)
+      relevant = human_decisions(gate_name, rule, before_index: before_index)
+      return :stale if relevant.empty? && any_human_decision?(gate_name, rule, before_index: before_index)
       return :missing if relevant.empty?
 
-      relevant.last.dig("authorization", "decision") == "approved" ? :approved : :denied
+      relevant.last.first.dig("authorization", "decision") == "approved" ? :approved : :denied
+    end
+
+    def authorization_status_for_state(gate_name, rule)
+      return authorization_status(gate_name, rule) unless gate_name == "human_merge" && constitutional_events(current_state).include?("merged")
+
+      valid_merged_events.each do |_event, index|
+        status = authorization_status(gate_name, rule, before_index: index)
+        return :approved if status == :approved
+      end
+      authorization_status(gate_name, rule, before_index: first_merged_event_index)
     end
 
     def authorized_gate?(gate_name, rule)
@@ -56,6 +116,10 @@ module Hid
 
     private
 
+    def current_state
+      @feature.dig("state", "current")
+    end
+
     def privileged_states
       Array(@project["derived_privileged_states"])
     end
@@ -66,7 +130,15 @@ module Hid
       end
     end
 
-    def gate_failures(expected_gates)
+    def constitutional_gates(state)
+      CONSTITUTIONAL_EVENTS.key?(state) ? CONSTITUTIONAL_GATES : []
+    end
+
+    def constitutional_events(state)
+      CONSTITUTIONAL_EVENTS.fetch(state, [])
+    end
+
+    def gate_failures(state, expected_gates)
       expected_gates.each_with_object([]) do |(gate_name, status), result|
         gate = @feature.dig("gates", gate_name)
         if gate.nil? || gate["status"] != status
@@ -75,9 +147,14 @@ module Hid
         end
 
         rule = @project.dig("human_gates", gate_name)
-        next unless rule
+        if rule.nil?
+          if constitutional_gates(state).include?(gate_name) && CONSTITUTIONAL_HUMAN_GATES.key?(gate_name)
+            result << "CONSTITUTIONAL_POLICY_VIOLATION gate #{gate_name} lacks its human authorization rule"
+          end
+          next
+        end
 
-        authorization = authorization_status(gate_name, rule)
+        authorization = authorization_status_for_state(gate_name, rule)
         result << authorization_failure(gate_name, authorization) unless authorization == :approved
       end
     end
@@ -95,14 +172,19 @@ module Hid
       end
     end
 
-    def human_decisions(gate_name, rule)
-      @events.select do |event|
-        human_decision_for_gate?(event, gate_name, rule) && artifact_matches_current?(event)
+    def human_decisions(gate_name, rule, before_index: nil)
+      @events.each_with_index.each_with_object([]) do |(event, index), result|
+        next if before_index && index >= before_index
+        next unless human_decision_for_gate?(event, gate_name, rule) && artifact_matches_current?(event)
+
+        result << [event, index]
       end
     end
 
-    def any_human_decision?(gate_name, rule)
-      @events.any? { |event| human_decision_for_gate?(event, gate_name, rule) }
+    def any_human_decision?(gate_name, rule, before_index: nil)
+      @events.each_with_index.any? do |event, index|
+        (!before_index || index < before_index) && human_decision_for_gate?(event, gate_name, rule)
+      end
     end
 
     def human_decision_for_gate?(event, gate_name, rule)
@@ -128,6 +210,53 @@ module Hid
         next if status == :valid
 
         result << event_failure(event_name, status)
+      end
+    end
+
+    def lifecycle_order_failures(required_events, expected_gates)
+      sequence = LIFECYCLE_EVENT_TYPES.select { |event_name| required_events.include?(event_name) }
+      return [] if sequence.empty?
+      return [] unless sequence.all? { |event_name| supporting_event_status(event_name) == :valid }
+      required_human_gates = expected_gates.keys.select { |gate_name| @project.dig("human_gates", gate_name) }
+      return [] if valid_lifecycle_sequence?(sequence, required_human_gates)
+
+      ["LIFECYCLE_ORDER_VIOLATION expected required human authorization < #{sequence.join(' < ')}"]
+    end
+
+    def valid_lifecycle_sequence?(sequence, required_human_gates)
+      valid_merged_events.any? do |merged_event, merged_index|
+        authorizations_valid = required_human_gates.all? do |gate_name|
+          rule = @project.dig("human_gates", gate_name)
+          authorization_status(gate_name, rule, before_index: merged_index) == :approved
+        end
+        next false unless authorizations_valid
+
+        artifact = merged_event["artifact"]
+        previous_index = merged_index
+        sequence.drop(1).all? do |event_name|
+          match = indexed_events(event_name).find do |event, index|
+            index > previous_index && same_git_artifact?(event["artifact"], artifact) &&
+              supporting_event_artifact_status(event, event_name) == :valid
+          end
+          previous_index = match.last if match
+          !match.nil?
+        end
+      end
+    end
+
+    def valid_merged_events
+      indexed_events("merged").select do |event, _index|
+        supporting_event_artifact_status(event, "merged") == :valid
+      end
+    end
+
+    def first_merged_event_index
+      indexed_events("merged").first&.last
+    end
+
+    def indexed_events(event_name)
+      @events.each_with_index.select do |event, _index|
+        event["feature"] == @feature["id"] && event["event"] == event_name
       end
     end
 

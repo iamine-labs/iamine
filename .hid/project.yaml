@@ -72,6 +72,7 @@ state_requirements:
       human_merge: passed
     events:
       - merged
+      - post_merge_validation_passed
   MERGED / VALIDATED / CLOSED:
     required_gates: passed
     gates:

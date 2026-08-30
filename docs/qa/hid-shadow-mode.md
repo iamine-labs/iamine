@@ -29,23 +29,27 @@ Proxmox/R5500 are not used to manufacture ceremony.
    prerequisites are missing.
 8. Bind Human Gates to the current clean Git HEAD/tree, never a historical
    candidate snapshot, and apply the last relevant decision in log order.
-9. Fail startup and next-action derivation when any canonical privileged state
-   lacks a policy entry.
-10. Require real commit/tree identity and plausible candidate ancestry for
+9. Union non-configurable constitutional requirements with project policy;
+   project policy may add gates but cannot remove Human Merge.
+10. Fail startup and next-action derivation when any canonical privileged state
+    lacks policy or constitutional coverage.
+11. Require physical log order `authorization < merge < post-merge < closure`
+    for the relevant feature and artifacts.
+12. Require real commit/tree identity and plausible candidate ancestry for
     merge, post-merge validation, and closure events.
-11. Verify referenced evidence exists.
-12. Verify evidence commit existence and real commit-to-tree relationship.
-13. Classify evidence as `VALID`, `STALE`, `INVALID`, or `UNKNOWN`.
-14. Require passed local validation to bind to candidate-snapshot evidence.
-15. Check coverage, dependencies, and artifact/environment validity fields.
-16. Fail field-based and free-text `NEVER_STORE` data and surface `REDACT`
+13. Verify referenced evidence exists.
+14. Verify evidence commit existence and real commit-to-tree relationship.
+15. Classify evidence as `VALID`, `STALE`, `INVALID`, or `UNKNOWN`.
+16. Require passed local validation to bind to candidate-snapshot evidence.
+17. Check coverage, dependencies, and artifact/environment validity fields.
+18. Fail field-based and free-text `NEVER_STORE` data and surface `REDACT`
     warnings, including compressed IPv6.
-17. Check append-only baseline prefix when available; visibly report
+19. Check append-only baseline prefix when available; visibly report
     `not_checked` otherwise.
-18. Label `origin/develop` as a local tracking ref whose remote freshness is not
+20. Label `origin/develop` as a local tracking ref whose remote freshness is not
     verified; never fetch automatically.
-19. Confirm LAN File Share remains unimplemented and `PROPOSED`.
-20. Confirm changed paths remain process-only and run Git whitespace checks.
+21. Confirm both proposed pilots remain unimplemented and `PROPOSED`.
+22. Confirm changed paths remain process-only and run Git whitespace checks.
 
 ## Regression Cases
 
@@ -63,10 +67,18 @@ denial then approval -> AUTHORIZED
 APPROVED FOR MERGE with pending gate(s) -> FAIL
 APPROVED FOR MERGE with all synthetic prerequisites -> PASS
 privileged state missing policy entry -> POLICY_INCOMPLETE
+partial policy omits human_merge -> FAIL
+policy explicitly disables human_merge -> CONSTITUTIONAL_POLICY_VIOLATION
+project policy adds security_review and satisfies it -> PASS
 MERGED without merged event -> FAIL
 MERGED with nonexistent or unrelated Git artifact -> FAIL
 CLOSED equivalent without post-merge events -> FAIL
 valid real Git merge/post-merge/closure path -> PASS
+23 invalid lifecycle permutations -> LIFECYCLE_ORDER_VIOLATION
+authorization then merge then post-merge then closure -> PASS
+approval then denial before merge -> FAIL
+denial after valid merge -> historical merge remains valid
+event from another feature -> ignored for this feature's sequence
 evidence for another current artifact -> STALE
 commit/tree contradiction -> INVALID
 missing referenced evidence -> FAIL
