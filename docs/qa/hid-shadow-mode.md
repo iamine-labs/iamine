@@ -27,19 +27,25 @@ Proxmox/R5500 are not used to manufacture ceremony.
    and merge lifecycle events are present.
 7. Derive `state_gate_inconsistency` before any merge action when those
    prerequisites are missing.
-8. Verify referenced evidence exists.
-9. Verify evidence commit existence and real commit-to-tree relationship.
-10. Classify evidence as `VALID`, `STALE`, `INVALID`, or `UNKNOWN`.
-11. Require passed local validation to bind to candidate-snapshot evidence.
-12. Check coverage, dependencies, and artifact/environment validity fields.
-13. Fail field-based and free-text `NEVER_STORE` data and surface `REDACT`
+8. Bind Human Gates to the current clean Git HEAD/tree, never a historical
+   candidate snapshot, and apply the last relevant decision in log order.
+9. Fail startup and next-action derivation when any canonical privileged state
+   lacks a policy entry.
+10. Require real commit/tree identity and plausible candidate ancestry for
+    merge, post-merge validation, and closure events.
+11. Verify referenced evidence exists.
+12. Verify evidence commit existence and real commit-to-tree relationship.
+13. Classify evidence as `VALID`, `STALE`, `INVALID`, or `UNKNOWN`.
+14. Require passed local validation to bind to candidate-snapshot evidence.
+15. Check coverage, dependencies, and artifact/environment validity fields.
+16. Fail field-based and free-text `NEVER_STORE` data and surface `REDACT`
     warnings, including compressed IPv6.
-14. Check append-only baseline prefix when available; visibly report
+17. Check append-only baseline prefix when available; visibly report
     `not_checked` otherwise.
-15. Label `origin/develop` as a local tracking ref whose remote freshness is not
+18. Label `origin/develop` as a local tracking ref whose remote freshness is not
     verified; never fetch automatically.
-16. Confirm LAN File Share remains unimplemented and `PROPOSED`.
-17. Confirm changed paths remain process-only and run Git whitespace checks.
+19. Confirm LAN File Share remains unimplemented and `PROPOSED`.
+20. Confirm changed paths remain process-only and run Git whitespace checks.
 
 ## Regression Cases
 
@@ -50,10 +56,17 @@ passed human gate without authorization -> FAIL
 agent actor on human authorization -> FAIL
 authorization bound to wrong tree -> FAIL
 matching human authorization -> PASS
+historical snapshot authorization for newer current candidate -> FAIL
+current candidate authorization -> PASS
+approval then denial -> NOT AUTHORIZED
+denial then approval -> AUTHORIZED
 APPROVED FOR MERGE with pending gate(s) -> FAIL
 APPROVED FOR MERGE with all synthetic prerequisites -> PASS
+privileged state missing policy entry -> POLICY_INCOMPLETE
 MERGED without merged event -> FAIL
+MERGED with nonexistent or unrelated Git artifact -> FAIL
 CLOSED equivalent without post-merge events -> FAIL
+valid real Git merge/post-merge/closure path -> PASS
 evidence for another current artifact -> STALE
 commit/tree contradiction -> INVALID
 missing referenced evidence -> FAIL

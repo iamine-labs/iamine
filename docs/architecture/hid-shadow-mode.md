@@ -8,7 +8,7 @@ gate result, validation count, or next action.
 
 ## Purpose
 
-HID v0.0.3 is a bounded machine-readable observation layer. It captures facts
+HID v0.0.4 is a bounded machine-readable observation layer. It captures facts
 needed to study a future control plane while the canonical IAMINE workflow,
 Architecture, QA, roadmaps, and explicit human gates retain all authority.
 
@@ -27,7 +27,7 @@ SNAPSHOT derived facts captured at a historical moment
 
 Current branch, HEAD, tree, dirty state, and ancestry come from Git through
 `.hid/scripts/capture.rb`. Manifests may retain named snapshots but must not
-present them as self-updating current state.
+present them as self-updating current state or use them as Human Gate authority.
 
 The canonical lifecycle is parsed from
 `docs/process/iamine-canonical-workflow.md`; `.hid/project.yaml` no longer keeps
@@ -53,6 +53,14 @@ Tooling validates structure and artifact correlation, not cryptographic human
 identity. Agents must not represent themselves as humans or infer approval from
 silence, tests, or prior conversation.
 
+Human authorization targets the current clean Git candidate derived at
+validation time, not `git.candidate_snapshot`. The snapshot remains historical
+evidence metadata. For the same feature, gate, action, and current artifact,
+the last relevant `human_authorization` event in append-only log order is the
+effective decision: a later denial revokes an approval and a later approval can
+supersede a denial. Decisions for older artifacts are stale and never carry
+forward.
+
 Privileged lifecycle states are constrained by the declarative
 `state_requirements` map in `.hid/project.yaml`. `APPROVED FOR MERGE` requires
 passed local validation, final review, human merge, every other applicable
@@ -65,6 +73,17 @@ state, so HID does not invent either one.
 `next_action` checks those invariants before returning an operational action. A
 privileged state with missing prerequisites yields `state_gate_inconsistency`;
 it cannot yield `run_merge_precheck` from state text alone.
+
+Privileged states are derived from the canonical lifecycle beginning at
+`APPROVED FOR MERGE`. Every derived privileged state must have a declarative
+policy entry. Missing coverage is `POLICY_INCOMPLETE`, fails validation at
+startup, and derives `policy_incomplete` rather than a privileged action.
+
+Lifecycle events supporting `MERGED`, `POST-MERGE VALIDATION`, or closure are
+not accepted by name alone. Their commit must exist, the recorded tree must
+match Git, and a merge artifact must descend from the current formal candidate.
+Post-merge validation and closure events must bind to that valid merge
+artifact. Missing, unverifiable, mismatched, or unrelated artifacts fail closed.
 
 The prior `architecture: passed` observation had no supporting authorization
 event. v0.0.2 corrects the mutable gate to `pending` and appends a corrective

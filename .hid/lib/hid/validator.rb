@@ -49,12 +49,12 @@ module Hid
 
       features.each do |feature|
         validate_evidence_references(feature, evidence)
-        validate_human_gates(feature, events, project)
-        validate_state_and_gates(feature, evidence, events, project)
+        validate_human_gates(feature, events, project, current)
+        validate_state_and_gates(feature, evidence, events, project, current)
       end
 
       append_only = validate_append_only(File.join(@hid_root, "events.jsonl"))
-      next_actions = features.to_h { |feature| [feature["id"], derive_next_action(feature, events, project)] }
+      next_actions = features.to_h { |feature| [feature["id"], derive_next_action(feature, events, project, current)] }
 
       {
         "features" => feature_paths.length,
@@ -68,13 +68,15 @@ module Hid
       }
     end
 
-    def validate_human_gates(feature, events, project)
-      invariants = StateInvariants.new(feature, events, project)
+    def validate_human_gates(feature, events, project, current = nil)
+      current ||= @git.capture
+      invariants = StateInvariants.new(feature, events, project, current: current, git: @git)
       project.fetch("human_gates").each do |gate_name, rule|
         gate = feature.fetch("gates").fetch(gate_name)
         next unless gate["status"] == "passed"
 
-        assert(invariants.authorized_gate?(gate_name, rule), "#{feature['id']}: human gate #{gate_name} passed without correlated human authorization")
+        status = invariants.authorization_status(gate_name, rule)
+        assert(status == :approved, "#{feature['id']}: human gate #{gate_name} is not authorized: #{status}")
       end
     end
 
@@ -173,6 +175,9 @@ module Hid
       expected_states = workflow_states(File.join(@root, canonical.fetch("workflow")))
       assert(project.dig("lifecycle", "representation") == "derived_at_validation", "#{path}: lifecycle must be derived")
       project["derived_lifecycle_states"] = expected_states
+      privileged_states = StateInvariants.privileged_states(expected_states)
+      assert(!privileged_states.empty?, "#{path}: POLICY_INCOMPLETE privileged lifecycle boundary is missing")
+      project["derived_privileged_states"] = privileged_states
 
       DATA_CLASSES.each do |data_class|
         assert(project.dig("data_semantics", data_class).is_a?(Array), "#{path}: missing data semantics for #{data_class}")
@@ -189,6 +194,8 @@ module Hid
       end
 
       state_requirements = fetch(project, "state_requirements", path)
+      coverage_failures = StateInvariants.policy_coverage_failures(privileged_states, state_requirements)
+      assert(coverage_failures.empty?, "#{path}: #{coverage_failures.join('; ')}")
       state_requirements.each do |state, requirements|
         assert(expected_states.include?(state), "#{path}: state requirement references non-canonical state #{state}")
         assert(requirements.is_a?(Hash), "#{path}: state requirement #{state} must be an object")
@@ -365,7 +372,8 @@ module Hid
       events
     end
 
-    def validate_state_and_gates(feature, evidence, events, project)
+    def validate_state_and_gates(feature, evidence, events, project, current = nil)
+      current ||= @git.capture
       candidate = feature.dig("git", "candidate_snapshot")
       matching_evidence = feature["evidence"].any? do |id|
         record = evidence[id]
@@ -378,12 +386,15 @@ module Hid
         assert(matching_evidence, "#{feature['id']}: local validation passed without evidence for candidate snapshot")
       end
 
-      failures = state_requirement_failures(feature, events, project)
+      failures = state_requirement_failures(feature, events, project, current)
       assert(failures.empty?, "#{feature['id']}: STATE_GATE_INCONSISTENCY: #{failures.join('; ')}")
     end
 
-    def derive_next_action(feature, events, project)
-      return "state_gate_inconsistency" unless state_requirement_failures(feature, events, project).empty?
+    def derive_next_action(feature, events, project, current = nil)
+      current ||= @git.capture
+      failures = state_requirement_failures(feature, events, project, current)
+      return "policy_incomplete" if failures.any? { |failure| failure.start_with?("POLICY_INCOMPLETE") }
+      return "state_gate_inconsistency" unless failures.empty?
       return "resolve_blockers" unless feature["blockers"].empty?
 
       case feature.dig("state", "current")
@@ -415,8 +426,8 @@ module Hid
       validate_append_only_prefix(previous, current, path)
     end
 
-    def state_requirement_failures(feature, events, project)
-      StateInvariants.new(feature, events, project).failures
+    def state_requirement_failures(feature, events, project, current)
+      StateInvariants.new(feature, events, project, current: current, git: @git).failures
     end
 
     def enforce_privacy(findings)

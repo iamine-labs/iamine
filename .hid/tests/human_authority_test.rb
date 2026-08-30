@@ -28,6 +28,64 @@ class HidHumanAuthorityTest < HidTestCase
     @validator.validate_human_gates(@feature, [authorization_event], @project)
   end
 
+  def test_historical_snapshot_authorization_does_not_authorize_current_candidate
+    current = current_candidate(head: OTHER_HEAD, tree: OTHER_TREE)
+
+    error = assert_raises(Hid::ValidationError) do
+      @validator.validate_human_gates(@feature, [authorization_event], @project, current)
+    end
+    assert_includes error.message, "stale"
+  end
+
+  def test_current_candidate_authorization_supports_gate
+    current = current_candidate(head: OTHER_HEAD, tree: OTHER_TREE)
+    event = authorization_event(head: OTHER_HEAD, tree: OTHER_TREE)
+
+    @validator.validate_human_gates(@feature, [event], @project, current)
+  end
+
+  def test_approval_followed_by_denial_is_not_authorized
+    events = [authorization_event, authorization_event(decision: "denied")]
+
+    error = assert_raises(Hid::ValidationError) do
+      @validator.validate_human_gates(@feature, events, @project)
+    end
+    assert_includes error.message, "denied"
+  end
+
+  def test_denial_followed_by_approval_is_authorized
+    events = [authorization_event(decision: "denied"), authorization_event]
+
+    @validator.validate_human_gates(@feature, events, @project)
+  end
+
+  def test_new_artifact_approval_supersedes_old_artifact_approval
+    current = current_candidate(head: OTHER_HEAD, tree: OTHER_TREE)
+    events = [authorization_event, authorization_event(head: OTHER_HEAD, tree: OTHER_TREE)]
+
+    @validator.validate_human_gates(@feature, events, @project, current)
+  end
+
+  def test_privileged_state_rejects_authorizations_for_historical_snapshot
+    feature = state_feature("APPROVED FOR MERGE")
+    current = current_candidate(head: OTHER_HEAD, tree: OTHER_TREE)
+
+    error = assert_raises(Hid::ValidationError) do
+      validate_state(feature, authorization_events, current: current)
+    end
+    assert_includes error.message, "AUTHORIZATION_STALE"
+    assert_equal "state_gate_inconsistency", derive_next_action(feature, authorization_events, current: current)
+  end
+
+  def test_privileged_state_accepts_current_authorizations_with_historical_evidence
+    feature = state_feature("APPROVED FOR MERGE")
+    current = current_candidate(head: OTHER_HEAD, tree: OTHER_TREE)
+    events = authorization_events(head: OTHER_HEAD, tree: OTHER_TREE)
+
+    validate_state(feature, events, current: current)
+    assert_equal "run_merge_precheck", derive_next_action(feature, events, current: current)
+  end
+
   def test_authorization_action_must_match_gate
     event = authorization_event
     event["authorization"]["action"] = "release"

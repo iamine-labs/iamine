@@ -53,6 +53,25 @@ module Hid
       [:unknown, nil]
     end
 
+    def artifact_status(head_sha, expected_tree)
+      state, actual_tree = commit_tree(head_sha)
+      return state unless state == :valid
+
+      actual_tree == expected_tree ? :valid : :invalid
+    end
+
+    def ancestry_status(ancestor_sha, descendant_sha)
+      return :invalid unless SHA_PATTERN.match?(ancestor_sha.to_s) && SHA_PATTERN.match?(descendant_sha.to_s)
+
+      _output, status = run("merge-base", "--is-ancestor", ancestor_sha, descendant_sha)
+      return :ancestor if status.success?
+      return :unrelated if status.exitstatus == 1
+
+      :unknown
+    rescue GitUnavailable
+      :unknown
+    end
+
     private
 
     def ancestry(base, head)
