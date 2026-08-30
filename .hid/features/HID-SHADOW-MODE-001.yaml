@@ -1,0 +1,116 @@
+schema_version: "0.0.1"
+id: HID-SHADOW-MODE-001
+kind: engineering_process_enabler
+title: HID v0.0.1 Shadow Mode
+
+canonical:
+  workflow: docs/process/iamine-canonical-workflow.md
+  roadmap: docs/roadmap/iamine-product-roadmap.md
+  architecture: docs/architecture/hid-shadow-mode.md
+  qa: docs/qa/hid-shadow-mode.md
+
+intent:
+  problem: IAMINE process state is reproducible but primarily narrative and conversational.
+  expected_outcome: Capture bounded machine-readable process observations without replacing canonical authority.
+
+state:
+  current: IMPLEMENTATION IN PROGRESS
+  authority: canonical_workflow
+
+scope:
+  include:
+    - .hid/**
+    - docs/architecture/hid-shadow-mode.md
+    - docs/qa/hid-shadow-mode.md
+    - docs/roadmap/iamine-product-roadmap.md
+  exclude:
+    - product runtime behavior
+    - automatic merge or authorization
+    - database, server, dashboard, SaaS, MCP, or orchestrator
+    - historical feature reconstruction
+    - automatic model routing
+
+risk:
+  level: RISK_1
+  reasons:
+    - process metadata is reconstructable and local to the repository
+    - roadmap drift and sensitive metadata require explicit guards
+    - incorrect shadow state must never override canonical state
+
+git:
+  base_branch: develop
+  base_sha: b6fad67e7af4f2e691f0334d64944ab5a3a9b1a5
+  base_tree: a18f150de86da34f64aae7fe06e7ed760154d44c
+  branch: feature/hid-shadow-mode-001
+  last_capture:
+    purpose: feature_start
+    head_sha: b6fad67e7af4f2e691f0334d64944ab5a3a9b1a5
+    tree: a18f150de86da34f64aae7fe06e7ed760154d44c
+    dirty: false
+    captured_at: "2026-08-30T02:55:26Z"
+
+gates:
+  architecture:
+    required: true
+    status: pending
+  local_validation:
+    required: true
+    status: pending
+  field_qa:
+    required: false
+    status: not_required
+    reason: no product or platform-dependent behavior changes
+  final_review:
+    required: true
+    status: pending
+  human_merge:
+    required: true
+    status: pending
+
+evidence: []
+blockers: []
+
+next_action:
+  type: implement_shadow_infrastructure
+  description: Create and locally validate the bounded HID v0.0.1 candidate.
+
+execution:
+  classification:
+    task_type: engineering_process_architecture
+    complexity: medium
+    risk: RISK_1
+    reasoning_required: high
+    context_size: medium
+    reversibility: high
+    architecture_impact: medium
+    security_impact: low
+  model:
+    provider: openai
+    model: not_measured
+    profile: not_assigned
+    selection_reason: Existing session model was not selected by HID routing.
+  escalation:
+    occurred: false
+    from: null
+    to: null
+    reason: null
+  usage:
+    input_tokens: not_measured
+    output_tokens: not_measured
+    total_tokens: not_measured
+  outcome:
+    accepted_first_pass: unknown
+    rework_required: unknown
+
+metrics:
+  feature_duration: not_measured
+  task_count: not_measured
+  agent_iterations: not_measured
+  human_interventions: not_measured
+  tests_executed: not_measured
+  tests_repeated: not_measured
+  failures: not_measured
+  scope_changes: 0
+  tree_changes_after_qa: not_measured
+  evidence_invalidations: 0
+  blocked_infrastructure_time: not_measured

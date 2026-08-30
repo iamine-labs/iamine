@@ -1,0 +1,27 @@
+{
+  "schema_version": "0.0.1",
+  "id": "EVIDENCE-ID",
+  "feature": "FEATURE-ID",
+  "type": "local_validation",
+  "artifact": {
+    "head_sha": null,
+    "tree": null
+  },
+  "environment": {
+    "host_class": "not_measured",
+    "os": "not_measured",
+    "arch": "not_measured"
+  },
+  "execution": {
+    "commands": [],
+    "started_at": null,
+    "finished_at": null
+  },
+  "result": {
+    "status": "unknown",
+    "tests": "not_measured",
+    "failures": "not_measured"
+  },
+  "failure_class": null,
+  "notes": []
+}

@@ -141,6 +141,9 @@ exact-merge quality gate with zero required failures. No product feature is
 currently authorized. `LAN-FILE-SHARE-ASSISTANT-AGENT-001` remains the next
 proposed candidate and is not authorized by this transition.
 
+`HID-SHADOW-MODE-001` is an active parallel engineering-process experiment. It
+does not change the product sequence or authorize the next product feature.
+
 The broader v0.9 operational stability claim still requires the operational
 target: 10-50 nodes, 3-10 operators, multiple physical networks, and two to
 four weeks of stable operation.
@@ -159,6 +162,7 @@ or handed off to the orchestrator.
 | IAMINE-CANONICAL-ROADMAP-RECONCILIATION-001 | CLOSED | Architecture / product roadmap | Reconciled the current v0.11.2 status, preserved existing milestone numbering, registered proposed GUI/CLI and Security/CI tracks, and corrected superseded QA evidence without changing runtime behavior; merge `e761b0a`, post-merge quality gate PASS WITH WARNINGS. |
 | IAMINE-PRODUCT-TRACKS-ROADMAP-RECONCILIATION-001 | CLOSED | Architecture / product roadmap | Reconciled internal assurance, public/internal governance, dashboard parallelism, shared-model installation direction, and deferred personal/family product tracks without runtime changes, milestone renumbering, or bulk authorization; implementation `44d34f7`, merge `b577073`, post-merge quality gate PASS WITH WARNINGS. |
 | IAMINE-CURRENT-STATE-ROADMAP-RECONCILIATION-001 | CLOSED | Architecture / product roadmap | Reconciled the merged Node Doctor and Local Control API catalog evidence, removed stale active-state claims, and identified the next sequential candidates without bulk authorization; implementation `705dea0`, merge `c60da20`, post-merge quality gate PASS WITH WARNINGS. |
+| HID-SHADOW-MODE-001 | ACTIVE | Architecture / engineering process | Introduce bounded machine-readable shadow observations for future features while canonical workflow, roadmap, QA, Architecture, and human gates retain authority; process metadata only, no product behavior or product feature authorization. |
 
 ## Milestone 0 - v0.7 Foundations
 
