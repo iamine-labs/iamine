@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "ipaddr"
 require "yaml"
 
 module Hid
@@ -8,7 +9,7 @@ module Hid
   class PrivacyPolicy
     EMAIL = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i
     IPV4 = /\b(?:\d{1,3}\.){3}\d{1,3}\b/
-    IPV6 = /\b(?:[0-9a-f]{1,4}:){2,7}[0-9a-f]{0,4}\b/i
+    IPV6_CANDIDATE = /[0-9a-f:.]+/i
     POSIX_LOCAL_PATH = %r{/(?:Users|home)/[^/\s]+(?:/[^\s]*)?}
     WINDOWS_LOCAL_PATH = /\b[A-Za-z]:\\[^\s]+/
     PRIVATE_KEY = /-----BEGIN [A-Z ]*PRIVATE KEY-----/
@@ -16,6 +17,7 @@ module Hid
     TOKEN_VALUE = /\b(?:sk|ghp|github_pat|xox[baprs])[-_][A-Za-z0-9_-]{12,}\b/i
     CREDENTIAL_URL = %r{https?://[^/\s:@]+:[^@\s]+@}i
     SECRET_QUERY = /[?&](?:api[_-]?key|access[_-]?token|refresh[_-]?token|secret|password)=[^&#\s]+/i
+    SECRET_ASSIGNMENT = /\b(?:api[_-]?key|apikey|access[_-]?token|refresh[_-]?token|password|secret|client[_-]?secret|private[_-]?key|session[_-]?token|credentials?)\b\s*[:=]\s*(?!not[_-]?configured\b|unset\b|none\b|null\b|redacted\b)(?:"[^"]+"|'[^']+'|[^\s,;]+)/i
 
     def self.load(path)
       data = YAML.safe_load(File.read(path), permitted_classes: [], aliases: false)
@@ -70,12 +72,12 @@ module Hid
         "bearer_token" => BEARER,
         "token_value" => TOKEN_VALUE,
         "credential_url" => CREDENTIAL_URL,
-        "secret_query" => SECRET_QUERY
+        "secret_query" => SECRET_QUERY,
+        "secret_assignment" => SECRET_ASSIGNMENT
       }
       warnings = {
         "email" => EMAIL,
         "ipv4" => IPV4,
-        "ipv6" => IPV6,
         "local_posix_path" => POSIX_LOCAL_PATH,
         "local_windows_path" => WINDOWS_LOCAL_PATH
       }
@@ -87,7 +89,18 @@ module Hid
       warnings.each do |kind, pattern|
         results << finding("privacy_warning", kind, source, path) if pattern.match?(value)
       end
+      results << finding("privacy_warning", "ipv6", source, path) if contains_ipv6?(value)
       results
+    end
+
+    def contains_ipv6?(value)
+      value.scan(IPV6_CANDIDATE).any? do |candidate|
+        next false if candidate.count(":") < 2
+
+        IPAddr.new(candidate).ipv6?
+      rescue IPAddr::InvalidAddressError
+        false
+      end
     end
 
     def finding(level, kind, source, path)

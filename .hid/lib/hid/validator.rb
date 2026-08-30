@@ -1,12 +1,12 @@
 # frozen_string_literal: true
 
 require "json"
-require "open3"
 require "time"
 require "yaml"
 
 require_relative "git_facts"
 require_relative "privacy"
+require_relative "state_invariants"
 
 module Hid
   class ValidationError < StandardError; end
@@ -20,6 +20,7 @@ module Hid
     ACTOR_ROLES = %w[architect developer qa reviewer merge-owner human system].freeze
     RESULT_STATUSES = %w[pass fail blocked unknown].freeze
     DATA_CLASSES = %w[SOURCE DERIVED SNAPSHOT].freeze
+    GATE_NAMES = %w[architecture local_validation field_qa final_review human_merge].freeze
 
     attr_reader :warnings
 
@@ -49,11 +50,11 @@ module Hid
       features.each do |feature|
         validate_evidence_references(feature, evidence)
         validate_human_gates(feature, events, project)
-        validate_state_and_gates(feature, evidence)
+        validate_state_and_gates(feature, evidence, events, project)
       end
 
       append_only = validate_append_only(File.join(@hid_root, "events.jsonl"))
-      next_actions = features.to_h { |feature| [feature["id"], derive_next_action(feature)] }
+      next_actions = features.to_h { |feature| [feature["id"], derive_next_action(feature, events, project)] }
 
       {
         "features" => feature_paths.length,
@@ -68,26 +69,12 @@ module Hid
     end
 
     def validate_human_gates(feature, events, project)
-      candidate = feature.dig("git", "candidate_snapshot")
+      invariants = StateInvariants.new(feature, events, project)
       project.fetch("human_gates").each do |gate_name, rule|
         gate = feature.fetch("gates").fetch(gate_name)
         next unless gate["status"] == "passed"
 
-        match = events.find do |event|
-          authorization = event["authorization"]
-          next false unless event["event"] == "human_authorization"
-          next false unless event.dig("actor", "type") == "human"
-          next false unless event["feature"] == feature["id"]
-          next false unless authorization.is_a?(Hash)
-          next false unless authorization["gate"] == gate_name
-          next false unless authorization["action"] == rule["action"]
-          next false unless authorization["decision"] == "approved"
-          next true unless rule["artifact_bound"]
-
-          event.dig("artifact", "head_sha") == candidate["head_sha"] &&
-            event.dig("artifact", "tree") == candidate["tree"]
-        end
-        assert(match, "#{feature['id']}: human gate #{gate_name} passed without correlated human authorization")
+        assert(invariants.authorized_gate?(gate_name, rule), "#{feature['id']}: human gate #{gate_name} passed without correlated human authorization")
       end
     end
 
@@ -120,6 +107,11 @@ module Hid
       assert_sha(event.dig("artifact", "head_sha"), "#{location}: authorization head_sha")
       assert_sha(event.dig("artifact", "tree"), "#{location}: authorization tree")
       assert(event.dig("artifact", "dirty") == false, "#{location}: authorization must bind to a clean artifact")
+    end
+
+    def validate_append_only_prefix(baseline, candidate, location)
+      assert(candidate.start_with?(baseline), "#{location}: committed baseline events were modified or removed")
+      "baseline_prefix_preserved"
     end
 
     private
@@ -195,6 +187,20 @@ module Hid
         assert(rule["action"].is_a?(String), "#{path}: human gate #{name} requires an action")
         assert([true, false].include?(rule["artifact_bound"]), "#{path}: human gate #{name} artifact_bound must be boolean")
       end
+
+      state_requirements = fetch(project, "state_requirements", path)
+      state_requirements.each do |state, requirements|
+        assert(expected_states.include?(state), "#{path}: state requirement references non-canonical state #{state}")
+        assert(requirements.is_a?(Hash), "#{path}: state requirement #{state} must be an object")
+        assert([nil, "passed"].include?(requirements["required_gates"]), "#{path}: invalid required_gates rule for #{state}")
+        fetch(requirements, "gates", "#{path}: state_requirements.#{state}").each do |gate_name, status|
+          assert(GATE_NAMES.include?(gate_name), "#{path}: state requirement #{state} references unknown gate #{gate_name}")
+          assert(status == "passed", "#{path}: state requirement #{state}.#{gate_name} must require passed")
+        end
+        Array(requirements["events"]).each do |event_name|
+          assert(project.dig("events", "allowed").include?(event_name), "#{path}: state requirement #{state} references unknown event #{event_name}")
+        end
+      end
       project
     end
 
@@ -236,7 +242,7 @@ module Hid
       assert(actual_tree == candidate["tree"], "#{path}: candidate commit/tree mismatch")
 
       gates = fetch(feature, "gates", path)
-      %w[architecture local_validation field_qa final_review human_merge].each do |gate_name|
+      GATE_NAMES.each do |gate_name|
         gate = fetch(gates, gate_name, path)
         assert([true, false].include?(gate["required"]), "#{path}: #{gate_name}.required must be boolean")
         assert(GATE_STATUSES.include?(gate["status"]), "#{path}: invalid #{gate_name}.status")
@@ -359,7 +365,7 @@ module Hid
       events
     end
 
-    def validate_state_and_gates(feature, evidence)
+    def validate_state_and_gates(feature, evidence, events, project)
       candidate = feature.dig("git", "candidate_snapshot")
       matching_evidence = feature["evidence"].any? do |id|
         record = evidence[id]
@@ -372,18 +378,12 @@ module Hid
         assert(matching_evidence, "#{feature['id']}: local validation passed without evidence for candidate snapshot")
       end
 
-      states_requiring_local_validation = [
-        "LOCAL VALIDATION PASSED",
-        "ARCHITECTURE REVIEW REQUIRED",
-        "READY FOR MERGE REVIEW",
-        "APPROVED FOR MERGE"
-      ]
-      if states_requiring_local_validation.include?(feature.dig("state", "current"))
-        assert(feature.dig("gates", "local_validation", "status") == "passed", "#{feature['id']}: state requires passed local validation")
-      end
+      failures = state_requirement_failures(feature, events, project)
+      assert(failures.empty?, "#{feature['id']}: STATE_GATE_INCONSISTENCY: #{failures.join('; ')}")
     end
 
-    def derive_next_action(feature)
+    def derive_next_action(feature, events, project)
+      return "state_gate_inconsistency" unless state_requirement_failures(feature, events, project).empty?
       return "resolve_blockers" unless feature["blockers"].empty?
 
       case feature.dig("state", "current")
@@ -401,22 +401,22 @@ module Hid
     end
 
     def validate_append_only(path)
-      stdout, _stderr, status = Open3.capture3("git", "-C", @root, "merge-base", "HEAD", "origin/develop")
-      unless status.success?
+      state, previous = @git.baseline_file(".hid/events.jsonl")
+      if state == :unavailable
         warnings << "append_only=not_checked reason=git_base_unavailable"
         return "not_checked"
       end
-
-      base = stdout.strip
-      previous, _stderr, previous_status = Open3.capture3("git", "-C", @root, "show", "#{base}:.hid/events.jsonl")
-      unless previous_status.success?
+      if state == :missing
         warnings << "append_only=not_checked reason=initial_log"
         return "not_checked"
       end
 
       current = File.read(path)
-      assert(current.start_with?(previous), "#{path}: committed baseline events were modified or removed")
-      "baseline_prefix_preserved"
+      validate_append_only_prefix(previous, current, path)
+    end
+
+    def state_requirement_failures(feature, events, project)
+      StateInvariants.new(feature, events, project).failures
     end
 
     def enforce_privacy(findings)

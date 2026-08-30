@@ -21,9 +21,22 @@ module Hid
         "head_sha" => head,
         "tree" => required("rev-parse", "HEAD^{tree}").strip,
         "dirty" => !required("status", "--porcelain=v1").empty?,
+        "base_ref" => "refs/remotes/origin/develop",
+        "base_ref_scope" => "local_tracking_ref",
+        "base_ref_freshness" => "not_verified",
         "base_sha" => base&.strip,
         "ancestry" => ancestry(base&.strip, head)
       }
+    end
+
+    def baseline_file(path)
+      base = optional("rev-parse", "origin/develop")
+      return [:unavailable, nil] if base.nil? || base.strip.empty?
+
+      content, status = run("show", "#{base.strip}:#{path}")
+      status.success? ? [:available, content] : [:missing, nil]
+    rescue GitUnavailable
+      [:unavailable, nil]
     end
 
     def commit_tree(sha)

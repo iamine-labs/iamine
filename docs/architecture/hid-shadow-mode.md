@@ -8,7 +8,7 @@ gate result, validation count, or next action.
 
 ## Purpose
 
-HID v0.0.2 is a bounded machine-readable observation layer. It captures facts
+HID v0.0.3 is a bounded machine-readable observation layer. It captures facts
 needed to study a future control plane while the canonical IAMINE workflow,
 Architecture, QA, roadmaps, and explicit human gates retain all authority.
 
@@ -53,6 +53,19 @@ Tooling validates structure and artifact correlation, not cryptographic human
 identity. Agents must not represent themselves as humans or infer approval from
 silence, tests, or prior conversation.
 
+Privileged lifecycle states are constrained by the declarative
+`state_requirements` map in `.hid/project.yaml`. `APPROVED FOR MERGE` requires
+passed local validation, final review, human merge, every other applicable
+`required` gate, and correlated human authorization for each human gate.
+`MERGED`, `POST-MERGE VALIDATION`, and `MERGED / VALIDATED / CLOSED` retain those
+requirements and add the corresponding merge, post-merge validation, and
+closure events. The canonical workflow has no standalone `MERGING` or `CLOSED`
+state, so HID does not invent either one.
+
+`next_action` checks those invariants before returning an operational action. A
+privileged state with missing prerequisites yields `state_gate_inconsistency`;
+it cannot yield `run_merge_precheck` from state text alone.
+
 The prior `architecture: passed` observation had no supporting authorization
 event. v0.0.2 corrects the mutable gate to `pending` and appends a corrective
 event without rewriting the old event log.
@@ -90,11 +103,21 @@ Detected `privacy_violation` values fail validation. A `privacy_warning` remains
 visible for human review and deterministic redaction. The validator never edits
 data and regular expressions cannot prove the absence of secrets.
 
+The recursive privacy walker applies both field-name and text-content rules.
+Obvious secret assignments inside arbitrary strings are violations. Complete
+content under `prompt`, `model_prompt`, `response`, `model_response`, or
+`completion` is prohibited, while bounded metadata such as IDs, hashes, sizes,
+token counts, profile, and selection reason remains allowed. IPv6 is parsed
+with Ruby's standard `IPAddr`, including compressed addresses, and produces a
+`REDACT` warning rather than a silent pass.
+
 ## Append-only Policy
 
 The event log is an append-only policy with baseline-prefix validation when the
-canonical base contains a prior log. Without that baseline, validation reports
-`not_checked`. It is not tamper-proof or cryptographically immutable.
+local tracking ref `origin/develop` contains a prior log. Without that local
+baseline, validation reports `not_checked`. HID does not fetch automatically or
+claim that the local tracking ref is current on the remote. The policy is not
+tamper-proof or cryptographically immutable.
 
 ## Tool Boundary
 
@@ -121,7 +144,8 @@ optimization are deferred. `FAST`, `BALANCED`, and `DEEP` remain provider-neutra
 
 - A commit cannot contain evidence naming its own commit SHA. Evidence-recording
   commits therefore produce visible staleness against the later metadata tree.
-- Git availability and the local `origin/develop` ref affect derived status.
+- Git availability and the local `origin/develop` tracking ref affect derived
+  status; remote freshness is explicitly `not_verified`.
 - Privacy detection has false-negative and false-positive risk.
 - Some source decisions remain represented in both canonical Markdown and a
   bounded feature snapshot while Shadow Mode is evaluated.

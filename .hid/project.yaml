@@ -40,6 +40,49 @@ human_gates:
     action: merge
     artifact_bound: true
 
+state_requirements:
+  LOCAL VALIDATION PASSED:
+    gates:
+      local_validation: passed
+  ARCHITECTURE REVIEW REQUIRED:
+    gates:
+      local_validation: passed
+  READY FOR MERGE REVIEW:
+    gates:
+      local_validation: passed
+  APPROVED FOR MERGE:
+    required_gates: passed
+    gates:
+      local_validation: passed
+      final_review: passed
+      human_merge: passed
+  MERGED:
+    required_gates: passed
+    gates:
+      local_validation: passed
+      final_review: passed
+      human_merge: passed
+    events:
+      - merged
+  POST-MERGE VALIDATION:
+    required_gates: passed
+    gates:
+      local_validation: passed
+      final_review: passed
+      human_merge: passed
+    events:
+      - merged
+  MERGED / VALIDATED / CLOSED:
+    required_gates: passed
+    gates:
+      local_validation: passed
+      final_review: passed
+      human_merge: passed
+    events:
+      - merged
+      - post_merge_validation_passed
+      - feature_closed
+
 data_semantics:
   SOURCE:
     - human intent and approved scope

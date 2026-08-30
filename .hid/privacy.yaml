@@ -39,10 +39,15 @@ NEVER_STORE:
     - credentials
     - session_token
   payload_keys:
+    - prompt
     - prompt_content
     - full_prompt
+    - model_prompt
+    - response
     - model_response
+    - full_response
     - full_model_response
+    - completion
     - environment_dump
     - raw_environment
   categories:
@@ -51,6 +56,17 @@ NEVER_STORE:
     - secret-bearing URLs or commands
     - complete model responses without explicit Architecture justification
     - environment-variable dumps
+
+  allowed_model_metadata:
+    - prompt_id
+    - prompt_hash
+    - prompt_size
+    - prompt_tokens
+    - input_tokens
+    - output_tokens
+    - model
+    - profile
+    - selection_reason
 
 limitations:
   - Detection is pattern-based and cannot prove that persisted data is safe.
