@@ -22,6 +22,7 @@ module Hid
     DATA_CLASSES = %w[SOURCE DERIVED SNAPSHOT].freeze
     GATE_NAMES = %w[architecture local_validation field_qa final_review human_merge].freeze
     GATE_NAME_PATTERN = /\A[a-z][a-z0-9_]*\z/
+    BRANCH_NAME_PATTERN = /\A[A-Za-z0-9][A-Za-z0-9._\/-]*\z/
 
     attr_reader :warnings
 
@@ -110,6 +111,16 @@ module Hid
       assert_sha(event.dig("artifact", "head_sha"), "#{location}: authorization head_sha")
       assert_sha(event.dig("artifact", "tree"), "#{location}: authorization tree")
       assert(event.dig("artifact", "dirty") == false, "#{location}: authorization must bind to a clean artifact")
+    end
+
+    def validate_merged_event(event, location)
+      integration = fetch(event, "integration", location)
+      assert(integration.is_a?(Hash), "#{location}: integration must be an object")
+      assert_sha(integration["source_head_sha"], "#{location}: integration.source_head_sha")
+      assert_sha(integration["source_tree"], "#{location}: integration.source_tree")
+      target = integration["target_branch"]
+      assert(target.is_a?(String) && BRANCH_NAME_PATTERN.match?(target), "#{location}: invalid integration.target_branch")
+      assert(integration["strategy"].is_a?(String), "#{location}: integration.strategy is required")
     end
 
     def validate_append_only_prefix(baseline, candidate, location)
@@ -372,6 +383,7 @@ module Hid
         assert(ACTOR_ROLES.include?(event.dig("actor", "role")), "#{location}: invalid actor role")
         validate_artifact(fetch(event, "artifact", location), location)
         validate_human_authorization_event(event, project, location) if event["event"] == "human_authorization"
+        validate_merged_event(event, location) if event["event"] == "merged"
         enforce_privacy(privacy.findings(event, location))
         events << event
       rescue JSON::ParserError, ArgumentError => e
@@ -403,6 +415,17 @@ module Hid
       failures = state_requirement_failures(feature, events, project, current)
       return "policy_incomplete" if failures.any? { |failure| failure.start_with?("POLICY_INCOMPLETE") }
       return "constitutional_policy_violation" if failures.any? { |failure| failure.start_with?("CONSTITUTIONAL_POLICY") }
+      return "canonical_integration_not_verifiable" if failures.any? do |failure|
+        failure.start_with?("CANONICAL_REF_UNAVAILABLE", "CANONICAL_INTEGRATION_NOT_VERIFIABLE")
+      end
+      return "canonical_integration_missing" if failures.any? do |failure|
+        failure.start_with?(
+          "CANONICAL_INTEGRATION_MISSING",
+          "CANONICAL_TARGET_MISMATCH",
+          "CANDIDATE_INTEGRATION_MISMATCH",
+          "INTEGRATION_STRATEGY_UNSUPPORTED"
+        )
+      end
       return "lifecycle_inconsistency" if failures.any? { |failure| failure.start_with?("LIFECYCLE_ORDER_VIOLATION") }
       return "state_gate_inconsistency" unless failures.empty?
       return "resolve_blockers" unless feature["blockers"].empty?

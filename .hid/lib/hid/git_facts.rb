@@ -72,6 +72,34 @@ module Hid
       :unknown
     end
 
+    def canonical_integration_status(commit_sha, branch)
+      return :invalid unless SHA_PATTERN.match?(commit_sha.to_s) && branch.is_a?(String) && !branch.empty?
+
+      target, target_status = run("rev-parse", "--verify", "refs/heads/#{branch}^{commit}")
+      return :unavailable unless target_status.success?
+
+      _output, status = run("merge-base", "--is-ancestor", commit_sha, target.strip)
+      return :contained if status.success?
+      return :not_contained if status.exitstatus == 1
+
+      :unknown
+    rescue GitUnavailable
+      :unknown
+    end
+
+    def merge_relation_status(candidate_sha, integration_sha, strategy)
+      return :unsupported unless strategy == "no_ff_merge"
+      return :invalid unless SHA_PATTERN.match?(candidate_sha.to_s) && SHA_PATTERN.match?(integration_sha.to_s)
+
+      output, status = run("rev-list", "--parents", "-n", "1", integration_sha)
+      return :unknown unless status.success?
+
+      parents = output.split.drop(1)
+      parents.length == 2 && parents.last == candidate_sha && parents.first != candidate_sha ? :valid : :invalid
+    rescue GitUnavailable
+      :unknown
+    end
+
     private
 
     def ancestry(base, head)

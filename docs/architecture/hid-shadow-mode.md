@@ -8,7 +8,7 @@ gate result, validation count, or next action.
 
 ## Purpose
 
-HID v0.0.5 is a bounded machine-readable observation layer. It captures facts
+HID v0.0.6 is a bounded machine-readable observation layer. It captures facts
 needed to study a future control plane while the canonical IAMINE workflow,
 Architecture, QA, roadmaps, and explicit human gates retain all authority.
 
@@ -82,9 +82,36 @@ startup, and derives `policy_incomplete` rather than a privileged action.
 
 Lifecycle events supporting `MERGED`, `POST-MERGE VALIDATION`, or closure are
 not accepted by name alone. Their commit must exist, the recorded tree must
-match Git, and a merge artifact must descend from the current formal candidate.
-Post-merge validation and closure events must bind to that valid merge
-artifact. Missing, unverifiable, mismatched, or unrelated artifacts fail closed.
+match Git, and the integration artifact must be linked to the exact current
+candidate by the canonical merge strategy. Post-merge validation and closure
+events must bind to that valid merge artifact. Missing, unverifiable,
+mismatched, unrelated, or noncanonical artifacts fail closed.
+
+## Canonical Integration Integrity
+
+The Human Gate authorizes the current candidate commit/tree. A later `merged`
+event records that source separately from the integration artifact and observed
+target. The event cannot redefine the constitutional target: it must match
+`project.integration_branch`, currently `develop`.
+
+The canonical workflow requires `git merge --no-ff` into `develop`, with no
+additional changes after validation. HID therefore recognizes only
+`strategy: no_ff_merge`. A valid integration artifact must:
+
+1. exist with its recorded tree;
+2. be a two-parent merge commit;
+3. have the exact authorized candidate as its second parent;
+4. be contained in the local `refs/heads/develop` history.
+
+This rejects both a linear descendant with arbitrary changes and a correctly
+shaped merge commit that exists only on a side branch. Fast-forward, squash,
+rebase, and cherry-pick remain unsupported and fail closed; HID does not infer
+integration from similar content. If the local canonical ref is missing or Git
+cannot verify it, the state is not eligible for `MERGED`.
+
+This check observes the available local branch. It does not fetch or establish
+that local `develop` is current with the remote. Remote freshness remains a
+separate, explicit merge-owner responsibility.
 
 Physical append-only log position is the lifecycle sequence source. For the
 same feature and relevant artifacts, a valid chain is:
@@ -185,6 +212,7 @@ optimization are deferred. `FAST`, `BALANCED`, and `DEEP` remain provider-neutra
 - Some source decisions remain represented in both canonical Markdown and a
   bounded feature snapshot while Shadow Mode is evaluated.
 - Human identity is not cryptographically authenticated.
+- Canonical containment verifies the local `develop` ref, not remote freshness.
 
 ## Pilot Boundary
 

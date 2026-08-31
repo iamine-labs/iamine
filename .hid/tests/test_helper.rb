@@ -5,10 +5,12 @@ require "yaml"
 require_relative "../lib/hid/validator"
 
 class FakeGit
-  def initialize(trees = {}, baseline: [:unavailable, nil], current: nil, ancestries: {})
+  def initialize(trees = {}, baseline: [:unavailable, nil], current: nil, ancestries: {}, containments: {}, relations: {})
     @trees = trees
     @baseline = baseline
     @ancestries = ancestries
+    @containments = containments
+    @relations = relations
     head = trees.keys.first
     @current = current || {"branch" => "fixture", "head_sha" => head, "tree" => trees.dig(head, 1), "dirty" => false}
   end
@@ -34,6 +36,21 @@ class FakeGit
 
   def ancestry_status(ancestor_sha, descendant_sha)
     @ancestries.fetch([ancestor_sha, descendant_sha], ancestor_sha == descendant_sha ? :ancestor : :unrelated)
+  end
+
+  def canonical_integration_status(commit_sha, branch)
+    @containments.fetch([commit_sha, branch]) do
+      state, = commit_tree(commit_sha)
+      state == :valid ? :contained : :unknown
+    end
+  end
+
+  def merge_relation_status(candidate_sha, integration_sha, strategy)
+    @relations.fetch([candidate_sha, integration_sha, strategy]) do
+      return :unsupported unless strategy == "no_ff_merge"
+
+      ancestry_status(candidate_sha, integration_sha) == :ancestor && candidate_sha != integration_sha ? :valid : :invalid
+    end
   end
 end
 
@@ -130,12 +147,29 @@ class HidTestCase < Minitest::Test
     }
   end
 
-  def workflow_event(name, head: HEAD, tree: TREE)
-    {
+  def workflow_event(
+    name,
+    head: HEAD,
+    tree: TREE,
+    source_head: HEAD,
+    source_tree: TREE,
+    target_branch: "develop",
+    strategy: "no_ff_merge"
+  )
+    event = {
       "event" => name,
       "feature" => "HID-SHADOW-MODE-001",
       "artifact" => {"head_sha" => head, "tree" => tree, "dirty" => false}
     }
+    if name == "merged"
+      event["integration"] = {
+        "source_head_sha" => source_head,
+        "source_tree" => source_tree,
+        "target_branch" => target_branch,
+        "strategy" => strategy
+      }
+    end
+    event
   end
 
   def current_candidate(head: HEAD, tree: TREE, dirty: false)

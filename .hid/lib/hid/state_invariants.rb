@@ -15,6 +15,16 @@ module Hid
       "final_review" => {"action" => "architecture_merge_approval", "artifact_bound" => true},
       "human_merge" => {"action" => "merge", "artifact_bound" => true}
     }.freeze
+    EVENT_STATUS_PRIORITY = %i[
+      target_mismatch
+      candidate_mismatch
+      strategy_unsupported
+      canonical_missing
+      canonical_ref_unavailable
+      canonical_unknown
+      unknown
+      invalid
+    ].freeze
 
     def self.privileged_states(lifecycle_states)
       start = lifecycle_states.index(PRIVILEGED_START_STATE)
@@ -266,9 +276,7 @@ module Hid
 
       statuses = events.map { |event| supporting_event_artifact_status(event, event_name) }
       return :valid if statuses.include?(:valid)
-      return :unknown if statuses.include?(:unknown)
-
-      :invalid
+      EVENT_STATUS_PRIORITY.find { |status| statuses.include?(status) } || :invalid
     end
 
     def supporting_event_artifact_status(event, event_name)
@@ -280,15 +288,41 @@ module Hid
         return :invalid if artifact["head_sha"] == @current["head_sha"]
 
         ancestry = @git.ancestry_status(@current["head_sha"], artifact["head_sha"])
-        return :valid if ancestry == :ancestor
         return :unknown if ancestry == :unknown
+        return :invalid unless ancestry == :ancestor
 
-        return :invalid
+        return integration_event_status(event)
       end
 
       return status unless LIFECYCLE_EVENT_TYPES.include?(event_name)
 
       valid_merged_artifact?(artifact) ? :valid : :invalid
+    end
+
+    def integration_event_status(event)
+      integration = event["integration"]
+      return :candidate_mismatch unless integration.is_a?(Hash)
+      return :candidate_mismatch unless integration["source_head_sha"] == @current["head_sha"] &&
+                                        integration["source_tree"] == @current["tree"]
+
+      canonical_target = @project.dig("project", "integration_branch")
+      return :target_mismatch unless integration["target_branch"] == canonical_target
+
+      relation = @git.merge_relation_status(
+        @current["head_sha"],
+        event.dig("artifact", "head_sha"),
+        integration["strategy"]
+      )
+      return :strategy_unsupported if relation == :unsupported
+      return :canonical_unknown if relation == :unknown
+      return :candidate_mismatch unless relation == :valid
+
+      containment = @git.canonical_integration_status(event.dig("artifact", "head_sha"), canonical_target)
+      return :valid if containment == :contained
+      return :canonical_missing if containment == :not_contained
+      return :canonical_ref_unavailable if containment == :unavailable
+
+      :canonical_unknown
     end
 
     def valid_merged_artifact?(artifact)
@@ -310,6 +344,18 @@ module Hid
         "event #{event_name} is required"
       when :unknown
         "EVENT_ARTIFACT_UNKNOWN event #{event_name} could not be verified"
+      when :target_mismatch
+        "CANONICAL_TARGET_MISMATCH event #{event_name} does not target the configured integration branch"
+      when :candidate_mismatch
+        "CANDIDATE_INTEGRATION_MISMATCH event #{event_name} is not a controlled merge of the authorized candidate"
+      when :strategy_unsupported
+        "INTEGRATION_STRATEGY_UNSUPPORTED event #{event_name} does not use the canonical no-ff merge strategy"
+      when :canonical_missing
+        "CANONICAL_INTEGRATION_MISSING event #{event_name} artifact is not contained in the canonical integration branch"
+      when :canonical_ref_unavailable
+        "CANONICAL_REF_UNAVAILABLE event #{event_name} canonical integration ref is unavailable"
+      when :canonical_unknown
+        "CANONICAL_INTEGRATION_NOT_VERIFIABLE event #{event_name} canonical integration could not be verified"
       else
         "INVALID_EVENT_ARTIFACT event #{event_name} lacks a valid Git artifact"
       end

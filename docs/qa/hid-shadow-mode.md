@@ -35,21 +35,26 @@ Proxmox/R5500 are not used to manufacture ceremony.
     lacks policy or constitutional coverage.
 11. Require physical log order `authorization < merge < post-merge < closure`
     for the relevant feature and artifacts.
-12. Require real commit/tree identity and plausible candidate ancestry for
-    merge, post-merge validation, and closure events.
-13. Verify referenced evidence exists.
-14. Verify evidence commit existence and real commit-to-tree relationship.
-15. Classify evidence as `VALID`, `STALE`, `INVALID`, or `UNKNOWN`.
-16. Require passed local validation to bind to candidate-snapshot evidence.
-17. Check coverage, dependencies, and artifact/environment validity fields.
-18. Fail field-based and free-text `NEVER_STORE` data and surface `REDACT`
+12. Require real commit/tree identity and exact candidate binding for merge,
+    post-merge validation, and closure events.
+13. Require a two-parent `no_ff_merge` with the exact candidate as second
+    parent and the integration artifact contained in local `develop`.
+14. Reject side-branch-only integration, alternate event targets, unsupported
+    strategies, missing canonical refs, and unverified containment.
+15. Verify referenced evidence exists.
+16. Verify evidence commit existence and real commit-to-tree relationship.
+17. Classify evidence as `VALID`, `STALE`, `INVALID`, or `UNKNOWN`.
+18. Require passed local validation to bind to candidate-snapshot evidence.
+19. Check coverage, dependencies, and artifact/environment validity fields.
+20. Fail field-based and free-text `NEVER_STORE` data and surface `REDACT`
     warnings, including compressed IPv6.
-19. Check append-only baseline prefix when available; visibly report
+21. Check append-only baseline prefix when available; visibly report
     `not_checked` otherwise.
-20. Label `origin/develop` as a local tracking ref whose remote freshness is not
-    verified; never fetch automatically.
-21. Confirm both proposed pilots remain unimplemented and `PROPOSED`.
-22. Confirm changed paths remain process-only and run Git whitespace checks.
+22. Label Git integration containment as local-only and `origin/develop` as a
+    local tracking ref whose remote freshness is not verified; never fetch
+    automatically.
+23. Confirm both proposed pilots remain unimplemented and `PROPOSED`.
+24. Confirm changed paths remain process-only and run Git whitespace checks.
 
 ## Regression Cases
 
@@ -74,6 +79,14 @@ MERGED without merged event -> FAIL
 MERGED with nonexistent or unrelated Git artifact -> FAIL
 CLOSED equivalent without post-merge events -> FAIL
 valid real Git merge/post-merge/closure path -> PASS
+linear descendant on side branch -> CANDIDATE_INTEGRATION_MISMATCH
+valid-shaped no-ff merge only on side branch -> CANONICAL_INTEGRATION_MISSING
+valid no-ff merge contained in develop -> PASS
+missing local develop -> CANONICAL_REF_UNAVAILABLE
+event target differs from configured develop -> CANONICAL_TARGET_MISMATCH
+fast-forward or other unsupported strategy -> INTEGRATION_STRATEGY_UNSUPPORTED
+extra modifying commit after authorized candidate -> CANDIDATE_INTEGRATION_MISMATCH
+post-merge or closure on side-only artifact -> FAIL
 23 invalid lifecycle permutations -> LIFECYCLE_ORDER_VIOLATION
 authorization then merge then post-merge then closure -> PASS
 approval then denial before merge -> FAIL

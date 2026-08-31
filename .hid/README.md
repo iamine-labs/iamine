@@ -1,4 +1,4 @@
-# HID v0.0.2 Shadow Mode
+# HID v0.0.6 Shadow Mode
 
 HID is a machine-readable observation layer for IAMINE's existing workflow. It
 does not enforce gates or replace `AGENTS.md`, the canonical workflow,
@@ -30,6 +30,19 @@ for the same feature, gate, action, and candidate commit/tree. The actor must be
 typed as human and the artifact must be clean. Tooling validates structure and
 correlation; it does not authenticate a person's identity cryptographically.
 An agent must not manufacture a human event from silence or inference.
+
+## Canonical Integration
+
+A `merged` event records the authorized source candidate separately from the
+integration artifact. It is valid only when Git proves that the artifact is a
+controlled `--no-ff` merge whose second parent is the exact candidate and that
+the artifact is contained in the configured local `develop` branch.
+
+Containment in a side branch is not integration. An event cannot replace the
+configured target branch. Fast-forward, squash, rebase, and cherry-pick are not
+recognized because the canonical workflow does not authorize those strategies.
+Missing or unverifiable canonical refs fail closed. HID does not fetch, so
+remote freshness remains explicitly outside this check.
 
 ## Evidence
 

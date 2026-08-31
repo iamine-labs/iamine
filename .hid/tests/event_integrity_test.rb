@@ -105,8 +105,14 @@ class HidEventIntegrityTest < HidTestCase
       git!(root, "config", "user.name", "HID Fixture")
       git!(root, "config", "user.email", "fixture@example.invalid")
       candidate_head, candidate_tree = commit_fixture(root, "candidate", "candidate")
-      merged_head, merged_tree = commit_fixture(root, "merged", "merged")
-      git!(root, "checkout", "-q", candidate_head)
+      git!(root, "branch", "-M", "develop")
+      git!(root, "checkout", "-q", "-b", "feature/test")
+      candidate_head, candidate_tree = commit_fixture(root, "candidate feature", "candidate feature")
+      git!(root, "checkout", "-q", "develop")
+      git!(root, "merge", "--no-ff", "-q", "feature/test", "-m", "canonical merge")
+      merged_head = git!(root, "rev-parse", "HEAD").strip
+      merged_tree = git!(root, "rev-parse", "HEAD^{tree}").strip
+      git!(root, "checkout", "-q", "feature/test")
 
       git = Hid::GitFacts.new(root)
       validator = Hid::Validator.new(root, git: git)
@@ -115,7 +121,13 @@ class HidEventIntegrityTest < HidTestCase
       feature["git"]["candidate_snapshot"] = {"head_sha" => candidate_head, "tree" => candidate_tree}
       events = authorization_events(head: candidate_head, tree: candidate_tree)
       events += %w[merged post_merge_validation_passed feature_closed].map do |name|
-        workflow_event(name, head: merged_head, tree: merged_tree)
+        workflow_event(
+          name,
+          head: merged_head,
+          tree: merged_tree,
+          source_head: candidate_head,
+          source_tree: candidate_tree
+        )
       end
       evidence = {
         "HID-EVID-0001" => {
@@ -145,6 +157,16 @@ class HidEventIntegrityTest < HidTestCase
         assert_includes error.message, "LIFECYCLE_ORDER_VIOLATION"
       end
     end
+  end
+
+  def test_merged_event_requires_integration_metadata
+    event = workflow_event("merged", head: OTHER_HEAD, tree: OTHER_TREE)
+    event.delete("integration")
+
+    error = assert_raises(Hid::ValidationError) do
+      @validator.validate_merged_event(event, "fixture")
+    end
+    assert_includes error.message, "integration"
   end
 
   def test_approval_then_denial_before_merge_is_rejected
