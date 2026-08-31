@@ -1,0 +1,94 @@
+{
+  "schema_version": "0.0.2",
+  "id": "HID-EVID-0006",
+  "feature": "HID-SHADOW-MODE-001",
+  "type": "local_validation",
+  "captured_at": "2026-08-31T07:47:01Z",
+  "artifact": {
+    "head_sha": "d9771e47617bebebeb56799c954f0b14e9696e1b",
+    "tree": "a6addb1a887c742bd8bc2efcf8b8f692bbb282b6"
+  },
+  "environment": {
+    "host_class": "local_macos",
+    "os": "macos",
+    "arch": "aarch64"
+  },
+  "execution": {
+    "commands": [
+      "git_identity_cleanliness",
+      "ruby_syntax",
+      "hid_full_regression_suite",
+      "canonical_integration_real_git_fixtures",
+      "event_integrity_and_lifecycle_tests",
+      "state_policy_tests",
+      "human_authority_tests",
+      "privacy_regression",
+      "evidence_regression",
+      "append_only_regression",
+      "hid_validator",
+      "yaml_safe_parse",
+      "json_parse",
+      "jsonl_line_parse",
+      "git_scope_and_whitespace",
+      "core_guard"
+    ],
+    "started_at": "2026-08-31T07:46:39Z",
+    "finished_at": "2026-08-31T07:47:01Z"
+  },
+  "coverage": {
+    "paths": [
+      ".hid/**",
+      "docs/architecture/hid-shadow-mode.md",
+      "docs/qa/hid-shadow-mode.md"
+    ],
+    "claims": [
+      "exact-candidate-no-ff-second-parent-binding",
+      "local-canonical-develop-containment",
+      "linear-side-descendant-rejected",
+      "side-branch-merge-rejected",
+      "canonical-develop-merge-accepted",
+      "missing-canonical-ref-fails-closed",
+      "event-target-cannot-override-canonical-target",
+      "unsupported-merge-strategies-fail-closed",
+      "post-candidate-modifying-commit-rejected",
+      "post-merge-and-closure-require-canonical-integration",
+      "prior-policy-authority-artifact-privacy-evidence-and-append-only-regression",
+      "process-only-scope"
+    ]
+  },
+  "dependencies": [
+    {
+      "type": "git_base",
+      "value": "b6fad67e7af4f2e691f0334d64944ab5a3a9b1a5"
+    },
+    {
+      "type": "canonical_local_branch",
+      "value": "develop"
+    },
+    {
+      "type": "runtime",
+      "value": "ruby-2.6.10"
+    }
+  ],
+  "validity": {
+    "artifact_bound": true,
+    "environment_bound": true
+  },
+  "result": {
+    "status": "pass",
+    "tests": {
+      "executed": 71,
+      "passed": 71,
+      "assertions": 209
+    },
+    "failures": 0
+  },
+  "failure_class": null,
+  "notes": [
+    "Field QA is not required because product and platform-dependent behavior did not change.",
+    "Only local refs/heads/develop containment was verified; remote freshness remains not verified.",
+    "The only supported strategy is the canonical no-ff merge with the exact candidate as second parent.",
+    "Human authorization remains absent and every real Human Gate remains pending.",
+    "Status is derived; the evidence-recording commit will make this record visibly stale against the later repository artifact."
+  ]
+}

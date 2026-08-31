@@ -7,7 +7,7 @@ artifact/environment validity.
 
 Evidence status is derived as `VALID`, `STALE`, `INVALID`, or `UNKNOWN`; it is
 not persisted as a manually editable conclusion. Evidence never certifies a
-branch name. A different artifact makes a record stale. v0.0.5 does not carry
+branch name. A different artifact makes a record stale. v0.0.6 does not carry
 evidence forward through ancestry or changed coverage.
 
 Do not store full logs, prompts, model responses, credentials, personal paths,

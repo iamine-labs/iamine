@@ -1,7 +1,7 @@
 schema_version: "0.0.2"
 id: HID-SHADOW-MODE-001
 kind: engineering_process_enabler
-title: HID Shadow Mode Constitutional Policy and Lifecycle Ordering Hardening
+title: HID Shadow Mode Canonical Integration Integrity
 
 canonical:
   workflow: docs/process/iamine-canonical-workflow.md
@@ -11,8 +11,8 @@ canonical:
 
 intent:
   data_class: SOURCE
-  problem: Project policy could remove constitutional Human Merge requirements, and valid lifecycle events could satisfy privileged state out of order.
-  expected_outcome: Union non-configurable authority minima with project policy and enforce feature-scoped privileged lifecycle order from append-only log position.
+  problem: A real descendant with a correct tree could satisfy MERGED without being contained in the canonical integration branch.
+  expected_outcome: Bind the exact candidate to a controlled no-ff integration artifact and require its containment in local develop before privileged post-merge states.
 
 state:
   data_class: SOURCE
@@ -50,12 +50,12 @@ git:
     captured_at: "2026-08-30T02:55:26Z"
   candidate_snapshot:
     data_class: SNAPSHOT
-    purpose: validated_constitutional_lifecycle_hardening_snapshot
+    purpose: validated_canonical_integration_integrity_snapshot
     branch: feature/hid-shadow-mode-001
-    head_sha: 2ce74feac0d7faf5f761ab7794d93c9f4e69e957
-    tree: 26419023658362b0545e4732e16a7794824d3fd7
+    head_sha: d9771e47617bebebeb56799c954f0b14e9696e1b
+    tree: a6addb1a887c742bd8bc2efcf8b8f692bbb282b6
     dirty: false
-    captured_at: "2026-08-30T23:12:41Z"
+    captured_at: "2026-08-31T07:47:01Z"
   current:
     data_class: DERIVED
     source: .hid/scripts/capture.rb
@@ -85,6 +85,7 @@ evidence:
   - HID-EVID-0003
   - HID-EVID-0004
   - HID-EVID-0005
+  - HID-EVID-0006
 blockers: []
 
 next_action:
@@ -93,7 +94,7 @@ next_action:
   manual_override: null
 
 execution:
-  task_type: engineering_process_hardening
+  task_type: canonical_integration_hardening
   risk: RISK_1
   model:
     provider: openai
@@ -111,9 +112,9 @@ execution:
 
 metrics:
   data_class: SNAPSHOT
-  tests_executed: 60
-  test_assertions: 176
-  validation_runs: 9
-  non_product_findings_reported: 4
+  tests_executed: 71
+  test_assertions: 209
+  validation_runs: 12
+  non_product_findings_reported: 5
   product_defects: 0
   scope_changes: 0
