@@ -418,6 +418,9 @@ module Hid
       return "canonical_integration_not_verifiable" if failures.any? do |failure|
         failure.start_with?("CANONICAL_REF_UNAVAILABLE", "CANONICAL_INTEGRATION_NOT_VERIFIABLE")
       end
+      return "merge_tree_not_verifiable" if failures.any? { |failure| failure.start_with?("MERGE_TREE_NOT_VERIFIABLE") }
+      return "merge_not_clean" if failures.any? { |failure| failure.start_with?("MERGE_NOT_CLEAN") }
+      return "merge_tree_mismatch" if failures.any? { |failure| failure.start_with?("MERGE_TREE_MISMATCH") }
       return "canonical_integration_missing" if failures.any? do |failure|
         failure.start_with?(
           "CANONICAL_INTEGRATION_MISSING",

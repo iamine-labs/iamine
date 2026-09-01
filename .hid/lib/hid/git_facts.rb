@@ -95,9 +95,37 @@ module Hid
       return :unknown unless status.success?
 
       parents = output.split.drop(1)
-      parents.length == 2 && parents.last == candidate_sha && parents.first != candidate_sha ? :valid : :invalid
+      return :invalid unless parents.length == 2 && parents.last == candidate_sha && parents.first != candidate_sha
+
+      artifact_status, actual_tree = commit_tree(integration_sha)
+      return :unknown if artifact_status == :unknown
+      return :invalid unless artifact_status == :valid
+
+      merge_status, expected_tree = expected_merge_tree(parents.first, candidate_sha)
+      return :merge_not_clean if merge_status == :conflict
+      return :merge_tree_not_verifiable unless merge_status == :clean
+
+      actual_tree == expected_tree ? :valid : :merge_tree_mismatch
     rescue GitUnavailable
       :unknown
+    end
+
+    def expected_merge_tree(parent1_sha, candidate_sha)
+      return [:invalid, nil] unless SHA_PATTERN.match?(parent1_sha.to_s) && SHA_PATTERN.match?(candidate_sha.to_s)
+
+      output, status = run("merge-tree", "--write-tree", parent1_sha, candidate_sha)
+      return [:conflict, nil] if status.exitstatus == 1
+      return [:unknown, nil] unless status.success?
+
+      tree = output.lines.first&.strip
+      return [:unknown, nil] unless SHA_PATTERN.match?(tree.to_s)
+
+      verified, tree_status = run("rev-parse", "--verify", "#{tree}^{tree}")
+      return [:unknown, nil] unless tree_status.success? && verified.strip == tree
+
+      [:clean, tree]
+    rescue GitUnavailable
+      [:unknown, nil]
     end
 
     private

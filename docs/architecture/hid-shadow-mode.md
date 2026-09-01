@@ -8,7 +8,7 @@ gate result, validation count, or next action.
 
 ## Purpose
 
-HID v0.0.6 is a bounded machine-readable observation layer. It captures facts
+HID v0.0.7 is a bounded machine-readable observation layer. It captures facts
 needed to study a future control plane while the canonical IAMINE workflow,
 Architecture, QA, roadmaps, and explicit human gates retain all authority.
 
@@ -101,13 +101,35 @@ additional changes after validation. HID therefore recognizes only
 1. exist with its recorded tree;
 2. be a two-parent merge commit;
 3. have the exact authorized candidate as its second parent;
-4. be contained in the local `refs/heads/develop` history.
+4. be contained in the local `refs/heads/develop` history;
+5. have the exact tree Git computes for a clean merge of its first parent and
+   the authorized candidate.
 
 This rejects both a linear descendant with arbitrary changes and a correctly
 shaped merge commit that exists only on a side branch. Fast-forward, squash,
 rebase, and cherry-pick remain unsupported and fail closed; HID does not infer
 integration from similar content. If the local canonical ref is missing or Git
 cannot verify it, the state is not eligible for `MERGED`.
+
+HID asks the repository's Git implementation to calculate the expected tree
+with `git merge-tree --write-tree <parent1> <candidate>`. Exit status zero and a
+verifiable tree object represent a clean merge. Exit status one represents a
+conflict. Other failures, malformed output, or an unavailable capability are
+not verifiable. HID never accepts topology alone as a fallback.
+
+The integration commit tree must equal the computed tree SHA. Content-addressed
+tree identity covers additions, modifications, deletions, modes, and nested
+trees without a custom diff parser. The event cannot declare the expected tree.
+The command runs against the same repository and configuration as validation;
+repository attributes and merge drivers therefore remain part of the bounded
+Git environment. A conflict or driver result that cannot produce a clean,
+verifiable tree fails closed.
+
+The canonical workflow requires stopping on conflict and forbids changes after
+the validated candidate. v0.0.7 consequently does not recognize manual conflict
+resolution. A manually constructed two-parent commit remains acceptable only
+when its graph, canonical containment, and tree are identical to the clean Git
+result; HID observes Git facts rather than terminal history.
 
 This check observes the available local branch. It does not fetch or establish
 that local `develop` is current with the remote. Remote freshness remains a
@@ -213,6 +235,8 @@ optimization are deferred. `FAST`, `BALANCED`, and `DEEP` remain provider-neutra
   bounded feature snapshot while Shadow Mode is evaluated.
 - Human identity is not cryptographically authenticated.
 - Canonical containment verifies the local `develop` ref, not remote freshness.
+- Deterministic tree validation requires Git `merge-tree --write-tree`; an
+  unavailable or failing capability blocks privileged integration state.
 
 ## Pilot Boundary
 

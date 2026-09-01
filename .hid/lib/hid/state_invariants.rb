@@ -19,6 +19,9 @@ module Hid
       target_mismatch
       candidate_mismatch
       strategy_unsupported
+      merge_tree_mismatch
+      merge_not_clean
+      merge_tree_not_verifiable
       canonical_missing
       canonical_ref_unavailable
       canonical_unknown
@@ -314,6 +317,9 @@ module Hid
         integration["strategy"]
       )
       return :strategy_unsupported if relation == :unsupported
+      return :merge_tree_mismatch if relation == :merge_tree_mismatch
+      return :merge_not_clean if relation == :merge_not_clean
+      return :merge_tree_not_verifiable if relation == :merge_tree_not_verifiable
       return :canonical_unknown if relation == :unknown
       return :candidate_mismatch unless relation == :valid
 
@@ -350,6 +356,12 @@ module Hid
         "CANDIDATE_INTEGRATION_MISMATCH event #{event_name} is not a controlled merge of the authorized candidate"
       when :strategy_unsupported
         "INTEGRATION_STRATEGY_UNSUPPORTED event #{event_name} does not use the canonical no-ff merge strategy"
+      when :merge_tree_mismatch
+        "MERGE_TREE_MISMATCH event #{event_name} tree differs from the deterministic clean merge result"
+      when :merge_not_clean
+        "MERGE_NOT_CLEAN event #{event_name} candidate and canonical parent do not merge cleanly"
+      when :merge_tree_not_verifiable
+        "MERGE_TREE_NOT_VERIFIABLE event #{event_name} deterministic merge tree could not be verified"
       when :canonical_missing
         "CANONICAL_INTEGRATION_MISSING event #{event_name} artifact is not contained in the canonical integration branch"
       when :canonical_ref_unavailable

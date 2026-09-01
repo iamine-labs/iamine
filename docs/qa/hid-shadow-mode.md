@@ -41,20 +41,24 @@ Proxmox/R5500 are not used to manufacture ceremony.
     parent and the integration artifact contained in local `develop`.
 14. Reject side-branch-only integration, alternate event targets, unsupported
     strategies, missing canonical refs, and unverified containment.
-15. Verify referenced evidence exists.
-16. Verify evidence commit existence and real commit-to-tree relationship.
-17. Classify evidence as `VALID`, `STALE`, `INVALID`, or `UNKNOWN`.
-18. Require passed local validation to bind to candidate-snapshot evidence.
-19. Check coverage, dependencies, and artifact/environment validity fields.
-20. Fail field-based and free-text `NEVER_STORE` data and surface `REDACT`
+15. Ask Git for the deterministic clean merge tree of the integration commit's
+    first parent and exact candidate; reject any actual-tree mismatch.
+16. Fail closed when the clean tree is unavailable or the merge conflicts;
+    manual conflict resolution is unsupported by the canonical workflow.
+17. Verify referenced evidence exists.
+18. Verify evidence commit existence and real commit-to-tree relationship.
+19. Classify evidence as `VALID`, `STALE`, `INVALID`, or `UNKNOWN`.
+20. Require passed local validation to bind to candidate-snapshot evidence.
+21. Check coverage, dependencies, and artifact/environment validity fields.
+22. Fail field-based and free-text `NEVER_STORE` data and surface `REDACT`
     warnings, including compressed IPv6.
-21. Check append-only baseline prefix when available; visibly report
+23. Check append-only baseline prefix when available; visibly report
     `not_checked` otherwise.
-22. Label Git integration containment as local-only and `origin/develop` as a
+24. Label Git integration containment as local-only and `origin/develop` as a
     local tracking ref whose remote freshness is not verified; never fetch
     automatically.
-23. Confirm both proposed pilots remain unimplemented and `PROPOSED`.
-24. Confirm changed paths remain process-only and run Git whitespace checks.
+25. Confirm both proposed pilots remain unimplemented and `PROPOSED`.
+26. Confirm changed paths remain process-only and run Git whitespace checks.
 
 ## Regression Cases
 
@@ -87,6 +91,13 @@ event target differs from configured develop -> CANONICAL_TARGET_MISMATCH
 fast-forward or other unsupported strategy -> INTEGRATION_STRATEGY_UNSUPPORTED
 extra modifying commit after authorized candidate -> CANDIDATE_INTEGRATION_MISMATCH
 post-merge or closure on side-only artifact -> FAIL
+actual no-ff merge tree equals Git-computed clean tree -> PASS
+manual topology with exact clean tree -> PASS
+added, modified, or deleted merge-tree content -> MERGE_TREE_MISMATCH
+clean merge conflict -> MERGE_NOT_CLEAN
+fabricated manual conflict resolution -> MERGE_NOT_CLEAN
+unavailable deterministic tree -> MERGE_TREE_NOT_VERIFIABLE
+post-merge or closure on manipulated tree -> FAIL
 23 invalid lifecycle permutations -> LIFECYCLE_ORDER_VIOLATION
 authorization then merge then post-merge then closure -> PASS
 approval then denial before merge -> FAIL

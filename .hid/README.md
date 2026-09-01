@@ -1,4 +1,4 @@
-# HID v0.0.6 Shadow Mode
+# HID v0.0.7 Shadow Mode
 
 HID is a machine-readable observation layer for IAMINE's existing workflow. It
 does not enforce gates or replace `AGENTS.md`, the canonical workflow,
@@ -36,13 +36,21 @@ An agent must not manufacture a human event from silence or inference.
 A `merged` event records the authorized source candidate separately from the
 integration artifact. It is valid only when Git proves that the artifact is a
 controlled `--no-ff` merge whose second parent is the exact candidate and that
-the artifact is contained in the configured local `develop` branch.
+the artifact is contained in the configured local `develop` branch. Git must
+also reproduce a clean merge of the first parent and candidate, and that
+deterministic tree must equal the integration commit tree exactly.
 
 Containment in a side branch is not integration. An event cannot replace the
 configured target branch. Fast-forward, squash, rebase, and cherry-pick are not
 recognized because the canonical workflow does not authorize those strategies.
 Missing or unverifiable canonical refs fail closed. HID does not fetch, so
 remote freshness remains explicitly outside this check.
+
+The expected tree comes from `git merge-tree --write-tree` in the repository;
+it is never supplied by an event or reconstructed in Ruby. Conflicts, command
+failure, unsupported Git environments, and tree mismatches fail closed. Manual
+conflict resolution is not supported because the canonical workflow requires a
+stop when conflicts appear.
 
 ## Evidence
 
