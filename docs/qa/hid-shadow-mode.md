@@ -33,8 +33,9 @@ Proxmox/R5500 are not used to manufacture ceremony.
    project policy may add gates but cannot remove Human Merge.
 10. Fail startup and next-action derivation when any canonical privileged state
     lacks policy or constitutional coverage.
-11. Require physical log order `authorization < merge < post-merge < closure`
-    for the relevant feature and artifacts.
+11. Require effective baseline-plus-control-ledger order
+    `authorization < merge < post-merge < closure` for the relevant feature
+    and artifacts; timestamps do not reorder the stream.
 12. Require real commit/tree identity and exact candidate binding for merge,
     post-merge validation, and closure events.
 13. Require a two-parent `no_ff_merge` with the exact candidate as second
@@ -59,6 +60,17 @@ Proxmox/R5500 are not used to manufacture ceremony.
     automatically.
 25. Confirm both proposed pilots remain unimplemented and `PROPOSED`.
 26. Confirm changed paths remain process-only and run Git whitespace checks.
+27. Verify the baseline event blob is unchanged after the v0.0.8 cutover.
+28. Require a linear control history with one appended JSONL event per commit
+    and reject prefix mutation, unexpected paths, or malformed history.
+29. Persist through compare-and-swap and fail concurrent movement as
+    `CONTROL_LEDGER_CHANGED`.
+30. Confirm every control append leaves subject HEAD/tree, index, working tree,
+    feature ref, and `develop` unchanged.
+31. Reject any current or historical control-ledger commit contained in
+    `develop`; control storage never establishes canonical integration.
+32. Apply the same schema and privacy validation before the supported writer
+    advances the control ref.
 
 ## Regression Cases
 
@@ -116,6 +128,17 @@ append-only preserved prefix -> PASS
 append-only changed prefix -> FAIL
 missing local origin/develop baseline -> not_checked
 Git capture -> derived current identity
+human authorization stored in control ledger -> candidate HEAD/tree unchanged
+control event writer -> subject worktree/index remain clean
+stale compare-and-swap input -> CONTROL_LEDGER_CHANGED
+approval then denial in ledger order -> DENIED
+approval then denial then approval -> APPROVED
+approve, canonical merge, post-merge, close from effective stream -> PASS
+control-ledger commit absent from develop -> not canonical integration
+historical control-ledger commit contained in develop -> FAIL
+private prompt proposed for control ledger -> rejected before persistence
+baseline event blob changed after cutover -> FAIL
+branch capture from develop or feature checkout -> actual branch reported
 ```
 
 ## Evidence Policy

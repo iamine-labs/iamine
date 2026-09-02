@@ -145,6 +145,16 @@ events:
   append_only: policy
   verification: baseline_prefix_when_available
   baseline_unavailable: visible_not_checked
+  baseline:
+    path: .hid/events.jsonl
+    blob: fd97049fa22d34f5903ba4a96b12f434e8f8d0cf
+    locked_after_cutover: true
+  control_ledger:
+    storage: git_ref
+    ref: refs/heads/hid/control-plane
+    events_path: events.jsonl
+    append: one_event_per_commit
+    compare_and_swap: true
   allowed:
     - feature_received
     - feature_triaged

@@ -1,4 +1,4 @@
-# HID v0.0.7 Shadow Mode
+# HID v0.0.8 Shadow Mode
 
 HID is a machine-readable observation layer for IAMINE's existing workflow. It
 does not enforce gates or replace `AGENTS.md`, the canonical workflow,
@@ -30,6 +30,39 @@ for the same feature, gate, action, and candidate commit/tree. The actor must be
 typed as human and the artifact must be clean. Tooling validates structure and
 correlation; it does not authenticate a person's identity cryptographically.
 An agent must not manufacture a human event from silence or inference.
+
+Human decisions and runtime lifecycle observations are persisted outside the
+subject artifact. `Validator#append_control_event` validates the proposed event,
+privacy policy, event identity, exact current candidate, and control-ref
+compare-and-swap before advancing the ledger. The resulting ledger commit is
+control-record identity only; it never replaces or extends the authorized
+subject commit/tree.
+
+## Subject And Control Planes
+
+The subject plane is the complete Git identity being reviewed: source, HID
+files, feature branch, commit, and tree. No path is excluded and no pseudo-tree
+or descendant equivalence is recognized.
+
+The control plane is the dedicated `refs/heads/hid/control-plane` ref. Each
+linear ledger commit contains only `events.jsonl`, preserves the previous
+content, and appends exactly one event. Updates use `git update-ref` with the
+observed prior value, so concurrent movement fails as `CONTROL_LEDGER_CHANGED`.
+The write uses Git plumbing without checking out the control ref and does not
+modify the subject HEAD, tree, index, working tree, feature ref, or `develop`.
+
+The effective event order is:
+
+```text
+all baseline .hid/events.jsonl events
+<
+all control-ledger events in first-parent commit order
+```
+
+Timestamps remain validated metadata but do not define lifecycle order. Every
+live event is associated in memory with the ledger commit that introduced it.
+No control-ledger commit may be contained in `develop`; canonical integration
+continues to require the real subject integration artifact.
 
 ## Canonical Integration
 
@@ -73,10 +106,12 @@ required before persistence and push.
 
 ## Append-only
 
-`events.jsonl` follows an append-only policy. When a canonical baseline already
-contains the log, validation checks that the baseline is an exact prefix. When
-no baseline is available, the result is visibly `not_checked`. This is neither
-tamper-proof storage nor a cryptographic immutability guarantee.
+`.hid/events.jsonl` is the locked pre-v0.0.8 baseline. Its configured Git blob
+must remain exact and no new runtime event is written there. Live events use
+the control ledger, where every commit must preserve the prior JSONL content
+and append exactly one line. Compare-and-swap prevents supported writers from
+silently losing a concurrent update. This remains policy enforcement, not
+cryptographic immutability against an operator who can rewrite refs.
 
 ## Commands
 

@@ -1,9 +1,11 @@
 # frozen_string_literal: true
 
 require "json"
+require "digest"
 require "time"
 require "yaml"
 
+require_relative "control_ledger"
 require_relative "git_facts"
 require_relative "privacy"
 require_relative "state_invariants"
@@ -26,10 +28,11 @@ module Hid
 
     attr_reader :warnings
 
-    def initialize(root, git: nil)
+    def initialize(root, git: nil, control_ledger: nil)
       @root = root
       @hid_root = File.join(root, ".hid")
       @git = git || GitFacts.new(root)
+      @control_ledger = control_ledger
       @warnings = []
     end
 
@@ -37,6 +40,7 @@ module Hid
       project = validate_project(File.join(@hid_root, "project.yaml"))
       privacy = load_privacy(project)
       current = @git.capture
+      control_ledger = @control_ledger || build_control_ledger(project)
 
       feature_paths = Dir[File.join(@hid_root, "features", "*.yaml")].sort
       assert(!feature_paths.empty?, "no HID feature manifests found")
@@ -47,7 +51,15 @@ module Hid
       validate_evidence_shape(read_json(template_path), template_path, template: true)
 
       evidence = load_evidence(feature_ids, project, privacy, current)
-      events = validate_events(File.join(@hid_root, "events.jsonl"), project, feature_ids, privacy)
+      live_entries = load_control_entries(control_ledger)
+      validate_control_separation(control_ledger, project)
+      events = validate_events(
+        File.join(@hid_root, "events.jsonl"),
+        project,
+        feature_ids,
+        privacy,
+        live_entries: live_entries
+      )
 
       features.each do |feature|
         validate_evidence_references(feature, evidence)
@@ -62,6 +74,12 @@ module Hid
         "features" => feature_paths.length,
         "evidence" => evidence.length,
         "events" => events.length,
+        "baseline_events" => events.count { |event| event.dig("control_record", "plane") == "subject_baseline" },
+        "control_events" => live_entries.length,
+        "control_ledger" => {
+          "ref" => control_ledger.ref,
+          "head" => control_ledger.head
+        },
         "current" => current,
         "evidence_statuses" => evidence.transform_values { |entry| entry.fetch("derived_status") },
         "append_only" => append_only,
@@ -126,6 +144,39 @@ module Hid
     def validate_append_only_prefix(baseline, candidate, location)
       assert(candidate.start_with?(baseline), "#{location}: committed baseline events were modified or removed")
       "baseline_prefix_preserved"
+    end
+
+    def append_control_event(event, expected_head: ControlLedger::CURRENT_HEAD)
+      assert(event.is_a?(Hash), "control event must be an object")
+      project = validate_project(File.join(@hid_root, "project.yaml"))
+      privacy = load_privacy(project)
+      current = @git.capture
+      assert(current["dirty"] == false, "control event subject working tree must be clean")
+
+      feature_paths = Dir[File.join(@hid_root, "features", "*.yaml")].sort
+      features = feature_paths.map { |path| validate_feature(path, project, privacy) }
+      feature_ids = features.map { |feature| feature["id"] }
+      ledger = @control_ledger || build_control_ledger(project)
+      validate_control_separation(ledger, project)
+      existing_entries = load_control_entries(ledger)
+
+      if event["event"] == "human_authorization"
+        assert(event.dig("artifact", "head_sha") == current["head_sha"], "human authorization must target current HEAD")
+        assert(event.dig("artifact", "tree") == current["tree"], "human authorization must target current tree")
+      end
+
+      serialized = JSON.generate(event)
+      proposed = ControlLedger::Entry.new(json: serialized, ledger_commit: "0" * 40)
+      validate_events(
+        File.join(@hid_root, "events.jsonl"),
+        project,
+        feature_ids,
+        privacy,
+        live_entries: existing_entries + [proposed]
+      )
+      ledger.append(serialized, expected_head: expected_head)
+    rescue ControlLedgerError => e
+      raise ValidationError, e.message
     end
 
     private
@@ -196,6 +247,7 @@ module Hid
       end
       assert(project.dig("events", "append_only") == "policy", "#{path}: append-only must be described as policy")
       assert(project.dig("events", "baseline_unavailable") == "visible_not_checked", "#{path}: unavailable baseline must be visible")
+      validate_event_storage(project, path)
       assert(project.dig("risk_gates", "enforcement") == false, "#{path}: risk gates cannot enforce in v0.0.2")
       assert(project.dig("model_routing", "enforced") == false, "#{path}: model routing cannot be enforced in v0.0.2")
 
@@ -229,6 +281,30 @@ module Hid
       project
     end
 
+    def validate_event_storage(project, path)
+      baseline = project.dig("events", "baseline")
+      assert(baseline.is_a?(Hash), "#{path}: events.baseline is required")
+      assert(baseline["path"] == ".hid/events.jsonl", "#{path}: baseline path must remain .hid/events.jsonl")
+      assert(baseline["locked_after_cutover"] == true, "#{path}: baseline must be locked after cutover")
+      assert_sha(baseline["blob"], "#{path}: events.baseline.blob")
+
+      baseline_path = File.join(@root, baseline["path"])
+      assert(File.file?(baseline_path), "#{path}: baseline event log is missing")
+      content = File.binread(baseline_path)
+      actual_blob = Digest::SHA1.hexdigest("blob #{content.bytesize}\0#{content}")
+      assert(actual_blob == baseline["blob"], "#{path}: baseline event log changed after control-plane cutover")
+
+      ledger = project.dig("events", "control_ledger")
+      assert(ledger.is_a?(Hash), "#{path}: events.control_ledger is required")
+      assert(ledger["storage"] == "git_ref", "#{path}: control ledger storage must be git_ref")
+      assert(ledger["ref"].is_a?(String), "#{path}: control ledger ref is required")
+      assert(ledger["ref"].start_with?("refs/heads/hid/"), "#{path}: control ledger ref must be isolated under refs/heads/hid/")
+      assert(ledger["ref"] != "refs/heads/#{project.dig('project', 'integration_branch')}", "#{path}: control ledger cannot be canonical integration")
+      assert(ledger["events_path"] == "events.jsonl", "#{path}: control ledger events_path must be events.jsonl")
+      assert(ledger["append"] == "one_event_per_commit", "#{path}: control ledger must append one event per commit")
+      assert(ledger["compare_and_swap"] == true, "#{path}: control ledger must use compare-and-swap")
+    end
+
     def load_privacy(project)
       relative = project.dig("privacy", "policy")
       assert(relative.is_a?(String), ".hid/project.yaml: privacy.policy is required")
@@ -238,6 +314,28 @@ module Hid
       assert(policy["schema_version"] == "0.0.2", "#{path}: unsupported schema_version")
       %w[ALLOW REDACT NEVER_STORE].each { |tier| assert(policy[tier].is_a?(Hash), "#{path}: missing #{tier}") }
       PrivacyPolicy.new(policy)
+    end
+
+    def build_control_ledger(project)
+      config = project.dig("events", "control_ledger")
+      ControlLedger.new(@root, ref: config.fetch("ref"), events_path: config.fetch("events_path"))
+    rescue ControlLedgerError, KeyError => e
+      raise ValidationError, "control ledger configuration is invalid: #{e.message}"
+    end
+
+    def validate_control_separation(control_ledger, project)
+      status = control_ledger.containment_status(project.dig("project", "integration_branch"))
+      return if %i[absent not_contained].include?(status)
+
+      raise ValidationError, "CONTROL_LEDGER_CANONICAL_CONTAMINATION status=#{status}"
+    rescue ControlLedgerError => e
+      raise ValidationError, "CONTROL_LEDGER_NOT_VERIFIABLE: #{e.message}"
+    end
+
+    def load_control_entries(control_ledger)
+      control_ledger.entries
+    rescue ControlLedgerError => e
+      raise ValidationError, "CONTROL_LEDGER_NOT_VERIFIABLE: #{e.message}"
     end
 
     def validate_feature(path, project, privacy)
@@ -356,17 +454,27 @@ module Hid
       assert([true, false].include?(artifact["dirty"]), "#{path}: artifact.dirty must be boolean")
     end
 
-    def validate_events(path, project, feature_ids, privacy)
+    def validate_events(path, project, feature_ids, privacy, live_entries: [])
       allowed = project.dig("events", "allowed")
       ids = {}
-      previous_time = nil
       events = []
+      records = []
 
       File.foreach(path).with_index(1) do |line, line_number|
         next if line.strip.empty?
 
+        records << [line, "#{path}:#{line_number}", {"plane" => "subject_baseline"}]
+      end
+      live_entries.each do |entry|
+        records << [
+          entry.json,
+          "control-ledger:#{entry.ledger_commit}",
+          {"plane" => "control_ledger", "ledger_commit" => entry.ledger_commit}
+        ]
+      end
+
+      records.each do |line, location, control_record|
         event = JSON.parse(line)
-        location = "#{path}:#{line_number}"
         assert(event.is_a?(Hash), "#{location}: event must be an object")
         assert(%w[0.0.1 0.0.2].include?(event["schema_version"]), "#{location}: unsupported schema_version")
         assert(EVENT_ID_PATTERN.match?(event["id"].to_s), "#{location}: invalid event id")
@@ -376,14 +484,13 @@ module Hid
         assert(!ids.key?(event["id"]), "#{location}: duplicate event id")
         ids[event["id"]] = true
 
-        timestamp = Time.iso8601(event["ts"])
-        assert(previous_time.nil? || timestamp >= previous_time, "#{location}: timestamps must be nondecreasing")
-        previous_time = timestamp
+        Time.iso8601(event["ts"])
         assert(ACTOR_TYPES.include?(event.dig("actor", "type")), "#{location}: invalid actor type")
         assert(ACTOR_ROLES.include?(event.dig("actor", "role")), "#{location}: invalid actor role")
         validate_artifact(fetch(event, "artifact", location), location)
         validate_human_authorization_event(event, project, location) if event["event"] == "human_authorization"
         validate_merged_event(event, location) if event["event"] == "merged"
+        event["control_record"] = control_record
         enforce_privacy(privacy.findings(event, location))
         events << event
       rescue JSON::ParserError, ArgumentError => e

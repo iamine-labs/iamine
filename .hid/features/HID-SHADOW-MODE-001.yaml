@@ -1,7 +1,7 @@
 schema_version: "0.0.2"
 id: HID-SHADOW-MODE-001
 kind: engineering_process_enabler
-title: HID Shadow Mode Deterministic Merge Tree Integrity
+title: HID Shadow Mode Control-Plane Ledger Separation
 
 canonical:
   workflow: docs/process/iamine-canonical-workflow.md
@@ -11,8 +11,8 @@ canonical:
 
 intent:
   data_class: SOURCE
-  problem: A fabricated merge commit with correct parents and canonical containment could add unauthorized content because topology did not bind the deterministic merge result tree.
-  expected_outcome: Require the integration tree to equal Git's clean merge tree for canonical parent1 and the exact authorized candidate, failing closed on conflict or unverifiable computation.
+  problem: Persisting a human authorization inside the authorized subject tree changes the candidate and makes exact artifact authority operationally self-referential.
+  expected_outcome: Persist validated control events on an isolated append-only Git ref without changing the subject HEAD, tree, index, working tree, feature ref, or canonical develop branch.
 
 state:
   data_class: SOURCE
@@ -31,12 +31,14 @@ scope:
     - database, server, dashboard, SaaS, MCP, or orchestrator
     - cryptographic event log and historical migration
     - LAN-FILE-SHARE-ASSISTANT-AGENT-001 implementation
+    - Approval Capsule UI or general-purpose control-plane CLI
 
 risk:
   data_class: SOURCE
   level: RISK_1
   reasons:
     - changes remain local, process-only, and reconstructible
+    - the isolated Git ref uses compare-and-swap but remains operator-rewritable
     - privacy false negatives and Git coupling require explicit limitations
     - shadow observations must never become workflow authority
 
@@ -95,7 +97,7 @@ next_action:
   manual_override: null
 
 execution:
-  task_type: deterministic_merge_tree_hardening
+  task_type: control_plane_ledger_separation
   risk: RISK_1
   model:
     provider: openai
@@ -113,9 +115,9 @@ execution:
 
 metrics:
   data_class: SNAPSHOT
-  tests_executed: 80
-  test_assertions: 233
-  validation_runs: 14
-  non_product_findings_reported: 6
+  tests_executed: 90
+  test_assertions: 265
+  validation_runs: 20
+  non_product_findings_reported: 7
   product_defects: 0
   scope_changes: 0

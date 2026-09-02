@@ -26,7 +26,8 @@ class HidAppendOnlyGitTest < HidTestCase
     root = File.expand_path("../..", __dir__)
     capture = Hid::GitFacts.new(root).capture
 
-    assert_equal "feature/hid-shadow-mode-001", capture["branch"]
+    expected_branch, = Open3.capture3("git", "-C", root, "branch", "--show-current")
+    assert_equal expected_branch.strip, capture["branch"]
     assert_match(/\A[0-9a-f]{40}\z/, capture["head_sha"])
     assert_match(/\A[0-9a-f]{40}\z/, capture["tree"])
     assert_equal "refs/remotes/origin/develop", capture["base_ref"]

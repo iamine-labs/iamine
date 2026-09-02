@@ -8,7 +8,7 @@ gate result, validation count, or next action.
 
 ## Purpose
 
-HID v0.0.7 is a bounded machine-readable observation layer. It captures facts
+HID v0.0.8 is a bounded machine-readable observation layer. It captures facts
 needed to study a future control plane while the canonical IAMINE workflow,
 Architecture, QA, roadmaps, and explicit human gates retain all authority.
 
@@ -32,6 +32,36 @@ present them as self-updating current state or use them as Human Gate authority.
 The canonical lifecycle is parsed from
 `docs/process/iamine-canonical-workflow.md`; `.hid/project.yaml` no longer keeps
 a second editable list of lifecycle states.
+
+## Control-Plane Ledger
+
+The complete candidate Git commit/tree is the subject plane. Human decisions,
+merge observations, post-merge results, closure, and later runtime observations
+are control-plane records. Persisting a control record must not mutate the
+subject it describes.
+
+`.hid/events.jsonl` is the immutable pre-v0.0.8 baseline. Its configured blob
+identity is validated from the complete file. New events are stored on the
+dedicated `refs/heads/hid/control-plane` ref and are never written back to the
+baseline or merged into `develop`.
+
+Each control-ledger commit is linear, contains only `events.jsonl`, preserves
+the previous JSONL content, and adds exactly one line. The supported writer
+validates event schema, uniqueness, privacy, and exact authorization subject
+before writing Git objects, then advances only the control ref with
+compare-and-swap. Concurrent ref movement is `CONTROL_LEDGER_CHANGED` and fails
+closed. HEAD, candidate tree, index, working tree, feature ref, and `develop`
+remain unchanged.
+
+The effective stream is the complete baseline followed by control commits in
+first-parent order. Timestamp values are validated metadata but never reorder
+events. A live event receives derived `control_record.ledger_commit` identity
+when read; that ledger commit does not replace its `artifact` subject.
+
+The validator rejects nonlinear histories, rewritten prefixes, commits that add
+zero or multiple events, unexpected paths, and any current or historical
+control-ledger commit contained in `develop`. Control-ref containment cannot
+satisfy canonical integration.
 
 ## Human Authority
 
@@ -135,7 +165,7 @@ This check observes the available local branch. It does not fetch or establish
 that local `develop` is current with the remote. Remote freshness remains a
 separate, explicit merge-owner responsibility.
 
-Physical append-only log position is the lifecycle sequence source. For the
+Effective baseline-plus-ledger position is the lifecycle sequence source. For the
 same feature and relevant artifacts, a valid chain is:
 
 ```text
@@ -197,11 +227,11 @@ with Ruby's standard `IPAddr`, including compressed addresses, and produces a
 
 ## Append-only Policy
 
-The event log is an append-only policy with baseline-prefix validation when the
-local tracking ref `origin/develop` contains a prior log. Without that local
-baseline, validation reports `not_checked`. HID does not fetch automatically or
-claim that the local tracking ref is current on the remote. The policy is not
-tamper-proof or cryptographically immutable.
+The baseline event log is locked to its configured Git blob after cutover. The
+live ledger enforces one-event-per-commit prefix growth and compare-and-swap.
+HID does not fetch automatically or claim that local refs are current on the
+remote. The policy is not tamper-proof or cryptographically immutable against
+an operator who can rewrite refs.
 
 ## Tool Boundary
 
@@ -237,6 +267,15 @@ optimization are deferred. `FAST`, `BALANCED`, and `DEEP` remain provider-neutra
 - Canonical containment verifies the local `develop` ref, not remote freshness.
 - Deterministic tree validation requires Git `merge-tree --write-tree`; an
   unavailable or failing capability blocks privileged integration state.
+- Control-ledger append safety assumes Git ref updates are not force-rewritten
+  outside the supported compare-and-swap writer.
+
+## Future Human Gate UX
+
+`Human Gate Approval Capsule` remains captured for future implementation. It
+will present WHAT, WHY, CHANGE, EXCLUDES, IMPACT, RISK, EVIDENCE, FINDINGS,
+LIMITATIONS, ARTIFACT, and ACTION while the human emits only APPROVE or DENY.
+v0.0.8 implements storage separation, not that UI or a general CLI.
 
 ## Pilot Boundary
 
