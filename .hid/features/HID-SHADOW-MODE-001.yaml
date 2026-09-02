@@ -52,12 +52,12 @@ git:
     captured_at: "2026-08-30T02:55:26Z"
   candidate_snapshot:
     data_class: SNAPSHOT
-    purpose: validated_deterministic_merge_tree_integrity_snapshot
-    branch: feature/hid-shadow-mode-001
-    head_sha: 8b43771d2884dfe53d4d8412a28977d9c5cbac2a
-    tree: be46321a8ecf1d9e1e1aa4815588661818edbd12
+    purpose: validated_control_plane_ledger_separation_snapshot
+    branch: feature/hid-control-plane-ledger-001
+    head_sha: d10107517f21061293f366c09a996200f330e0df
+    tree: 57699ce5780aa02f9f4fd6a4b15791cc826b8859
     dirty: false
-    captured_at: "2026-09-01T05:24:58Z"
+    captured_at: "2026-09-02T02:35:21Z"
   current:
     data_class: DERIVED
     source: .hid/scripts/capture.rb
@@ -89,6 +89,7 @@ evidence:
   - HID-EVID-0005
   - HID-EVID-0006
   - HID-EVID-0007
+  - HID-EVID-0008
 blockers: []
 
 next_action:

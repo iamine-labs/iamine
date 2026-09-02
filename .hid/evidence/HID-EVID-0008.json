@@ -1,0 +1,103 @@
+{
+  "schema_version": "0.0.2",
+  "id": "HID-EVID-0008",
+  "feature": "HID-SHADOW-MODE-001",
+  "type": "local_validation",
+  "captured_at": "2026-09-02T02:35:21Z",
+  "artifact": {
+    "head_sha": "d10107517f21061293f366c09a996200f330e0df",
+    "tree": "57699ce5780aa02f9f4fd6a4b15791cc826b8859"
+  },
+  "environment": {
+    "host_class": "local_macos",
+    "os": "macos",
+    "arch": "aarch64"
+  },
+  "execution": {
+    "commands": [
+      "git_identity_cleanliness",
+      "ruby_syntax",
+      "hid_full_regression_suite",
+      "control_ledger_real_git_fixtures",
+      "human_authority_tests",
+      "event_integrity_and_lifecycle_tests",
+      "state_policy_tests",
+      "canonical_integration_real_git_fixtures",
+      "deterministic_merge_tree_real_git_fixtures",
+      "privacy_regression",
+      "hid_validator",
+      "yaml_safe_parse",
+      "json_parse",
+      "jsonl_line_parse",
+      "git_scope_and_whitespace"
+    ],
+    "started_at": "2026-09-02T02:15:00Z",
+    "finished_at": "2026-09-02T02:35:21Z"
+  },
+  "coverage": {
+    "paths": [
+      ".hid/**",
+      "docs/architecture/hid-shadow-mode.md",
+      "docs/qa/hid-shadow-mode.md"
+    ],
+    "claims": [
+      "subject-and-control-plane-separation",
+      "human-authorization-persistence-without-candidate-drift",
+      "one-event-per-control-commit",
+      "control-ref-compare-and-swap",
+      "baseline-plus-live-effective-event-order",
+      "revocation-latest-ledger-decision",
+      "full-privileged-lifecycle-from-control-events",
+      "control-ref-cannot-satisfy-canonical-integration",
+      "deterministic-merge-tree-regression",
+      "privacy-validation-before-supported-append",
+      "process-only-scope"
+    ]
+  },
+  "dependencies": [
+    {
+      "type": "git_base",
+      "value": "b6fad67e7af4f2e691f0334d64944ab5a3a9b1a5"
+    },
+    {
+      "type": "control_ref",
+      "value": "refs/heads/hid/control-plane"
+    },
+    {
+      "type": "canonical_local_branch",
+      "value": "develop"
+    },
+    {
+      "type": "git_capability",
+      "value": "git-2.50.1-commit-tree-update-ref"
+    },
+    {
+      "type": "runtime",
+      "value": "ruby-2.6.10"
+    }
+  ],
+  "validity": {
+    "artifact_bound": true,
+    "environment_bound": true
+  },
+  "result": {
+    "status": "pass",
+    "tests": {
+      "executed": 90,
+      "passed": 90,
+      "assertions": 265
+    },
+    "failures": 0
+  },
+  "failure_class": null,
+  "notes": [
+    "Does persisting human_authorization modify the authorized candidate: NO.",
+    "Control events advance only the isolated ledger ref through compare-and-swap; subject HEAD, tree, index, working tree, feature ref, and develop remain unchanged.",
+    "The effective stream preserves baseline events before all linear control-ledger events; timestamps remain non-authoritative metadata.",
+    "Approval, denial, reapproval, canonical merge, post-merge validation, and closure were validated in temporary Git repositories.",
+    "The supported writer rejects privacy violations before advancing the control ref.",
+    "No real human authorization, merge lifecycle event, control ref, product change, pilot, push, or canonical merge was created.",
+    "Field QA is not required because product and platform-dependent behavior did not change.",
+    "The evidence-recording commit will make this record visibly stale against the later repository artifact."
+  ]
+}
