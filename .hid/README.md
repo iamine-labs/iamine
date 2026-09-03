@@ -1,4 +1,4 @@
-# HID v0.0.8 Shadow Mode
+# HID v0.0.9 Shadow Mode
 
 HID is a machine-readable observation layer for IAMINE's existing workflow. It
 does not enforce gates or replace `AGENTS.md`, the canonical workflow,
@@ -13,10 +13,10 @@ authorization.
 
 ## Data Semantics
 
-- `SOURCE` is introduced by an authority: intent, approved scope, Architecture
-  decisions, risk acceptance, and human authorization.
+- Subject `SOURCE` defines identity, intent, approved scope, risk, gate
+  requirements, Constitution, Project Policy, and reviewer mandates.
 - `DERIVED` is calculated from canonical sources or Git: current identity,
-  ancestry, evidence status, and next action.
+  ancestry, evidence status, operational gate outcomes, state, and next action.
 - `SNAPSHOT` is a derived observation captured at a historical moment: Git
   identity, environment, or test result.
 
@@ -25,7 +25,7 @@ Current Git facts are never stored as a live authority. Run
 
 ## Human Gates
 
-A human gate marked `passed` requires a correlated `human_authorization` event
+A derived human gate `passed` requires a correlated `human_authorization` event
 for the same feature, gate, action, and candidate commit/tree. The actor must be
 typed as human and the artifact must be clean. Tooling validates structure and
 correlation; it does not authenticate a person's identity cryptographically.
@@ -37,6 +37,46 @@ privacy policy, event identity, exact current candidate, and control-ref
 compare-and-swap before advancing the ledger. The resulting ledger commit is
 control-record identity only; it never replaces or extends the authorized
 subject commit/tree.
+
+## Operational Projection
+
+`GateProjection` reads requirements from the subject and typed operational facts
+from the Control Ledger. Manifest `state.current` and `gates.*.status` are
+non-authoritative legacy snapshots. Differences produce diagnostics; changing
+them cannot grant or veto runtime authority. No derived view is written back.
+
+New control events use schema `0.0.3`. A typed `outcome` includes `gate`, `phase`,
+`result`, `mandate`, and bounded external `evidence` (feature, exact artifact,
+kind, result, reference). Reviews reuse `architecture_approved` or
+`architecture_changes_required`; validation reuses the existing validation
+events. No manifest/evidence-index update is required to record an outcome.
+Unknown requirements or authority rules cannot unlock a privileged action.
+Additional pre-merge requirements must be explicit typed gates; unresolved
+event-only policy extensions fail closed rather than being silently omitted.
+
+`architecture` is development authorization. `architecture_checkpoint` is the
+canonical checkpoint before QA. `final_review` is the final Architecture
+decision; it does not retroactively authorize development. Review #8 belongs
+to that final phase for its original candidate, but is not imported here.
+
+Reviewer mandates are scoped by feature, gate, phase, actor type, and role in
+Project Policy. A role label without that policy permission is insufficient.
+This is the existing operator-trusted local model, not identity authentication
+or cryptographic reviewer attestation. Human merge still requires an actual
+human decision; a reviewer mandate cannot create it.
+
+`human_gate_eligibility` returns `READY` with the exact prerequisite event IDs,
+or `NOT_READY` with `APPROVAL_CAPSULE_NOT_READY` and the missing gate. Future
+`human_decision_requested` events must bind that snapshot to the exact candidate
+and target. Approval must reference that earlier capsule, after all non-human
+prerequisites; new review outcomes require a new capsule and approval. Denial
+needs no capsule. Ledger position, not timestamps, determines precedence.
+
+Historical schemas remain readable but cannot satisfy new operational gates.
+`HID-EVENT-0060` remains untouched historical human merge approval for its exact
+old artifact; it is neither a review nor authorization for a new artifact.
+The full capsule UI/CLI remains captured for future implementation; only model
+eligibility and the supported writer's ordering checks are implemented.
 
 ## Subject And Control Planes
 
@@ -96,6 +136,10 @@ environment, and execution result. Status is derived, never stored:
 - `UNKNOWN`: Git cannot verify the artifact in the current environment.
 
 Stale evidence remains historical evidence. It is not automatically reused.
+New operational evidence is embedded in the bounded control event; its feature,
+artifact, validation/review kind and result must match the outcome exactly.
+Its reference identifies an operator-held report, not an instruction to load
+arbitrary paths or fetch a URL. Evidence authenticity remains an operator duty.
 
 ## Privacy
 
@@ -119,7 +163,12 @@ cryptographic immutability against an operator who can rewrite refs.
 ruby .hid/scripts/capture.rb
 ruby .hid/scripts/validate.rb
 ruby .hid/tests/validator_test.rb
+ruby .hid/tests/gate_projection_test.rb
+ruby .hid/tests/review_authority_test.rb
+ruby .hid/tests/realistic_lifecycle_test.rb
 ```
 
 The scripts use the Ruby standard library. Validation supplements rather than
 replaces IAMINE repository tests and QA.
+Post-merge validation uses the unchanged source candidate checkout; the
+integration artifact is a separate Git identity, never a replacement candidate.

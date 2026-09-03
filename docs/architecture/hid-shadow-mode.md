@@ -2,13 +2,13 @@
 
 Feature: `HID-SHADOW-MODE-001`
 
-The canonical state is read from the feature manifest and workflow. This
-document defines architecture and does not duplicate the current Git identity,
+Operational state is derived from subject requirements, control facts and Git,
+using the canonical workflow. This document does not duplicate current Git identity,
 gate result, validation count, or next action.
 
 ## Purpose
 
-HID v0.0.8 is a bounded machine-readable observation layer. It captures facts
+HID v0.0.9 is a bounded machine-readable observation layer. It captures facts
 needed to study a future control plane while the canonical IAMINE workflow,
 Architecture, QA, roadmaps, and explicit human gates retain all authority.
 
@@ -20,8 +20,8 @@ inference, scheduler, dashboard, protocols, and product security are excluded.
 HID distinguishes:
 
 ```text
-SOURCE   human or Architecture input
-DERIVED  current Git facts, evidence status, next action
+SOURCE   subject intent, scope, static policy and requirements
+DERIVED  current Git facts, gate outcomes, operational state and next action
 SNAPSHOT derived facts captured at a historical moment
 ```
 
@@ -77,8 +77,9 @@ clean commit and tree
 decision = approved
 ```
 
-A `passed` gate without the matching event is a validation failure. A matching
-event does not set a gate automatically and does not grant HID authority.
+A derived `passed` human gate requires the matching event and an eligible prior
+capsule. A manifest status has no operational authority. Projection observes
+the decision but does not grant HID permission to act.
 Tooling validates structure and artifact correlation, not cryptographic human
 identity. Agents must not represent themselves as humans or infer approval from
 silence, tests, or prior conversation.
@@ -100,10 +101,10 @@ The project policy may add gates, including risk-specific gates, but omission,
 corresponding merge, post-merge validation, and closure events. The canonical
 workflow has no standalone `MERGING` or `CLOSED` state, so HID invents neither.
 
-`next_action` checks those invariants before returning an operational action. A
-privileged state with missing prerequisites yields `state_gate_inconsistency`,
-constitutional weakening yields `constitutional_policy_violation`, and invalid
-event order yields `lifecycle_inconsistency`. None can yield a privileged action.
+`next_action` follows the first missing canonical prerequisite, not a mutable
+state label. Unknown requirements fail closed; invalid lifecycle facts cannot
+yield a privileged action. Low-level invariant diagnostics remain separate
+from the public runtime projection.
 
 Privileged states are derived from the canonical lifecycle beginning at
 `APPROVED FOR MERGE`. Every derived privileged state must have a declarative
@@ -180,9 +181,71 @@ denial after a valid merge does not erase the historical Git event; it prevents
 later actions that require current authority. Events from another feature or an
 older candidate do not satisfy this chain.
 
-The prior `architecture: passed` observation had no supporting authorization
-event. v0.0.2 corrects the mutable gate to `pending` and appends a corrective
-event without rewriting the old event log.
+The v0.0.2 correction of an unsupported `architecture: passed` remains historical.
+v0.0.9 does not rewrite that history or promote those legacy statuses.
+
+## Operational State And Gate Authority
+
+Architecture Review #9 identified an operational self-reference after the first
+real external human approval: the ledger advanced but runtime state and gate
+statuses still required subject-manifest edits. Synthetic invariant fixtures
+did not establish operational readiness.
+
+The explicit v0.0.9 policy cutover keeps gate requirements in the subject and
+moves outcome authority to typed schema `0.0.3` control facts. `state.current`
+and `gates.*.status` are non-authoritative legacy snapshots. They cannot grant
+or veto authority; mismatches are visible diagnostics. Static requirements,
+canonical target, merge strategy and Constitution cannot be changed by events.
+
+Responsibilities are split among small modules:
+
+- `OperationalFacts`: typed outcome/evidence validation and policy-scoped mandates.
+- `GateProjection`: requirements, latest relevant outcomes, canonical phase order,
+  derived state/next action, and capsule eligibility.
+- `LifecycleProjection`: prerequisite snapshots at merge, post-merge ordering,
+  closure, and the existing exact Git integration invariants.
+- `ControlLedger`: unchanged storage protocol, linear append and compare-and-swap.
+
+The canonical order is development authorization (`architecture`), implementation,
+local validation, Architecture checkpoint, Field QA when required, final review,
+capsule and human merge. Implementation/checkpoint requirements represent
+existing canonical phases, not new product gates. Additional required gates
+need explicit authority rules and are checked before the final human decision.
+
+Reviews reuse `architecture_approved`/`architecture_changes_required` with an
+explicit gate, phase, pass/fail/blocked result, and mandate. Review #8 maps to
+`final_review` only for its original artifact; it is not initial development
+authorization and no retrospective fact is recorded by this implementation.
+
+The Constitution explicitly separates review authority from human authority.
+Final review remains mandatory, under a policy-authorized architect mandate;
+human merge remains mandatory, bound to the exact candidate and a real human
+decision. Project Policy may add requirements but cannot remove these minimums
+or replace architect authority with a developer/system role. Mandates specify
+feature, gates, actor types and roles. This bounds the trusted operator model;
+it does not authenticate the claimed actor or report cryptographically.
+
+Every new operational result carries bounded external evidence: feature,
+exact HEAD/tree, kind, result and a report reference. No evidence reuse is
+inferred from ancestry, similar trees, historical snapshots or stale files.
+An event name alone has no authority. Latest relevant ledger order controls
+negative reviews and reapproval; a later negative result blocks progression.
+
+Capsule eligibility requires all applicable non-human prerequisites, fresh
+evidence and a clean exact candidate. The request records the prerequisite
+event IDs. A human approval must reference an earlier eligible capsule with
+the same prerequisites; changed reviews require a new capsule and approval.
+Early requests/approvals fail before persistence. Denials require no capsule.
+This ordering applies prospectively; `HID-EVENT-0060` remains unmodified history
+for the old artifact and cannot authorize the new candidate. No new real events
+are written during Development.
+
+Runtime projection reports the source candidate; after a real integration the
+validator is run from the source checkout, keeping the separate integration
+identity verified by Git. A valid past merge is not erased by a later denial.
+Post-merge validation must precede Architecture closure and bind that same
+integration artifact. The realistic temporary-repository E2E, not the synthetic
+invariant fixtures, is the operational-readiness regression.
 
 ## Evidence Integrity
 

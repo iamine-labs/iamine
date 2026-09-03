@@ -91,7 +91,7 @@ class HidMergeTreeIntegrityTest < HidTestCase
     assert_includes error.message, "MERGE_TREE_NOT_VERIFIABLE"
     assert_equal(
       "merge_tree_not_verifiable",
-      validator.send(:derive_next_action, feature, events, state_project, current_candidate)
+      validator.send(:invariant_next_action, feature, events, state_project, current_candidate)
     )
   end
 
@@ -256,7 +256,7 @@ class HidMergeTreeIntegrityTest < HidTestCase
     validator = Hid::Validator.new(fixture.fetch(:root))
     current = current_candidate(head: fixture.fetch(:candidate_head), tree: fixture.fetch(:candidate_tree))
     events = authorization_events(head: fixture.fetch(:candidate_head), tree: fixture.fetch(:candidate_tree))
-    validator.send(:derive_next_action, real_feature("MERGED", fixture), events + lifecycle_events, state_project, current)
+    validator.send(:invariant_next_action, real_feature("MERGED", fixture), events + lifecycle_events, state_project, current)
   end
 
   def real_feature(state, fixture)

@@ -30,15 +30,44 @@ authority:
   silence_is_authorization: false
 
 human_gates:
-  architecture:
-    action: development_authorization
-    artifact_bound: true
-  final_review:
-    action: architecture_merge_approval
-    artifact_bound: true
   human_merge:
     action: merge
     artifact_bound: true
+
+operational_policy:
+  version: "0.0.9"
+  legacy_runtime_fields: non_authoritative
+  gate_authorities:
+    architecture: {kind: review, phase: development_authorization, mandate: iamine-architecture}
+    implementation: {kind: implementation, phase: implementation, mandate: iamine-development}
+    local_validation: {kind: validation, phase: local_validation, mandate: iamine-development}
+    architecture_checkpoint: {kind: review, phase: architecture_checkpoint, mandate: iamine-architecture}
+    field_qa: {kind: validation, phase: field_qa, mandate: iamine-qa}
+    final_review: {kind: review, phase: final_review, mandate: iamine-architecture}
+    merged: {kind: integration, phase: merged, mandate: iamine-merge-owner}
+    post_merge_validation: {kind: validation, phase: post_merge_validation, mandate: iamine-qa}
+    closure: {kind: review, phase: closure, mandate: iamine-architecture}
+  mandates:
+    iamine-architecture:
+      actor_types: [agent, human]
+      roles: [architect]
+      features: [HID-SHADOW-MODE-001]
+      gates: [architecture, architecture_checkpoint, final_review, closure]
+    iamine-development:
+      actor_types: [agent, human]
+      roles: [developer]
+      features: [HID-SHADOW-MODE-001]
+      gates: [implementation, local_validation]
+    iamine-qa:
+      actor_types: [agent, human]
+      roles: [qa]
+      features: [HID-SHADOW-MODE-001]
+      gates: [field_qa, post_merge_validation]
+    iamine-merge-owner:
+      actor_types: [agent, human]
+      roles: [merge-owner]
+      features: [HID-SHADOW-MODE-001]
+      gates: [merged]
 
 state_requirements:
   LOCAL VALIDATION PASSED:
@@ -87,11 +116,10 @@ state_requirements:
 data_semantics:
   SOURCE:
     - human intent and approved scope
-    - architecture decisions and risk acceptance
-    - explicit human authorization
+    - constitutional and project requirements and reviewer mandates
   DERIVED:
     - current Git identity and ancestry
-    - evidence status and next action
+    - operational gate outcomes, lifecycle state, evidence status and next action
   SNAPSHOT:
     - Git identity at a recorded event or validation
     - environment and bounded test result

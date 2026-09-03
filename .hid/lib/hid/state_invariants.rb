@@ -12,7 +12,6 @@ module Hid
       "MERGED / VALIDATED / CLOSED" => %w[merged post_merge_validation_passed feature_closed]
     }.freeze
     CONSTITUTIONAL_HUMAN_GATES = {
-      "final_review" => {"action" => "architecture_merge_approval", "artifact_bound" => true},
       "human_merge" => {"action" => "merge", "artifact_bound" => true}
     }.freeze
     EVENT_STATUS_PRIORITY = %i[

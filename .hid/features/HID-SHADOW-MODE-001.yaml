@@ -1,7 +1,7 @@
 schema_version: "0.0.2"
 id: HID-SHADOW-MODE-001
 kind: engineering_process_enabler
-title: HID Shadow Mode Control-Plane Ledger Separation
+title: HID Shadow Mode Operational State and Gate Authority Split
 
 canonical:
   workflow: docs/process/iamine-canonical-workflow.md
@@ -11,11 +11,12 @@ canonical:
 
 intent:
   data_class: SOURCE
-  problem: Persisting a human authorization inside the authorized subject tree changes the candidate and makes exact artifact authority operationally self-referential.
-  expected_outcome: Persist validated control events on an isolated append-only Git ref without changing the subject HEAD, tree, index, working tree, feature ref, or canonical develop branch.
+  problem: Operational gate statuses still depend on subject manifest mutation and conflate review verdicts with human merge decisions.
+  expected_outcome: Derive gate outcomes, lifecycle state and capsule eligibility from typed external facts while preserving the exact candidate and historical human authorization.
 
 state:
-  data_class: SOURCE
+  data_class: SNAPSHOT
+  operational_authority: non_authoritative_legacy
   current: ARCHITECTURE REVIEW REQUIRED
   authority: development_handoff
 
@@ -67,9 +68,15 @@ gates:
     required: true
     status: pending
     reason: prior passed value had no correlated human authorization event
+  implementation:
+    required: true
+    status: pending
   local_validation:
     required: true
     status: passed
+  architecture_checkpoint:
+    required: true
+    status: pending
   field_qa:
     required: false
     status: not_required
@@ -94,11 +101,11 @@ blockers: []
 
 next_action:
   data_class: DERIVED
-  rule: state_gates_blockers
+  rule: policy_control_events_git_facts
   manual_override: null
 
 execution:
-  task_type: control_plane_ledger_separation
+  task_type: operational_state_gate_authority_split
   risk: RISK_1
   model:
     provider: openai

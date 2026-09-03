@@ -18,6 +18,7 @@ begin
   report["evidence_statuses"].sort.each { |id, status| puts "evidence_status=#{id}:#{status}" }
   puts "append_only=#{report['append_only']}"
   report["next_actions"].sort.each { |id, action| puts "next_action=#{id}:#{action}" }
+  report["operational_state"].sort.each { |id, projection| puts "operational_state=#{id}:#{JSON.generate(projection)}" }
   report["warnings"].each { |warning| warn "HID warning: #{warning}" }
 rescue Hid::ValidationError, Hid::GitUnavailable => e
   warn "HID validation: FAIL"

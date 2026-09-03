@@ -47,7 +47,8 @@ class HidControlLedgerTest < HidTestCase
       ledger = control_ledger(root)
       before = subject_snapshot(root)
 
-      ledger_commit = validator.append_control_event(authorization_record(60, candidate))
+      event = authorization_record(60, candidate, decision: "denied").merge("schema_version" => "0.0.3")
+      ledger_commit = validator.append_control_event(event)
 
       assert_equal before, subject_snapshot(root)
       assert_equal ledger_commit, ledger.head
@@ -58,7 +59,7 @@ class HidControlLedgerTest < HidTestCase
   def test_supported_writer_rejects_private_content_before_persistence
     with_hid_workspace do |root, validator, candidate|
       ledger = control_ledger(root)
-      event = authorization_record(60, candidate)
+      event = authorization_record(60, candidate, decision: "denied").merge("schema_version" => "0.0.3")
       event["metadata"] = {"prompt" => "should-never-be-stored"}
 
       assert_raises(Hid::ValidationError) { validator.append_control_event(event) }
@@ -83,11 +84,9 @@ class HidControlLedgerTest < HidTestCase
     end
   end
 
-  def test_full_lifecycle_advances_only_canonical_and_control_refs
+  def test_synthetic_invariants_preserve_canonical_and_control_refs
     with_repository do |root, candidate|
       ledger = control_ledger(root)
-      ledger.append(JSON.generate(authorization_record(60, candidate, gate: "architecture", action: "development_authorization")))
-      ledger.append(JSON.generate(authorization_record(61, candidate, gate: "final_review", action: "architecture_merge_approval")))
       ledger.append(JSON.generate(authorization_record(62, candidate)))
       candidate_after_authorization = subject_snapshot(root)
 
@@ -117,7 +116,7 @@ class HidControlLedgerTest < HidTestCase
       assert_equal candidate_after_authorization, subject_snapshot(root)
       assert_equal refs_after_merge, subject_refs(root)
       assert_equal integration, git_artifact_for(root, integration.fetch(:head))
-      assert_equal 6, ledger.entries.length
+      assert_equal 4, ledger.entries.length
     end
   end
 

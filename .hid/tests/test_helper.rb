@@ -89,6 +89,7 @@ class HidTestCase < Minitest::Test
   end
 
   def state_feature(state, overrides = {})
+    # Synthetic projected states exercise low-level invariants, not readiness.
     statuses = {
       "architecture" => "passed",
       "local_validation" => "passed",
@@ -118,22 +119,18 @@ class HidTestCase < Minitest::Test
     evidence ||= {
       "HID-EVID-0001" => {
         "derived_status" => "VALID",
-        "artifact" => {"head_sha" => HEAD, "tree" => TREE}
+          "artifact" => {"head_sha" => current["head_sha"], "tree" => current["tree"]}
       }
     }
     validator.send(:validate_state_and_gates, feature, evidence, events, state_project, current)
   end
 
   def derive_next_action(feature, events, current: current_candidate, project: state_project)
-    @validator.send(:derive_next_action, feature, events, project, current)
+    @validator.send(:invariant_next_action, feature, events, project, current)
   end
 
   def authorization_events(head: HEAD, tree: TREE)
-    [
-      authorization_event(gate: "architecture", action: "development_authorization", head: head, tree: tree),
-      authorization_event(gate: "final_review", action: "architecture_merge_approval", head: head, tree: tree),
-      authorization_event(head: head, tree: tree)
-    ]
+    [authorization_event(head: head, tree: tree)]
   end
 
   def authorization_event(gate: "human_merge", action: "merge", decision: "approved", head: HEAD, tree: TREE, actor: "human")

@@ -77,13 +77,14 @@ class HidHumanAuthorityTest < HidTestCase
     assert_equal "state_gate_inconsistency", derive_next_action(feature, authorization_events, current: current)
   end
 
-  def test_privileged_state_accepts_current_authorizations_with_historical_evidence
+  def test_privileged_state_rejects_current_authorization_with_historical_evidence
     feature = state_feature("APPROVED FOR MERGE")
     current = current_candidate(head: OTHER_HEAD, tree: OTHER_TREE)
     events = authorization_events(head: OTHER_HEAD, tree: OTHER_TREE)
 
-    validate_state(feature, events, current: current)
-    assert_equal "run_merge_precheck", derive_next_action(feature, events, current: current)
+    evidence = {"HID-EVID-0001" => {"derived_status" => "STALE", "artifact" => {"head_sha" => HEAD, "tree" => TREE}}}
+    error = assert_raises(Hid::ValidationError) { validate_state(feature, events, current: current, evidence: evidence) }
+    assert_includes error.message, "fresh exact-candidate evidence"
   end
 
   def test_authorization_action_must_match_gate

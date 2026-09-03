@@ -9,6 +9,7 @@ require_relative "control_ledger"
 require_relative "git_facts"
 require_relative "privacy"
 require_relative "state_invariants"
+require_relative "gate_projection"
 
 module Hid
   class ValidationError < StandardError; end
@@ -22,7 +23,7 @@ module Hid
     ACTOR_ROLES = %w[architect developer qa reviewer merge-owner human system].freeze
     RESULT_STATUSES = %w[pass fail blocked unknown].freeze
     DATA_CLASSES = %w[SOURCE DERIVED SNAPSHOT].freeze
-    GATE_NAMES = %w[architecture local_validation field_qa final_review human_merge].freeze
+    GATE_NAMES = GateProjection::CANONICAL_ORDER
     GATE_NAME_PATTERN = /\A[a-z][a-z0-9_]*\z/
     BRANCH_NAME_PATTERN = /\A[A-Za-z0-9][A-Za-z0-9._\/-]*\z/
 
@@ -37,6 +38,7 @@ module Hid
     end
 
     def run
+      warnings.clear
       project = validate_project(File.join(@hid_root, "project.yaml"))
       privacy = load_privacy(project)
       current = @git.capture
@@ -63,12 +65,11 @@ module Hid
 
       features.each do |feature|
         validate_evidence_references(feature, evidence)
-        validate_human_gates(feature, events, project, current)
-        validate_state_and_gates(feature, evidence, events, project, current)
       end
+      projections = project_operational_state(features, events, project, current)
 
       append_only = validate_append_only(File.join(@hid_root, "events.jsonl"))
-      next_actions = features.to_h { |feature| [feature["id"], derive_next_action(feature, events, project, current)] }
+      next_actions = projections.transform_values { |projection| projection["next_action"] }
 
       {
         "features" => feature_paths.length,
@@ -84,6 +85,7 @@ module Hid
         "evidence_statuses" => evidence.transform_values { |entry| entry.fetch("derived_status") },
         "append_only" => append_only,
         "next_actions" => next_actions,
+        "operational_state" => projections,
         "warnings" => warnings.dup
       }
     end
@@ -148,6 +150,7 @@ module Hid
 
     def append_control_event(event, expected_head: ControlLedger::CURRENT_HEAD)
       assert(event.is_a?(Hash), "control event must be an object")
+      assert(event["schema_version"] == OperationalFacts::SCHEMA, "new control events require operational schema 0.0.3")
       project = validate_project(File.join(@hid_root, "project.yaml"))
       privacy = load_privacy(project)
       current = @git.capture
@@ -158,6 +161,7 @@ module Hid
       feature_ids = features.map { |feature| feature["id"] }
       ledger = @control_ledger || build_control_ledger(project)
       validate_control_separation(ledger, project)
+      observed_head = ledger.head
       existing_entries = load_control_entries(ledger)
 
       if event["event"] == "human_authorization"
@@ -167,14 +171,29 @@ module Hid
 
       serialized = JSON.generate(event)
       proposed = ControlLedger::Entry.new(json: serialized, ledger_commit: "0" * 40)
-      validate_events(
+      events = validate_events(
         File.join(@hid_root, "events.jsonl"),
         project,
         feature_ids,
         privacy,
         live_entries: existing_entries + [proposed]
       )
-      ledger.append(serialized, expected_head: expected_head)
+      projections = project_operational_state(features, events, project, current)
+      projection = projections.fetch(event["feature"])
+      if event["event"] == "human_authorization" && event.dig("authorization", "decision") == "approved"
+        assert(projection.dig("gates", "human_merge", "status") == "passed", "APPROVAL_CAPSULE_NOT_READY human approval prerequisites missing")
+      end
+      if event["event"] == "merged"
+        assert(event.dig("integration", "source_head_sha") == current["head_sha"] &&
+          event.dig("integration", "source_tree") == current["tree"], "CANDIDATE_INTEGRATION_MISMATCH")
+      end
+      if %w[post_merge_validation closure].include?(event.dig("outcome", "gate"))
+        expected_state = event.dig("outcome", "gate") == "closure" ? "MERGED / VALIDATED / CLOSED" : "POST-MERGE VALIDATION"
+        expected_state = "CHANGES REQUIRED" if event.dig("outcome", "result") != "pass"
+        assert(projection["state"] == expected_state, "LIFECYCLE_ORDER_VIOLATION post-merge fact not applicable")
+      end
+      expected = expected_head.equal?(ControlLedger::CURRENT_HEAD) ? observed_head : expected_head
+      ledger.append(serialized, expected_head: expected)
     rescue ControlLedgerError => e
       raise ValidationError, e.message
     end
@@ -266,6 +285,8 @@ module Hid
         human_gates
       )
       assert(constitutional_failures.empty?, "#{path}: #{constitutional_failures.join('; ')}")
+      operational_failures = OperationalFacts.new(project).policy_failures
+      assert(operational_failures.empty?, "#{path}: #{operational_failures.join('; ')}")
       state_requirements.each do |state, requirements|
         assert(expected_states.include?(state), "#{path}: state requirement references non-canonical state #{state}")
         assert(requirements.is_a?(Hash), "#{path}: state requirement #{state} must be an object")
@@ -344,8 +365,7 @@ module Hid
       id = fetch(feature, "id", path)
       assert(FEATURE_ID_PATTERN.match?(id), "#{path}: invalid feature id")
       assert(File.basename(path, ".yaml") == id, "#{path}: filename must match feature id")
-      assert(project.fetch("derived_lifecycle_states").include?(feature.dig("state", "current")), "#{path}: non-canonical current state")
-      assert(feature.dig("state", "data_class") == "SOURCE", "#{path}: state must be classified as SOURCE")
+      assert(feature.dig("state", "operational_authority") == "non_authoritative_legacy", "#{path}: legacy state must not be operational authority")
       assert(project.fetch("risk_levels").key?(feature.dig("risk", "level")), "#{path}: invalid risk level")
 
       fetch(feature, "canonical", path).each_value do |relative_path|
@@ -369,7 +389,6 @@ module Hid
       gates.each do |gate_name, gate|
         assert(GATE_NAME_PATTERN.match?(gate_name), "#{path}: invalid gate name #{gate_name}")
         assert([true, false].include?(gate["required"]), "#{path}: #{gate_name}.required must be boolean")
-        assert(GATE_STATUSES.include?(gate["status"]), "#{path}: invalid #{gate_name}.status")
       end
 
       assert(feature["evidence"].is_a?(Array), "#{path}: evidence must be an array")
@@ -476,7 +495,7 @@ module Hid
       records.each do |line, location, control_record|
         event = JSON.parse(line)
         assert(event.is_a?(Hash), "#{location}: event must be an object")
-        assert(%w[0.0.1 0.0.2].include?(event["schema_version"]), "#{location}: unsupported schema_version")
+        assert(%w[0.0.1 0.0.2 0.0.3].include?(event["schema_version"]), "#{location}: unsupported schema_version")
         assert(EVENT_ID_PATTERN.match?(event["id"].to_s), "#{location}: invalid event id")
         assert(event["project"] == "iamine", "#{location}: project must be iamine")
         assert(feature_ids.include?(event["feature"]), "#{location}: unknown feature")
@@ -491,6 +510,12 @@ module Hid
         validate_human_authorization_event(event, project, location) if event["event"] == "human_authorization"
         validate_merged_event(event, location) if event["event"] == "merged"
         event["control_record"] = control_record
+        if event["schema_version"] == OperationalFacts::SCHEMA
+          assert(control_record["plane"] == "control_ledger", "operational outcomes must be external")
+          OperationalFacts.new(project).validate!(event)
+          artifact_status = @git.artifact_status(event.dig("artifact", "head_sha"), event.dig("artifact", "tree"))
+          assert(artifact_status == :valid, "OPERATIONAL_ARTIFACT_INVALID Git cannot verify the exact outcome artifact")
+        end
         enforce_privacy(privacy.findings(event, location))
         events << event
       rescue JSON::ParserError, ArgumentError => e
@@ -501,23 +526,23 @@ module Hid
 
     def validate_state_and_gates(feature, evidence, events, project, current = nil)
       current ||= @git.capture
-      candidate = feature.dig("git", "candidate_snapshot")
       matching_evidence = feature["evidence"].any? do |id|
         record = evidence[id]
-        record && record["derived_status"] != "INVALID" &&
-          record.dig("artifact", "head_sha") == candidate["head_sha"] &&
-          record.dig("artifact", "tree") == candidate["tree"]
+        record && record["derived_status"] == "VALID" &&
+          record.dig("artifact", "head_sha") == current["head_sha"] &&
+          record.dig("artifact", "tree") == current["tree"]
       end
 
       if feature.dig("gates", "local_validation", "status") == "passed"
-        assert(matching_evidence, "#{feature['id']}: local validation passed without evidence for candidate snapshot")
+        assert(matching_evidence, "#{feature['id']}: local validation passed without fresh exact-candidate evidence")
       end
 
       failures = state_requirement_failures(feature, events, project, current)
       assert(failures.empty?, "#{feature['id']}: STATE_GATE_INCONSISTENCY: #{failures.join('; ')}")
     end
 
-    def derive_next_action(feature, events, project, current = nil)
+    # Diagnostic for low-level invariant tests on an already projected state.
+    def invariant_next_action(feature, events, project, current = nil)
       current ||= @git.capture
       failures = state_requirement_failures(feature, events, project, current)
       return "policy_incomplete" if failures.any? { |failure| failure.start_with?("POLICY_INCOMPLETE") }
@@ -551,6 +576,15 @@ module Hid
         "run_merge_precheck"
       else
         "follow_canonical_workflow"
+      end
+    end
+
+    def project_operational_state(features, events, project, current)
+      features.to_h do |feature|
+        projection = GateProjection.new(feature, events, project, current: current, git: @git).run
+        assert(projection["failures"].empty?, "#{feature['id']}: #{projection['failures'].join('; ')}")
+        projection["warnings"].each { |warning| warnings << "#{feature['id']}: #{warning}" }
+        [feature["id"], projection]
       end
     end
 

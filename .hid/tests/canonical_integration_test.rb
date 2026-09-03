@@ -226,7 +226,7 @@ class HidCanonicalIntegrationTest < HidTestCase
     validator = Hid::Validator.new(fixture.fetch(:root))
     current = current_candidate(head: fixture.fetch(:candidate_head), tree: fixture.fetch(:candidate_tree))
     events = authorization_events(head: fixture.fetch(:candidate_head), tree: fixture.fetch(:candidate_tree))
-    validator.send(:derive_next_action, real_feature(state, fixture), events + lifecycle_events, state_project, current)
+    validator.send(:invariant_next_action, real_feature(state, fixture), events + lifecycle_events, state_project, current)
   end
 
   def real_feature(state, fixture)

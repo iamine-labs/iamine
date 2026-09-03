@@ -25,8 +25,8 @@ Proxmox/R5500 are not used to manufacture ceremony.
 5. Reject a wrong actor, gate action, feature, commit, tree, or dirty artifact.
 6. Reject privileged states unless their required gates, human authorization,
    and merge lifecycle events are present.
-7. Derive `state_gate_inconsistency` before any merge action when those
-   prerequisites are missing.
+7. Derive the first missing canonical prerequisite before any merge action;
+   legacy state/gate statuses cannot bypass it.
 8. Bind Human Gates to the current clean Git HEAD/tree, never a historical
    candidate snapshot, and apply the last relevant decision in log order.
 9. Union non-configurable constitutional requirements with project policy;
@@ -49,7 +49,8 @@ Proxmox/R5500 are not used to manufacture ceremony.
 17. Verify referenced evidence exists.
 18. Verify evidence commit existence and real commit-to-tree relationship.
 19. Classify evidence as `VALID`, `STALE`, `INVALID`, or `UNKNOWN`.
-20. Require passed local validation to bind to candidate-snapshot evidence.
+20. Require passed local validation to bind to fresh exact-candidate external
+    evidence; snapshot evidence never authorizes a new artifact.
 21. Check coverage, dependencies, and artifact/environment validity fields.
 22. Fail field-based and free-text `NEVER_STORE` data and surface `REDACT`
     warnings, including compressed IPv6.
@@ -71,6 +72,49 @@ Proxmox/R5500 are not used to manufacture ceremony.
     `develop`; control storage never establishes canonical integration.
 32. Apply the same schema and privacy validation before the supported writer
     advances the control ref.
+
+## v0.0.9 Operational Readiness
+
+The old synthetic state/invariant fixtures are unit regression tests, not
+operational-readiness evidence. `realistic_lifecycle_test.rb` loads the real
+manifest and Project Policy into a disposable Git repository with actual Git
+facts. It starts without a control ref and records development authorization,
+implementation, local validation, checkpoint and final review, then an eligible
+capsule request and exactly one human merge decision. It validates a real
+no-ff integration, post-merge evidence and Architecture closure. Every gate
+append checks source HEAD/tree, index digest, feature ref and working tree.
+No real repository ref, historical approval, or real ledger is modified.
+
+Additional focused suites cover:
+
+- legacy gate/state tampering without authority;
+- external evidence and reviews bound to exact feature, HEAD/tree and phase;
+- declared reviewer mandates distinct from human merge authority;
+- wrong role, mandate, review type, result, evidence and candidate rejection;
+- negative review, reapproval and ledger ordering rather than timestamps;
+- unknown requirements, required/optional Field QA and constitutional minimums;
+- capsule rejection before all non-human gates and fresh prerequisite binding;
+- changed reviews requiring a new capsule and human decision;
+- historical approval remaining stale/non-applicable to a new candidate;
+- denial before/after merge, post-merge failures, ordering and wrong artifacts;
+- existing canonical containment and deterministic merge-tree protections.
+
+```bash
+ruby .hid/tests/gate_projection_test.rb
+ruby .hid/tests/review_authority_test.rb
+ruby .hid/tests/operational_lifecycle_test.rb
+ruby .hid/tests/realistic_lifecycle_test.rb
+ruby .hid/tests/validator_test.rb
+ruby .hid/scripts/validate.rb
+git diff --check
+```
+
+The full suite also loads all prior Control Ledger, human authority, evidence,
+event/lifecycle, canonical integration, merge-tree, privacy and policy suites.
+Validate Ruby syntax and every YAML/JSON/JSONL file separately. Gate scope is
+process-only; Cargo and Field QA apply only if product changes, which is not
+authorized here. A validator structural PASS with pending runtime gates is not
+merge readiness. Existing stale evidence is reported, never silently reused.
 
 ## Regression Cases
 

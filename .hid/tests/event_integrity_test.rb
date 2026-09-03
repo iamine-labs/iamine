@@ -131,7 +131,7 @@ class HidEventIntegrityTest < HidTestCase
       end
       evidence = {
         "HID-EVID-0001" => {
-          "derived_status" => "STALE",
+          "derived_status" => "VALID",
           "artifact" => {"head_sha" => candidate_head, "tree" => candidate_tree}
         }
       }
@@ -187,15 +187,15 @@ class HidEventIntegrityTest < HidTestCase
     validate_state(state_feature("MERGED"), events, validator: lifecycle_validator)
   end
 
-  def test_final_review_authorization_after_merge_is_rejected
-    approvals = authorization_events.reject { |event| event.dig("authorization", "gate") == "final_review" }
+  def test_human_review_authorization_cannot_replace_missing_final_review
+    approvals = authorization_events
     late_final_review = authorization_event(gate: "final_review", action: "architecture_merge_approval")
     events = approvals + [merged_event, late_final_review]
 
     error = assert_raises(Hid::ValidationError) do
-      validate_state(state_feature("MERGED"), events, validator: lifecycle_validator)
+      validate_state(state_feature("MERGED", "final_review" => "pending"), events, validator: lifecycle_validator)
     end
-    assert_includes error.message, "LIFECYCLE_ORDER_VIOLATION"
+    assert_includes error.message, "gate final_review must be passed"
   end
 
   def test_other_feature_events_do_not_affect_lifecycle_order
@@ -245,7 +245,7 @@ class HidEventIntegrityTest < HidTestCase
   end
 
   def derive_lifecycle_next_action(feature, events)
-    lifecycle_validator.send(:derive_next_action, feature, events, state_project, current_candidate)
+    lifecycle_validator.send(:invariant_next_action, feature, events, state_project, current_candidate)
   end
 
   def assert_invalid_event_artifact(state, lifecycle_events)
