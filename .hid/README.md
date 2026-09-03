@@ -1,4 +1,4 @@
-# HID v0.0.9 Shadow Mode
+# HID v0.0.10 Shadow Mode
 
 HID is a machine-readable observation layer for IAMINE's existing workflow. It
 does not enforce gates or replace `AGENTS.md`, the canonical workflow,
@@ -54,10 +54,28 @@ Unknown requirements or authority rules cannot unlock a privileged action.
 Additional pre-merge requirements must be explicit typed gates; unresolved
 event-only policy extensions fail closed rather than being silently omitted.
 
+v0.0.10 builds an immutable `OperationalFact` only after dispatching on the
+event type and validating its discriminated payload, domain, gate policy,
+mandate, phase, result and evidence. Gate and lifecycle projections normalize
+their input independently of the writer and consume these facts, never raw
+`outcome.gate` as authority. Unknown event types/domains fail closed.
+
+`authority_kind` is explicit in Project Policy. Human decisions, review
+verdicts, validation results, QA results, lifecycle facts and integration facts
+are not interchangeable. Capsule requests are a separate non-gate domain.
+Human events allow `authorization` and an optional `capsule_id`, not `outcome`,
+review/validation/QA fields or integration data. Outcomes have one canonical
+`result`; duplicate result/verdict/domain fields are rejected. Metadata is
+observational only and still passes privacy-before-write.
+
 `architecture` is development authorization. `architecture_checkpoint` is the
 canonical checkpoint before QA. `final_review` is the final Architecture
 decision; it does not retroactively authorize development. Review #8 belongs
 to that final phase for its original candidate, but is not imported here.
+The current workflow represents initial development authorization as a
+policy-mandated Architecture verdict (`REVIEW_VERDICT`, phase
+`development_authorization`), not a `human_authorization`. Only `human_merge`
+accepts `HUMAN_DECISION`; no additional human development gate is introduced.
 
 Reviewer mandates are scoped by feature, gate, phase, actor type, and role in
 Project Policy. A role label without that policy permission is insufficient.

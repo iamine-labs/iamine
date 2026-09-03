@@ -54,8 +54,13 @@ class HidGateProjectionTest < HidTestCase
   end
 
   def test_cross_feature_events_cannot_support_same_artifact
-    events = nonhuman_events.each { |event| event["feature"] = "OTHER-FEATURE-001" }
-    assert_equal "pending", operational_projection(events).dig("gates", "final_review", "status")
+    project = state_project
+    project["operational_policy"]["mandates"].each_value { |mandate| mandate["features"] << "OTHER-FEATURE-001" }
+    events = nonhuman_events.each do |event|
+      event["feature"] = "OTHER-FEATURE-001"
+      event["outcome"]["evidence"]["feature"] = "OTHER-FEATURE-001"
+    end
+    assert_equal "pending", operational_projection(events, project: project).dig("gates", "final_review", "status")
   end
 
   def test_negative_review_blocks_and_latest_review_can_reapprove

@@ -116,6 +116,44 @@ process-only; Cargo and Field QA apply only if product changes, which is not
 authorized here. A validator structural PASS with pending runtime gates is not
 merge readiness. Existing stale evidence is reported, never silently reused.
 
+## v0.0.10 Authority Domain Isolation
+
+Architecture Review #10's eleven previously passing adversarial cases and both
+reproduced attacks are retained in `architecture_review10_test.rb`. The two
+attacks now assert rejection before writing, unchanged control/subject refs,
+pending gates and `NOT_READY`, rather than merely checking the final state.
+The five-fake-prerequisites case still attempts the later capsule and human
+approval; no rejected prerequisite is replaced by synthetic valid authority.
+
+Typed-fact and domain suites additionally cover:
+
+- fixed event-to-domain dispatch and immutable, detached fact snapshots;
+- approved/denied human decisions carrying fake review, validation or QA results;
+- strict reserved fields, contradictory results and unknown types/domains;
+- explicit compatible gate policy, constitutional minima and custom gates;
+- raw malformed input rejected by projection independently of the writer;
+- valid review/validation facts satisfying only their intended gates;
+- initial Architecture as the existing mandated development-authorization phase,
+  not an invented human development gate;
+- a negative final review blocking approval against a previously valid capsule;
+- source identity and all refs preserved when the writer rejects an event;
+- unchanged legacy baseline, privacy, ledger and integration protections.
+
+```bash
+GIT_OPTIONAL_LOCKS=0 ruby .hid/tests/architecture_review10_test.rb --name /review10/
+GIT_OPTIONAL_LOCKS=0 ruby .hid/tests/typed_operational_fact_test.rb
+GIT_OPTIONAL_LOCKS=0 ruby .hid/tests/authority_domain_test.rb
+GIT_OPTIONAL_LOCKS=0 ruby .hid/tests/validator_test.rb
+GIT_OPTIONAL_LOCKS=0 ruby .hid/scripts/validate.rb
+git diff --check
+git diff --cached --check
+```
+
+The complete HID suite includes realistic positive and negative Git lifecycles.
+All operational writes in these tests are confined to disposable repositories.
+The real control ledger and `.hid/events.jsonl` must remain unchanged. Current
+candidate approval remains absent; tests do not manufacture real authority.
+
 ## Regression Cases
 
 The standard-library Minitest suite covers:

@@ -8,7 +8,7 @@ gate result, validation count, or next action.
 
 ## Purpose
 
-HID v0.0.9 is a bounded machine-readable observation layer. It captures facts
+HID v0.0.10 is a bounded machine-readable observation layer. It captures facts
 needed to study a future control plane while the canonical IAMINE workflow,
 Architecture, QA, roadmaps, and explicit human gates retain all authority.
 
@@ -246,6 +246,62 @@ identity verified by Git. A valid past merge is not erased by a later denial.
 Post-merge validation must precede Architecture closure and bind that same
 integration artifact. The realistic temporary-repository E2E, not the synthetic
 invariant fixtures, is the operational-readiness regression.
+
+## Typed Facts And Authority Domains
+
+Architecture Review #10 reproduced a cross-domain P1 in v0.0.9: human-event
+validation returned before checking an extra `outcome`, while GateProjection
+selected raw payloads by `outcome.gate`. A human denial could therefore invent
+review or validation results, even without evidence. Five such records could
+unlock a capsule and a later human merge decision.
+
+v0.0.10 closes that route without changing the ledger protocol. Event type
+selects a fixed authority domain in `AuthorityDomains`, not an event-supplied
+domain or a gate label. `OperationalFacts` validates the complete payload before
+constructing a detached, recursively frozen `OperationalFact` with feature,
+subject, domain, gate, result, phase, authority, evidence and source event.
+
+| Gate | Required authority kind | Canonical event |
+| --- | --- | --- |
+| architecture | REVIEW_VERDICT | architecture_approved / architecture_changes_required |
+| implementation | LIFECYCLE_FACT | implementation_completed |
+| local_validation | VALIDATION_RESULT | validation_passed / validation_failed |
+| architecture_checkpoint | REVIEW_VERDICT | architecture_approved / architecture_changes_required |
+| field_qa | QA_RESULT | field_qa_passed / field_qa_blocked |
+| final_review | REVIEW_VERDICT | architecture_approved / architecture_changes_required |
+| human_merge | HUMAN_DECISION | human_authorization |
+| merged | INTEGRATION_FACT | merged |
+| post_merge_validation | VALIDATION_RESULT | post_merge_validation_passed / validation_failed |
+| closure | LIFECYCLE_FACT | feature_closed |
+
+Initial Architecture and final review remain separate phases under the actual
+canonical Architecture mandate. The current policy does not define a human
+development-authorization event; `human_authorization` is exclusively a human
+merge decision. No generic IAM/RBAC or additional human gate is introduced.
+`human_decision_requested` has domain `CAPSULE_REQUEST` and emits no gate result.
+
+Top-level payloads are discriminated allowlists. Only operational outcomes may
+carry `outcome`; only human decisions may carry `authorization`/`capsule_id`;
+only capsule requests may carry `capsule`; only merge facts may carry
+`integration`. Nested authorization, outcome, evidence, artifact and capsule
+fields are also bounded allowlists. Extra `domain`, `authority_kind`,
+`review_type`, `review_phase`, `verdict`, `validation_result`, `qa_result` or
+contradictory `result` fields cannot override canonical semantics. Innocuous
+metadata remains non-authoritative and subject to the existing privacy policy.
+
+The writer validates these contracts before compare-and-swap. Projection
+independently normalizes raw input, verifies Git artifact identity, and selects
+only typed facts matching the expected domain, gate, feature and subject.
+Ledger ordering and latest-result rules then operate on those facts. Lifecycle
+projection uses typed facts as well; existing exact Git integration invariants
+remain unchanged. Additional policy gates require an explicit compatible domain;
+minimum constitutional domains cannot be weakened.
+
+All 59 baseline records and `HID-EVENT-0060` remain unmodified history. Legacy
+schemas normalize to no new operational fact, rather than being guessed into a
+privileged domain. This implementation does not persist real prerequisite,
+review or human-authorization events. It requires a new exact-candidate review
+and human decision before any integration.
 
 ## Evidence Integrity
 

@@ -33,20 +33,21 @@ human_gates:
   human_merge:
     action: merge
     artifact_bound: true
+    authority_kind: HUMAN_DECISION
 
 operational_policy:
-  version: "0.0.9"
+  version: "0.0.10"
   legacy_runtime_fields: non_authoritative
   gate_authorities:
-    architecture: {kind: review, phase: development_authorization, mandate: iamine-architecture}
-    implementation: {kind: implementation, phase: implementation, mandate: iamine-development}
-    local_validation: {kind: validation, phase: local_validation, mandate: iamine-development}
-    architecture_checkpoint: {kind: review, phase: architecture_checkpoint, mandate: iamine-architecture}
-    field_qa: {kind: validation, phase: field_qa, mandate: iamine-qa}
-    final_review: {kind: review, phase: final_review, mandate: iamine-architecture}
-    merged: {kind: integration, phase: merged, mandate: iamine-merge-owner}
-    post_merge_validation: {kind: validation, phase: post_merge_validation, mandate: iamine-qa}
-    closure: {kind: review, phase: closure, mandate: iamine-architecture}
+    architecture: {kind: review, authority_kind: REVIEW_VERDICT, phase: development_authorization, mandate: iamine-architecture}
+    implementation: {kind: implementation, authority_kind: LIFECYCLE_FACT, phase: implementation, mandate: iamine-development}
+    local_validation: {kind: validation, authority_kind: VALIDATION_RESULT, phase: local_validation, mandate: iamine-development}
+    architecture_checkpoint: {kind: review, authority_kind: REVIEW_VERDICT, phase: architecture_checkpoint, mandate: iamine-architecture}
+    field_qa: {kind: validation, authority_kind: QA_RESULT, phase: field_qa, mandate: iamine-qa}
+    final_review: {kind: review, authority_kind: REVIEW_VERDICT, phase: final_review, mandate: iamine-architecture}
+    merged: {kind: integration, authority_kind: INTEGRATION_FACT, phase: merged, mandate: iamine-merge-owner}
+    post_merge_validation: {kind: validation, authority_kind: VALIDATION_RESULT, phase: post_merge_validation, mandate: iamine-qa}
+    closure: {kind: review, authority_kind: LIFECYCLE_FACT, phase: closure, mandate: iamine-architecture}
   mandates:
     iamine-architecture:
       actor_types: [agent, human]

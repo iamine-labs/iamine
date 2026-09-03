@@ -18,12 +18,15 @@ module Hid
 
     def initialize(feature, events, project, current:, git:)
       @feature, @events, @project, @current, @git = feature, events, project, current, git
-      @facts = OperationalFacts.new(project)
+      @facts = OperationalFacts.new(project, git: git)
+      # Normalize at this boundary too; callers cannot bypass the writer and
+      # make a raw payload authoritative merely by choosing outcome.gate.
+      @event_facts = events.map { |event| @facts.build(event) }
     end
 
     def run(lifecycle: true)
       failures = policy_failures + capsule_failures
-      gates = nonhuman_gates(@events)
+      gates = nonhuman_gates(@event_facts)
       gates["human_merge"] = human_outcome(gates)
       eligibility = eligibility_for(gates)
       state, action = state_action(gates)
@@ -37,7 +40,7 @@ module Hid
       end
       result = {"gates" => gates, "state" => state, "next_action" => action,
                 "human_gate_eligibility" => eligibility, "failures" => failures}
-      result = LifecycleProjection.new(self, @feature, @events, @project, @current, @git).apply(result) if lifecycle
+      result = LifecycleProjection.new(self, @feature, @events, @project, @current, @git, facts: @event_facts).apply(result) if lifecycle
       result["warnings"] = legacy_mismatches(result)
       result
     end
@@ -50,26 +53,24 @@ module Hid
       self.class.new(@feature, events, @project, current: @current, git: @git).run(lifecycle: false)
     end
 
-    def current_event?(event)
-      @facts.operational?(event) && event["feature"] == @feature["id"] &&
-        @facts.same_artifact?(event["artifact"], @current)
+    def current_fact?(fact)
+      fact && fact.feature == @feature["id"] && @facts.same_artifact?(fact.subject, @current)
     end
 
     def capsule_failures
-      @events.each_with_index.each_with_object([]) do |(event, index), failures|
-        next unless current_event?(event)
+      @event_facts.each_with_index.each_with_object([]) do |(fact, index), failures|
+        next unless current_fact?(fact)
 
-        if event["event"] == "human_authorization" && event.dig("authorization", "decision") == "approved"
-          prefix = @events.take(index + 1)
-          projection = self.class.new(@feature, prefix, @project, current: @current, git: @git)
-          outcome = projection.send(:human_outcome, projection.send(:nonhuman_gates, prefix))
-          failures << "APPROVAL_CAPSULE_NOT_READY #{event['id']}" unless outcome["status"] == "passed"
+        if fact.domain == "HUMAN_DECISION" && fact.result == "approved"
+          prefix = @event_facts.take(index + 1)
+          outcome = human_outcome(nonhuman_gates(prefix), facts: prefix)
+          failures << "APPROVAL_CAPSULE_NOT_READY #{fact.id}" unless outcome["status"] == "passed"
         end
-        next unless event["event"] == "human_decision_requested"
+        next unless fact.domain == "CAPSULE_REQUEST"
 
-        eligibility = eligibility_for(nonhuman_gates(@events.take(index)))
-        unless eligibility["status"] == "READY" && event.dig("capsule", "prerequisite_events") == eligibility["prerequisite_events"]
-          failures << "APPROVAL_CAPSULE_NOT_READY #{event['id']}"
+        eligibility = eligibility_for(nonhuman_gates(@event_facts.take(index)))
+        unless eligibility["status"] == "READY" && fact.capsule["prerequisite_events"] == eligibility["prerequisite_events"]
+          failures << "APPROVAL_CAPSULE_NOT_READY #{fact.id}"
         end
       end
     end
@@ -106,19 +107,21 @@ module Hid
       value || StateInvariants::CONSTITUTIONAL_GATES.include?(gate) || policy_gates.include?(gate)
     end
 
-    def nonhuman_gates(events)
+    def nonhuman_gates(facts)
       previous_index = -1
       gate_order.reject { |gate| gate == "human_merge" }.each_with_object({}) do |gate, outcomes|
         required = requirement(gate)
         status = required.nil? ? "unknown" : required ? "pending" : "not_required"
         result = {"required" => required, "status" => status}
         if required
-          candidates = events.each_with_index.select { |event, _index| current_event?(event) && event.dig("outcome", "gate") == gate }
+          domain = @facts.expected_domain(gate)
+          candidates = facts.each_with_index.select do |fact, _index|
+            current_fact?(fact) && fact.gate == gate && fact.domain == domain && fact.domain != "HUMAN_DECISION"
+          end
           unless candidates.empty?
-            event, index = candidates.last
-            @facts.validate!(event)
-            result.merge!("status" => {"pass" => "passed", "fail" => "failed", "blocked" => "blocked"}.fetch(event.dig("outcome", "result")),
-                          "event_id" => event["id"], "event_index" => index)
+            fact, index = candidates.last
+            result.merge!("status" => {"pass" => "passed", "fail" => "failed", "blocked" => "blocked"}.fetch(fact.result),
+                          "event_id" => fact.id, "event_index" => index)
             if index <= previous_index
               result.merge!("status" => "blocked", "reason" => "GATE_ORDER_VIOLATION")
             end
@@ -143,27 +146,29 @@ module Hid
       end
     end
 
-    def human_outcome(gates)
+    def human_outcome(gates, facts: @event_facts)
       result = {"required" => true, "status" => "pending"}
       if requirement("human_merge").nil?
         return result.merge("status" => "unknown")
       end
-      decisions = @events.each_with_index.select { |event, _| current_event?(event) && event["event"] == "human_authorization" }
+      decisions = facts.each_with_index.select do |fact, _|
+        current_fact?(fact) && fact.domain == "HUMAN_DECISION" && fact.gate == "human_merge" &&
+          fact.domain == @facts.expected_domain("human_merge")
+      end
       return result if decisions.empty?
 
-      event, index = decisions.last
-      @facts.validate!(event)
-      result["event_id"] = event["id"]
-      return result.merge("status" => "failed", "reason" => "AUTHORIZATION_DENIED") if event.dig("authorization", "decision") == "denied"
+      fact, index = decisions.last
+      result["event_id"] = fact.id
+      return result.merge("status" => "failed", "reason" => "AUTHORIZATION_DENIED") if fact.result == "denied"
 
-      capsule_index = @events.take(index).rindex { |prior| current_event?(prior) && prior["event"] == "human_decision_requested" && prior["id"] == event["capsule_id"] }
+      capsule_index = facts.take(index).rindex { |prior| current_fact?(prior) && prior.domain == "CAPSULE_REQUEST" && prior.id == fact.capsule_id }
       return result.merge("status" => "blocked", "reason" => "APPROVAL_CAPSULE_NOT_READY") unless capsule_index
 
-      capsule = @events[capsule_index]
-      snapshots = [nonhuman_gates(@events.take(capsule_index)), nonhuman_gates(@events.take(index)), gates]
+      capsule = facts[capsule_index]
+      snapshots = [nonhuman_gates(facts.take(capsule_index)), nonhuman_gates(facts.take(index)), gates]
       valid = snapshots.all? do |snapshot|
         eligibility = eligibility_for(snapshot)
-        eligibility["status"] == "READY" && eligibility["prerequisite_events"] == capsule.dig("capsule", "prerequisite_events")
+        eligibility["status"] == "READY" && eligibility["prerequisite_events"] == capsule.capsule["prerequisite_events"]
       end
       result.merge("status" => valid ? "passed" : "blocked", "reason" => valid ? "exact_capsule_approval" : "AUTHORIZATION_REQUIRES_NEW_CAPSULE")
     end
