@@ -1,0 +1,131 @@
+schema_version: "0.0.2"
+id: HID-SHADOW-MODE-001
+kind: engineering_process_enabler
+title: HID Shadow Mode Operational State and Gate Authority Split
+
+canonical:
+  workflow: docs/process/iamine-canonical-workflow.md
+  roadmap: docs/roadmap/iamine-product-roadmap.md
+  architecture: docs/architecture/hid-shadow-mode.md
+  qa: docs/qa/hid-shadow-mode.md
+
+intent:
+  data_class: SOURCE
+  problem: Operational gate statuses still depend on subject manifest mutation and conflate review verdicts with human merge decisions.
+  expected_outcome: Derive gate outcomes, lifecycle state and capsule eligibility from typed external facts while preserving the exact candidate and historical human authorization.
+
+state:
+  data_class: SNAPSHOT
+  operational_authority: non_authoritative_legacy
+  current: ARCHITECTURE REVIEW REQUIRED
+  authority: development_handoff
+
+scope:
+  data_class: SOURCE
+  include:
+    - .hid/**
+    - docs/architecture/hid-shadow-mode.md
+    - docs/qa/hid-shadow-mode.md
+  exclude:
+    - product behavior and product security
+    - automatic merge, authorization, or model routing
+    - database, server, dashboard, SaaS, MCP, or orchestrator
+    - cryptographic event log and historical migration
+    - LAN-FILE-SHARE-ASSISTANT-AGENT-001 implementation
+    - Approval Capsule UI or general-purpose control-plane CLI
+
+risk:
+  data_class: SOURCE
+  level: RISK_1
+  reasons:
+    - changes remain local, process-only, and reconstructible
+    - the isolated Git ref uses compare-and-swap but remains operator-rewritable
+    - privacy false negatives and Git coupling require explicit limitations
+    - shadow observations must never become workflow authority
+
+git:
+  base_snapshot:
+    data_class: SNAPSHOT
+    branch: develop
+    head_sha: b6fad67e7af4f2e691f0334d64944ab5a3a9b1a5
+    tree: a18f150de86da34f64aae7fe06e7ed760154d44c
+    dirty: false
+    captured_at: "2026-08-30T02:55:26Z"
+  candidate_snapshot:
+    data_class: SNAPSHOT
+    purpose: validated_control_plane_ledger_separation_snapshot
+    branch: feature/hid-control-plane-ledger-001
+    head_sha: d10107517f21061293f366c09a996200f330e0df
+    tree: 57699ce5780aa02f9f4fd6a4b15791cc826b8859
+    dirty: false
+    captured_at: "2026-09-02T02:35:21Z"
+  current:
+    data_class: DERIVED
+    source: .hid/scripts/capture.rb
+
+gates:
+  architecture:
+    required: true
+    status: pending
+    reason: prior passed value had no correlated human authorization event
+  implementation:
+    required: true
+    status: pending
+  local_validation:
+    required: true
+    status: passed
+  architecture_checkpoint:
+    required: true
+    status: pending
+  field_qa:
+    required: false
+    status: not_required
+    reason: no product or platform-dependent behavior changes
+  final_review:
+    required: true
+    status: pending
+  human_merge:
+    required: true
+    status: pending
+
+evidence:
+  - HID-EVID-0001
+  - HID-EVID-0002
+  - HID-EVID-0003
+  - HID-EVID-0004
+  - HID-EVID-0005
+  - HID-EVID-0006
+  - HID-EVID-0007
+  - HID-EVID-0008
+blockers: []
+
+next_action:
+  data_class: DERIVED
+  rule: policy_control_events_git_facts
+  manual_override: null
+
+execution:
+  task_type: operational_state_gate_authority_split
+  risk: RISK_1
+  model:
+    provider: openai
+    model: not_measured
+    profile: not_measured
+  optional_telemetry:
+    complexity: medium
+    context_size: medium
+    escalation: false
+    rework: true
+  usage:
+    input_tokens: not_measured
+    output_tokens: not_measured
+    total_tokens: not_measured
+
+metrics:
+  data_class: SNAPSHOT
+  tests_executed: 90
+  test_assertions: 265
+  validation_runs: 20
+  non_product_findings_reported: 7
+  product_defects: 0
+  scope_changes: 0

@@ -1,0 +1,222 @@
+schema_version: "0.0.2"
+
+project:
+  id: iamine
+  integration_branch: develop
+
+mode:
+  name: shadow
+  enforcement: false
+  canonical_workflow_wins: true
+
+canonical_authority:
+  agent_rules: AGENTS.md
+  workflow: docs/process/iamine-canonical-workflow.md
+  context: docs/process/iamine-context-consolidation.md
+  product_roadmap: docs/roadmap/iamine-product-roadmap.md
+  agent_network_roadmap: docs/roadmap/iamine-agent-network-roadmap.md
+
+authority:
+  intent: human
+  priority: human
+  product_scope: human
+  architecture_exception: human
+  risk_acceptance: human
+  destructive_operation: human
+  merge: human
+  release: human
+  milestone_closure: human
+  public_claim: human
+  silence_is_authorization: false
+
+human_gates:
+  human_merge:
+    action: merge
+    artifact_bound: true
+    authority_kind: HUMAN_DECISION
+
+operational_policy:
+  version: "0.0.10"
+  legacy_runtime_fields: non_authoritative
+  gate_authorities:
+    architecture: {kind: review, authority_kind: REVIEW_VERDICT, phase: development_authorization, mandate: iamine-architecture}
+    implementation: {kind: implementation, authority_kind: LIFECYCLE_FACT, phase: implementation, mandate: iamine-development}
+    local_validation: {kind: validation, authority_kind: VALIDATION_RESULT, phase: local_validation, mandate: iamine-development}
+    architecture_checkpoint: {kind: review, authority_kind: REVIEW_VERDICT, phase: architecture_checkpoint, mandate: iamine-architecture}
+    field_qa: {kind: validation, authority_kind: QA_RESULT, phase: field_qa, mandate: iamine-qa}
+    final_review: {kind: review, authority_kind: REVIEW_VERDICT, phase: final_review, mandate: iamine-architecture}
+    merged: {kind: integration, authority_kind: INTEGRATION_FACT, phase: merged, mandate: iamine-merge-owner}
+    post_merge_validation: {kind: validation, authority_kind: VALIDATION_RESULT, phase: post_merge_validation, mandate: iamine-qa}
+    closure: {kind: review, authority_kind: LIFECYCLE_FACT, phase: closure, mandate: iamine-architecture}
+  mandates:
+    iamine-architecture:
+      actor_types: [agent, human]
+      roles: [architect]
+      features: [HID-SHADOW-MODE-001]
+      gates: [architecture, architecture_checkpoint, final_review, closure]
+    iamine-development:
+      actor_types: [agent, human]
+      roles: [developer]
+      features: [HID-SHADOW-MODE-001]
+      gates: [implementation, local_validation]
+    iamine-qa:
+      actor_types: [agent, human]
+      roles: [qa]
+      features: [HID-SHADOW-MODE-001]
+      gates: [field_qa, post_merge_validation]
+    iamine-merge-owner:
+      actor_types: [agent, human]
+      roles: [merge-owner]
+      features: [HID-SHADOW-MODE-001]
+      gates: [merged]
+
+state_requirements:
+  LOCAL VALIDATION PASSED:
+    gates:
+      local_validation: passed
+  ARCHITECTURE REVIEW REQUIRED:
+    gates:
+      local_validation: passed
+  READY FOR MERGE REVIEW:
+    gates:
+      local_validation: passed
+  APPROVED FOR MERGE:
+    required_gates: passed
+    gates:
+      local_validation: passed
+      final_review: passed
+      human_merge: passed
+  MERGED:
+    required_gates: passed
+    gates:
+      local_validation: passed
+      final_review: passed
+      human_merge: passed
+    events:
+      - merged
+  POST-MERGE VALIDATION:
+    required_gates: passed
+    gates:
+      local_validation: passed
+      final_review: passed
+      human_merge: passed
+    events:
+      - merged
+      - post_merge_validation_passed
+  MERGED / VALIDATED / CLOSED:
+    required_gates: passed
+    gates:
+      local_validation: passed
+      final_review: passed
+      human_merge: passed
+    events:
+      - merged
+      - post_merge_validation_passed
+      - feature_closed
+
+data_semantics:
+  SOURCE:
+    - human intent and approved scope
+    - constitutional and project requirements and reviewer mandates
+  DERIVED:
+    - current Git identity and ancestry
+    - operational gate outcomes, lifecycle state, evidence status and next action
+  SNAPSHOT:
+    - Git identity at a recorded event or validation
+    - environment and bounded test result
+
+lifecycle:
+  source: docs/process/iamine-canonical-workflow.md
+  representation: derived_at_validation
+
+failure_classes:
+  - product
+  - baseline
+  - harness
+  - infrastructure
+  - test_gap
+  - unknown
+
+risk_levels:
+  RISK_0: documentation or trivial local change
+  RISK_1: local and reconstructible change
+  RISK_2: backend, database, or API change
+  RISK_3: security, distributed runtime, or release change
+
+risk_gates:
+  enforcement: false
+  purpose: observe_required_review_and_validation
+
+model_routing:
+  enforced: false
+  must_capture_when_available:
+    - task_type
+    - risk
+    - model_or_profile_used
+  useful_if_available:
+    - complexity
+    - context_size
+    - tokens
+    - escalation
+    - rework
+  deferred:
+    - total_cost_optimizer
+    - automatic_selection
+    - historical_optimization
+  profiles:
+    - FAST
+    - BALANCED
+    - DEEP
+  mappings: not_configured
+  missing_measurement: not_measured
+
+events:
+  append_only: policy
+  verification: baseline_prefix_when_available
+  baseline_unavailable: visible_not_checked
+  baseline:
+    path: .hid/events.jsonl
+    blob: fd97049fa22d34f5903ba4a96b12f434e8f8d0cf
+    locked_after_cutover: true
+  control_ledger:
+    storage: git_ref
+    ref: refs/heads/hid/control-plane
+    events_path: events.jsonl
+    append: one_event_per_commit
+    compare_and_swap: true
+  allowed:
+    - feature_received
+    - feature_triaged
+    - scope_defined
+    - scope_changed
+    - scope_approved
+    - architecture_started
+    - architecture_approved
+    - architecture_changes_required
+    - implementation_started
+    - implementation_completed
+    - artifact_captured
+    - validation_started
+    - validation_passed
+    - validation_failed
+    - field_qa_started
+    - field_qa_passed
+    - field_qa_blocked
+    - failure_classified
+    - gate_state_corrected
+    - changes_completed
+    - replanning_requested
+    - replanning_completed
+    - human_decision_requested
+    - human_authorization
+    - merged
+    - post_merge_validation_passed
+    - feature_closed
+
+privacy:
+  policy: .hid/privacy.yaml
+  automatic_redaction: false
+
+metrics:
+  missing_value: not_measured
+  no_improvement_claims_without_evidence: true

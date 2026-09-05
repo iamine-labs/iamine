@@ -1,0 +1,102 @@
+{
+  "schema_version": "0.0.2",
+  "id": "HID-EVID-0007",
+  "feature": "HID-SHADOW-MODE-001",
+  "type": "local_validation",
+  "captured_at": "2026-09-01T05:24:58Z",
+  "artifact": {
+    "head_sha": "8b43771d2884dfe53d4d8412a28977d9c5cbac2a",
+    "tree": "be46321a8ecf1d9e1e1aa4815588661818edbd12"
+  },
+  "environment": {
+    "host_class": "local_macos",
+    "os": "macos",
+    "arch": "aarch64"
+  },
+  "execution": {
+    "commands": [
+      "git_identity_cleanliness",
+      "git_merge_tree_capability_probe",
+      "ruby_syntax",
+      "hid_full_regression_suite",
+      "deterministic_merge_tree_real_git_fixtures",
+      "canonical_integration_real_git_fixtures",
+      "event_integrity_and_lifecycle_tests",
+      "state_policy_tests",
+      "human_authority_tests",
+      "privacy_regression",
+      "evidence_regression",
+      "append_only_regression",
+      "hid_validator",
+      "yaml_safe_parse",
+      "json_parse",
+      "jsonl_line_parse",
+      "git_scope_and_whitespace",
+      "core_guard"
+    ],
+    "started_at": "2026-09-01T05:24:08Z",
+    "finished_at": "2026-09-01T05:24:58Z"
+  },
+  "coverage": {
+    "paths": [
+      ".hid/**",
+      "docs/architecture/hid-shadow-mode.md",
+      "docs/qa/hid-shadow-mode.md"
+    ],
+    "claims": [
+      "git-computed-clean-merge-tree",
+      "actual-integration-tree-exact-match",
+      "manual-topology-legitimate-tree-accepted",
+      "unauthorized-added-file-rejected",
+      "unauthorized-modification-rejected",
+      "unauthorized-deletion-rejected",
+      "merge-conflict-fails-closed",
+      "manual-conflict-resolution-rejected",
+      "merge-tree-unavailable-fails-closed",
+      "post-merge-and-closure-require-valid-merge-tree",
+      "canonical-target-candidate-and-containment-regression",
+      "prior-policy-authority-lifecycle-privacy-evidence-and-append-only-regression",
+      "process-only-scope"
+    ]
+  },
+  "dependencies": [
+    {
+      "type": "git_base",
+      "value": "b6fad67e7af4f2e691f0334d64944ab5a3a9b1a5"
+    },
+    {
+      "type": "canonical_local_branch",
+      "value": "develop"
+    },
+    {
+      "type": "git_capability",
+      "value": "git-2.50.1-merge-tree-write-tree"
+    },
+    {
+      "type": "runtime",
+      "value": "ruby-2.6.10"
+    }
+  ],
+  "validity": {
+    "artifact_bound": true,
+    "environment_bound": true
+  },
+  "result": {
+    "status": "pass",
+    "tests": {
+      "executed": 80,
+      "passed": 80,
+      "assertions": 233
+    },
+    "failures": 0
+  },
+  "failure_class": null,
+  "notes": [
+    "Field QA is not required because product and platform-dependent behavior did not change.",
+    "Git merge-tree --write-tree returned one verifiable tree SHA for a clean merge and exit status one for conflict without changing refs, index, or working tree.",
+    "Conflicts, tree mismatches, unsupported Git capability, malformed output, and command failure all fail closed.",
+    "Only local refs/heads/develop containment was verified; remote freshness remains not verified.",
+    "Human authorization remains absent and every real Human Gate remains pending.",
+    "Status is derived; the evidence-recording commit will make this record visibly stale against the later repository artifact."
+  ]
+}

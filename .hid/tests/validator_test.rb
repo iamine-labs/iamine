@@ -1,0 +1,18 @@
+# frozen_string_literal: true
+
+require_relative "append_only_git_test"
+require_relative "canonical_integration_test"
+require_relative "control_ledger_test"
+require_relative "evidence_test"
+require_relative "event_integrity_test"
+require_relative "human_authority_test"
+require_relative "merge_tree_integrity_test"
+require_relative "privacy_test"
+require_relative "state_policy_test"
+require_relative "gate_projection_test"
+require_relative "review_authority_test"
+require_relative "realistic_lifecycle_test"
+require_relative "operational_lifecycle_test"
+require_relative "architecture_review10_test"
+require_relative "typed_operational_fact_test"
+require_relative "authority_domain_test"

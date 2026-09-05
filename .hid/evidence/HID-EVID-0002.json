@@ -1,0 +1,75 @@
+{
+  "schema_version": "0.0.2",
+  "id": "HID-EVID-0002",
+  "feature": "HID-SHADOW-MODE-001",
+  "type": "local_validation",
+  "captured_at": "2026-08-30T04:41:23Z",
+  "artifact": {
+    "head_sha": "46dc4da3fc23ed9549b753ef61b4d9966bbd9110",
+    "tree": "dbf7baef30780217ba69a72f161471d2140802b2"
+  },
+  "environment": {
+    "host_class": "local_macos",
+    "os": "macos",
+    "arch": "aarch64"
+  },
+  "execution": {
+    "commands": [
+      "git_identity_cleanliness",
+      "hid_capture",
+      "hid_regression_tests",
+      "hid_validator",
+      "yaml_safe_parse",
+      "json_parse",
+      "jsonl_line_parse",
+      "git_scope_and_whitespace",
+      "staging_whitespace"
+    ],
+    "started_at": "2026-08-30T04:41:03Z",
+    "finished_at": "2026-08-30T04:41:23Z"
+  },
+  "coverage": {
+    "paths": [
+      ".hid/**",
+      "docs/architecture/hid-shadow-mode.md",
+      "docs/qa/hid-shadow-mode.md"
+    ],
+    "claims": [
+      "human-gate-event-correlation",
+      "git-capture-and-commit-tree-integrity",
+      "evidence-reference-and-staleness-classification",
+      "privacy-policy-warning-and-violation",
+      "source-derived-snapshot-semantics",
+      "append-only-status-visibility",
+      "process-only-scope"
+    ]
+  },
+  "dependencies": [
+    {
+      "type": "git_base",
+      "value": "b6fad67e7af4f2e691f0334d64944ab5a3a9b1a5"
+    },
+    {
+      "type": "runtime",
+      "value": "ruby-2.6.10"
+    }
+  ],
+  "validity": {
+    "artifact_bound": true,
+    "environment_bound": true
+  },
+  "result": {
+    "status": "pass",
+    "tests": {
+      "executed": 13,
+      "passed": 13,
+      "assertions": 18
+    },
+    "failures": 0
+  },
+  "failure_class": null,
+  "notes": [
+    "Field QA is not required because product and platform-dependent behavior did not change.",
+    "Status is derived; the evidence-recording commit will make this record visibly stale against the later repository artifact."
+  ]
+}

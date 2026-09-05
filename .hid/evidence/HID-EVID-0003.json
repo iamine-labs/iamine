@@ -1,0 +1,84 @@
+{
+  "schema_version": "0.0.2",
+  "id": "HID-EVID-0003",
+  "feature": "HID-SHADOW-MODE-001",
+  "type": "local_validation",
+  "captured_at": "2026-08-30T05:14:10Z",
+  "artifact": {
+    "head_sha": "6178d8c80ee5f4fcad1566d46c809fe454ad5f0a",
+    "tree": "96c5f0b6298ae726f4c29f035d90d8881ce0b667"
+  },
+  "environment": {
+    "host_class": "local_macos",
+    "os": "macos",
+    "arch": "aarch64"
+  },
+  "execution": {
+    "commands": [
+      "git_identity_cleanliness",
+      "hid_capture",
+      "ruby_syntax",
+      "hid_regression_tests",
+      "hid_validator",
+      "yaml_safe_parse",
+      "json_parse",
+      "jsonl_line_parse",
+      "privacy_adversarial_cases",
+      "state_gate_invariant_cases",
+      "append_only_baseline_cases",
+      "git_baseline_failure_modes",
+      "git_scope_and_whitespace",
+      "core_guard"
+    ],
+    "started_at": "2026-08-30T05:13:56Z",
+    "finished_at": "2026-08-30T05:14:10Z"
+  },
+  "coverage": {
+    "paths": [
+      ".hid/**",
+      "docs/architecture/hid-shadow-mode.md",
+      "docs/qa/hid-shadow-mode.md"
+    ],
+    "claims": [
+      "privileged-state-gate-consistency",
+      "human-gate-event-correlation-without-state-bypass",
+      "never-store-field-and-free-text-detection",
+      "prompt-and-response-content-policy",
+      "compressed-full-and-ipv4-mapped-ipv6-detection",
+      "append-only-baseline-prefix-regression",
+      "missing-local-baseline-visible-not-checked",
+      "local-tracking-ref-freshness-not-verified",
+      "evidence-reference-and-staleness-classification",
+      "process-only-scope"
+    ]
+  },
+  "dependencies": [
+    {
+      "type": "git_base",
+      "value": "b6fad67e7af4f2e691f0334d64944ab5a3a9b1a5"
+    },
+    {
+      "type": "runtime",
+      "value": "ruby-2.6.10"
+    }
+  ],
+  "validity": {
+    "artifact_bound": true,
+    "environment_bound": true
+  },
+  "result": {
+    "status": "pass",
+    "tests": {
+      "executed": 32,
+      "passed": 32,
+      "assertions": 46
+    },
+    "failures": 0
+  },
+  "failure_class": null,
+  "notes": [
+    "Field QA is not required because product and platform-dependent behavior did not change.",
+    "The local origin/develop tracking ref is inspected without fetching and its remote freshness is not verified.",
+    "Status is derived; the evidence-recording commit will make this record visibly stale against the later repository artifact."
+  ]
+}
