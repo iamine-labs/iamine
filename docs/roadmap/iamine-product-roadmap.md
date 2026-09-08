@@ -141,8 +141,16 @@ exact-merge quality gate with zero required failures. No product feature is
 currently authorized. `LAN-FILE-SHARE-ASSISTANT-AGENT-001` remains the next
 proposed candidate and is not authorized by this transition.
 
-`HID-SHADOW-MODE-001` is an active parallel engineering-process experiment. It
-does not change the product sequence or authorize the next product feature.
+`HID-SHADOW-MODE-001` is `MERGED / VALIDATED / CLOSED`: integration `50c0a311`
+and Control Ledger closure event `HID-EVENT-0072` establish its operational
+closure. This documentary reconciliation does not create another lifecycle
+event or change the product sequence. The human adopted
+[HID Phase 0 exit contract version 1.0](../architecture/hid-phase0-exit-contract.md)
+on `2026-09-07`, then separately declared HID Phase 0 - Control Core `CLOSED`
+after confirming P0-01 through P0-08. The
+[exit evidence and decision package](../qa/hid-phase0-exit-evidence.md)
+records the satisfied criteria and limits. This is not a product-milestone
+closure and does not authorize a pilot or next product feature.
 
 The broader v0.9 operational stability claim still requires the operational
 target: 10-50 nodes, 3-10 operators, multiple physical networks, and two to
@@ -162,7 +170,7 @@ or handed off to the orchestrator.
 | IAMINE-CANONICAL-ROADMAP-RECONCILIATION-001 | CLOSED | Architecture / product roadmap | Reconciled the current v0.11.2 status, preserved existing milestone numbering, registered proposed GUI/CLI and Security/CI tracks, and corrected superseded QA evidence without changing runtime behavior; merge `e761b0a`, post-merge quality gate PASS WITH WARNINGS. |
 | IAMINE-PRODUCT-TRACKS-ROADMAP-RECONCILIATION-001 | CLOSED | Architecture / product roadmap | Reconciled internal assurance, public/internal governance, dashboard parallelism, shared-model installation direction, and deferred personal/family product tracks without runtime changes, milestone renumbering, or bulk authorization; implementation `44d34f7`, merge `b577073`, post-merge quality gate PASS WITH WARNINGS. |
 | IAMINE-CURRENT-STATE-ROADMAP-RECONCILIATION-001 | CLOSED | Architecture / product roadmap | Reconciled the merged Node Doctor and Local Control API catalog evidence, removed stale active-state claims, and identified the next sequential candidates without bulk authorization; implementation `705dea0`, merge `c60da20`, post-merge quality gate PASS WITH WARNINGS. |
-| HID-SHADOW-MODE-001 | ACTIVE | Architecture / engineering process | Introduce bounded machine-readable shadow observations for future features while canonical workflow, roadmap, QA, Architecture, and human gates retain authority; process metadata only, no product behavior or product feature authorization. |
+| HID-SHADOW-MODE-001 | CLOSED | Architecture / engineering process | Process-only Shadow Mode completed its real lifecycle in integration `50c0a311`; post-merge validation `HID-EVENT-0071` and closure `HID-EVENT-0072` are verified in the separate Control Ledger. HID Phase 0 - Control Core is CLOSED under the separately approved v1.0 exit contract; no product behavior change or pilot authorization. |
 
 ## Milestone 0 - v0.7 Foundations
 
