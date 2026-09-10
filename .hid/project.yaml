@@ -52,22 +52,22 @@ operational_policy:
     iamine-architecture:
       actor_types: [agent, human]
       roles: [architect]
-      features: [HID-SHADOW-MODE-001]
+      features: [HID-SHADOW-MODE-001, SECRETS-SCAN-CI-GATE-REPAIR-001]
       gates: [architecture, architecture_checkpoint, final_review, closure]
     iamine-development:
       actor_types: [agent, human]
       roles: [developer]
-      features: [HID-SHADOW-MODE-001]
+      features: [HID-SHADOW-MODE-001, SECRETS-SCAN-CI-GATE-REPAIR-001]
       gates: [implementation, local_validation]
     iamine-qa:
       actor_types: [agent, human]
       roles: [qa]
-      features: [HID-SHADOW-MODE-001]
+      features: [HID-SHADOW-MODE-001, SECRETS-SCAN-CI-GATE-REPAIR-001]
       gates: [field_qa, post_merge_validation]
     iamine-merge-owner:
       actor_types: [agent, human]
       roles: [merge-owner]
-      features: [HID-SHADOW-MODE-001]
+      features: [HID-SHADOW-MODE-001, SECRETS-SCAN-CI-GATE-REPAIR-001]
       gates: [merged]
 
 state_requirements:
