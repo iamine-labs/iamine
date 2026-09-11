@@ -69,14 +69,48 @@ class HidRealisticLifecycleTest < HidTestCase
       private_event = operational_event("architecture", artifact: candidate)
       private_event["metadata"] = {"prompt" => "never-store"}
       legacy = human_event(premature, artifact: candidate).merge("schema_version" => "0.0.2")
-      [premature, human_event(premature, artifact: candidate), bad_role, bad_evidence, false_tree, private_event, legacy].each do |event|
-        assert_raises(Hid::ValidationError) { validator.append_control_event(event) }
+      cases = [
+        [premature, /APPROVAL_CAPSULE_NOT_READY/],
+        [human_event(premature, artifact: candidate), /APPROVAL_CAPSULE_NOT_READY/],
+        [bad_role, /OPERATIONAL_FACT_INVALID actor not authorized by mandate/],
+        [bad_evidence, /OPERATIONAL_FACT_INVALID evidence feature\/artifact mismatch/],
+        [false_tree, /OPERATIONAL_ARTIFACT_INVALID Git cannot verify the exact outcome artifact/],
+        [private_event, /privacy_violation prohibited_payload .*metadata\.prompt/],
+        [legacy, /new control events require operational schema 0\.0\.3/]
+      ]
+      cases.each do |event, reason|
+        error = assert_raises(Hid::ValidationError) { validator.append_control_event(event) }
+        assert_match reason, error.message
         assert_nil ledger.head
         assert_equal initial, subject_identity(root)
       end
       orphan = operational_event("closure", artifact: candidate)
-      assert_raises(Hid::ValidationError) { validator.append_control_event(orphan) }
+      error = assert_raises(Hid::ValidationError) { validator.append_control_event(orphan) }
+      assert_equal "LIFECYCLE_ORDER_VIOLATION post-merge fact not applicable", error.message
       assert_nil ledger.head
+    end
+  end
+
+  # The existing authority-domain matrix also uses this fixture. Pin its
+  # rejection reasons here without changing the out-of-scope test file.
+  def test_human_outcome_matrix_rejects_reserved_fields_for_the_expected_reason
+    with_real_workspace do |root, validator, git|
+      candidate = git.capture
+      initial = subject_identity(root)
+      refs = git!(root, "for-each-ref", "--format=%(refname) %(objectname)")
+      ledger = Hid::ControlLedger.new(root, ref: "refs/heads/hid/control-plane", events_path: "events.jsonl")
+      assert_equal "request_architecture_review", projection(validator)["next_action"]
+      %w[approved denied].each do |decision|
+        %w[final_review local_validation field_qa].each do |gate|
+          event = human_event({"id" => "HID-EVENT-0099"}, artifact: candidate, decision: decision)
+          event["outcome"] = {"gate" => gate, "result" => "pass"}
+          error = assert_raises(Hid::ValidationError) { validator.append_control_event(event) }
+          assert_equal "OPERATIONAL_FACT_INVALID reserved or unknown event fields", error.message, "#{decision}/#{gate}"
+          assert_nil ledger.head
+          assert_equal initial, subject_identity(root)
+          assert_equal refs, git!(root, "for-each-ref", "--format=%(refname) %(objectname)")
+        end
+      end
     end
   end
 
@@ -104,7 +138,10 @@ class HidRealisticLifecycleTest < HidTestCase
       object_path = File.expand_path(git!(source, "rev-parse", "--git-path", "objects").strip, source)
       File.write(File.join(root, ".git/objects/info/alternates"), "#{object_path}\n")
       FileUtils.cp_r(File.join(source, ".hid"), root)
-      references = state_project.fetch("canonical_authority").values + operational_feature.fetch("canonical").values
+      manifests = Dir[File.join(root, ".hid/features/*.yaml")].sort.map do |path|
+        YAML.safe_load(File.read(path), permitted_classes: [], aliases: false)
+      end
+      references = state_project.fetch("canonical_authority").values + manifests.flat_map { |manifest| manifest.fetch("canonical").values }
       references.uniq.each do |relative|
         FileUtils.mkdir_p(File.dirname(File.join(root, relative)))
         FileUtils.cp(File.join(source, relative), File.join(root, relative))

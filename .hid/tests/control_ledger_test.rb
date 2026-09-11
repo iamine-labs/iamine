@@ -62,9 +62,19 @@ class HidControlLedgerTest < HidTestCase
       event = authorization_record(60, candidate, decision: "denied").merge("schema_version" => "0.0.3")
       event["metadata"] = {"prompt" => "should-never-be-stored"}
 
-      assert_raises(Hid::ValidationError) { validator.append_control_event(event) }
+      error = assert_raises(Hid::ValidationError) { validator.append_control_event(event) }
+      assert_match(/privacy_violation prohibited_payload .*metadata\.prompt/, error.message)
       assert_nil ledger.head
       assert_equal "", git!(root, "status", "--porcelain=v1")
+    end
+  end
+
+  def test_workspace_git_preserves_unknown_object_rejection
+    with_hid_workspace do |_root, _validator, candidate, git|
+      assert_equal [:valid, candidate.fetch(:tree)], git.commit_tree(candidate.fetch(:head))
+      assert_equal [:invalid, nil], git.commit_tree("0" * 40)
+      assert_equal :invalid, git.artifact_status("0" * 40, "0" * 40)
+      assert_equal :invalid, git.artifact_status(candidate.fetch(:head), "0" * 40)
     end
   end
 
@@ -200,22 +210,25 @@ class HidControlLedgerTest < HidTestCase
       git!(root, "checkout", "-q", "-b", "feature/test")
 
       candidate = git_artifact(root)
-      manifest = YAML.safe_load(File.read(File.join(root, ".hid/features/HID-SHADOW-MODE-001.yaml")), permitted_classes: [], aliases: false)
-      snapshot = manifest.dig("git", "candidate_snapshot")
+      source_git = Hid::GitFacts.new(source_root)
+      trees = Dir[File.join(root, ".hid/features/*.yaml")].sort.to_h do |path|
+        manifest = YAML.safe_load(File.read(path), permitted_classes: [], aliases: false)
+        snapshot = manifest.fetch("git").fetch("candidate_snapshot")
+        head = snapshot.fetch("head_sha")
+        actual = source_git.commit_tree(head)
+        raise "fixture snapshot is not verifiable: #{manifest.fetch('id')}" unless actual == [:valid, snapshot.fetch("tree")]
+
+        [head, actual]
+      end
+      trees[candidate.fetch(:head)] = [:valid, candidate.fetch(:tree)]
       current = {
         "branch" => "feature/test",
         "head_sha" => candidate.fetch(:head),
         "tree" => candidate.fetch(:tree),
         "dirty" => false
       }
-      git = FakeGit.new(
-        {
-          snapshot.fetch("head_sha") => [:valid, snapshot.fetch("tree")],
-          candidate.fetch(:head) => [:valid, candidate.fetch(:tree)]
-        },
-        current: current
-      )
-      yield root, Hid::Validator.new(root, git: git), candidate
+      git = FakeGit.new(trees, current: current)
+      yield root, Hid::Validator.new(root, git: git), candidate, git
     end
   end
 
