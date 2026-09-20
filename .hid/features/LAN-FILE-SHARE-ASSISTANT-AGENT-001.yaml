@@ -1,0 +1,123 @@
+schema_version: "0.0.2"
+id: LAN-FILE-SHARE-ASSISTANT-AGENT-001
+kind: product_agent_feature
+title: LAN File Share Assistant functional agent registration
+
+canonical:
+  workflow: docs/process/iamine-canonical-workflow.md
+  roadmap: docs/roadmap/iamine-agent-network-roadmap.md
+  architecture: docs/architecture/lan-file-share-assistant-agent.md
+  qa: docs/qa/lan-file-share-assistant-agent.md
+
+intent:
+  data_class: SOURCE
+  problem: An operator who already selected a file share cannot verify a declared read-only boundary from a redacted summary without risking discovery, mounting, or file access.
+  expected_outcome: A bounded local_readonly review of operator-supplied redacted share metadata that refuses or hands off every filesystem, network, authentication, and execution request.
+
+state:
+  data_class: SNAPSHOT
+  operational_authority: non_authoritative_legacy
+  current: PROPOSED
+  authority: human_onboarding_preparation_only
+
+scope:
+  data_class: SOURCE
+  include:
+    - agents/official/lan-file-share-assistant package and its seven referenced policy documents
+    - iamine-node/src/lan_file_share_assistant_agent bounded local_readonly agent module
+    - bounded CLI wiring for the agent task class, limited to the architecture contract allow-list
+    - the feature architecture contract, the QA plan, and bounded roadmap status notes
+    - feature registration and mandate extension only under separate governance authority
+  exclude:
+    - filesystem discovery, file access, share mounting, and share probing
+    - network connections, transfers, and protocol clients
+    - authentication material and any private key handling
+    - shell execution, child processes, and privilege expansion
+    - shared runtime, iamine-agent-runtime, iamine-agents, and iamine-core changes
+    - the shared official_agent_execution composition
+    - model execution, scheduling, transport, worker lifecycle, and inference behavior
+    - dashboard, client, packaging, registry, marketplace, and public beta behavior
+    - Development authorization, implementation, and merge for this subject
+
+risk:
+  data_class: SOURCE
+  level: RISK_2
+  reasons:
+    - the future implementation adds a new executable local agent surface and CLI task type to the node backend
+    - field QA is required on all six canonical roles before merge review
+    - this registration grants no execution, review, or merge authority
+    - no shared runtime, network, filesystem, or private key surface is authorized
+
+git:
+  base_snapshot:
+    data_class: SNAPSHOT
+    branch: develop
+    head_sha: 79def1d1707441e72a086033f4b6401af9b05ecb
+    tree: 1312781bc0416b460163bca5b4baed97302b1221
+    dirty: false
+    captured_at: "2026-09-18T01:37:00Z"
+  candidate_snapshot:
+    data_class: SNAPSHOT
+    purpose: clean_published_base_observed_before_onboarding_edits_not_an_implemented_or_authorized_subject
+    branch: develop
+    head_sha: 79def1d1707441e72a086033f4b6401af9b05ecb
+    tree: 1312781bc0416b460163bca5b4baed97302b1221
+    dirty: false
+    captured_at: "2026-09-18T01:37:00Z"
+  current:
+    data_class: DERIVED
+    source: .hid/scripts/capture.rb
+
+gates:
+  architecture:
+    required: true
+    status: pending
+    reason: architecture analysis and the functional contract are recorded, but no lifecycle approval is recorded
+  implementation:
+    required: true
+    status: pending
+  local_validation:
+    required: true
+    status: pending
+  architecture_checkpoint:
+    required: true
+    status: pending
+  field_qa:
+    required: true
+    status: pending
+    reason: the feature adds executable agent and CLI behavior, so the six canonical field roles are required
+  final_review:
+    required: true
+    status: pending
+  human_merge:
+    required: true
+    status: pending
+
+evidence: []
+blockers:
+  - Independent Architecture approval and Development authorization for this subject are outstanding
+  - HID mandate coverage for this feature is recorded; no lifecycle outcome event has been recorded for this subject
+  - No implementation branch, candidate, or reviewed artifact exists for this subject
+  - field_qa is required for the future implementation on all six canonical roles
+
+next_action:
+  data_class: DERIVED
+  rule: policy_control_events_git_facts
+  manual_override: null
+
+execution:
+  task_type: lan_file_share_assistant_architecture_contract_and_hid_onboarding
+  risk: RISK_2
+  model:
+    provider: not_measured
+    model: not_measured
+    profile: not_measured
+  optional_telemetry:
+    complexity: not_measured
+    context_size: not_measured
+    escalation: false
+    rework: false
+  usage:
+    input_tokens: not_measured
+    output_tokens: not_measured
+    total_tokens: not_measured

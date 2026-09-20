@@ -682,6 +682,28 @@ Not all functional P0 agents should be implemented in parallel at the start.
 and remains `PROPOSED` until Architecture records its exact base, scope,
 dependencies, out-of-scope list, and Development authorization.
 
+For that row, A6 Option A and the functional Architecture contract are now
+recorded, so its bounded state is:
+
+```text
+architecture analysis: COMPLETE
+operating-mode decision: A6 OPTION A / local_readonly
+functional architecture contract: RECORDED
+development authorization: NOT AUTHORIZED
+implementation: NOT STARTED
+```
+
+`local_readonly` supersedes the skeleton's historical `local_planning`
+reservation for this functional row and `lan_readonly` remains deferred. The
+closed skeleton artifacts and their evidence are unchanged. The row stays
+`PROPOSED` because the current roadmap vocabulary has no state for an
+architecture contract that is recorded but not authorized for development.
+The contract is
+[docs/architecture/lan-file-share-assistant-agent.md](../architecture/lan-file-share-assistant-agent.md)
+and its QA plan and evidence template is
+[docs/qa/lan-file-share-assistant-agent.md](../qa/lan-file-share-assistant-agent.md).
+Field QA is required for the future implementation.
+
 Each P0 agent must pass positive capability tests, negative capability tests,
 scope boundary tests, permission boundary tests, handoff tests, unsafe action
 tests, prompt injection tests, role confusion tests, privacy redaction tests,

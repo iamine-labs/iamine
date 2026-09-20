@@ -139,7 +139,16 @@ local validation, exact-candidate Field QA on Mac, TS140, and all four
 Proxmox/R5500 guests, Architecture approval, controlled integration, and an
 exact-merge quality gate with zero required failures. No product feature is
 currently authorized. `LAN-FILE-SHARE-ASSISTANT-AGENT-001` remains the next
-proposed candidate and is not authorized by this transition.
+proposed candidate and is not authorized by this transition. Its A6 Option A
+operating-mode decision (`local_readonly`) and functional Architecture contract
+are recorded in
+[docs/architecture/lan-file-share-assistant-agent.md](../architecture/lan-file-share-assistant-agent.md),
+with the QA plan in
+[docs/qa/lan-file-share-assistant-agent.md](../qa/lan-file-share-assistant-agent.md):
+architecture analysis is `COMPLETE`, the contract is `RECORDED`, Development is
+`NOT AUTHORIZED`, implementation is `NOT STARTED`, and the row stays
+`PROPOSED`. This records no Development authorization and no lifecycle
+approval.
 
 `HID-SHADOW-MODE-001` is `MERGED / VALIDATED / CLOSED`: integration `50c0a311`
 and Control Ledger closure event `HID-EVENT-0072` establish its operational
