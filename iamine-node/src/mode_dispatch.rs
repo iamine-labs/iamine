@@ -1,10 +1,10 @@
 use crate::node_modes::NodeMode;
 use crate::{
     cluster_stress_cli::run_cluster_stress_cli, code_quality::run_code_quality_checks,
-    hardware_cli::run_hardware_cli, lan_node_doctor::run_lan_node_doctor,
-    model_selector_cli::ModelSelectorCLI, node_config_schema::run_node_config_cli,
-    node_doctor_agent::run_node_doctor_agent_cli, node_identity::NodeIdentity,
-    node_identity_cli::run_node_identity_cli, prompt_task_label,
+    hardware_cli::run_hardware_cli, lan_file_share_assistant_agent::run_lan_file_share_agent_cli,
+    lan_node_doctor::run_lan_node_doctor, model_selector_cli::ModelSelectorCLI,
+    node_config_schema::run_node_config_cli, node_doctor_agent::run_node_doctor_agent_cli,
+    node_identity::NodeIdentity, node_identity_cli::run_node_identity_cli, prompt_task_label,
     quality_gate::run_release_validation, regression_runner::run_default_regression_suite,
     reporter_agent::run_reporter_agent_cli, security_checks::run_security_checks, tasks_cli,
     user_diagnostics_support::run_support_cli, worker_lifecycle::run_worker_lifecycle_cli,
@@ -38,6 +38,7 @@ pub(crate) fn is_control_plane_mode(mode: &NodeMode) -> bool {
             | NodeMode::Support { .. }
             | NodeMode::AgentNodeDoctor { .. }
             | NodeMode::AgentReporter { .. }
+            | NodeMode::AgentLanFileShare { .. }
             | NodeMode::LanDoctor { .. }
             | NodeMode::WorkerLifecycle { .. }
     )
@@ -46,7 +47,9 @@ pub(crate) fn is_control_plane_mode(mode: &NodeMode) -> bool {
 pub(crate) fn requires_log_free_dispatch(mode: &NodeMode) -> bool {
     matches!(
         mode,
-        NodeMode::AgentNodeDoctor { .. } | NodeMode::AgentReporter { .. }
+        NodeMode::AgentNodeDoctor { .. }
+            | NodeMode::AgentReporter { .. }
+            | NodeMode::AgentLanFileShare { .. }
     )
 }
 
@@ -147,6 +150,11 @@ pub(crate) async fn handle_pre_network_mode(
 
         NodeMode::AgentReporter { command } => {
             run_reporter_agent_cli(command)?;
+            Ok(true)
+        }
+
+        NodeMode::AgentLanFileShare { command } => {
+            run_lan_file_share_agent_cli(command)?;
             Ok(true)
         }
 
@@ -562,6 +570,9 @@ mod tests {
         assert!(is_control_plane_mode(&NodeMode::AgentReporter {
             command: reporter_command(),
         }));
+        assert!(is_control_plane_mode(&NodeMode::AgentLanFileShare {
+            command: lan_file_share_command(),
+        }));
         assert!(!is_control_plane_mode(&NodeMode::Worker));
     }
 
@@ -578,6 +589,9 @@ mod tests {
         }));
         assert!(requires_log_free_dispatch(&NodeMode::AgentReporter {
             command: reporter_command(),
+        }));
+        assert!(requires_log_free_dispatch(&NodeMode::AgentLanFileShare {
+            command: lan_file_share_command(),
         }));
         assert!(!requires_log_free_dispatch(&NodeMode::LanDoctor {
             json: true,
@@ -598,6 +612,14 @@ mod tests {
         crate::reporter_agent::ReporterCliCommand {
             package_root: "agents/official/reporter".to_string(),
             evidence: Vec::new(),
+            json: true,
+        }
+    }
+
+    fn lan_file_share_command() -> crate::lan_file_share_assistant_agent::LanFileShareCliCommand {
+        crate::lan_file_share_assistant_agent::LanFileShareCliCommand {
+            package_root: "agents/official/lan-file-share-assistant".to_string(),
+            shares: Vec::new(),
             json: true,
         }
     }

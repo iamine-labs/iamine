@@ -38,6 +38,7 @@ mod infer_observability;
 mod infer_retry;
 mod infer_runtime;
 mod infer_watchdog;
+mod lan_file_share_assistant_agent;
 mod lan_inference_cli;
 mod lan_node_doctor;
 mod lan_observability;

@@ -1,6 +1,7 @@
 use crate::cli_flags::{parse_optional_string_flag, parse_optional_u32_flag};
 use crate::cluster_stress::ClusterStressConfig;
 use crate::hardware_cli::HardwareCliCommand;
+use crate::lan_file_share_assistant_agent::LanFileShareCliCommand;
 use crate::lan_inference_cli::{lan_usage, parse_lan_infer_args};
 use crate::node_config_schema::{node_config_usage, NodeConfigCommand};
 use crate::node_identity_cli::{node_identity_usage, NodeIdentityCommand};
@@ -235,7 +236,10 @@ pub(crate) fn parse_args_from(raw_args: Vec<String>) -> Result<NodeMode, String>
             Some("reporter") => Ok(NodeMode::AgentReporter {
                 command: ReporterCliCommand::from_args(&args[3..])?,
             }),
-            _ => Err("Uso: iamine-node agents node-doctor --package-root PATH [--json]\n  iamine-node agents reporter --package-root PATH [--evidence SOURCE:STATUS:CLAIM]... [--json]".to_string()),
+            Some("lan-file-share") => Ok(NodeMode::AgentLanFileShare {
+                command: LanFileShareCliCommand::from_args(&args[3..])?,
+            }),
+            _ => Err("Uso: iamine-node agents node-doctor --package-root PATH [--json]\n  iamine-node agents reporter --package-root PATH [--evidence SOURCE:STATUS:CLAIM]... [--json]\n  iamine-node agents lan-file-share --package-root PATH [--share SHARE:STATUS:CLAIM]... [--json]".to_string()),
         },
 
         Some("nodes") => Ok(NodeMode::Nodes),
@@ -426,6 +430,51 @@ mod tests {
         .expect_err("unknown reporter argument should fail");
         assert_eq!(unknown, "Argumento Reporter no reconocido: --raw-log");
         assert!(!unknown.contains("/private/log"));
+    }
+
+    #[test]
+    fn cli_parses_lan_file_share_agent_as_typed_control_plane_mode() {
+        let parsed = parse_args_from(args(&[
+            "iamine-node",
+            "agents",
+            "lan-file-share",
+            "--package-root=agents/official/lan-file-share-assistant",
+            "--share",
+            "documents_share:observed:readonly_boundary",
+            "--json",
+        ]));
+        assert!(parsed.is_ok());
+        let Some(mode) = parsed.ok() else {
+            return;
+        };
+
+        assert!(matches!(
+            mode,
+            NodeMode::AgentLanFileShare { command }
+                if command.package_root == "agents/official/lan-file-share-assistant"
+                    && command.shares.len() == 1
+                    && command.json
+        ));
+    }
+
+    #[test]
+    fn cli_lan_file_share_requires_package_root_and_rejects_unknown_arguments() {
+        let missing = parse_args_from(args(&["iamine-node", "agents", "lan-file-share"]))
+            .expect_err("package root should be required");
+        assert_eq!(missing, "Falta --package-root PATH");
+
+        let unknown = parse_args_from(args(&[
+            "iamine-node",
+            "agents",
+            "lan-file-share",
+            "--package-root",
+            "agents/official/lan-file-share-assistant",
+            "--mount",
+            "/private/share",
+        ]))
+        .expect_err("unknown lan-file-share argument should fail");
+        assert_eq!(unknown, "Argumento LAN file share no reconocido: --mount");
+        assert!(!unknown.contains("/private/share"));
     }
 
     #[test]
