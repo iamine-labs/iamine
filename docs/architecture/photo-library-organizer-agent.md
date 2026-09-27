@@ -333,12 +333,37 @@ agents/official/photo-library-organizer/**
 iamine-node/src/photo_library_organizer_agent/**
 iamine-node/src/cli.rs
 iamine-node/src/mode_dispatch.rs
+iamine-node/src/node_modes.rs      (FUTURE_IMPLEMENTATION / REQUIRED_MODIFY: add the NodeMode::AgentPhotoLibraryOrganizer variant and its mode_label arm required by the already-approved bounded CLI entry)
 iamine-node/src/usage.rs
 iamine-node/src/main.rs   (module declaration and wiring only)
 ```
 
 This list is a prospective implementation allow-list for a future authorized
 feature. It is not authorized by this document.
+
+`iamine-node/src/node_modes.rs` is recorded here as an allow-list completion
+only. `NodeMode` is defined in that file, so the already-approved bounded CLI
+mode entry cannot be implemented without one `NodeMode` variant and one
+`mode_label` arm there. Recording this path:
+
+- corrects an omitted implementation path only;
+- does not change the A7 Option A decision;
+- does not widen functional scope;
+- grants no new authority;
+- grants no filesystem authority;
+- grants no network authority;
+- grants no mutation authority;
+- grants no model/inference authority;
+- introduces no shared-runtime change;
+- does not authorize implementation;
+- does not authorize Field QA;
+- does not authorize merge of implementation.
+
+No code file has been modified by this contract. Option A remains
+`DECLARED_METADATA_ONLY` with `local_readonly`, task
+`photo_library_organizer_review`, operation
+`review_declared_photo_inventory`, and filesystem, network, mutation, and
+model/inference authority `NONE`.
 
 ## Forbidden Scope
 
