@@ -30,7 +30,7 @@ last closed sequential Agent Network feature: REPORTER-AGENT-001
 reporter merge: 8f5d4fb2470406b946e76da585e2ea4a55199f70
 reporter merge tree: c97274f3ace6af6735e349257f05ed1607f2a132
 active roadmap feature: none
-next sequential product candidate: LAN-FILE-SHARE-ASSISTANT-AGENT-001 (PROPOSED)
+next sequential product candidate: PHOTO-LIBRARY-ORGANIZER-AGENT-001 (PROPOSED / NOT AUTHORIZED)
 previous gate state: V0.11.2 CLOSED / POST-MERGE PASS
 runtime regression baseline: 149/149
 agents regression baseline: 109/109
@@ -678,31 +678,36 @@ six roles, plus the 1118-test workspace gate on TS140.
 Not all functional P0 agents should be implemented in parallel at the start.
 `NODE-DOCTOR-AGENT-001` is the closed complete reference vertical.
 `REPORTER-AGENT-001` is the second closed functional vertical.
-`LAN-FILE-SHARE-ASSISTANT-AGENT-001` is the next sequential product candidate
-and remains `PROPOSED` until Architecture records its exact base, scope,
-dependencies, out-of-scope list, and Development authorization.
-
-For that row, A6 Option A and the functional Architecture contract are now
-recorded, so its bounded state is:
+`LAN-FILE-SHARE-ASSISTANT-AGENT-001` is the third closed functional vertical and
+is `MERGED / VALIDATED / CLOSED`: the exact candidate `457370e7` / tree
+`4b68b5ab` passed the architecture checkpoint, six-role Field QA and the final
+review, was published as the controlled `--no-ff` merge `2232f83b` into
+`develop`, and then passed post-merge validation. Its lifecycle record is:
 
 ```text
-architecture analysis: COMPLETE
-operating-mode decision: A6 OPTION A / local_readonly
-functional architecture contract: RECORDED
-development authorization: NOT AUTHORIZED
-implementation: NOT STARTED
+architecture: HID-EVENT-0085
+implementation: HID-EVENT-0086
+local validation: HID-EVENT-0087
+architecture checkpoint: HID-EVENT-0088
+field QA: HID-EVENT-0089 (six roles, PASS)
+final review: HID-EVENT-0090
+human authorization: HID-EVENT-0092
+merge: 2232f83bb1fc6c4a0bf53e77d6050b1bfc2570db
+post-merge validation: HID-EVENT-0094
+closure: HID-EVENT-0095
+state: MERGED / VALIDATED / CLOSED
 ```
 
 `local_readonly` supersedes the skeleton's historical `local_planning`
 reservation for this functional row and `lan_readonly` remains deferred. The
-closed skeleton artifacts and their evidence are unchanged. The row stays
-`PROPOSED` because the current roadmap vocabulary has no state for an
-architecture contract that is recorded but not authorized for development.
-The contract is
+closed skeleton artifacts and their evidence are unchanged. The contract is
 [docs/architecture/lan-file-share-assistant-agent.md](../architecture/lan-file-share-assistant-agent.md)
-and its QA plan and evidence template is
+and its completed QA record is
 [docs/qa/lan-file-share-assistant-agent.md](../qa/lan-file-share-assistant-agent.md).
-Field QA is required for the future implementation.
+
+The next sequential P0 functional candidate is
+`PHOTO-LIBRARY-ORGANIZER-AGENT-001`, which is `PROPOSED` and `NOT AUTHORIZED`
+by this reconciliation.
 
 Each P0 agent must pass positive capability tests, negative capability tests,
 scope boundary tests, permission boundary tests, handoff tests, unsafe action

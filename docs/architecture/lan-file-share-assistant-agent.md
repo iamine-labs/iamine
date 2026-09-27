@@ -14,19 +14,27 @@ data class: SOURCE
 architecture analysis: COMPLETE
 A6 Option A human decision: RECORDED
 functional architecture contract: RECORDED
-architecture lifecycle approval: NOT RECORDED
-development authorization: NOT AUTHORIZED
-implementation: NOT STARTED
-field QA required: YES, for the future implementation
+architecture lifecycle approval: HID-EVENT-0085
+architecture checkpoint: HID-EVENT-0088
+final review: HID-EVENT-0090
+development authorization: RECORDED (HID-EVENT-0085)
+implementation: HID-EVENT-0086
+local validation: HID-EVENT-0087
+field QA: HID-EVENT-0089 (six roles, PASS)
+human merge authorization: HID-EVENT-0092
+merge: 2232f83bb1fc6c4a0bf53e77d6050b1bfc2570db
+post-merge validation: HID-EVENT-0094
+closure: HID-EVENT-0095
+feature state: MERGED / VALIDATED / CLOSED
 ```
 
 This document records the functional contract only: problem, scope, contracts,
-ownership, restrictions, non-regression rules, and the future implementation
-allow-list. Recording a contract is not a lifecycle decision. This document
-does not approve Architecture, does not authorize Development, does not create a
-branch, does not create a source candidate, and does not open any operational
-gate. A later, separate Architecture verdict is required before Development may
-be authorized.
+ownership, restrictions, non-regression rules, and the implementation
+allow-list. Recording a contract is not a lifecycle decision, and this document
+does not itself approve Architecture or authorize Development. That later,
+separate Architecture verdict was recorded as `HID-EVENT-0085`, and the
+subsequent checkpoint, final review, human merge authorization, merge,
+post-merge validation and closure facts are recorded in the Control Ledger.
 
 The contract is owned by Architecture. Development may not widen it, and no
 prompt, agent output, operator confirmation, roadmap text, or role instruction
@@ -36,12 +44,14 @@ may expand it.
 
 Milestone `v0.12.0` - P0 Official Agents. The closed verticals
 `NODE-DOCTOR-AGENT-001` and `REPORTER-AGENT-001` precede this row, and
-`LAN-FILE-SHARE-ASSISTANT-AGENT-001` is the next sequential product candidate.
+`LAN-FILE-SHARE-ASSISTANT-AGENT-001` is `MERGED / VALIDATED / CLOSED`.
 
 Skeleton contract `LAN-FILE-SHARE-ASSISTANT-AGENT-001-SKELETON` is `CLOSED`.
-The functional row remains `PROPOSED`. The current roadmap vocabulary has no
-state for "architecture contract recorded but Development not authorized", so
-`PROPOSED` is preserved rather than replacing it with an invented state.
+The functional row is `MERGED / VALIDATED / CLOSED`: candidate `457370e7`,
+tree `4b68b5ab`, controlled `--no-ff` merge `2232f83b`, six-role Field QA
+`HID-EVENT-0089`, post-merge validation `HID-EVENT-0094`, and closure
+`HID-EVENT-0095`. The next sequential P0 functional candidate is
+`PHOTO-LIBRARY-ORGANIZER-AGENT-001`, which is `NOT AUTHORIZED`.
 
 Preserved, unmodified skeleton documents:
 
@@ -205,7 +215,9 @@ Required properties:
 - closed enums for every token field, so unknown values fail closed;
 - deduplication of repeated tokens;
 - rejection of free-form text, raw paths, hostnames, addresses, identifiers,
-  credentials, logs, prompts, and unredacted evidence;
+  credentials, logs, prompts, and unredacted evidence inside every supplied
+  metadata token, while `--package-root PATH` and `--share SHARE:STATUS:CLAIM`
+  remain the bounded, strictly validated CLI surface described above;
 - explicit, distinguishable states for supplied, missing, and unsupported
   metadata;
 - deterministic structured parsing followed by independent re-parsing inside
@@ -374,8 +386,8 @@ The implementation reuses existing runtime support without modifying it:
 
 ```text
 reused and unmodified:
-  iamine-agent-runtime::ExecutionMode::LocalReadonly
-  iamine-agent-runtime::ResourceOperatingMode::LocalReadonly
+  iamine-agents::ExecutionMode::LocalReadonly (owned by iamine-agents, consumed by iamine-agent-runtime)
+  iamine-agents::ResourceOperatingMode::LocalReadonly (owned by iamine-agents, consumed by iamine-agent-runtime)
   iamine-node::official_agent_execution (shared local-readonly composition)
   iamine-agents scope, permission, and manifest validation owners
 
@@ -420,10 +432,12 @@ docs/roadmap/iamine-product-roadmap.md
 .hid/features/LAN-FILE-SHARE-ASSISTANT-AGENT-001.yaml
 ```
 
-CONDITIONAL (requires separate authority in its own iteration):
+CONDITIONAL (requires separate governance authority in its own iteration):
 
 ```text
-.hid/project.yaml (mandate feature lists only; never inside Development)
+.hid/project.yaml mandate feature lists only — the subject-registration extension
+recorded by the governance onboarding iteration; never part of Development and
+never a product-code change
 .hid/tests/** (only if a governance iteration explicitly admits them)
 ```
 
@@ -445,8 +459,10 @@ scripts/quality-gate.sh
 iamine-node/src/cluster_registry.rs
 scheduler, P2P, PubSub, worker lifecycle, model selection, inference,
 model storage, reputation, reward, and settlement code
-.hid/project.yaml
 ```
+
+`.hid/project.yaml` mandate feature-list extensions are governed by the
+CONDITIONAL entry above; they are never product-code or Development edits.
 
 `iamine-node/src/main.rs` must remain wiring only. `cluster_registry.rs` must
 not grow. No unrelated refactor, formatting sweep, dependency change, or
@@ -454,8 +470,8 @@ cleanup may ride along.
 
 ## Test Architecture
 
-Test classes required before the future implementation can claim local
-validation:
+Test classes the implementation must cover to claim local validation (all
+delivered and exercised in the recorded candidate):
 
 ```text
 package manifest and all seven referenced metadata documents
@@ -568,24 +584,32 @@ recording role. It establishes no lifecycle fact by itself.
 architecture analysis: COMPLETE
 A6 Option A human decision: RECORDED
 architecture contract: RECORDED
-architecture lifecycle approval: NOT RECORDED
-development authorization: NOT AUTHORIZED
-implementation: NOT STARTED
+architecture lifecycle approval: HID-EVENT-0085
+architecture checkpoint: HID-EVENT-0088
+final review: HID-EVENT-0090
+development authorization: RECORDED (HID-EVENT-0085)
+implementation: HID-EVENT-0086
+local validation: HID-EVENT-0087
+field QA: HID-EVENT-0089 (six roles, PASS)
+human merge authorization: HID-EVENT-0092
+merge: 2232f83bb1fc6c4a0bf53e77d6050b1bfc2570db
+post-merge validation: HID-EVENT-0094
+closure: HID-EVENT-0095
+feature state: MERGED / VALIDATED / CLOSED
 ```
 
-If the canonical workflow requires an explicit human Architecture decision
-before Development authorization, that decision is still outstanding:
-
-```text
-HUMAN_ARCHITECTURE_APPROVAL_REQUIRED
-```
+The explicit Architecture decision this document previously awaited is recorded
+as `HID-EVENT-0085`; the checkpoint, final review, human merge authorization,
+merge, post-merge validation and closure facts are recorded in the Control
+Ledger.
 
 The HEC Adapter Contract v1.0 remains frozen and productive IAMINE HEC
 execution is not authorized. This feature carries no HEC requirement, creates
 no HEC schema, does not modify Hermes, and does not block MAIN work on HEC.
 
-Next candidate recorded by the roadmap after this row:
+Next candidate recorded by the roadmap after this row (not authorized by this
+reconciliation):
 
 ```text
-PHOTO-LIBRARY-ORGANIZER-AGENT-001
+PHOTO-LIBRARY-ORGANIZER-AGENT-001 (PROPOSED / NOT AUTHORIZED)
 ```

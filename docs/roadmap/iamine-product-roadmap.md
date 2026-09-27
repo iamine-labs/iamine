@@ -137,18 +137,19 @@ merge `c60da20` after its exact-merge quality gate passed.
 `REPORTER-AGENT-001` closed in merge `8f5d4fb` after bounded implementation,
 local validation, exact-candidate Field QA on Mac, TS140, and all four
 Proxmox/R5500 guests, Architecture approval, controlled integration, and an
-exact-merge quality gate with zero required failures. No product feature is
-currently authorized. `LAN-FILE-SHARE-ASSISTANT-AGENT-001` remains the next
-proposed candidate and is not authorized by this transition. Its A6 Option A
-operating-mode decision (`local_readonly`) and functional Architecture contract
-are recorded in
+exact-merge quality gate with zero required failures.
+`LAN-FILE-SHARE-ASSISTANT-AGENT-001` is `MERGED / VALIDATED / CLOSED`:
+candidate `457370e7`, tree `4b68b5ab`, controlled `--no-ff` merge `2232f83b`
+into `develop`, six-role Field QA `HID-EVENT-0089`, post-merge validation
+`HID-EVENT-0094`, and closure `HID-EVENT-0095`, all bound to the exact candidate
+and published merge artifact. Its A6 Option A operating-mode decision
+(`local_readonly`) and functional Architecture contract remain recorded in
 [docs/architecture/lan-file-share-assistant-agent.md](../architecture/lan-file-share-assistant-agent.md),
-with the QA plan in
-[docs/qa/lan-file-share-assistant-agent.md](../qa/lan-file-share-assistant-agent.md):
-architecture analysis is `COMPLETE`, the contract is `RECORDED`, Development is
-`NOT AUTHORIZED`, implementation is `NOT STARTED`, and the row stays
-`PROPOSED`. This records no Development authorization and no lifecycle
-approval.
+with the completed QA record in
+[docs/qa/lan-file-share-assistant-agent.md](../qa/lan-file-share-assistant-agent.md).
+No product feature is currently authorized: `PHOTO-LIBRARY-ORGANIZER-AGENT-001`
+is the next sequential P0 functional candidate and is `NOT AUTHORIZED` by this
+reconciliation, and the v0.12.0 P0 milestone QA gate is not triggered.
 
 `HID-SHADOW-MODE-001` is `MERGED / VALIDATED / CLOSED`: integration `50c0a311`
 and Control Ledger closure event `HID-EVENT-0072` establish its operational

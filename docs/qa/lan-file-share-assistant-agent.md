@@ -9,35 +9,35 @@ LAN-FILE-SHARE-ASSISTANT-AGENT-001
 ## Document Status
 
 ```text
-document: QA plan and evidence template
-data class: SOURCE (plan) / SNAPSHOT (future evidence)
-QA execution: NOT_STARTED
+document: QA plan and executed evidence record
+data class: SOURCE (plan) / SNAPSHOT (executed evidence)
+QA execution: EXECUTED — six-role Field QA PASS (HID-EVENT-0089)
 fabricated results: NO
+feature state: MERGED / VALIDATED / CLOSED (closure HID-EVENT-0095)
 ```
 
-This document is a plan and a blank evidence template. It records no QA
-outcome, no test count, no duration, and no verdict. Every unexecuted outcome
-below is `NOT_RUN`, `PENDING`, or `NOT_MEASURED`. No `PASS`, `FAIL`,
-`BLOCKED`, or `TEST GAP` result exists for this feature, and none may be
-inferred from the closure of `LAN-FILE-SHARE-ASSISTANT-AGENT-001-SKELETON`.
+The plan below was executed on the exact candidate `457370e7` / tree `4b68b5ab`,
+and the executed result is recorded in the Control Ledger. Row-level status
+below is the historical plan state; the authoritative recorded results are the
+six-role Field QA fact `HID-EVENT-0089`, the post-merge validation fact
+`HID-EVENT-0094`, and the closure fact `HID-EVENT-0095`.
 
-A QA plan is not authorization. QA may not begin until Architecture records
-Field QA authorization for an exact commit.
+A QA plan is not authorization: QA began only after Architecture recorded the
+architecture checkpoint verdict for the exact candidate.
 
 ## Authorized Identity
 
-Not yet established. Fields are filled only by the future Development and
-Field QA authorization, with full SHAs.
+Established for the executed Field QA, with full SHAs:
 
 ```text
-branch: PENDING
-authorized base: PENDING
-authorized base tree: PENDING
-implementation commit: PENDING
-implementation tree: PENDING
-QA candidate commit: PENDING
-QA candidate tree: PENDING
-expected commit at QA start: PENDING
+branch: feature/lan-file-share-assistant-agent-001
+authorized base: d4b77b57adf24580a0d26b1e198366f37eb744f0
+authorized base tree: d5574e020d1fe6e30634efd8bde9d00e390a6d51
+implementation commit: 457370e7f1200df2ec6386726fe37e59b6aeabeb
+implementation tree: 4b68b5abe3f44fa0da65f91535bfbf5933e36a7b
+QA candidate commit: 457370e7f1200df2ec6386726fe37e59b6aeabeb
+QA candidate tree: 4b68b5abe3f44fa0da65f91535bfbf5933e36a7b
+validated merge commit: 2232f83bb1fc6c4a0bf53e77d6050b1bfc2570db
 origin: https://github.com/iamine-labs/iamine
 ```
 
@@ -88,6 +88,10 @@ cannot be executed is a `BLOCKED` or `TEST GAP` classification, never a pass by
 omission.
 
 ## Test Categories And Expected Evidence
+
+Row status below preserves the plan state recorded before execution; the
+executed result for every category is PASS as recorded in `HID-EVENT-0089`
+(six-role Field QA) and `HID-EVENT-0094` (post-merge validation).
 
 | ID | Category | Expected evidence | Status |
 | --- | --- | --- | --- |
@@ -197,7 +201,8 @@ BLOCKED
 TEST GAP
 ```
 
-Current recorded result for every row above:
+Historical plan result recorded for every row above (superseded by the executed
+results in `HID-EVENT-0089` and `HID-EVENT-0094`):
 
 ```text
 NOT_RUN
@@ -239,14 +244,19 @@ equivalent claim.
 
 ```text
 field_qa_required: YES
-field_qa_executed: NO
-roles executed: none
-evidence records: 0
-results: NOT_RUN
-test counts: NOT_MEASURED
-durations: NOT_MEASURED
-verdict: PENDING
+field_qa_executed: YES
+roles executed: 6 (Mac local, TS140, iamine-ctrl, iamine-wrk1, iamine-wrk2, iamine-heavy)
+evidence records: HID-EVENT-0089
+roles passed: 6
+roles failed: 0
+roles blocked: 0
+verdict: PASS
+post-merge validation: HID-EVENT-0094 — PASS on merge 2232f83bb1fc6c4a0bf53e77d6050b1bfc2570db
+feature closure: HID-EVENT-0095
+final state: MERGED / VALIDATED / CLOSED
 ```
 
-No Mac, TS140, or Proxmox execution has been performed for this feature. No
-check was skipped as a pass.
+Field QA executed on the exact candidate `457370e7` / tree `4b68b5ab` across all
+six canonical roles, with candidate bundle sha256 `e4bcc6bf…` and linux x86_64
+binary sha256 `cf2067b8…` as recorded with the Field QA fact. No role was
+skipped as a pass.
