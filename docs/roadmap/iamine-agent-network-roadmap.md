@@ -709,6 +709,30 @@ The next sequential P0 functional candidate is
 `PHOTO-LIBRARY-ORGANIZER-AGENT-001`, which is `PROPOSED` and `NOT AUTHORIZED`
 by this reconciliation.
 
+`PHOTO-LIBRARY-ORGANIZER-AGENT-001` remains `PROPOSED`: its A7 Option A and the
+functional Architecture contract are now recorded, so its bounded state is:
+
+```text
+architecture analysis: COMPLETE
+operating-mode decision: A7 OPTION A / local_readonly
+functional architecture contract: RECORDED
+architecture lifecycle event: NOT YET RECORDED
+development authorization: NOT AUTHORIZED
+implementation: NOT STARTED
+```
+
+`local_readonly` supersedes the skeleton's historical `local_planning`
+reservation for this functional row, and `local_photo_library_readonly` remains
+deferred. The closed skeleton artifacts and their evidence are unchanged. The
+row stays `PROPOSED` because the current roadmap vocabulary has no state for an
+architecture contract that is recorded but not authorized for development and
+not yet recorded as a lifecycle event. The contract is
+[docs/architecture/photo-library-organizer-agent.md](../architecture/photo-library-organizer-agent.md)
+and its QA plan is
+[docs/qa/photo-library-organizer-agent.md](../qa/photo-library-organizer-agent.md).
+Field QA is required for the future implementation. Recording this contract
+grants no Development authority.
+
 Each P0 agent must pass positive capability tests, negative capability tests,
 scope boundary tests, permission boundary tests, handoff tests, unsafe action
 tests, prompt injection tests, role confusion tests, privacy redaction tests,
