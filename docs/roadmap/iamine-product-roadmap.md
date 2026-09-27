@@ -150,6 +150,18 @@ with the completed QA record in
 No product feature is currently authorized: `PHOTO-LIBRARY-ORGANIZER-AGENT-001`
 is the next sequential P0 functional candidate and is `NOT AUTHORIZED` by this
 reconciliation, and the v0.12.0 P0 milestone QA gate is not triggered.
+`PHOTO-LIBRARY-ORGANIZER-AGENT-001` remains `PROPOSED`: its A7 Option A
+operating-mode decision (`local_readonly`) and functional Architecture contract
+are recorded in
+[docs/architecture/photo-library-organizer-agent.md](../architecture/photo-library-organizer-agent.md),
+with the QA plan in
+[docs/qa/photo-library-organizer-agent.md](../qa/photo-library-organizer-agent.md):
+architecture analysis is `COMPLETE`, the contract is `RECORDED`, Development is
+`NOT AUTHORIZED`, and implementation is `NOT STARTED`. Architecture/HID
+materialization does not grant Development authority and records no lifecycle
+approval. `HOME-NETWORK-ASSISTANT-AGENT-001`,
+`WINDOWS-OPTIMIZER-ASSISTANT-AGENT-001`, and the v0.12.0 P0 milestone QA gate
+are not advanced by this reconciliation.
 
 `HID-SHADOW-MODE-001` is `MERGED / VALIDATED / CLOSED`: integration `50c0a311`
 and Control Ledger closure event `HID-EVENT-0072` establish its operational

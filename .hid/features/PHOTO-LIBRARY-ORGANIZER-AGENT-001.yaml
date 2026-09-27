@@ -1,0 +1,127 @@
+schema_version: "0.0.2"
+id: PHOTO-LIBRARY-ORGANIZER-AGENT-001
+kind: product_agent_feature
+title: Photo Library Organizer functional agent registration
+
+canonical:
+  workflow: docs/process/iamine-canonical-workflow.md
+  roadmap: docs/roadmap/iamine-agent-network-roadmap.md
+  architecture: docs/architecture/photo-library-organizer-agent.md
+  qa: docs/qa/photo-library-organizer-agent.md
+
+intent:
+  data_class: SOURCE
+  problem: An operator who already scoped a photo-library organization question cannot obtain a bounded, non-destructive review of a declared redacted inventory without exposing the photo library to the agent.
+  expected_outcome: A bounded local_readonly review of operator-supplied redacted inventory metadata that refuses or hands off every filesystem, media, metadata-extraction, and execution request.
+
+state:
+  data_class: SNAPSHOT
+  operational_authority: non_authoritative_legacy
+  current: PROPOSED
+  authority: human_onboarding_preparation_only
+
+scope:
+  data_class: SOURCE
+  include:
+    - the feature architecture contract, the QA plan, and bounded roadmap status notes
+    - feature registration and mandate extension only under separate governance authority
+    - agents/official/photo-library-organizer package and its seven referenced policy documents
+    - iamine-node/src/photo_library_organizer_agent bounded local_readonly agent module
+    - bounded CLI wiring for the agent task class, limited to the architecture contract allow-list
+  exclude:
+    - filesystem discovery, enumeration, reads, traversal, and symlink following
+    - image bytes, thumbnails, and media hashes
+    - EXIF, XMP, IPTC, GPS, face, person, location, OCR, vision, and embedding analysis
+    - duplicate detection by image content
+    - file modification, transfer, recovery, renaming, deletion, tagging, and transcoding
+    - cloud, LAN share, camera, device, account, and credential handling
+    - shell execution, child processes, and privilege expansion
+    - shared runtime, iamine-agent-runtime, iamine-agents, and iamine-core changes
+    - the shared official_agent_execution composition
+    - model execution, scheduling, transport, worker lifecycle, and inference behavior
+    - dashboard, client, packaging, registry, marketplace, and public beta behavior
+    - Development authorization, implementation, and merge for this subject
+
+risk:
+  data_class: SOURCE
+  level: RISK_2
+  reasons:
+    - the future implementation adds a new executable local agent surface and CLI task type to the node backend
+    - field QA will be required before merge review
+    - this registration grants no execution, review, or merge authority
+    - no shared runtime, network, filesystem, model, or media surface is authorized
+
+git:
+  base_snapshot:
+    data_class: SNAPSHOT
+    branch: develop
+    head_sha: 7180092a0a61e355e61a64f898cb449268aa4215
+    tree: 1eaab0e7ea2198029d8e12683e00d307b3f833e0
+    dirty: false
+    captured_at: "2026-09-27T02:27:13Z"
+  candidate_snapshot:
+    data_class: SNAPSHOT
+    purpose: clean_published_base_observed_before_onboarding_edits_not_an_implemented_or_authorized_subject
+    branch: develop
+    head_sha: 7180092a0a61e355e61a64f898cb449268aa4215
+    tree: 1eaab0e7ea2198029d8e12683e00d307b3f833e0
+    dirty: false
+    captured_at: "2026-09-27T02:27:13Z"
+  current:
+    data_class: DERIVED
+    source: .hid/scripts/capture.rb
+
+gates:
+  architecture:
+    required: true
+    status: pending
+    reason: the functional architecture contract is recorded, but no lifecycle approval is recorded
+  implementation:
+    required: true
+    status: pending
+  local_validation:
+    required: true
+    status: pending
+  architecture_checkpoint:
+    required: true
+    status: pending
+  field_qa:
+    required: true
+    status: pending
+    reason: the feature will add executable agent and CLI behavior, so field QA is required before merge review
+  final_review:
+    required: true
+    status: pending
+  human_merge:
+    required: true
+    status: pending
+
+evidence: []
+blockers:
+  - The functional architecture contract is materialized, but no Architecture lifecycle event has been recorded for this subject
+  - Development authorization and the implementation branch are outstanding
+  - HID mandate coverage for this feature is recorded; no lifecycle outcome event has been recorded for this subject
+  - No implementation branch, candidate, or reviewed artifact exists for this subject
+  - field_qa is required for the future implementation
+
+next_action:
+  data_class: DERIVED
+  rule: policy_control_events_git_facts
+  manual_override: null
+
+execution:
+  task_type: photo_library_organizer_architecture_contract_and_hid_onboarding
+  risk: RISK_2
+  model:
+    provider: not_measured
+    model: not_measured
+    profile: not_measured
+  optional_telemetry:
+    complexity: not_measured
+    context_size: not_measured
+    escalation: false
+    rework: false
+  usage:
+    input_tokens: not_measured
+    output_tokens: not_measured
+    total_tokens: not_measured
