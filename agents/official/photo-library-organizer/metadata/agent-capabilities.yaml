@@ -1,0 +1,45 @@
+schema: iamine.agent.capabilities.draft-0.1
+package_id: iamine.beta.photo-library-organizer
+capability_id: photo_library_organizer_review
+capability_version: 0.1.0
+declared_task_types:
+  - photo_library_organizer_review
+operations:
+  - review_declared_photo_inventory
+  - explain_declared_organization_boundary
+  - highlight_missing_or_unsafe_inventory_metadata
+  - suggest_non_destructive_organization_steps
+input_classes:
+  - operator_declared_photo_inventory_summary
+  - redacted_photo_inventory_summary
+  - redacted_organization_intent_summary
+output_classes:
+  - photo_library_organization_review
+  - blocked_action_report
+  - clarification_request
+  - handoff_request
+  - refusal_report
+execution_modes:
+  - local_readonly
+limitations:
+  - no_credential_handling
+  - no_filesystem_access
+  - no_media_decoding
+  - no_metadata_extraction
+  - no_network_access
+  - no_photo_discovery
+  - no_raw_text
+risk_profile:
+  labels:
+    - bounded_readonly
+    - operator_review_required
+    - pre_filesystem
+  expands_scope: false
+  grants_permissions: false
+  claims_scheduler_priority: false
+  claims_trust_or_reputation: false
+review:
+  requires_human_review: true
+  self_approval_allowed: false
+  evidence:
+    - review/capability-review.md

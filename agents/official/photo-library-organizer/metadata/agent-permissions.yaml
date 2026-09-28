@@ -1,0 +1,96 @@
+schema: iamine.agent.permissions.draft-0.1
+package_id: iamine.beta.photo-library-organizer
+permission_profile_id: photo_library_organizer_local_readonly_permissions
+permission_profile_version: 0.1.0
+default_policy: deny
+requested_categories:
+  - local_readonly
+  - redacted_status_summary
+forbidden_categories:
+  - arbitrary_shell
+  - credential_access
+  - destructive_write
+  - mainnet_operation
+  - marketplace_publish
+  - model_download
+  - model_load
+  - network_mutation
+  - private_key_access
+  - service_mutation
+  - unrestricted_filesystem
+  - vm_or_container_mutation
+  - wallet_access
+blocked_actions:
+  - access_private_keys
+  - access_wallet
+  - collect_credentials
+  - create_albums
+  - decode_media
+  - delete_files
+  - detect_content_duplicates
+  - discover_photo_libraries
+  - download_models
+  - load_models
+  - mainnet_operation
+  - mutate_network
+  - mutate_vm_or_container
+  - parse_exif_metadata
+  - publish_agent
+  - read_gps_coordinates
+  - read_photo_file_contents
+  - read_private_files
+  - relay_photo_metadata
+  - rename_files
+  - restart_services
+  - reward_operation
+  - run_ocr
+  - run_shell
+  - run_vision_inference
+  - settlement_operation
+  - tag_files
+  - token_operation
+  - transfer_photos_to_cloud
+  - write_files
+confirmation_requirements:
+  requires_confirmation_for: []
+  must_refuse_without_confirmation:
+    - any_network_mutation
+    - any_private_data_request
+    - any_shell_action
+    - any_write_action
+data_access:
+  allowed:
+    - redacted_status_summary
+  forbidden:
+    - credentials
+    - disk_uuids
+    - exif_metadata
+    - face_metadata
+    - full_hostnames
+    - gps_coordinates
+    - home_directories
+    - image_bytes
+    - ip_addresses
+    - mac_addresses
+    - machine_ids
+    - media_hashes
+    - private_keys
+    - private_paths
+    - personal_paths
+    - raw_media_metadata
+    - raw_private_logs
+    - raw_process_lists
+    - serial_numbers
+    - thumbnails
+    - usernames
+    - wallet_keys
+network_access:
+  mode: none
+filesystem_access:
+  mode: package_relative_review_only
+process_access:
+  mode: none
+escalation:
+  on_forbidden_request: return_to_orchestrator
+review:
+  requires_human_review: true

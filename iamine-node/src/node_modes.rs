@@ -3,6 +3,7 @@ use crate::hardware_cli::HardwareCliCommand;
 use crate::lan_file_share_assistant_agent::LanFileShareCliCommand;
 use crate::node_config_schema::NodeConfigCommand;
 use crate::node_identity_cli::NodeIdentityCommand;
+use crate::photo_library_organizer_agent::PhotoLibraryCliCommand;
 use crate::reporter_agent::ReporterCliCommand;
 use crate::user_diagnostics_support::SupportCommand;
 use crate::worker_lifecycle::WorkerLifecycleCommand;
@@ -104,6 +105,9 @@ pub(crate) enum NodeMode {
     AgentLanFileShare {
         command: LanFileShareCliCommand,
     },
+    AgentPhotoLibraryOrganizer {
+        command: PhotoLibraryCliCommand,
+    },
     LanDoctor {
         json: bool,
         network: bool,
@@ -196,6 +200,7 @@ pub(crate) fn mode_label(mode: &NodeMode) -> &'static str {
         NodeMode::AgentNodeDoctor { .. } => "agent-node-doctor",
         NodeMode::AgentReporter { .. } => "agent-reporter",
         NodeMode::AgentLanFileShare { .. } => "agent-lan-file-share",
+        NodeMode::AgentPhotoLibraryOrganizer { .. } => "agent-photo-library-organizer",
         NodeMode::LanDoctor { .. } => "lan-doctor",
         NodeMode::Capabilities => "capabilities",
         NodeMode::Nodes => "nodes",

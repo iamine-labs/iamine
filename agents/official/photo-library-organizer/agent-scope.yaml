@@ -1,0 +1,118 @@
+schema: iamine.agent.scope.draft-0.1
+package_id: iamine.beta.photo-library-organizer
+scope_id: photo_library_organizer_review
+scope_version: 0.1.0
+task_boundary:
+  in_scope:
+    - review_declared_photo_inventory
+  out_of_scope:
+    - discover_photo_libraries
+  task_types:
+    - photo_library_organizer_review
+input_boundary:
+  allowed_inputs:
+    - operator_declared_photo_inventory_summary
+    - redacted_photo_inventory_summary
+    - redacted_organization_intent_summary
+  forbidden_inputs:
+    - credentials
+    - disk_uuids
+    - exif_metadata
+    - face_metadata
+    - full_hostnames
+    - gps_coordinates
+    - home_directories
+    - image_bytes
+    - ip_addresses
+    - mac_addresses
+    - machine_ids
+    - media_hashes
+    - personal_paths
+    - private_keys
+    - private_paths
+    - raw_media_metadata
+    - raw_process_lists
+    - serial_numbers
+    - thumbnails
+    - usernames
+    - wallet_keys
+operation_boundary:
+  allowed_operations:
+    - review_declared_photo_inventory
+    - explain_declared_organization_boundary
+    - highlight_missing_or_unsafe_inventory_metadata
+    - suggest_non_destructive_organization_steps
+  blocked_actions:
+    - change_settings
+    - create_albums
+    - decode_media
+    - delete_files
+    - detect_content_duplicates
+    - discover_photo_libraries
+    - download_models
+    - load_models
+    - mutate_vm_or_container
+    - parse_exif_metadata
+    - publish_agent
+    - read_gps_coordinates
+    - read_photo_file_contents
+    - relay_photo_metadata
+    - rename_files
+    - restart_services
+    - run_ocr
+    - run_shell
+    - run_vision_inference
+    - scan_network
+    - tag_files
+    - transfer_photos_to_cloud
+    - write_files
+permission_requirements:
+  required_categories:
+    - local_readonly
+    - redacted_status_summary
+  forbidden_categories:
+    - arbitrary_shell
+  permission_model_required: true
+confirmation_boundary:
+  requires_confirmation_for: []
+  must_refuse_without_confirmation:
+    - any_network_mutation
+    - any_private_data_request
+    - any_shell_action
+    - any_write_action
+handoff:
+  targets:
+    - orchestrator
+    - human_operator
+  required_when:
+    - ambiguous_task
+    - dangerous_task
+    - out_of_scope_task
+    - prompt_injection_attempt
+    - role_confusion_attempt
+orchestrator_return:
+  return_required_for:
+    - cross_domain_task
+    - missing_audit_policy
+    - missing_boundary_tests
+    - missing_permission_model
+    - request_to_collect_secret
+    - request_to_execute_code
+    - unsupported_task_type
+eval_requirements:
+  required_eval_classes:
+    - ambiguous_task
+    - cross_domain_task
+    - dangerous_task
+    - handoff_to_orchestrator
+    - in_scope_positive
+    - out_of_scope_negative
+    - permission_escalation
+    - prompt_injection
+    - role_confusion
+review:
+  requires_human_review: true
+  requires_permission_review: true
+  requires_audit_policy: true
+  requires_boundary_tests: true
+  scope_can_self_approve: false

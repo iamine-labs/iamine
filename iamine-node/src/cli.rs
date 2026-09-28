@@ -6,6 +6,7 @@ use crate::lan_inference_cli::{lan_usage, parse_lan_infer_args};
 use crate::node_config_schema::{node_config_usage, NodeConfigCommand};
 use crate::node_identity_cli::{node_identity_usage, NodeIdentityCommand};
 use crate::node_modes::{InferenceControlFlags, NodeMode};
+use crate::photo_library_organizer_agent::PhotoLibraryCliCommand;
 use crate::reporter_agent::ReporterCliCommand;
 use crate::user_diagnostics_support::{support_usage, SupportCommand};
 use crate::worker_lifecycle::{worker_lifecycle_usage, WorkerLifecycleCommand};
@@ -239,7 +240,10 @@ pub(crate) fn parse_args_from(raw_args: Vec<String>) -> Result<NodeMode, String>
             Some("lan-file-share") => Ok(NodeMode::AgentLanFileShare {
                 command: LanFileShareCliCommand::from_args(&args[3..])?,
             }),
-            _ => Err("Uso: iamine-node agents node-doctor --package-root PATH [--json]\n  iamine-node agents reporter --package-root PATH [--evidence SOURCE:STATUS:CLAIM]... [--json]\n  iamine-node agents lan-file-share --package-root PATH [--share SHARE:STATUS:CLAIM]... [--json]".to_string()),
+            Some("photo-library-organizer") => Ok(NodeMode::AgentPhotoLibraryOrganizer {
+                command: PhotoLibraryCliCommand::from_args(&args[3..])?,
+            }),
+            _ => Err("Uso: iamine-node agents node-doctor --package-root PATH [--json]\n  iamine-node agents reporter --package-root PATH [--evidence SOURCE:STATUS:CLAIM]... [--json]\n  iamine-node agents lan-file-share --package-root PATH [--share SHARE:STATUS:CLAIM]... [--json]\n  iamine-node agents photo-library-organizer --package-root PATH [--item LABEL:CATEGORY:STATUS:CLAIM]... [--json]".to_string()),
         },
 
         Some("nodes") => Ok(NodeMode::Nodes),

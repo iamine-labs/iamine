@@ -65,6 +65,7 @@ mod official_agent_execution;
 mod p2p_protocol_version_runtime;
 mod path_config;
 mod peer_tracker;
+mod photo_library_organizer_agent;
 mod protocol;
 mod pubsub_observability;
 mod pubsub_readiness;
